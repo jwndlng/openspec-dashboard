@@ -1,0 +1,30 @@
+# Dependencies
+node_modules/
+
+# Build output (dist/ holds the UI bundle and the compiled binary;
+# *.bun-build are temp executables `bun build --compile` leaves behind; `bun run build` removes them)
+dist/
+*.bun-build
+*.tsbuildinfo
+
+# Logs and test output
+*.log
+coverage/
+
+# Secrets and local environment — never commit; .env.example documents the keys
+.env
+.env.*
+!.env.example
+
+# OS metadata
+.DS_Store
+Thumbs.db
+
+# Editors (shared extension recommendations are fine)
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.swp
+
+# Local, per-user agent settings (commands and skills under .claude/ stay tracked)
+.claude/settings.local.json

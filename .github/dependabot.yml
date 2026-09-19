@@ -1,0 +1,14 @@
+version: 2
+updates:
+  # No `bun` ecosystem entry: Dependabot only parses bun.lock lockfileVersion <= 1 and Bun 1.4 writes
+  # version 2, so the job fails on every run. Update packages manually with `bun update` until that is
+  # supported, then re-add it here.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: ci
+    groups:
+      actions:
+        patterns: ["*"]

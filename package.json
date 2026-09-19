@@ -1,0 +1,32 @@
+{
+  "name": "openspec-dashboard",
+  "version": "0.1.0",
+  "description": "Local-first Kanban across all OpenSpec repositories on this machine",
+  "type": "module",
+  "private": true,
+  "license": "MIT",
+  "packageManager": "bun@1.4.2",
+  "engines": {
+    "bun": ">=1.4.0"
+  },
+  "scripts": {
+    "dev": "bun run scripts/build-ui.ts && bun run src/server/index.ts",
+    "build:ui": "bun run scripts/build-ui.ts",
+    "build": "bun run scripts/build-ui.ts && bun build --compile src/server/index.ts --outfile dist/openspec-dashboard && rm -f .*.bun-build",
+    "test": "bun test",
+    "typecheck": "tsc --noEmit",
+    "lint": "biome lint .",
+    "format": "biome format --write .",
+    "check": "bun run lint && bun run typecheck && bun test"
+  },
+  "dependencies": {
+    "@fission-ai/openspec": "^1.13.0",
+    "preact": "^10.24.0",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.5.14",
+    "@types/bun": "^1.4.2",
+    "typescript": "^5.6.0"
+  }
+}

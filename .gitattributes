@@ -1,0 +1,11 @@
+# Normalise line endings for everything git considers text.
+* text=auto eol=lf
+
+# Binary assets
+*.woff2 binary
+
+# Generated: collapse in diffs and keep out of language stats.
+bun.lock linguist-generated=true -diff
+
+# Synthetic openspec/ trees written for the tests; tests assert on their content.
+test/fixtures/** linguist-vendored=true

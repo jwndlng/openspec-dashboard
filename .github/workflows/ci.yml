@@ -1,0 +1,56 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# A newer push to the same ref supersedes the run in progress.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: check (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        # macOS is the primary platform and has a case-insensitive file system,
+        # which path-handling tests depend on.
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: .bun-version
+
+      - name: Verify pinned Bun version
+        run: test "$(bun --version)" = "$(cat .bun-version)"
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      # The server entry imports dist/ui/index.html.
+      - name: Build UI
+        run: bun run build:ui
+
+      - name: Lint, typecheck, test
+        run: bun run check
+
+      - name: Build single binary
+        run: bun run build
+
+      - name: Smoke test binary
+        run: ./dist/openspec-dashboard --help
+
+      - name: Tree is clean after a full cycle
+        run: test -z "$(git status --porcelain)" || (git status --porcelain && exit 1)
