@@ -1,4 +1,4 @@
-import { afterAll, afterEach, beforeAll, expect, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
 import { existsSync } from "node:fs";
 import { mkdir, readFile, realpath, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -8,6 +8,9 @@ import { SessionStore } from "../src/server/sessions/store.ts";
 import { checkWorktreeRemovable, copyChangeIfMissing, ensureWorktree, removeWorktree } from "../src/server/sessions/worktree.ts";
 import { tempDir, useTempHome } from "./helpers.ts";
 import { FAKE_AGENT, git, harness, tempGitRepo, waitFor, watch } from "./sessionHelpers.ts";
+
+// These tests start real processes in pseudo-terminals and open sockets; slow CI runners need more than the 5 s default.
+setDefaultTimeout(30_000);
 
 let cleanup: () => Promise<void>;
 const managers: SessionManager[] = [];

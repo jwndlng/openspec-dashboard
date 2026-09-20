@@ -1,4 +1,4 @@
-import { afterAll, afterEach, beforeAll, expect, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
 import { createFetchHandler, createWebSocketHandlers, webSocketRefusal, type AppState, type TerminalSocketData } from "../src/server/api.ts";
 import { Scanner } from "../src/server/scanner.ts";
 import type { Session } from "../src/shared/types.ts";
@@ -6,6 +6,9 @@ import { useTempHome } from "./helpers.ts";
 import { harness, waitFor, type Harness } from "./sessionHelpers.ts";
 
 const JSON_HEADERS = { "content-type": "application/json" };
+// These tests start real processes in pseudo-terminals and open sockets; slow CI runners need more than the 5 s default.
+setDefaultTimeout(30_000);
+
 let cleanup: () => Promise<void>;
 const servers: { stop: () => Promise<void> }[] = [];
 
