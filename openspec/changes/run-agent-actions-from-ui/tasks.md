@@ -14,38 +14,38 @@
 
 ## 2. Configuration and types
 
-- [ ] 2.1 Add `AgentSessionsConfig`, per-repository `agent` settings, `Session`, `SessionState`, `SessionEvent` and failure-reason types to `src/shared/types.ts`
-- [ ] 2.2 Extend the zod schema in `src/server/config.ts` with defaults (`enabled: false`, `maxRunning: 2`, `idleMinutes: 30`, `claudePath: "claude"`, `passApiKeyEnv: false`, command templates), optional-on-input so older configs load
-- [ ] 2.3 Validation: `maxRunning >= 1`; templates may only contain `{change}`; reject allowed-tools entries or templates matching a permission-bypass mode/flag
-- [ ] 2.4 Tests: old config loads with defaults; invalid template, `maxRunning: 0` and bypass entries are rejected with the offending path
+- [x] 2.1 Add `AgentSessionsConfig`, per-repository `agent` settings, `Session`, `SessionState`, `SessionEvent` and failure-reason types to `src/shared/types.ts`
+- [x] 2.2 Extend the zod schema in `src/server/config.ts` with defaults (`enabled: false`, `maxRunning: 2`, `idleMinutes: 30`, `claudePath: "claude"`, `passApiKeyEnv: false`, command templates), optional-on-input so older configs load
+- [x] 2.3 Validation: `maxRunning >= 1`; templates may only contain `{change}`; reject allowed-tools entries or templates matching a permission-bypass mode/flag
+- [x] 2.4 Tests: old config loads with defaults; invalid template, `maxRunning: 0` and bypass entries are rejected with the offending path
 
 ## 3. Cross-site request protection
 
-- [ ] 3.1 If `create-change-from-dashboard` has already landed a guard for mutating routes, reuse it; otherwise implement one guard in `src/server/api.ts` (JSON content type, `X-OpenSpec-Dashboard: 1`, matching `Origin`/`Host`) applied to every non-GET/HEAD route
-- [ ] 3.2 Send the header from every mutating call in `src/ui/api.ts`
-- [ ] 3.3 Tests: foreign `Origin`, missing header and wrong content type are `403` for `PUT /api/config`, `POST /api/scan`, `POST /api/discover` and the new routes; the UI's own requests pass
+- [x] 3.1 If `create-change-from-dashboard` has already landed a guard for mutating routes, reuse it; otherwise implement one guard in `src/server/api.ts` (JSON content type, `X-OpenSpec-Dashboard: 1`, matching `Origin`/`Host`) applied to every non-GET/HEAD route
+- [x] 3.2 Send the header from every mutating call in `src/ui/api.ts`
+- [x] 3.3 Tests: foreign `Origin`, missing header and wrong content type are `403` for `PUT /api/config`, `POST /api/scan`, `POST /api/discover` and the new routes; the UI's own requests pass
 
 ## 4. Runner
 
-- [ ] 4.1 Define `Runner`/`RunnerProcess`/`RunnerEvent` in `src/server/sessions/runner.ts` per design D1
-- [ ] 4.2 Implement `fake-claude` test executable (`test/fixtures/fake-claude.ts`) speaking the observed protocol, scripted via environment variables: echo turns, denied tool call, auth failure exit, usage-limit error, hang until interrupted, crash
-- [ ] 4.3 Implement `claudeRunner.ts`: resolve binary, `available()` via `--version`, build the argument array (D2, D5, D6: `--setting-sources project`, variadic flags as single `--flag=value`) without a shell, strip `ANTHROPIC_API_KEY`/`ANTHROPIC_AUTH_TOKEN` unless `passApiKeyEnv`, parse newline-delimited JSON into normalised events, write user messages to stdin, in-band interrupt control request with SIGINT fallback, kill with timeout escalation; warn when `apiKeySource` is not `none`
-- [ ] 4.4 Build the appended system prompt with the worktree rules (owned worktree/branch, never touch the main checkout, copy-and-commit the change directory when missing) and `--add-dir` for the change directory
-- [ ] 4.5 Tests with the fake: argument array contains no bypass flag and no shell is involved; environment stripping; event normalisation from the recorded fixtures; message with shell metacharacters arrives verbatim; interrupt and kill
+- [x] 4.1 Define `Runner`/`RunnerProcess`/`RunnerEvent` in `src/server/sessions/runner.ts` per design D1
+- [x] 4.2 Implement `fake-claude` test executable (`test/fixtures/fake-claude.ts`) speaking the observed protocol, scripted via environment variables: echo turns, denied tool call, auth failure exit, usage-limit error, hang until interrupted, crash
+- [x] 4.3 Implement `claudeRunner.ts`: resolve binary, `available()` via `--version`, build the argument array (D2, D5, D6: `--setting-sources project`, variadic flags as single `--flag=value`) without a shell, strip `ANTHROPIC_API_KEY`/`ANTHROPIC_AUTH_TOKEN` unless `passApiKeyEnv`, parse newline-delimited JSON into normalised events, write user messages to stdin, in-band interrupt control request with SIGINT fallback, kill with timeout escalation; warn when `apiKeySource` is not `none`
+- [x] 4.4 Build the appended system prompt with the worktree rules (owned worktree/branch, never touch the main checkout, copy-and-commit the change directory when missing) and `--add-dir` for the change directory
+- [x] 4.5 Tests with the fake: argument array contains no bypass flag and no shell is involved; environment stripping; event normalisation from the recorded fixtures; message with shell metacharacters arrives verbatim; interrupt and kill
 
 ## 5. Session manager and storage
 
-- [ ] 5.1 Implement `src/server/sessions/store.ts`: `~/.openspec-dashboard/sessions/<id>/meta.json` (atomic, `0600`) and append-only `events.ndjson` with monotonically increasing `seq`; retention of the newest 50 ended sessions; transcript size cap eliding oldest tool-result bodies
-- [ ] 5.2 Implement `src/server/sessions/manager.ts`: state machine (D8), one open session per repository+change, FIFO queue against `maxRunning`, queued follow-ups, stop/close/cancel, failure classification, idle shutdown after `idleMinutes`, lazy restart with `--resume`
-- [ ] 5.3 Start-up reconciliation (`running` without process → `interrupted`) and shutdown handling in `src/server/index.ts` (stop children, mark `interrupted`)
-- [ ] 5.4 Starter availability from the snapshot (draft while an artifact is not done; implement in `Ready`/`Implementing`; never archived) and command templating over the validated change name
-- [ ] 5.5 Safe worktree removal: read-only checks (`git status --porcelain` in the worktree, nothing ahead of upstream/base via `rev-list`) and, only when clean and confirmed, `git worktree unlock` then `git worktree remove` without `--force`
-- [ ] 5.6 Tests with the fake: full lifecycle, multi-turn follow-up keeps one CLI session id, running limit and queue order, duplicate open returns the existing session, stop keeps the conversation, cancel, crash → `failed/crashed`, auth and usage-limit reasons, idle stop then resume, reopen after simulated restart, retention, removal refused with dirty or unpushed worktree (temp git repositories)
+- [x] 5.1 Implement `src/server/sessions/store.ts`: `~/.openspec-dashboard/sessions/<id>/meta.json` (atomic, `0600`) and append-only `events.ndjson` with monotonically increasing `seq`; retention of the newest 50 ended sessions; transcript size cap eliding oldest tool-result bodies
+- [x] 5.2 Implement `src/server/sessions/manager.ts`: state machine (D8), one open session per repository+change, FIFO queue against `maxRunning`, queued follow-ups, stop/close/cancel, failure classification, idle shutdown after `idleMinutes`, lazy restart with `--resume`
+- [x] 5.3 Start-up reconciliation (`running` without process → `interrupted`) and shutdown handling in `src/server/index.ts` (stop children, mark `interrupted`)
+- [x] 5.4 Starter availability from the snapshot (draft while an artifact is not done; implement in `Ready`/`Implementing`; never archived) and command templating over the validated change name
+- [x] 5.5 Safe worktree removal: read-only checks (`git status --porcelain` in the worktree, nothing ahead of upstream/base via `rev-list`) and, only when clean and confirmed, `git worktree unlock` then `git worktree remove` without `--force`
+- [x] 5.6 Tests with the fake: full lifecycle, multi-turn follow-up keeps one CLI session id, running limit and queue order, duplicate open returns the existing session, stop keeps the conversation, cancel, crash → `failed/crashed`, auth and usage-limit reasons, idle stop then resume, reopen after simulated restart, retention, removal refused with dirty or unpushed worktree (temp git repositories)
 
 ## 6. API
 
-- [ ] 6.1 Add the session routes to `src/server/api.ts` (open, list, get, events as Server-Sent Events honouring `Last-Event-ID` and `after`, messages, stop, close with `removeWorktree`, cancel, delete) with the refusal status codes from the `dashboard-api` spec
-- [ ] 6.2 Tests: every refusal case (feature off, repo not opted in, repo disabled or failed scan, unknown repo/change, invalid name, unavailable action, CLI unavailable, message to ended session); stream order and reconnect without loss; `GET /api/state` unchanged; no process starts while the feature is disabled
+- [x] 6.1 Add the session routes to `src/server/api.ts` (open, list, get, events as Server-Sent Events honouring `Last-Event-ID` and `after`, messages, stop, close with `removeWorktree`, cancel, delete) with the refusal status codes from the `dashboard-api` spec
+- [x] 6.2 Tests: every refusal case (feature off, repo not opted in, repo disabled or failed scan, unknown repo/change, invalid name, unavailable action, CLI unavailable, message to ended session); stream order and reconnect without loss; `GET /api/state` unchanged; no process starts while the feature is disabled
 
 ## 7. UI
 

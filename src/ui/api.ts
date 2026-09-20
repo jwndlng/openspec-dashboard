@@ -7,7 +7,7 @@ export class ApiError extends Error {
 }
 
 async function call<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(path, { ...init, headers: { "content-type": "application/json", ...init?.headers } });
+  const res = await fetch(path, { ...init, headers: { "content-type": "application/json", "x-openspec-dashboard": "1", ...init?.headers } });
   if (!res.ok) {
     let message = res.statusText;
     let issues: string[] = [];

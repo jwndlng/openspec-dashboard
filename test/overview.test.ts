@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import type { ChangeSnapshot, Config, RepoSnapshot, Snapshot } from "../src/shared/types.ts";
+import { defaultAgentSessions } from "../src/server/config.ts";
 import { cdCommand } from "../src/ui/format.ts";
 import { enabledOnly, filterRows, overviewRows, parseOverviewState, serializeOverviewState, sortRows, toggleSort } from "../src/ui/overviewState.ts";
 import { repoPath, routeFromPath } from "../src/ui/routes.ts";
@@ -102,6 +103,7 @@ test("enabledOnly drops repositories the config no longer enables, before any re
     scanRoots: [],
     pollIntervalSeconds: 60,
     port: 4711,
+    agentSessions: defaultAgentSessions(),
     repos: [
       { id: "a", path: "/w/alpha-infra", name: "alpha-infra", enabled: true },
       { id: "b", path: "/w/beta-soc", name: "beta-soc", enabled: false },

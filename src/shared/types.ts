@@ -77,6 +77,27 @@ export interface RepoConfig {
   path: string;
   name: string;
   enabled: boolean;
+  /** Agent-session opt-in for this repository; absent means not opted in. */
+  agent?: RepoAgentConfig;
+}
+
+export interface RepoAgentConfig {
+  enabled: boolean;
+  /** Added to the built-in default allow-list for sessions in this repository. */
+  allowedTools: string[];
+}
+
+export interface AgentSessionsConfig {
+  enabled: boolean;
+  /** Sessions whose agent is working at the same time; further turns queue. */
+  maxRunning: number;
+  /** A waiting session's process is stopped after this long and resumed on the next message. */
+  idleMinutes: number;
+  claudePath: string;
+  /** Keep ANTHROPIC_API_KEY / ANTHROPIC_AUTH_TOKEN in the agent's environment (bills the API instead of the CLI login). */
+  passApiKeyEnv: boolean;
+  /** Opening instructions; `{change}` is the only placeholder. */
+  commands: Record<SessionAction, string>;
 }
 
 export interface Config {
@@ -85,6 +106,68 @@ export interface Config {
   repos: RepoConfig[];
   pollIntervalSeconds: number;
   port: number;
+  agentSessions: AgentSessionsConfig;
+}
+
+export type SessionAction = "draft" | "implement";
+export type SessionState = "queued" | "running" | "waiting" | "closed" | "failed" | "cancelled" | "interrupted";
+export type SessionFailure = "auth" | "usage-limit" | "cli-missing" | "crashed";
+
+export const OPEN_SESSION_STATES: readonly SessionState[] = ["queued", "running", "waiting", "interrupted"];
+
+export interface RateLimitWindow {
+  utilization: number;
+  resetsAt: number;
+}
+
+export interface Session {
+  id: string;
+  repoId: string;
+  change: string;
+  action: SessionAction;
+  /** Conversation id chosen by the dashboard and passed to the CLI; used for resume. */
+  cliSessionId: string;
+  state: SessionState;
+  failure?: SessionFailure;
+  error?: string;
+  worktreePath?: string;
+  createdAt: string;
+  updatedAt: string;
+  turns: number;
+  costUsd: number;
+  /** Highest event sequence number written so far. */
+  lastSeq: number;
+  /** "none" means the CLI's own login is used. */
+  apiKeySource?: string;
+  rateLimit?: { status: string; windows: Record<string, RateLimitWindow> };
+}
+
+export type SessionEventKind = "user" | "assistant" | "tool_use" | "tool_result" | "denied" | "result" | "state" | "error";
+
+export interface SessionEvent {
+  seq: number;
+  at: string;
+  kind: SessionEventKind;
+  text?: string;
+  tool?: { name: string; input?: unknown };
+  isError?: boolean;
+  state?: SessionState;
+  costUsd?: number;
+}
+
+export interface AgentAvailability {
+  available: boolean;
+  version?: string;
+  reason?: string;
+}
+
+/** The session starters a change currently qualifies for (before feature/opt-in checks). */
+export function availableActions(change: Pick<ChangeSnapshot, "archived" | "artifacts" | "stage">): SessionAction[] {
+  if (change.archived) return [];
+  const actions: SessionAction[] = [];
+  if (change.artifacts.length === 0 || change.artifacts.some((a) => a.status !== "done")) actions.push("draft");
+  if (change.stage === "ready" || change.stage === "implementing") actions.push("implement");
+  return actions;
 }
 
 export interface DiscoverResult {

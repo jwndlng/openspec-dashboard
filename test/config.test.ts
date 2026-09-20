@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { ConfigValidationError, defaultConfig, loadConfig, newRepoConfig, repoId, saveConfig, validateConfig } from "../src/server/config.ts";
+import { ConfigValidationError, defaultAgentSessions, defaultConfig, loadConfig, newRepoConfig, repoId, saveConfig, validateConfig } from "../src/server/config.ts";
 import { useTempHome } from "./helpers.ts";
 
 let home: string;
@@ -15,7 +15,8 @@ afterAll(() => cleanup());
 test("first run creates default config", async () => {
   const { config, warning } = await loadConfig();
   expect(warning).toBeUndefined();
-  expect(config).toEqual({ version: 1, scanRoots: [], repos: [], pollIntervalSeconds: 60, port: 4711 });
+  expect(config).toEqual({ version: 1, scanRoots: [], repos: [], pollIntervalSeconds: 60, port: 4711, agentSessions: defaultAgentSessions() });
+  expect(config.agentSessions.enabled).toBe(false);
   expect(JSON.parse(await readFile(join(home, "config.json"), "utf8")).port).toBe(4711);
 });
 

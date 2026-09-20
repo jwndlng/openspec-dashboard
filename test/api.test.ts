@@ -1,6 +1,9 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { join } from "node:path";
 import { createFetchHandler, type AppState } from "../src/server/api.ts";
+
+/** What the dashboard's own UI sends with every mutating request. */
+const UI = { "content-type": "application/json", "x-openspec-dashboard": "1" };
 import { defaultConfig, newRepoConfig } from "../src/server/config.ts";
 import { Scanner } from "../src/server/scanner.ts";
 import { FIXTURES, useTempHome } from "./helpers.ts";
@@ -35,7 +38,7 @@ test("fresh install: empty state, default config, UI fallback", async () => {
 });
 
 test("invalid config is rejected and unchanged", async () => {
-  const res = await fetch(`${base}/api/config`, { method: "PUT", body: JSON.stringify({ ...defaultConfig(), pollIntervalSeconds: 1 }) });
+  const res = await fetch(`${base}/api/config`, { method: "PUT", headers: UI, body: JSON.stringify({ ...defaultConfig(), pollIntervalSeconds: 1 }) });
   expect(res.status).toBe(400);
   expect((await res.json()).issues[0]).toContain("pollIntervalSeconds");
   expect(state.config.pollIntervalSeconds).toBe(60);
@@ -43,20 +46,20 @@ test("invalid config is rejected and unchanged", async () => {
 
 test("enabling a repo persists and triggers a scan that populates state", async () => {
   const repo = newRepoConfig(join(FIXTURES, "demo-ops"), true);
-  const res = await fetch(`${base}/api/config`, { method: "PUT", body: JSON.stringify({ ...defaultConfig(), repos: [repo] }) });
+  const res = await fetch(`${base}/api/config`, { method: "PUT", headers: UI, body: JSON.stringify({ ...defaultConfig(), repos: [repo] }) });
   expect(res.status).toBe(200);
   expect(state.scanner.scanning).toBe(true);
-  expect((await (await fetch(`${base}/api/scan`, { method: "POST" })).json()).started).toBe(false);
+  expect((await (await fetch(`${base}/api/scan`, { method: "POST", headers: UI })).json()).started).toBe(false);
   await state.scanner.trigger().done;
   const snap = await (await fetch(`${base}/api/state`)).json();
   expect(snap.repos[0].name).toBe("demo-ops");
   expect(snap.repos[0].changes.length).toBeGreaterThan(8);
-  expect((await (await fetch(`${base}/api/scan`, { method: "POST" })).json()).started).toBe(true);
+  expect((await (await fetch(`${base}/api/scan`, { method: "POST", headers: UI })).json()).started).toBe(true);
   await state.scanner.trigger().done;
 });
 
 const discover = (body?: unknown) =>
-  fetch(`${base}/api/discover`, { method: "POST", body: body === undefined ? undefined : JSON.stringify(body) });
+  fetch(`${base}/api/discover`, { method: "POST", headers: UI, body: body === undefined ? undefined : JSON.stringify(body) });
 
 test("discover uses saved roots, returns only unconfigured repos and persists nothing", async () => {
   state.config = { ...state.config, scanRoots: [FIXTURES] };
@@ -82,7 +85,7 @@ test("discover rejects relative roots and malformed bodies", async () => {
   const res = await discover({ scanRoots: ["relative/path"] });
   expect(res.status).toBe(400);
   expect((await res.json()).issues[0]).toContain("scanRoots.0");
-  expect((await fetch(`${base}/api/discover`, { method: "POST", body: "{nope" })).status).toBe(400);
+  expect((await fetch(`${base}/api/discover`, { method: "POST", headers: UI, body: "{nope" })).status).toBe(400);
 });
 
 test("discover reports a missing root and still scans the others", async () => {
