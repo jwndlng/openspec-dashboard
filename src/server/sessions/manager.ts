@@ -14,26 +14,13 @@ import {
   type SessionState,
   type Snapshot,
 } from "../../shared/types.ts";
+import { DEFAULT_ALLOWED_TOOLS } from "../../shared/agentDefaults.ts";
 import { CHANGE_NAME } from "../source.ts";
 import type { Runner, RunnerEvent, RunnerProcess } from "./runner.ts";
 import { SessionStore } from "./store.ts";
 import { checkWorktreeRemovable, removeWorktree, type Removable } from "./worktree.ts";
 
-/** Always allowed in a session; repositories can add to it, nothing can bypass it (design.md D6). */
-export const DEFAULT_ALLOWED_TOOLS = [
-  "Read",
-  "Glob",
-  "Grep",
-  "Edit",
-  "Write",
-  "Bash(openspec *)",
-  "Bash(git status*)",
-  "Bash(git diff*)",
-  "Bash(git log*)",
-  "Bash(git add *)",
-  "Bash(git commit *)",
-  "Bash(git branch -m *)",
-];
+export { DEFAULT_ALLOWED_TOOLS };
 
 const STOP_FALLBACK_MS = 5_000;
 const END_GRACE_MS = 3_000;
@@ -229,8 +216,12 @@ export class SessionManager {
       live.costBase = session.costUsd;
       void this.consume(session, live, live.proc);
     }
-    await this.setState(session, "running");
+    // `setState` assigns the state synchronously and only its persistence is awaited, so the state change and the
+    // hand-over of the message happen in one tick: a Stop can neither overtake the message nor see a stale state,
+    // and a fast answer cannot be overwritten by a late "running".
+    const announced = this.setState(session, "running");
     live.proc.send(text);
+    await announced;
   }
 
   private spawn(session: Session): RunnerProcess {
@@ -253,7 +244,13 @@ export class SessionManager {
     try {
       for await (const event of proc.events) await this.onRunnerEvent(session, live, event);
     } catch (err) {
-      await this.record(session, { kind: "error", text: `lost the agent's output: ${err instanceof Error ? err.message : String(err)}` });
+      // Never leave a session "running" with nobody listening to it.
+      if (live.proc === proc) live.proc = undefined;
+      proc.kill();
+      if (OPEN_SESSION_STATES.includes(session.state)) {
+        await this.fail(session, "crashed", `lost the agent's output: ${err instanceof Error ? err.message : String(err)}`).catch(() => undefined);
+      }
+      return;
     }
     const exit = await proc.exited;
     if (live.proc === proc) live.proc = undefined;

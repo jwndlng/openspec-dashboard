@@ -49,11 +49,11 @@
 
 ## 7. UI
 
-- [ ] 7.1 `src/ui/api.ts`: session calls and an `EventSource` wrapper with reconnect using the last `seq`
-- [ ] 7.2 Card starters and session badge (`working` / `waiting for you` / `failed` with reason) in `src/ui/kanban.tsx`, joined to cards by repository id and change name; unchanged cards when the feature is off or the repository not opted in
-- [ ] 7.3 Session panel (drawer, `?session=<id>` deep link): header with worktree path, branch, state and cost; transcript with escaped text, collapsible tool calls/results and highlighted denials; input box (Enter sends; disabled when no message can be accepted); Stop, Close with the remove-worktree confirmation, Cancel, Copy resume command, Copy cd (worktree)
-- [ ] 7.4 Settings section: global switch (blocked while the CLI is missing), CLI availability and version, `maxRunning`, idle limit, command templates, per-repository opt-in and additional allowed tools beside the default list, plain-language risk statement, list of session worktrees
-- [ ] 7.5 Styles for both themes using existing tokens; status conveyed by text plus colour
+- [x] 7.1 `src/ui/api.ts`: session calls and an `EventSource` wrapper with reconnect using the last `seq`
+- [x] 7.2 Card starters and session badge (`working` / `waiting for you` / `failed` with reason) in `src/ui/kanban.tsx`, joined to cards by repository id and change name; unchanged cards when the feature is off or the repository not opted in
+- [x] 7.3 Session panel (drawer, `?session=<id>` deep link): header with worktree path, branch, state and cost; transcript with escaped text, collapsible tool calls/results and highlighted denials; input box (Enter sends; disabled when no message can be accepted); Stop, Close with the remove-worktree confirmation, Cancel, Copy resume command, Copy cd (worktree)
+- [x] 7.4 Settings section: global switch (blocked while the CLI is missing), CLI availability and version, `maxRunning`, idle limit, command templates, per-repository opt-in and additional allowed tools beside the default list, plain-language risk statement, list of session worktrees
+- [x] 7.5 Styles for both themes using existing tokens; status conveyed by text plus colour
 
 ## 8. Invariants and documentation
 

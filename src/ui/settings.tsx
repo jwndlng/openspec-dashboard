@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import type { Config, DiscoverResult, RepoConfig } from "../shared/types.ts";
+import { AgentSettings } from "./agentSettings.tsx";
 import { api, ApiError } from "./api.ts";
 
 interface Props {
@@ -191,6 +192,8 @@ export function Settings({ config, onSaved }: Props) {
             <span class="hint">· port {draft.port} (change in <code>~/.openspec-dashboard/config.json</code>, restart to apply)</span>
           </div>
         </section>
+
+        <AgentSettings draft={draft} update={update} />
       </div>
       <div class="savebar">
         <button type="button" class="btn primary" onClick={save} disabled={!dirty || saving}>

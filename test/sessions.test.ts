@@ -96,7 +96,10 @@ test("running limit queues further sessions; Stop frees the slot and keeps the c
   await waitFor(() => state(h.manager, second.id) === "running", "second picked up");
   expect((await h.manager.events(first.id, 0)).find((e) => e.kind === "result")?.text).toBe("turn stopped");
   expect(h.manager.get(first.id).failure).toBeUndefined();
-  expect((await recorded(process.env.FAKE_CLAUDE_RECORD)).length).toBe(2); // in-band interrupt: no restart of the first process
+  // Exactly two processes ever start (one per session): the in-band interrupt did not restart the first one.
+  await waitFor(async () => (await recorded(process.env.FAKE_CLAUDE_RECORD as string)).length === 2, "second process start-up");
+  await new Promise((r) => setTimeout(r, 150));
+  expect((await recorded(process.env.FAKE_CLAUDE_RECORD)).length).toBe(2);
   await h.manager.cancel(second.id);
   expect(state(h.manager, second.id)).toBe("cancelled");
 });
