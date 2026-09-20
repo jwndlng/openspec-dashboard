@@ -54,7 +54,7 @@ with `FAKE_CLAUDE_MODE` (`echo`, `deny`, `auth`, `limit`, `hang`, `crash`). Its 
 
 ## Demo site and screenshots
 
-The [live demo](https://jwndlng.github.io/openspec-dashboard/) is the real UI built with `bun run build:demo`: the
+The [live demo](https://blog.wndlng.ch/openspec-dashboard/) is the real UI built with `bun run build:demo`: the
 entry point `src/ui/demo/main.tsx` swaps the HTTP API for an in-memory one and switches to hash routing. It is
 published from `main` by `.github/workflows/pages.yml`; nothing generated is committed.
 

@@ -40,7 +40,7 @@
 
 - [x] 7.1 Add a `Build demo` step to `.github/workflows/ci.yml` (before the clean-tree check)
 - [x] 7.2 Add `.github/workflows/pages.yml`: triggers `push` to `main` + `workflow_dispatch`; read-only `build` job (install, `build:demo`, `screenshots`, upload Pages artifact); `deploy` job with `pages: write` + `id-token: write`, environment `github-pages`; all actions SHA-pinned; concurrency group so deploys do not overlap
-- [ ] 7.3 Maintainer: enable GitHub Pages with source "GitHub Actions" in the repository settings, then run the workflow and confirm the demo and both screenshots are reachable
+- [x] 7.3 (Done 2026-09-20: enabled via the API with `build_type=workflow`; the first deploy had failed with 404 until then. The account's Pages site uses the custom domain `blog.wndlng.ch`, so the demo is served from `https://blog.wndlng.ch/openspec-dashboard/` and the `github.io` URL redirects there.) Maintainer: enable GitHub Pages with source "GitHub Actions" in the repository settings, then run the workflow and confirm the demo and both screenshots are reachable
 
 ## 8. Docs
 
