@@ -4,12 +4,12 @@ Local-first Kanban across every [OpenSpec](https://github.com/Fission-AI/OpenSpe
 Ships as a single Bun binary. Repositories stay the source of truth; the dashboard indexes them and is read-only
 towards them, with one explicit, previewed exception: applying [shared config profiles](#shared-openspec-config).
 
-**[Live demo →](https://jwndlng.github.io/openspec-dashboard/)** — the real UI on made-up sample data, nothing to install.
+**[Live demo →](https://blog.wndlng.ch/openspec-dashboard/)** — the real UI on made-up sample data, nothing to install.
 
-<a href="https://jwndlng.github.io/openspec-dashboard/#/board">
+<a href="https://blog.wndlng.ch/openspec-dashboard/#/board">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="https://jwndlng.github.io/openspec-dashboard/screenshots/board-dark.png">
-    <img alt="The combined Kanban board: one column per lifecycle step from New to Archived, cards grouped and coloured by repository, with task progress, last activity, branch badges and warnings." src="https://jwndlng.github.io/openspec-dashboard/screenshots/board-light.png">
+    <source media="(prefers-color-scheme: dark)" srcset="https://blog.wndlng.ch/openspec-dashboard/screenshots/board-dark.png">
+    <img alt="The combined Kanban board: one column per lifecycle step from New to Archived, cards grouped and coloured by repository, with task progress, last activity, branch badges and warnings." src="https://blog.wndlng.ch/openspec-dashboard/screenshots/board-light.png">
   </picture>
 </a>
 
