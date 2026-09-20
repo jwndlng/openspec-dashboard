@@ -19,8 +19,3 @@ export function routeFromPath(pathname: string): Route {
 export function repoPath(repoId: string): string {
   return `/repo/${encodeURIComponent(repoId)}`;
 }
-
-export function navigate(path: string): void {
-  history.pushState(null, "", path);
-  dispatchEvent(new PopStateEvent("popstate"));
-}

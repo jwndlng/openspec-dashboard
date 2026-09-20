@@ -1,0 +1,57 @@
+name: pages
+
+# Publishes the demo (the real UI on sample data) and its screenshots to GitHub Pages.
+# Never runs for pull requests: the deploy job is the only place in this repository with write scopes.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Let a running deploy finish; queue at most the newest one behind it.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: .bun-version
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build demo
+        run: bun run build:demo
+
+      # ubuntu-latest ships Google Chrome; the script fails loudly if it cannot find or drive it.
+      - name: Take screenshots from the demo
+        run: bun run screenshots
+
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: dist/demo
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1

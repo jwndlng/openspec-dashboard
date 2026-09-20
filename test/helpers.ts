@@ -22,3 +22,8 @@ export async function useTempHome(): Promise<{ home: string; cleanup: () => Prom
 export async function tempDir(prefix = "osd-"): Promise<string> {
   return mkdtemp(join(tmpdir(), prefix));
 }
+
+/** True for strings that contain something shaped like a real user's home directory (the demo's /home/demo is allowed). */
+export function looksLikeRealHome(text: string): boolean {
+  return /\/Users\/[^/\s"']+/.test(text) || /\/home\/(?!demo(?:\/|\b))[^/\s"']+/.test(text) || /[A-Za-z]:\\+Users\\+[^\\\s"']+/.test(text);
+}
