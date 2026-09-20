@@ -10,6 +10,10 @@ export function configPath(): string {
   return join(dashboardHome(), "config.json");
 }
 
+export function sharedConfigPath(): string {
+  return join(dashboardHome(), "shared-config.json");
+}
+
 export function cachePath(): string {
   return join(dashboardHome(), "cache", "snapshot.json");
 }

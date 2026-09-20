@@ -1,8 +1,9 @@
 import { join, sep } from "node:path";
 import { deriveStage } from "../shared/columns.ts";
-import type { ChangeSnapshot, Config, RepoConfig, RepoSnapshot, Snapshot, Worktree } from "../shared/types.ts";
+import type { ChangeSnapshot, Config, RepoConfig, RepoSnapshot, SharedConfig, Snapshot, Worktree } from "../shared/types.ts";
 import { emptySnapshot, writeSnapshot } from "./cache.ts";
 import { readChangeArtifacts } from "./openspecAdapter.ts";
+import { loadSharedConfig, repoSharedConfig } from "./sharedConfig.ts";
 import { changeSpecsSynced } from "./specSync.ts";
 import { LocalRepoSource, type ChangeDirEntry, type DirtyFile, type RepoSource } from "./source.ts";
 import { parseTaskProgress } from "./tasksParser.ts";
@@ -119,14 +120,17 @@ async function scanChange(ctx: RepoContext, entry: ChangeDirEntry, withGit: bool
   };
 }
 
-export async function scanRepo(repo: RepoConfig, source: RepoSource = new LocalRepoSource(repo.path)): Promise<RepoSnapshot> {
+/** `shared` is the dashboard's shared OpenSpec config, when one exists; it only adds the read-only sync state. */
+export async function scanRepo(repo: RepoConfig, source: RepoSource = new LocalRepoSource(repo.path), shared?: SharedConfig): Promise<RepoSnapshot> {
   const base = { id: repo.id, name: repo.name, path: repo.path, scannedAt: new Date().toISOString() };
   if (!(await source.exists())) {
     return { ...base, ok: false, error: "repository path or its openspec/ directory does not exist", isGit: false, worktrees: [], changes: [] };
   }
   const isGit = await source.isGit();
   const [branch, worktrees] = isGit ? await Promise.all([source.branch(), source.worktrees()]) : [undefined, []];
-  const projectSchema = parseMarker(await source.readText(join(repo.path, "openspec", "config.yaml"))).schema;
+  const configYaml = await source.readText(join(repo.path, "openspec", "config.yaml"));
+  const projectSchema = parseMarker(configYaml).schema;
+  const sharedConfig = shared && shared.profiles.length > 0 ? repoSharedConfig(configYaml, shared) : undefined;
   const openspecDir = join(repo.path, "openspec");
   const dirty = isGit ? await source.dirtyFiles().catch(() => []) : [];
   const lastUpdatedAt = isGit
@@ -139,7 +143,7 @@ export async function scanRepo(repo: RepoConfig, source: RepoSource = new LocalR
   for (const entry of listing.active) changes.push(await scanChange(ctx, entry, true));
   for (const [i, entry] of listing.archived.entries()) changes.push(await scanChange(ctx, entry, i < ARCHIVED_ACTIVITY_LIMIT));
 
-  return { ...base, ok: true, warnings: listing.warnings.length ? listing.warnings : undefined, isGit, currentBranch: branch, worktrees, lastUpdatedAt, changes };
+  return { ...base, ok: true, warnings: listing.warnings.length ? listing.warnings : undefined, isGit, currentBranch: branch, worktrees, lastUpdatedAt, sharedConfig, changes };
 }
 
 function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
@@ -154,6 +158,8 @@ export interface ScannerOptions {
   repoTimeoutMs?: number;
   /** Test seam; defaults to the local filesystem source. */
   sourceFor?: (repo: RepoConfig) => RepoSource;
+  /** Test seam; defaults to the shared config stored in the dashboard home. */
+  sharedConfig?: () => Promise<SharedConfig | undefined>;
   persist?: boolean;
 }
 
@@ -200,6 +206,7 @@ export class Scanner {
     const config = this.getConfig();
     const repos = config.repos.filter((r) => r.enabled);
     const previous = new Map(this.snapshot.repos.map((r) => [r.id, r]));
+    const shared = await (this.options.sharedConfig ?? loadSharedConfig)();
     const results: RepoSnapshot[] = new Array(repos.length);
     const concurrency = this.options.concurrency ?? DEFAULT_CONCURRENCY;
     const timeoutMs = this.options.repoTimeoutMs ?? DEFAULT_REPO_TIMEOUT_MS;
@@ -211,7 +218,7 @@ export class Scanner {
         const repo = repos[index];
         const source = this.options.sourceFor?.(repo) ?? new LocalRepoSource(repo.path);
         try {
-          results[index] = await withTimeout(scanRepo(repo, source), timeoutMs, repo.name);
+          results[index] = await withTimeout(scanRepo(repo, source, shared), timeoutMs, repo.name);
         } catch (err) {
           // Keep the last good changes so the board never blanks out on a transient failure.
           const prev = previous.get(repo.id);
@@ -226,6 +233,7 @@ export class Scanner {
             currentBranch: prev?.currentBranch,
             worktrees: prev?.worktrees ?? [],
             lastUpdatedAt: prev?.lastUpdatedAt,
+            sharedConfig: shared && shared.profiles.length > 0 ? prev?.sharedConfig : undefined,
             changes: prev?.changes ?? [],
           };
         }

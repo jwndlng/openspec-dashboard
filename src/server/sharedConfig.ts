@@ -1,0 +1,302 @@
+// The shared OpenSpec config: named profiles of guidance for agents (`context`, per-artifact `rules`) kept once in the
+// dashboard home and merged into many repositories' `openspec/config.yaml`.
+//
+// Shared content lives in *managed sections* that are recognisable in the file itself — one delimited block per profile
+// at the start of the `context` text, and rule entries carrying a marker comment with the profile id. Which profiles a
+// repository carries, and whether they are current, is therefore derived from the repository alone, and everything
+// outside the markers stays the project's own. Applying is the only operation here that writes to a tracked
+// repository; it touches nothing but those sections of that one file.
+import { chmod, mkdir, readFile, rename, stat, unlink, writeFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
+import { isMap, isScalar, isSeq, parseDocument, Scalar, YAMLSeq } from "yaml";
+import type { AppliedProfile, RepoConfig, RepoSharedConfig, SharedConfig, SharedConfigApplyResult, SharedConfigPreview, SharedProfile } from "../shared/types.ts";
+import { sharedConfigPath } from "./paths.ts";
+
+export const MARKER = "openspec-dashboard:shared";
+/** OpenSpec ignores `context` entirely above this many UTF-8 bytes. */
+export const MAX_CONTEXT_BYTES = 50 * 1024;
+
+const PROFILE_ID = /^[a-z0-9][a-z0-9-]{0,62}$/;
+const ARTIFACT_ID = /^[A-Za-z0-9._-]+$/;
+const BEGIN_LINE = new RegExp(`^<!-- ${MARKER}:begin ([a-z0-9-]+)\\b.*-->$`);
+const END_LINE = new RegExp(`^<!-- ${MARKER}:end ([a-z0-9-]+) -->$`);
+const RULE_COMMENT = new RegExp(`^${MARKER}:([a-z0-9-]+)$`);
+
+export const contextBegin = (id: string) => `<!-- ${MARKER}:begin ${id} — managed by openspec-dashboard, edits here are overwritten -->`;
+export const contextEnd = (id: string) => `<!-- ${MARKER}:end ${id} -->`;
+export const ruleComment = (id: string) => `${MARKER}:${id}`;
+
+export const EMPTY_SHARED_CONFIG: SharedConfig = { profiles: [] };
+
+export class SharedConfigValidationError extends Error {
+  constructor(readonly issues: string[]) {
+    super(`invalid shared config: ${issues.join("; ")}`);
+  }
+}
+
+export function validateSharedConfig(body: unknown): SharedConfig {
+  const issues: string[] = [];
+  const list = (body as { profiles?: unknown } | null)?.profiles;
+  if (!Array.isArray(list)) throw new SharedConfigValidationError(["profiles: must be a list"]);
+  const profiles: SharedProfile[] = [];
+  const seen = new Set<string>();
+  for (const [i, raw] of list.entries()) {
+    const at = `profiles.${i}`;
+    const input = (raw ?? {}) as { id?: unknown; name?: unknown; context?: unknown; rules?: unknown };
+    if (typeof input.id !== "string" || !PROFILE_ID.test(input.id)) issues.push(`${at}.id: must be a lower-case slug matching ${PROFILE_ID}`);
+    else if (seen.has(input.id)) issues.push(`${at}.id: duplicate profile id ${JSON.stringify(input.id)}`);
+    else seen.add(input.id);
+    if (typeof input.name !== "string" || input.name.trim() === "") issues.push(`${at}.name: must be a non-empty string`);
+    if (typeof input.context !== "string") issues.push(`${at}.context: must be a string`);
+    // A marker line inside shared text would be read back as a section boundary.
+    else if (input.context.includes(MARKER)) issues.push(`${at}.context: must not contain ${JSON.stringify(MARKER)}`);
+    const rules: Record<string, string[]> = {};
+    if (typeof input.rules !== "object" || input.rules === null || Array.isArray(input.rules)) {
+      issues.push(`${at}.rules: must be an object of artifact id → list of rules`);
+    } else {
+      for (const [artifact, entries] of Object.entries(input.rules)) {
+        if (!ARTIFACT_ID.test(artifact)) issues.push(`${at}.rules.${JSON.stringify(artifact)}: artifact id must match ${ARTIFACT_ID}`);
+        else if (!Array.isArray(entries) || entries.some((r) => typeof r !== "string" || r.trim() === "" || /[\r\n]/.test(r))) issues.push(`${at}.rules.${artifact}: must be a list of non-empty single-line strings`);
+        else if (entries.length > 0) rules[artifact] = entries.map((r: string) => r.trim());
+      }
+    }
+    if (issues.length === 0) profiles.push({ id: input.id as string, name: (input.name as string).trim(), context: (input.context as string).trim(), rules });
+  }
+  if (issues.length) throw new SharedConfigValidationError(issues);
+  return { profiles };
+}
+
+async function writeAtomic(path: string, content: string, mode?: number): Promise<void> {
+  await mkdir(dirname(path), { recursive: true });
+  const tmp = `${path}.${process.pid}.tmp`;
+  try {
+    await writeFile(tmp, content, "utf8");
+    if (mode !== undefined) await chmod(tmp, mode);
+    await rename(tmp, path);
+  } catch (err) {
+    await unlink(tmp).catch(() => undefined);
+    throw err;
+  }
+}
+
+/** The stored shared config, or undefined when none has been saved (or the file is unusable). */
+export async function loadSharedConfig(): Promise<SharedConfig | undefined> {
+  try {
+    return validateSharedConfig(JSON.parse(await readFile(sharedConfigPath(), "utf8")));
+  } catch {
+    return undefined;
+  }
+}
+
+export async function saveSharedConfig(body: unknown): Promise<SharedConfig> {
+  const valid = validateSharedConfig(body);
+  await writeAtomic(sharedConfigPath(), `${JSON.stringify(valid, null, 2)}\n`);
+  return valid;
+}
+
+/** Managed content found in a file for one profile id. */
+interface ManagedProfile {
+  /** Text between this profile's context markers; undefined when it has no context block. */
+  context?: string;
+  rules: Record<string, string[]>;
+}
+
+interface Managed {
+  /** Profile id → its managed content, in the order the ids first appear in the file. */
+  profiles: Map<string, ManagedProfile>;
+  /** The project's own context: everything outside the managed blocks. */
+  localContext: string;
+}
+
+/** Splits a context string into managed blocks and local text. Throws on unbalanced, nested or repeated blocks. */
+function splitContext(context: string, into: Map<string, ManagedProfile>): string {
+  const local: string[] = [];
+  let open: { id: string; lines: string[] } | undefined;
+  for (const line of context.replace(/\r\n?/g, "\n").split("\n")) {
+    const begin = BEGIN_LINE.exec(line.trim());
+    const end = END_LINE.exec(line.trim());
+    if (begin) {
+      if (open || into.get(begin[1])?.context !== undefined) throw new Error("malformed shared-config markers in context");
+      open = { id: begin[1], lines: [] };
+    } else if (end) {
+      if (!open || open.id !== end[1]) throw new Error("malformed shared-config markers in context");
+      into.set(open.id, { ...(into.get(open.id) ?? { rules: {} }), context: open.lines.join("\n") });
+      open = undefined;
+    } else if (line.includes(`${MARKER}:begin`) || line.includes(`${MARKER}:end`)) {
+      throw new Error("malformed shared-config markers in context");
+    } else {
+      (open ? open.lines : local).push(line);
+    }
+  }
+  if (open) throw new Error("malformed shared-config markers in context");
+  return local.join("\n");
+}
+
+type Doc = ReturnType<typeof parseDocument>;
+
+const profileOfRule = (item: unknown): string | undefined => (isScalar(item) ? RULE_COMMENT.exec(item.comment?.trim() ?? "")?.[1] : undefined);
+
+/** Parses a config and extracts the managed sections. Throws when the file is not something apply may touch. */
+function readManaged(text: string): { doc: Doc; managed: Managed } {
+  const doc = parseDocument(text);
+  if (doc.errors.length > 0) throw new Error(`invalid YAML: ${doc.errors[0].message}`);
+  if (doc.contents !== null && !isMap(doc.contents)) throw new Error("config is not a YAML mapping");
+
+  const context = doc.get("context");
+  if (context !== undefined && context !== null && typeof context !== "string") throw new Error("`context` is not a string");
+
+  const profiles = new Map<string, ManagedProfile>();
+  const localContext = splitContext(typeof context === "string" ? context : "", profiles);
+
+  const rules = doc.get("rules", true);
+  if (rules !== undefined && !(isScalar(rules) && rules.value === null)) {
+    if (!isMap(rules)) throw new Error("`rules` is not a mapping");
+    for (const pair of rules.items) {
+      const artifact = String(isScalar(pair.key) ? pair.key.value : pair.key);
+      if (pair.value === null || (isScalar(pair.value) && pair.value.value === null)) continue;
+      if (!isSeq(pair.value)) throw new Error(`\`rules.${artifact}\` is not a list`);
+      for (const item of pair.value.items) {
+        const id = profileOfRule(item);
+        if (id === undefined) continue;
+        const entry = profiles.get(id) ?? { rules: {} };
+        entry.rules[artifact] = [...(entry.rules[artifact] ?? []), String((item as Scalar).value)];
+        profiles.set(id, entry);
+      }
+    }
+  }
+  return { doc, managed: { profiles, localContext } };
+}
+
+function sameRules(a: Record<string, string[]>, b: Record<string, string[]>): boolean {
+  const ids = (r: Record<string, string[]>) => Object.keys(r).filter((id) => r[id].length > 0).sort();
+  const [ia, ib] = [ids(a), ids(b)];
+  return ia.length === ib.length && ia.every((id, i) => id === ib[i] && a[id].length === b[id].length && a[id].every((rule, j) => rule === b[id][j]));
+}
+
+const matches = (found: ManagedProfile, profile: SharedProfile) => (found.context ?? "").trim() === profile.context.trim() && sameRules(found.rules, profile.rules);
+
+/** Pure: which profiles a config file carries and whether they are current. `undefined` text means the file is missing. */
+export function repoSharedConfig(text: string | undefined, shared: SharedConfig): RepoSharedConfig {
+  if (text === undefined) return { unreadable: true, applied: [] };
+  let managed: Managed;
+  try {
+    ({ managed } = readManaged(text));
+  } catch {
+    return { unreadable: true, applied: [] };
+  }
+  const known = new Map(shared.profiles.map((p) => [p.id, p]));
+  const applied: AppliedProfile[] = [...managed.profiles].map(([id, found]) => {
+    const profile = known.get(id);
+    return { id, state: !profile ? "orphaned" : matches(found, profile) ? "in-sync" : "outdated" };
+  });
+  // dashboard order first, orphans last: stable for the UI whatever the order in the file
+  const rank = (id: string) => (known.has(id) ? shared.profiles.findIndex((p) => p.id === id) : shared.profiles.length);
+  return { unreadable: false, applied: applied.sort((a, b) => rank(a.id) - rank(b.id) || a.id.localeCompare(b.id)) };
+}
+
+/**
+ * Pure: the config text carrying exactly `desired` (in that order) as its managed content — other profiles' sections,
+ * orphaned ones included, are removed; an empty list removes everything managed. Other keys, comments, and the
+ * project's own context and rules are left as they are. Throws with the reason when the file must not be touched.
+ */
+export function applyShared(text: string, desired: SharedProfile[]): string {
+  const { doc, managed } = readManaged(text);
+  const effective = desired.filter((p) => p.context.trim() !== "" || Object.keys(p.rules).length > 0);
+  const current = [...managed.profiles];
+  const upToDate = current.length === effective.length && effective.every((p, i) => current[i][0] === p.id && matches(current[i][1], p));
+  if (upToDate) return text; // never reserialise a file that needs no change
+
+  // context: one block per profile, then the project's own text
+  const local = managed.localContext.replace(/^\n+/, "").replace(/\s+$/, "");
+  const blocks = effective.filter((p) => p.context.trim() !== "").map((p) => `${contextBegin(p.id)}\n${p.context.trim()}\n${contextEnd(p.id)}\n`);
+  const context = [...blocks, ...(local ? [`${local}\n`] : [])].join("\n");
+  const bytes = (s: string) => Buffer.byteLength(s, "utf8");
+  if (bytes(context) > MAX_CONTEXT_BYTES) {
+    const kb = (n: number) => `${(n / 1024).toFixed(1)}KB`;
+    throw new Error(`context would be ${kb(bytes(context))} (shared ${kb(bytes(blocks.join("\n")))} + the project's own ${kb(bytes(local))}); OpenSpec ignores context above ${kb(MAX_CONTEXT_BYTES)}`);
+  }
+  if (context) {
+    const node = new Scalar(context);
+    node.type = Scalar.BLOCK_LITERAL;
+    const existing = doc.get("context", true);
+    if (isScalar(existing)) {
+      node.comment = existing.comment;
+      node.commentBefore = existing.commentBefore;
+    }
+    doc.set("context", node);
+  } else if (doc.has("context")) {
+    doc.delete("context");
+  }
+
+  // rules: marked entries first (profile order), the project's own entries after them, untouched
+  const artifacts = new Set([...effective.flatMap((p) => Object.keys(p.rules)), ...current.flatMap(([, found]) => Object.keys(found.rules))]);
+  for (const artifact of artifacts) {
+    const existing = doc.getIn(["rules", artifact], true);
+    const locals = isSeq(existing) ? existing.items.filter((item) => profileOfRule(item) === undefined) : [];
+    const marked = effective.flatMap((p) =>
+      (p.rules[artifact] ?? []).map((rule) => {
+        const node = new Scalar(rule);
+        node.comment = ` ${ruleComment(p.id)}`;
+        return node;
+      }),
+    );
+    if (marked.length + locals.length === 0) {
+      doc.deleteIn(["rules", artifact]);
+    } else if (isSeq(existing)) {
+      existing.items = [...marked, ...locals];
+    } else {
+      const seq = new YAMLSeq();
+      seq.items = [...marked, ...locals];
+      doc.setIn(["rules", artifact], seq);
+    }
+  }
+  const rules = doc.get("rules", true);
+  if (isMap(rules) && rules.items.length === 0) doc.delete("rules");
+
+  return doc.toString({ lineWidth: 0 });
+}
+
+function configYaml(repo: RepoConfig): string {
+  return join(repo.path, "openspec", "config.yaml");
+}
+
+async function readConfigYaml(repo: RepoConfig): Promise<string | undefined> {
+  try {
+    return await readFile(configYaml(repo), "utf8");
+  } catch {
+    return undefined;
+  }
+}
+
+/** Resolves ids to profiles in dashboard order; unknown ids are an error, not silently dropped. */
+export function resolveProfiles(shared: SharedConfig, profileIds: string[]): SharedProfile[] {
+  const unknown = profileIds.filter((id) => !shared.profiles.some((p) => p.id === id));
+  if (unknown.length) throw new Error(`unknown profile${unknown.length > 1 ? "s" : ""}: ${unknown.join(", ")}`);
+  return shared.profiles.filter((p) => profileIds.includes(p.id));
+}
+
+/** What apply would do to one repository. Reads only. `repo` must come from the dashboard config, never a request. */
+export async function previewFor(repo: RepoConfig, shared: SharedConfig, profileIds: string[]): Promise<SharedConfigPreview> {
+  const before = await readConfigYaml(repo);
+  const base = { repoId: repo.id, current: repoSharedConfig(before, shared), before: before ?? "" };
+  if (before === undefined) return { ...base, after: "", refusal: "openspec/config.yaml does not exist or cannot be read" };
+  try {
+    return { ...base, after: applyShared(before, resolveProfiles(shared, profileIds)) };
+  } catch (err) {
+    return { ...base, after: before, refusal: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+/** Writes the managed sections into one repository's `openspec/config.yaml`. Re-reads the file; never trusts a preview. */
+export async function applyTo(repo: RepoConfig, shared: SharedConfig, profileIds: string[]): Promise<SharedConfigApplyResult> {
+  const preview = await previewFor(repo, shared, profileIds);
+  if (preview.refusal) return { repoId: repo.id, result: "refused", reason: preview.refusal };
+  if (preview.after === preview.before) return { repoId: repo.id, result: "unchanged" };
+  try {
+    const mode = (await stat(configYaml(repo))).mode & 0o777;
+    await writeAtomic(configYaml(repo), preview.after, mode);
+    return { repoId: repo.id, result: "written" };
+  } catch (err) {
+    return { repoId: repo.id, result: "refused", reason: `could not write: ${err instanceof Error ? err.message : String(err)}` };
+  }
+}
