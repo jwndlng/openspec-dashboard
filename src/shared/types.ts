@@ -86,21 +86,32 @@ export interface RepoConfig {
 
 export interface RepoAgentConfig {
   enabled: boolean;
-  /** Added to the built-in default allow-list for sessions in this repository. */
-  allowedTools: string[];
+  /** Agent profile used for this repository; absent means the default agent. */
+  agentId?: string;
+}
+
+/**
+ * One agent CLI the dashboard can start in a terminal. Nothing here is specific to a vendor: a profile is a command
+ * line plus the opening prompts, so any CLI that runs interactively in a terminal can be described.
+ */
+export interface AgentProfile {
+  id: string;
+  name: string;
+  /** Argument list, never a shell string. `{prompt}` is replaced by the opening prompt as one argument; without it
+   *  the prompt is typed into the terminal once the agent has started. */
+  command: string[];
+  /** Opening prompt per session starter; `{change}` is the only placeholder. A starter without a prompt is not offered. */
+  prompts: Partial<Record<SessionAction, string>>;
+  /** Continues this agent's latest conversation in the same directory, e.g. ["claude", "--continue"]. */
+  resumeCommand?: string[];
+  /** Environment variables removed for the agent, e.g. API keys so a CLI's own login is used. */
+  unsetEnv?: string[];
 }
 
 export interface AgentSessionsConfig {
   enabled: boolean;
-  /** Sessions whose agent is working at the same time; further turns queue. */
-  maxRunning: number;
-  /** A waiting session's process is stopped after this long and resumed on the next message. */
-  idleMinutes: number;
-  claudePath: string;
-  /** Keep ANTHROPIC_API_KEY / ANTHROPIC_AUTH_TOKEN in the agent's environment (bills the API instead of the CLI login). */
-  passApiKeyEnv: boolean;
-  /** Opening instructions; `{change}` is the only placeholder. */
-  commands: Record<SessionAction, string>;
+  agents: AgentProfile[];
+  defaultAgent: string;
 }
 
 export interface Config {
@@ -114,55 +125,38 @@ export interface Config {
 
 export type SessionAction = "draft" | "implement" | "archive";
 export const SESSION_ACTIONS: readonly SessionAction[] = ["draft", "implement", "archive"];
-export type SessionState = "queued" | "running" | "waiting" | "closed" | "failed" | "cancelled" | "interrupted";
-export type SessionFailure = "auth" | "usage-limit" | "cli-missing" | "crashed";
+/** A session is a process in a terminal: it runs, or it has ended. `failed` means it could not be started. */
+export type SessionState = "running" | "exited" | "failed";
 
-export const OPEN_SESSION_STATES: readonly SessionState[] = ["queued", "running", "waiting", "interrupted"];
-
-export interface RateLimitWindow {
-  utilization: number;
-  resetsAt: number;
-}
+export const OPEN_SESSION_STATES: readonly SessionState[] = ["running"];
 
 export interface Session {
   id: string;
   repoId: string;
   change: string;
   action: SessionAction;
-  /** Conversation id chosen by the dashboard and passed to the CLI; used for resume. */
-  cliSessionId: string;
+  agentId: string;
+  agentName: string;
   state: SessionState;
-  failure?: SessionFailure;
+  exitCode?: number | null;
   error?: string;
-  worktreePath?: string;
+  /** The session's own git worktree, under the dashboard home. */
+  worktreePath: string;
+  branch: string;
   createdAt: string;
   updatedAt: string;
-  turns: number;
-  costUsd: number;
-  /** Highest event sequence number written so far. */
-  lastSeq: number;
-  /** "none" means the CLI's own login is used. */
-  apiKeySource?: string;
-  rateLimit?: { status: string; windows: Record<string, RateLimitWindow> };
-}
-
-export type SessionEventKind = "user" | "assistant" | "tool_use" | "tool_result" | "denied" | "result" | "state" | "error";
-
-export interface SessionEvent {
-  seq: number;
-  at: string;
-  kind: SessionEventKind;
-  text?: string;
-  tool?: { name: string; input?: unknown };
-  isError?: boolean;
-  state?: SessionState;
-  costUsd?: number;
+  /** When the terminal last printed something; a long quiet spell usually means the agent waits for the user. */
+  lastOutputAt?: string;
+  /** True once the agent has a conversation that `resumeCommand` can continue. */
+  resumable: boolean;
 }
 
 export interface AgentAvailability {
+  id: string;
+  name: string;
   available: boolean;
-  version?: string;
-  reason?: string;
+  /** Resolved executable, when found. */
+  path?: string;
 }
 
 /** Included unless explicitly switched off for this repository (the global switch is checked separately). */

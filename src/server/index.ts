@@ -1,10 +1,9 @@
 // CLI entry point: `openspec-dashboard [--port N] [--no-open]`.
 import indexHtmlAsset from "../../dist/ui/index.html" with { type: "text" };
-import { createFetchHandler, type AppState } from "./api.ts";
+import { createFetchHandler, createWebSocketHandlers, type AppState, type TerminalSocketData } from "./api.ts";
 import { readSnapshot } from "./cache.ts";
 import { loadConfig } from "./config.ts";
 import { Scanner } from "./scanner.ts";
-import { ClaudeRunner } from "./sessions/claudeRunner.ts";
 import { SessionManager } from "./sessions/manager.ts";
 
 // With `type: "text"` Bun hands us the file contents; bun-types only knows the HTMLBundle shape.
@@ -58,7 +57,6 @@ async function main(): Promise<void> {
   state.sessions = new SessionManager({
     getConfig: () => state.config,
     getSnapshot: () => state.scanner.snapshot,
-    runner: new ClaudeRunner(() => state.config.agentSessions.claudePath),
   });
   await state.sessions.init();
   state.scanner.start();
@@ -67,6 +65,7 @@ async function main(): Promise<void> {
     hostname: "127.0.0.1",
     port: args.port ?? config.port,
     fetch: createFetchHandler({ state, indexHtml }),
+    websocket: createWebSocketHandlers(state) as unknown as Bun.WebSocketHandler<TerminalSocketData>,
   });
   const url = `http://127.0.0.1:${server.port}`;
   console.log(`openspec-dashboard listening on ${url}`);

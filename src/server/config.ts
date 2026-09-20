@@ -18,52 +18,57 @@ const absolutePath = z
 
 const scanRootsSchema = z.array(absolutePath);
 
-// Anything that could switch off the agent CLI's permission checks must never come out of the config.
-const BYPASS = /bypassPermissions|dangerously|skip-permissions|--permission-mode/i;
+// A profile is the user's own command line, but the dashboard never helps switching off an agent's permission checks.
+const BYPASS = /bypassPermissions|dangerously|skip-permissions|--yolo/i;
 const noBypass = (value: string) => !BYPASS.test(value);
+const BYPASS_MESSAGE = "must not contain a permission-bypass mode or flag";
 
-// Entries are joined with commas into a single CLI argument, so an entry may not contain one or look like a flag.
-const allowedToolSchema = z
+const placeholdersOnly = (allowed: string[]) => (v: string) => (v.match(/\{[^}]*\}/g) ?? []).every((ph) => allowed.includes(ph));
+
+const commandSchema = z
+  .array(z.string().min(1).refine(noBypass, { message: BYPASS_MESSAGE }).refine(placeholdersOnly(["{prompt}"]), { message: "unknown placeholder; only {prompt} is supported" }))
+  .min(1, { message: "command must name an executable" })
+  .refine((args) => args.length === 0 || !args[0].includes("{"), { message: "the executable cannot be a placeholder" });
+
+const promptSchema = z
   .string()
   .trim()
   .min(1)
-  .refine((v) => !v.includes(",") && !v.startsWith("-"), { message: "must be a single tool pattern" })
-  .refine(noBypass, { message: "must not contain a permission-bypass mode or flag" });
-
-const commandTemplateSchema = z
-  .string()
-  .trim()
-  .min(1)
-  .refine((v) => (v.match(/\{[^}]*\}/g) ?? []).every((p) => p === "{change}"), { message: "unknown placeholder; only {change} is supported" })
+  .refine(placeholdersOnly(["{change}"]), { message: "unknown placeholder; only {change} is supported" })
   .refine((v) => v.includes("{change}"), { message: "must contain {change}" })
-  .refine(noBypass, { message: "must not contain a permission-bypass mode or flag" });
+  .refine(noBypass, { message: BYPASS_MESSAGE });
 
+const agentProfileSchema = z.object({
+  id: z.string().regex(/^[a-z0-9][a-z0-9-]{0,31}$/, { message: "lower-case letters, digits and dashes" }),
+  name: z.string().trim().min(1),
+  command: commandSchema,
+  prompts: z.object({ draft: promptSchema.optional(), implement: promptSchema.optional(), archive: promptSchema.optional() }).default({}),
+  resumeCommand: z.array(z.string().min(1).refine(noBypass, { message: BYPASS_MESSAGE })).min(1).optional(),
+  unsetEnv: z.array(z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/)).optional(),
+});
 
+// Older configs carried Claude-specific keys here (claudePath, commands, allowedTools, …); unknown keys are dropped.
 export { defaultAgentSessions };
 
 const agentSessionsSchema = z
   .object({
     enabled: z.boolean().default(false),
-    maxRunning: z.number().int().min(1).default(2),
-    idleMinutes: z.number().int().min(1).default(30),
-    claudePath: z.string().trim().min(1).refine(noBypass, { message: "must not contain a permission-bypass mode or flag" }).default("claude"),
-    passApiKeyEnv: z.boolean().default(false),
-    commands: z
-      .object({
-        draft: commandTemplateSchema.default("/opsx:ff {change}"),
-        implement: commandTemplateSchema.default("/opsx:apply {change}"),
-        archive: commandTemplateSchema.default("/opsx:archive {change}"),
-      })
-      .default({}),
+    agents: z.array(agentProfileSchema).min(1).default(() => defaultAgentSessions().agents),
+    defaultAgent: z.string().default(() => defaultAgentSessions().defaultAgent),
   })
-  .default({});
+  .default({})
+  .superRefine((cfg, ctx) => {
+    const ids = cfg.agents.map((a) => a.id);
+    if (new Set(ids).size !== ids.length) ctx.addIssue({ code: "custom", path: ["agents"], message: "agent ids must be unique" });
+    if (!ids.includes(cfg.defaultAgent)) ctx.addIssue({ code: "custom", path: ["defaultAgent"], message: "must be the id of a configured agent" });
+  });
 
 const repoSchema = z.object({
   id: z.string().regex(/^[a-f0-9]{12}$/),
   path: absolutePath,
   name: z.string().trim().min(1),
   enabled: z.boolean(),
-  agent: z.object({ enabled: z.boolean(), allowedTools: z.array(allowedToolSchema).default([]) }).optional(),
+  agent: z.object({ enabled: z.boolean(), agentId: z.string().optional() }).optional(),
 });
 
 export const configSchema = z
@@ -82,6 +87,9 @@ export const configSchema = z
         ctx.addIssue({ code: "custom", path: ["repos", i, "id"], message: `duplicate repo id ${repo.id}` });
       }
       ids.add(repo.id);
+      if (repo.agent?.agentId && !cfg.agentSessions.agents.some((a) => a.id === repo.agent?.agentId)) {
+        ctx.addIssue({ code: "custom", path: ["repos", i, "agent", "agentId"], message: "unknown agent" });
+      }
       if (repo.id !== repoId(repo.path)) {
         ctx.addIssue({ code: "custom", path: ["repos", i, "id"], message: "id does not match path" });
       }

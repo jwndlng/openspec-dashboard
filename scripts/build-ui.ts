@@ -66,7 +66,9 @@ if (!build.success) {
   process.exit(1);
 }
 const js = (await build.outputs[0].text()).replaceAll("</script", "<\\/script");
-const css = [await Bun.file(join(ui, "styles.css")).text(), target.extraCss ? await Bun.file(target.extraCss).text() : ""].join("\n");
+// The terminal widget ships its own stylesheet; it is inlined like everything else (no network at runtime).
+const xtermCss = await Bun.file(join(root, "node_modules", "@xterm", "xterm", "css", "xterm.css")).text();
+const css = [xtermCss, await Bun.file(join(ui, "styles.css")).text(), target.extraCss ? await Bun.file(target.extraCss).text() : ""].join("\n");
 
 // Runs before first paint so the stored/system theme never flashes the other one.
 // Mirrors parsePreference + resolveTheme in src/ui/theme.ts.

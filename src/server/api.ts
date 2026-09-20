@@ -1,4 +1,4 @@
-import type { Config, DiscoverResult, RepoConfig, ScanTriggerResult, SessionEvent, SharedConfigApplyResult, SharedConfigAssignment, SharedConfigPreview } from "../shared/types.ts";
+import type { Config, DiscoverResult, RepoConfig, ScanTriggerResult, SharedConfigApplyResult, SharedConfigAssignment, SharedConfigPreview } from "../shared/types.ts";
 import { ConfigValidationError, saveConfig, validateConfig, validateScanRoots } from "./config.ts";
 import { discoverRepos } from "./discover.ts";
 import type { Scanner } from "./scanner.ts";
@@ -12,9 +12,9 @@ export interface AppState {
   sessions?: SessionManager;
 }
 
-/** The part of Bun's server object the handler needs: lifting the idle timeout for long-lived event streams. */
+/** The part of Bun's server object the handler needs: upgrading the terminal request to a WebSocket. */
 export interface ServerLike {
-  timeout(req: Request, seconds: number): void;
+  upgrade(req: Request, options: { data: unknown }): boolean;
 }
 
 export interface AppOptions {
@@ -96,34 +96,71 @@ async function readJson(req: Request): Promise<Record<string, unknown>> {
   }
 }
 
-/** Transcript as Server-Sent Events: backlog after `after`/`Last-Event-ID`, then live events, with keep-alives. */
-function eventStream(sessions: SessionManager, id: string, afterSeq: number): Response {
-  sessions.get(id); // 404 before the stream starts
-  const encoder = new TextEncoder();
-  let unsubscribe = () => {};
-  let keepAlive: ReturnType<typeof setInterval> | undefined;
-  const stream = new ReadableStream<Uint8Array>({
-    async start(controller) {
-      let last = afterSeq;
-      const buffered: SessionEvent[] = [];
-      let replaying = true;
-      const write = (event: SessionEvent) => {
-        if (event.seq <= last) return;
-        last = event.seq;
-        controller.enqueue(encoder.encode(`id: ${event.seq}\ndata: ${JSON.stringify(event)}\n\n`));
-      };
-      unsubscribe = sessions.subscribe(id, (event) => (replaying ? buffered.push(event) : write(event)));
-      for (const event of await sessions.events(id, afterSeq)) write(event);
-      replaying = false;
-      for (const event of buffered) write(event);
-      keepAlive = setInterval(() => controller.enqueue(encoder.encode(": keep-alive\n\n")), 15_000);
+/**
+ * The terminal WebSocket is the most sensitive endpoint: whoever holds it types into an agent on this machine.
+ * A WebSocket handshake is a GET that browsers allow cross-origin and that carries no preflight, so the JSON guard
+ * does not apply; instead the handshake must carry the dashboard's own Origin (browsers always send one and pages
+ * cannot forge it) and address a loopback host name (DNS rebinding).
+ */
+export function webSocketRefusal(req: Request): string | undefined {
+  const url = new URL(req.url);
+  if (!LOOPBACK_HOSTS.has(url.hostname)) return "request must be addressed to a loopback host name";
+  if (req.headers.get("sec-fetch-site")?.toLowerCase() === "cross-site") return "cross-site requests are not allowed";
+  const origin = req.headers.get("origin");
+  const from = origin && URL.canParse(origin) ? new URL(origin) : undefined;
+  if (!(from?.protocol === "http:" && LOOPBACK_HOSTS.has(from.hostname) && from.port === url.port)) return "origin is not the dashboard";
+  return undefined;
+}
+
+export interface TerminalSocketData {
+  sessionId: string;
+  detach?: () => void;
+}
+
+/** Minimal shape of Bun's ServerWebSocket that the handlers use. */
+interface TerminalSocket {
+  data: TerminalSocketData;
+  send(data: string | Uint8Array): unknown;
+  close(code?: number, reason?: string): void;
+}
+
+/**
+ * Wire format: server → client binary frames are raw terminal output (first the scrollback), and one text frame
+ * `{"type":"exit"}` when the process ends; client → server text frames are `{"type":"input","data":…}` and
+ * `{"type":"resize","cols":…,"rows":…}`.
+ */
+export function createWebSocketHandlers(state: AppState) {
+  return {
+    async open(ws: TerminalSocket) {
+      const sessions = state.sessions;
+      if (!sessions) return ws.close(1011, "agent sessions are not available");
+      try {
+        const { scrollback, detach } = await sessions.attach(ws.data.sessionId, (chunk) => {
+          if (chunk.length === 0) ws.send(JSON.stringify({ type: "exit" }));
+          else ws.send(chunk);
+        });
+        ws.data.detach = detach;
+        if (scrollback.length > 0) ws.send(scrollback);
+        if (sessions.get(ws.data.sessionId).state !== "running") ws.send(JSON.stringify({ type: "exit" }));
+      } catch {
+        ws.close(1008, "unknown session");
+      }
     },
-    cancel() {
-      unsubscribe();
-      clearInterval(keepAlive);
+    message(ws: TerminalSocket, message: string | Uint8Array) {
+      if (typeof message !== "string" || !state.sessions) return;
+      let parsed: { type?: unknown; data?: unknown; cols?: unknown; rows?: unknown };
+      try {
+        parsed = JSON.parse(message);
+      } catch {
+        return;
+      }
+      if (parsed.type === "input" && typeof parsed.data === "string") state.sessions.write(ws.data.sessionId, parsed.data);
+      else if (parsed.type === "resize" && typeof parsed.cols === "number" && typeof parsed.rows === "number") state.sessions.resize(ws.data.sessionId, parsed.cols, parsed.rows);
     },
-  });
-  return new Response(stream, { headers: { "content-type": "text/event-stream; charset=utf-8", "cache-control": "no-cache, no-transform", "x-accel-buffering": "no" } });
+    close(ws: TerminalSocket) {
+      ws.data.detach?.();
+    },
+  };
 }
 
 async function sessionRoutes(state: AppState, req: Request, url: URL, server?: ServerLike): Promise<Response> {
@@ -132,7 +169,7 @@ async function sessionRoutes(state: AppState, req: Request, url: URL, server?: S
   const [, , , id, sub] = url.pathname.split("/"); // /api/sessions/<id>/<sub>
   try {
     if (!id) {
-      if (req.method === "GET") return json({ sessions: sessions.list(), agent: await sessions.agentAvailability() });
+      if (req.method === "GET") return json({ sessions: sessions.list(), agents: sessions.agents() });
       if (req.method === "POST") return json(await sessions.open(await readJson(req)), 201);
     } else if (!sub) {
       if (req.method === "GET") return json(sessions.get(id));
@@ -140,16 +177,17 @@ async function sessionRoutes(state: AppState, req: Request, url: URL, server?: S
         await sessions.remove(id);
         return json({ deleted: true });
       }
-    } else if (req.method === "GET" && sub === "events") {
-      const after = Number(req.headers.get("last-event-id") ?? url.searchParams.get("after") ?? 0);
-      server?.timeout(req, 0); // the default idle timeout would cut a quiet stream
-      return eventStream(sessions, id, Number.isFinite(after) ? after : 0);
+    } else if (req.method === "GET" && sub === "terminal") {
+      sessions.get(id); // 404 before upgrading
+      const refusal = webSocketRefusal(req);
+      if (refusal) return json({ error: refusal }, 403);
+      // After a successful upgrade Bun expects no response at all; the signature stays `Response` for every other caller.
+      if (server?.upgrade(req, { data: { sessionId: id } satisfies TerminalSocketData })) return undefined as unknown as Response;
+      return json({ error: "expected a WebSocket upgrade" }, 426);
     } else if (req.method === "GET" && sub === "worktree") {
       return json(await sessions.worktreeStatus(id));
     } else if (req.method === "POST") {
-      if (sub === "messages") return json(await sessions.send(id, (await readJson(req)).text));
-      if (sub === "stop") return json(await sessions.stop(id));
-      if (sub === "cancel") return json(await sessions.cancel(id));
+      if (sub === "resume") return json(await sessions.resume(id));
       if (sub === "close") return json(await sessions.close(id, { removeWorktree: (await readJson(req)).removeWorktree === true }));
     }
   } catch (err) {
