@@ -4,6 +4,7 @@ import type { ChangeSnapshot, Config, RepoSnapshot, Snapshot } from "../shared/t
 import { NoRepos } from "./empty.tsx";
 import { EMPTY_FILTERS, parseFilters, serializeFilters, type Filters } from "./filters.ts";
 import { applyCommand, cdCommand, daysSince, relTime, splitBranchLabel } from "./format.ts";
+import { isMinimized, loadGroupState, saveGroupState, toggleGroup, type GroupOverrides } from "./groupState.ts";
 import { assignRepoHues, groupByRepo, recentArchived } from "./repoGroups.ts";
 import { navigate } from "./routes.ts";
 
@@ -100,9 +101,17 @@ function ChangeCard({ card, now, showRepo }: { card: Card; now: number; showRepo
   );
 }
 
+/** Minimize state for the groups of a board; owned by `Kanban`, consumed by every column. */
+interface GroupControls {
+  overrides: GroupOverrides;
+  onToggle: (repoId: string, column: string) => void;
+  /** A text search is active: show every group open so matches are never hidden, and leave stored choices alone. */
+  forceExpanded: boolean;
+}
+
 // Cards of one column, grouped by repository in the same order in every column. On a single-repository
 // board (`showRepo` false) the group header would only repeat the page header, so the cards render flat.
-function RepoGroups({ cards, now, showRepo }: { cards: Card[]; now: number; showRepo: boolean }) {
+function RepoGroups({ column, cards, now, showRepo, groups: controls }: { column: string; cards: Card[]; now: number; showRepo: boolean; groups: GroupControls }) {
   const groups = useMemo(() => groupByRepo(cards), [cards]);
   if (!showRepo) {
     return (
@@ -115,18 +124,35 @@ function RepoGroups({ cards, now, showRepo }: { cards: Card[]; now: number; show
   }
   return (
     <div class="cards">
-      {groups.map((g) => (
-        <section key={g.repoId} class="repo-group repo-tint" style={repoHue(g.cards[0].hue)} aria-label={g.repoName}>
-          <div class="repo-group-head">
-            <span class="swatch" />
-            <span class="name">{g.repoName}</span>
-            <span class="count">{g.cards.length}</span>
-          </div>
-          {g.cards.map((c) => (
-            <ChangeCard key={`${c.repoId}/${c.name}`} card={c} now={now} showRepo />
-          ))}
-        </section>
-      ))}
+      {groups.map((g) => {
+        const expanded = controls.forceExpanded || !isMinimized(controls.overrides, g.repoId, column);
+        const bodyId = `group-${column.replace(/[^A-Za-z0-9]+/g, "-")}-${g.repoId}`;
+        return (
+          <section key={g.repoId} class={`repo-group repo-tint ${expanded ? "" : "minimized"}`} style={repoHue(g.cards[0].hue)} aria-label={g.repoName}>
+            <button
+              type="button"
+              class="repo-group-head"
+              aria-expanded={expanded}
+              aria-controls={bodyId}
+              aria-disabled={controls.forceExpanded}
+              title={controls.forceExpanded ? "expanded while searching" : expanded ? "minimize this group" : "expand this group"}
+              onClick={() => !controls.forceExpanded && controls.onToggle(g.repoId, column)}
+            >
+              <span class="chevron" aria-hidden="true" />
+              <span class="swatch" />
+              <span class="name">{g.repoName}</span>
+              <span class="count">{g.cards.length}</span>
+            </button>
+            {expanded && (
+              <div class="repo-group-body" id={bodyId}>
+                {g.cards.map((c) => (
+                  <ChangeCard key={`${c.repoId}/${c.name}`} card={c} now={now} showRepo />
+                ))}
+              </div>
+            )}
+          </section>
+        );
+      })}
     </div>
   );
 }
@@ -142,14 +168,14 @@ const COLUMN_HINT: Record<string, string> = {
 };
 
 // `countLabel` replaces the card count in the header when the column shows only part of its cards (Archived).
-function Column({ label, cards, now, hot, showRepo, countLabel }: { label: string; cards: Card[]; now: number; hot?: boolean; showRepo: boolean; countLabel?: string }) {
+function Column({ label, cards, now, hot, showRepo, countLabel, groups }: { label: string; cards: Card[]; now: number; hot?: boolean; showRepo: boolean; countLabel?: string; groups: GroupControls }) {
   return (
     <section class="column">
       <div class="column-head">
         <h2 title={COLUMN_HINT[label]}>{label}</h2>
         <span class={`count ${hot && cards.length ? "hot" : ""}`}>{countLabel ?? cards.length}</span>
       </div>
-      <RepoGroups cards={cards} now={now} showRepo={showRepo} />
+      <RepoGroups column={label} cards={cards} now={now} showRepo={showRepo} groups={groups} />
     </section>
   );
 }
@@ -229,6 +255,16 @@ export function Kanban({ snapshot, config, repoId }: { snapshot: Snapshot | null
     setFiltersState(next);
     history.replaceState(null, "", `${location.pathname}${serializeFilters(next)}`);
   };
+
+  // Which repository groups are minimized; remembered in the browser, deviations from the defaults only.
+  const [groupOverrides, setGroupOverrides] = useState<GroupOverrides>(loadGroupState);
+  const toggleGroupState = (groupRepoId: string, column: string) => {
+    const next = toggleGroup(groupOverrides, groupRepoId, column);
+    setGroupOverrides(next);
+    // Prune against every tracked repository (not just the visible ones); without a snapshot nothing is known, so keep all.
+    saveGroupState(next, snapshot ? snapshot.repos.map((r) => r.id) : Object.keys(next).map((key) => key.slice(0, key.indexOf("|"))));
+  };
+  const groupControls: GroupControls = { overrides: groupOverrides, onToggle: toggleGroupState, forceExpanded: filters.q.trim() !== "" };
 
   const single = repoId !== undefined;
   const repos: RepoSnapshot[] = useMemo(() => (snapshot?.repos ?? []).filter((r) => !single || r.id === repoId), [snapshot, single, repoId]);
@@ -311,13 +347,13 @@ export function Kanban({ snapshot, config, repoId }: { snapshot: Snapshot | null
         {columns.map((label) => {
           const inColumn = visible.filter((c) => c.column === label);
           if (label !== "Archived") {
-            return <Column key={label} label={label} cards={inColumn} now={now} hot={label === "Done" || label === "Synced"} showRepo={!single} />;
+            return <Column key={label} label={label} cards={inColumn} now={now} hot={label === "Done" || label === "Synced"} showRepo={!single} groups={groupControls} />;
           }
           if (filters.hideArchived) return null;
           // A regular column, but bounded to the most recent archives; the header still reports the total.
           const recent = recentArchived(inColumn, ARCHIVED_LIMIT);
           const countLabel = recent.length < inColumn.length ? `${recent.length} of ${inColumn.length}` : undefined;
-          return <Column key={label} label={label} cards={recent} now={now} showRepo={!single} countLabel={countLabel} />;
+          return <Column key={label} label={label} cards={recent} now={now} showRepo={!single} countLabel={countLabel} groups={groupControls} />;
         })}
       </div>
     </>

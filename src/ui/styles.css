@@ -238,7 +238,24 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: 
 }
 /* On top of the 6px card gap, so panels sit clearly further apart than the cards inside them. */
 .repo-group + .repo-group { margin-top: 8px; }
-.repo-group-head { display: flex; align-items: center; gap: 6px; padding: 0 2px; font-size: 11px; line-height: 16px; }
+.repo-group-body { display: flex; flex-direction: column; gap: 6px; }
+/* The header is the minimize/expand button; a minimized group is just this line inside its panel. */
+.repo-group-head {
+  display: flex; align-items: center; gap: 6px; width: 100%; padding: 0 2px;
+  font: inherit; font-size: 11px; line-height: 16px; text-align: left; color: inherit;
+  background: none; border: 0; border-radius: var(--radius); cursor: pointer;
+}
+.repo-group-head:hover .name, .repo-group-head:hover .chevron { filter: brightness(1.15); }
+.repo-group-head:focus-visible { outline: 1px solid var(--repo-color); outline-offset: 2px; }
+.repo-group-head[aria-disabled="true"] { cursor: default; }
+.repo-group-head[aria-disabled="true"] .chevron { color: var(--fg-disabled); }
+/* Drawn, not a glyph: text triangles render as a dot at this size. Points right when minimized, down when expanded. */
+.repo-group-head .chevron {
+  flex: none; width: 0; height: 0; margin: 0 2px 0 1px; color: var(--repo-color);
+  border-left: 5px solid currentColor; border-top: 4px solid transparent; border-bottom: 4px solid transparent;
+  transition: transform 120ms;
+}
+.repo-group-head[aria-expanded="true"] .chevron { transform: rotate(90deg); }
 .repo-group-head .name { color: var(--repo-color); font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .repo-group-head .count { margin-left: auto; font-family: var(--font-mono); color: var(--fg-subtle); }
 
