@@ -59,3 +59,37 @@ test("callers cannot mutate the demo's state through returned objects", async ()
   state.repos.length = 0;
   expect((await api.state()).repos.length).toBeGreaterThan(0);
 });
+
+test("shared config in the demo: per-repository profiles, outdated after an edit, orphaned after a delete, nothing persisted", async () => {
+  const { api } = demo();
+  expect(await api.sharedConfig()).toEqual({ profiles: [] });
+  expect((await api.state()).repos.every((r) => r.sharedConfig === undefined)).toBe(true);
+
+  const base = { id: "base", name: "Base", context: "We use conventional commits.", rules: { proposal: ["Always include Non-goals"] } };
+  const security = { id: "security", name: "Security", context: "Threat-model every new endpoint.", rules: {} };
+  await api.saveSharedConfig({ profiles: [base, security] });
+  const [first, second] = (await api.state()).repos;
+  expect(first.sharedConfig).toEqual({ unreadable: false, applied: [] });
+
+  const assignments = [{ repoId: first.id, profileIds: ["base", "security"] }, { repoId: second.id, profileIds: ["base"] }, { repoId: "nope", profileIds: ["base"] }, { repoId: second.id.concat("x"), profileIds: [] }];
+  const { previews } = await api.previewSharedConfig(assignments.slice(0, 3));
+  expect(previews[0].after).toContain("openspec-dashboard:shared:begin security");
+  expect(previews[0].after).toContain("- Always include Non-goals # openspec-dashboard:shared:base");
+  expect(previews[0].before).not.toContain("openspec-dashboard:shared");
+  expect(previews[2].refusal).toContain("not an enabled repository");
+  expect((await api.state()).repos[0].sharedConfig?.applied).toEqual([]); // a preview changes nothing
+
+  const { results } = await api.applySharedConfig(assignments.slice(0, 3));
+  expect(results.map((r) => r.result)).toEqual(["written", "written", "refused"]);
+  expect((await api.applySharedConfig([assignments[1]])).results[0].result).toBe("unchanged");
+  expect((await api.applySharedConfig([{ repoId: first.id, profileIds: ["missing"] }])).results[0].reason).toBe("unknown profile: missing");
+  let repos = (await api.state()).repos;
+  expect(repos[0].sharedConfig?.applied).toEqual([{ id: "base", state: "in-sync" }, { id: "security", state: "in-sync" }]);
+  expect(repos[1].sharedConfig?.applied).toEqual([{ id: "base", state: "in-sync" }]);
+
+  await api.saveSharedConfig({ profiles: [{ ...base, context: "We use conventional commits. Squash on merge." }] });
+  repos = (await api.state()).repos;
+  expect(repos[0].sharedConfig?.applied).toEqual([{ id: "base", state: "outdated" }, { id: "security", state: "orphaned" }]);
+
+  expect(await demo().api.sharedConfig()).toEqual({ profiles: [] }); // a reload starts over
+});

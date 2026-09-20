@@ -5,6 +5,7 @@ import { NoRepos } from "./empty.tsx";
 import { relTime } from "./format.ts";
 import { filterRows, type OverviewRow, type OverviewState, overviewRows, parseOverviewState, type SortKey, serializeOverviewState, sortRows, toggleSort } from "./overviewState.ts";
 import { repoPath } from "./routes.ts";
+import { summarize } from "./sharedConfigState.ts";
 import { currentQuery, href, navigate, replaceQuery } from "./url.ts";
 
 /** Plain left-click only, so modifier-clicks and text selection keep their browser behaviour. */
@@ -15,6 +16,8 @@ function isPlainClick(e: MouseEvent): boolean {
 function Row({ row, stages, now }: { row: OverviewRow; stages: string[]; now: number }) {
   const path = repoPath(row.id);
   const idle = row.open === 0;
+  // Profile ids rather than names: they are readable slugs and need no extra request here.
+  const shared = summarize(row.sharedConfig, []);
   return (
     <tr
       class={idle ? "idle" : ""}
@@ -38,6 +41,11 @@ function Row({ row, stages, now }: { row: OverviewRow; stages: string[]; now: nu
           {row.name}
         </a>
         {row.hint && <span class="path-hint mono">{row.hint}/</span>}
+        {shared && (
+          <span class={shared.level === "ok" ? "path-hint" : `badge ${shared.level}`} title="Shared OpenSpec config profiles carried by openspec/config.yaml">
+            ⚙ {shared.text}
+          </span>
+        )}
         {!row.ok && (
           <span class="badge danger" title={row.error}>
             ⚠ scan failed

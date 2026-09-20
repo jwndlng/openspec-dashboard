@@ -1,13 +1,17 @@
 import { useEffect, useRef, useState } from "preact/hooks";
-import type { Config, DiscoverResult, RepoConfig } from "../shared/types.ts";
+import type { Config, DiscoverResult, RepoConfig, Snapshot } from "../shared/types.ts";
 import { api, ApiError } from "./api.ts";
+import { SharedConfigPanel } from "./sharedConfig.tsx";
 
 interface Props {
   config: Config | null;
+  snapshot: Snapshot | null;
   onSaved: (config: Config) => void;
+  /** Something changed that the next scan will pick up (shared config saved or applied). */
+  onRescan: () => void;
 }
 
-export function Settings({ config, onSaved }: Props) {
+export function Settings({ config, snapshot, onSaved, onRescan }: Props) {
   const [draft, setDraft] = useState<Config | null>(config);
   const [dirty, setDirty] = useState(false);
   const [newRoot, setNewRoot] = useState("");
@@ -191,6 +195,9 @@ export function Settings({ config, onSaved }: Props) {
             <span class="hint">· port {draft.port} (change in <code>~/.openspec-dashboard/config.json</code>, restart to apply)</span>
           </div>
         </section>
+
+        {/* Works on the saved config, not the draft above: it has its own save and only ever targets tracked repositories. */}
+        {config && <SharedConfigPanel config={config} snapshot={snapshot} onApplied={onRescan} />}
       </div>
       <div class="savebar">
         <button type="button" class="btn primary" onClick={save} disabled={!dirty || saving}>

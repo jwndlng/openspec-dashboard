@@ -1,4 +1,4 @@
-import type { Config, DiscoverResult, ScanTriggerResult, Snapshot } from "../shared/types.ts";
+import type { Config, DiscoverResult, ScanTriggerResult, SharedConfig, SharedConfigApplyResult, SharedConfigAssignment, SharedConfigPreview, Snapshot } from "../shared/types.ts";
 
 export class ApiError extends Error {
   constructor(readonly status: number, message: string, readonly issues: string[] = []) {
@@ -31,6 +31,12 @@ export interface Api {
   /** Read-only; pass the draft roots to discover against unsaved edits. */
   discover(scanRoots?: string[]): Promise<DiscoverResult>;
   scan(): Promise<ScanTriggerResult>;
+  sharedConfig(): Promise<SharedConfig>;
+  /** Stores the profiles in the dashboard home; never writes to a repository. */
+  saveSharedConfig(config: SharedConfig): Promise<SharedConfig>;
+  previewSharedConfig(assignments: SharedConfigAssignment[]): Promise<{ previews: SharedConfigPreview[] }>;
+  /** The one call that writes to tracked repositories: the managed sections of `openspec/config.yaml`. */
+  applySharedConfig(assignments: SharedConfigAssignment[]): Promise<{ results: SharedConfigApplyResult[] }>;
 }
 
 export const httpApi: Api = {
@@ -40,6 +46,10 @@ export const httpApi: Api = {
   discover: (scanRoots) =>
     call<DiscoverResult>("/api/discover", { method: "POST", body: scanRoots ? JSON.stringify({ scanRoots }) : undefined }),
   scan: () => call<ScanTriggerResult>("/api/scan", { method: "POST" }),
+  sharedConfig: () => call<SharedConfig>("/api/shared-config"),
+  saveSharedConfig: (config) => call<SharedConfig>("/api/shared-config", { method: "PUT", body: JSON.stringify(config) }),
+  previewSharedConfig: (assignments) => call<{ previews: SharedConfigPreview[] }>("/api/shared-config/preview", { method: "POST", body: JSON.stringify({ assignments }) }),
+  applySharedConfig: (assignments) => call<{ results: SharedConfigApplyResult[] }>("/api/shared-config/apply", { method: "POST", body: JSON.stringify({ assignments }) }),
 };
 
 let current: Api = httpApi;
@@ -56,4 +66,8 @@ export const api: Api = {
   saveConfig: (config) => current.saveConfig(config),
   discover: (scanRoots) => current.discover(scanRoots),
   scan: () => current.scan(),
+  sharedConfig: () => current.sharedConfig(),
+  saveSharedConfig: (config) => current.saveSharedConfig(config),
+  previewSharedConfig: (assignments) => current.previewSharedConfig(assignments),
+  applySharedConfig: (assignments) => current.applySharedConfig(assignments),
 };

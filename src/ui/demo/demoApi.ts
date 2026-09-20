@@ -1,5 +1,5 @@
 // In-memory stand-in for the dashboard server. Nothing is read from or written to anywhere: a reload starts over.
-import type { Config, RepoSnapshot, Snapshot } from "../../shared/types.ts";
+import type { Config, RepoSharedConfig, RepoSnapshot, SharedConfigApplyResult, SharedConfigPreview, SharedProfile, Snapshot } from "../../shared/types.ts";
 import type { Api } from "../api.ts";
 import { buildSample, DEMO_ROOT } from "./sampleData.ts";
 
@@ -29,13 +29,44 @@ export function createDemoApi({ now = Date.now, latencyMs = 150 }: DemoApiOption
     changes: [],
   });
 
+  // Shared config, simulated: the demo has no files, so it remembers which profile (and which version of it) each
+  // sample repository "carries" and renders a stand-in config.yaml for the preview.
+  let profiles: SharedProfile[] = [];
+  const carried = new Map<string, SharedProfile[]>();
+  const same = (a: SharedProfile, b: SharedProfile) => a.context === b.context && JSON.stringify(a.rules) === JSON.stringify(b.rules);
+
+  const sharedState = (repoId: string): RepoSharedConfig => ({
+    unreadable: false,
+    applied: (carried.get(repoId) ?? []).map((was) => {
+      const now_ = profiles.find((p) => p.id === was.id);
+      return { id: was.id, state: !now_ ? "orphaned" : same(was, now_) ? "in-sync" : "outdated" };
+    }),
+  });
+
+  const MARK = "openspec-dashboard:shared";
+  const renderConfig = (applied: SharedProfile[]): string => {
+    const blocks = applied.filter((p) => p.context.trim()).map((p) => [`<!-- ${MARK}:begin ${p.id} — managed by openspec-dashboard, edits here are overwritten -->`, ...p.context.trim().split("\n"), `<!-- ${MARK}:end ${p.id} -->`, ""]);
+    const context = [...blocks.flat(), "Sample project context (the project's own — never touched)."];
+    const artifacts = [...new Set(applied.flatMap((p) => Object.keys(p.rules)))];
+    const rules = artifacts.flatMap((artifact) => [`  ${artifact}:`, ...applied.flatMap((p) => (p.rules[artifact] ?? []).map((rule) => `    - ${rule} # ${MARK}:${p.id}`))]);
+    return ["schema: spec-driven", "context: |", ...context.map((l) => (l ? `  ${l}` : "")), ...(rules.length ? ["rules:", ...rules] : []), ""].join("\n");
+  };
+
+  const desiredFor = (repoId: string, profileIds: string[]): { desired?: SharedProfile[]; refusal?: string } => {
+    if (!config.repos.some((r) => r.enabled && r.id === repoId)) return { refusal: "not an enabled repository in the dashboard config" };
+    const unknown = profileIds.filter((id) => !profiles.some((p) => p.id === id));
+    if (unknown.length) return { refusal: `unknown profile${unknown.length > 1 ? "s" : ""}: ${unknown.join(", ")}` };
+    return { desired: profiles.filter((p) => profileIds.includes(p.id)) };
+  };
+
   const snapshot = (): Snapshot => ({
     generatedAt,
     repos: config.repos
       .filter((r) => r.enabled)
       .map((r) => {
         const known = sample.snapshot.repos.find((s) => s.id === r.id);
-        return known ? { ...known, name: r.name } : emptyRepo(r.id, r.name, r.path);
+        const repo = known ? { ...known, name: r.name } : emptyRepo(r.id, r.name, r.path);
+        return profiles.length > 0 ? { ...repo, sharedConfig: sharedState(r.id) } : repo;
       }),
   });
 
@@ -58,6 +89,30 @@ export function createDemoApi({ now = Date.now, latencyMs = 150 }: DemoApiOption
     scan: () => {
       generatedAt = new Date(now()).toISOString();
       return reply({ started: true });
+    },
+    sharedConfig: () => reply({ profiles }),
+    saveSharedConfig: (next) => {
+      profiles = structuredClone(next.profiles);
+      return reply({ profiles });
+    },
+    previewSharedConfig: (assignments) =>
+      reply({
+        previews: assignments.map(({ repoId, profileIds }): SharedConfigPreview => {
+          const before = renderConfig(carried.get(repoId) ?? []);
+          const { desired, refusal } = desiredFor(repoId, profileIds);
+          return { repoId, current: sharedState(repoId), before, after: desired ? renderConfig(desired) : before, refusal };
+        }),
+      }),
+    applySharedConfig: (assignments) => {
+      const results = assignments.map(({ repoId, profileIds }): SharedConfigApplyResult => {
+        const { desired, refusal } = desiredFor(repoId, profileIds);
+        if (!desired) return { repoId, result: "refused", reason: refusal };
+        const unchanged = renderConfig(desired) === renderConfig(carried.get(repoId) ?? []);
+        carried.set(repoId, structuredClone(desired));
+        return { repoId, result: unchanged ? "unchanged" : "written" };
+      });
+      generatedAt = new Date(now()).toISOString();
+      return reply({ results });
     },
   };
 }

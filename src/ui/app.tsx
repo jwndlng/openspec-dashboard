@@ -90,6 +90,11 @@ export function App() {
   const shown = enabledOnly(snapshot, config);
   const failing = shown?.repos.filter((r) => !r.ok) ?? [];
 
+  // The server rescans after a shared-config save or apply; pick the result up without waiting for the next poll.
+  const reloadSoon = () => {
+    for (const ms of [1500, 5000]) setTimeout(() => void loadState(), ms);
+  };
+
   const link = (path: string, label: string, active: boolean) => (
     <a
       href={href(path)}
@@ -134,7 +139,7 @@ export function App() {
       </header>
       <main class="main">
         {route.view === "settings" ? (
-          <Settings config={config} onSaved={(c) => { setConfig(c); void loadState(); }} />
+          <Settings config={config} snapshot={shown} onSaved={(c) => { setConfig(c); void loadState(); }} onRescan={reloadSoon} />
         ) : route.view === "overview" ? (
           <Overview snapshot={shown} config={config} />
         ) : (

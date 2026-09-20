@@ -24,10 +24,18 @@ bun test test/scanner.test.ts   # a single test file
 
 ## Invariants — do not break these
 
-1. **Read-only towards tracked repositories.** All writes stay under `~/.openspec-dashboard/` (or
-   `OPENSPEC_DASHBOARD_HOME` in tests). Git is invoked only with the read-only subcommands listed in
-   `openspec/specs/dashboard-api/spec.md`; adding one means changing that spec.
+1. **Read-only towards tracked repositories, with enumerated exceptions.** The dashboard writes to a tracked
+   repository only in response to an explicit user action, only to the paths enumerated in the "never writes"
+   requirement of `openspec/specs/dashboard-api/spec.md`, never deletes or moves anything there, and never runs a git
+   command that writes. Today that list has one entry: the managed sections of `openspec/config.yaml` (applying
+   shared config profiles, `src/server/sharedConfig.ts`). Scanning, polling, discovery, previews and saving settings
+   write nothing to a repository. All other writes stay under `~/.openspec-dashboard/` (or `OPENSPEC_DASHBOARD_HOME`
+   in tests). Git is invoked only with the read-only subcommands listed in that spec. Adding a path or a subcommand
+   means changing that spec first.
 2. **Loopback only.** The server binds `127.0.0.1`; there is no auth because nothing else can reach it.
+2a. **Mutating API routes are same-origin only.** Every non-GET `/api/` request passes `crossSiteRefusal` in
+   `src/server/api.ts` (JSON content type, loopback host, own origin). Loopback binding alone does not stop a web page
+   in the same browser; do not add a mutating route that bypasses the guard.
 3. **`@fission-ai/openspec` internals only through `src/server/openspecAdapter.ts`.** Do not call the library's
    `resolveSchema`/`loadChangeContext`: they locate files via `import.meta.url`, which does not exist inside the
    compiled binary. The adapter embeds the schema at build time. Anything that works under `bun run` but reads files
