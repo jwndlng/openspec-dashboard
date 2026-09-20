@@ -53,6 +53,8 @@ what it found under **Discovered**; click **Enable** on the repos to track, then
   "Copy apply command" action (`cd <repo> && claude "/opsx:apply <change>"`).
   Within each column, cards are **grouped by repository** (same order in every column), and every repository gets its
   own automatic, stable colour — on the group header, its cards and its filter chip — in both themes.
+  Click a group header to minimize the group to its name and count; groups in **Archived** start minimized. Choices are
+  remembered in the browser, and a text search always opens the groups that contain matches.
 - Filters: repo, text, stale-for-N-days, hide archived — kept in the URL. Bookmarks of the old combined board move from
   `/?repos=…` to `/board?repos=…`.
 - Theme: dark and light. Follows the OS appearance by default; the **Theme** button in the top bar cycles
