@@ -116,9 +116,15 @@ test("terminal socket: scrollback, typing, resize, exit — and no entry from an
   const first = connect(url, http);
   expect(await first.opened).toBe(true);
   await waitFor(() => first.text().includes("fake-agent ready"), "banner over the socket");
+  // A resize reaches the agent as an asynchronous signal, so ask until it reports the new width rather than racing it.
   first.send({ type: "resize", cols: 77, rows: 21 });
+  await waitFor(async () => {
+    first.send({ type: "input", data: "width?\r" });
+    await new Promise((r) => setTimeout(r, 100));
+    return first.text().includes("(cols=77)");
+  }, "the agent sees the resized terminal");
   first.send({ type: "input", data: "from the browser\r" });
-  await waitFor(() => first.text().includes("you said: from the browser (cols=77)"), "typed input echoed");
+  await waitFor(() => first.text().includes("you said: from the browser"), "typed input echoed");
 
   // a second viewer (another tab) first gets what the terminal has shown so far, then follows along
   const second = connect(url, http);

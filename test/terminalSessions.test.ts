@@ -81,9 +81,15 @@ test("a session is the agent in a terminal, in its own worktree: start, type, ex
   expect(view.text()).toContain("tty=true");
   expect(view.text()).toContain("key=false");
 
+  // A resize reaches the agent as an asynchronous signal, so ask until it reports the new width rather than racing it.
   h.manager.resize(s.id, 90, 20);
+  await waitFor(async () => {
+    h.manager.write(s.id, "width?\r");
+    await new Promise((r) => setTimeout(r, 100));
+    return view.text().includes("(cols=90)");
+  }, "the agent sees the resized terminal");
   h.manager.write(s.id, "hello there\r");
-  await waitFor(() => view.text().includes("you said: hello there (cols=90)"), "echo of typed input");
+  await waitFor(() => view.text().includes("you said: hello there"), "echo of typed input");
   expect(h.manager.get(s.id).lastOutputAt).toBeTruthy();
 
   h.manager.write(s.id, "exit\r");
