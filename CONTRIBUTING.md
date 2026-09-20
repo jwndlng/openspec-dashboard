@@ -45,6 +45,13 @@ The main checkout stays on `main` and is only read from (and used to run the das
 change lists under **Impact** in its proposal; if you need to touch something another in-flight change owns, say so in
 the proposal first. Agent sessions follow the same rule — see `CLAUDE.md`.
 
+## Testing agent sessions
+
+Tests must never start the real agent CLI or use the network. Everything under `src/server/sessions/` is exercised
+through `test/fixtures/fake-claude.ts`, a small executable that speaks the CLI's stream-JSON protocol and is scripted
+with `FAKE_CLAUDE_MODE` (`echo`, `deny`, `auth`, `limit`, `hang`, `crash`). Its event shapes come from
+`test/fixtures/claude-stream/`, recorded once from the real CLI and sanitised — update both together.
+
 ## Toolchain
 
 Bun is pinned in `.bun-version` (and `packageManager`). Upgrading Bun is a deliberate commit of its own — the compiled

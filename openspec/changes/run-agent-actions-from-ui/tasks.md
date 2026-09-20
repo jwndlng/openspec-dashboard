@@ -57,13 +57,22 @@
 
 ## 8. Invariants and documentation
 
-- [ ] 8.1 Reword `CLAUDE.md` invariant 1 and the README's "never writes to a tracked repository" statement to the new boundary (dashboard code does not write except confirmed safe worktree removal; it may start the user's agent in a dedicated worktree on request, off by default)
-- [ ] 8.2 README: how to enable agent sessions, what the default allow-list permits, that the CLI's own login is used and no credentials are handled, how to resume a session in a terminal
-- [ ] 8.3 `CONTRIBUTING.md`: tests must use the fake runner; never invoke the real CLI or the network from tests
+- [x] 8.1 Reword `CLAUDE.md` invariant 1 and the README's "never writes to a tracked repository" statement to the new boundary (dashboard code does not write except confirmed safe worktree removal; it may start the user's agent in a dedicated worktree on request, off by default)
+- [x] 8.2 README: how to enable agent sessions, what the default allow-list permits, that the CLI's own login is used and no credentials are handled, how to resume a session in a terminal
+- [x] 8.3 `CONTRIBUTING.md`: tests must use the fake runner; never invoke the real CLI or the network from tests
 
 ## 9. Verification
 
-- [ ] 9.1 `bun run check` and `bun run build` pass; the compiled binary starts a session against the fake runner (process spawning and Server-Sent Events work inside the single binary)
-- [ ] 9.2 Manual run with the real CLI on a scratch repository: open **Implement**, watch the transcript, send a follow-up, Stop, send another message, copy the resume command and continue in a terminal, close with worktree removal; confirm the main checkout's `git status` and branch never changed
-- [ ] 9.3 Confirm with agent sessions disabled that no route can start a process and that a scan still leaves repositories byte-identical
-- [ ] 9.4 Confirm a request from another origin cannot open a session (browser test page on a different port)
+- [x] 9.1 `bun run check` and `bun run build` pass; the compiled binary starts a session against the fake runner (process spawning and Server-Sent Events work inside the single binary)
+- [x] 9.2 Manual run with the real CLI on a scratch repository: open **Implement**, watch the transcript, send a follow-up, Stop, send another message, copy the resume command and continue in a terminal, close with worktree removal; confirm the main checkout's `git status` and branch never changed
+- [x] 9.3 Confirm with agent sessions disabled that no route can start a process and that a scan still leaves repositories byte-identical
+- [x] 9.4 Confirm a request from another origin cannot open a session (browser test page on a different port)
+
+> Verified 2026-09-20 with the compiled binary. Fake runner: feature off → 403 and no process; foreign Origin, missing
+> header and form content type → 403; a two-turn session streamed in order over one event stream; child environment
+> without API key, `dontAsk`, isolated settings; records `0600`; no stray processes after shutdown. Real CLI on a scratch
+> repository: Implement created and committed the file in its own worktree on `feat/<change>`, follow-up and in-band
+> Stop worked, `claude --resume` from a terminal continued the same conversation, the main checkout's branch, status and
+> HEAD never changed, and worktree removal was refused because of unpushed commits. 9.4 used forged `Origin` headers, not
+> a real browser page. Four small turns cost about $0.54 on the CLI's default model — a per-repository model setting
+> (design Open Questions) is worth doing soon.

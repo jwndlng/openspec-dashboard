@@ -24,10 +24,18 @@ bun test test/scanner.test.ts   # a single test file
 
 ## Invariants — do not break these
 
-1. **Read-only towards tracked repositories.** All writes stay under `~/.openspec-dashboard/` (or
-   `OPENSPEC_DASHBOARD_HOME` in tests). Git is invoked only with the read-only subcommands listed in
-   `openspec/specs/dashboard-api/spec.md`; adding one means changing that spec.
-2. **Loopback only.** The server binds `127.0.0.1`; there is no auth because nothing else can reach it.
+1. **The dashboard's own code never changes a tracked repository.** All writes stay under `~/.openspec-dashboard/`
+   (or `OPENSPEC_DASHBOARD_HOME` in tests). Git is invoked only with the read-only subcommands listed in
+   `openspec/specs/dashboard-api/spec.md`; adding one means changing that spec. Two deliberate, narrow exceptions,
+   both part of agent sessions (off by default, per-repository opt-in): on the user's click the dashboard may *start
+   the user's agent CLI* in a dedicated worktree — what that agent changes is the agent's doing, bounded by its
+   allow-list — and, only after the user confirms and read-only checks prove nothing would be lost, it may run
+   `git worktree unlock` + a non-forcing `git worktree remove` on a session's worktree. With agent sessions disabled
+   no process that can modify a repository is ever started.
+2. **Loopback only, and mutating requests must come from the dashboard's own UI.** The server binds `127.0.0.1` and
+   has no auth. Because any web page can send requests to localhost, every non-GET request must pass the guard in
+   `src/server/api.ts` (`rejectCrossSite`: JSON content type, `X-OpenSpec-Dashboard` header, loopback Host, matching
+   Origin). New mutating routes get it automatically; never add a side-effecting GET.
 3. **`@fission-ai/openspec` internals only through `src/server/openspecAdapter.ts`.** Do not call the library's
    `resolveSchema`/`loadChangeContext`: they locate files via `import.meta.url`, which does not exist inside the
    compiled binary. The adapter embeds the schema at build time. Anything that works under `bun run` but reads files
@@ -40,6 +48,17 @@ bun test test/scanner.test.ts   # a single test file
 7. **Nothing from a real repository goes into this one.** No copied `openspec/` trees, repo names, paths, hostnames or
    people from other projects — not in fixtures, tests, specs, proposals or commit messages. Use made-up names
    (`demo-ops`, `alpha-infra`, `/w/acme/...`). Fixtures are generated, never copied. This repository may be public.
+
+## Agent sessions (`src/server/sessions/`)
+
+- The agent is only ever reached through the `Runner` interface; `claudeRunner.ts` is the one implementation and the
+  one place that knows CLI flags. It never reads or forwards credentials, never uses a shell, fixes the permission
+  mode to `dontAsk`, and starts with `--setting-sources project` so the user's personal allow rules cannot widen a
+  session's allow-list. Do not add a way to pass free-form CLI arguments or a permission-bypass mode.
+- Tests never start the real CLI or touch the network: they use `test/fixtures/fake-claude.ts`, which replays the
+  shapes recorded in `test/fixtures/claude-stream/`. When the CLI's format changes, update both together.
+- Session records live under `~/.openspec-dashboard/sessions/`; all writes for one session go through the store's
+  per-session queue.
 
 ## One agent, one worktree
 
