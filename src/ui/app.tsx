@@ -5,14 +5,15 @@ import { relTime } from "./format.ts";
 import { Kanban } from "./kanban.tsx";
 import { Overview } from "./overview.tsx";
 import { enabledOnly } from "./overviewState.ts";
-import { navigate, type Route, routeFromPath } from "./routes.ts";
+import { type Route, routeFromPath } from "./routes.ts";
 import { Settings } from "./settings.tsx";
+import { currentPath, href, navigate, onRouteChange } from "./url.ts";
 import { applyTheme, loadPreference, nextPreference, resolveTheme, savePreference, type ThemePreference } from "./theme.ts";
 
 const THEME_LABEL: Record<ThemePreference, string> = { system: "System", light: "Light", dark: "Dark" };
 
 export function App() {
-  const [route, setRoute] = useState<Route>(() => routeFromPath(location.pathname));
+  const [route, setRoute] = useState<Route>(() => routeFromPath(currentPath()));
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   const [config, setConfig] = useState<Config | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -20,11 +21,7 @@ export function App() {
   const [, tick] = useState(0);
   const [themePref, setThemePref] = useState<ThemePreference>(loadPreference);
 
-  useEffect(() => {
-    const onPop = () => setRoute(routeFromPath(location.pathname));
-    addEventListener("popstate", onPop);
-    return () => removeEventListener("popstate", onPop);
-  }, []);
+  useEffect(() => onRouteChange(() => setRoute(routeFromPath(currentPath()))), []);
 
   // Apply the theme, and follow live OS appearance changes while the preference is "system".
   // Layout effect so the colours swap in the same frame as the button label.
@@ -95,7 +92,7 @@ export function App() {
 
   const link = (path: string, label: string, active: boolean) => (
     <a
-      href={path}
+      href={href(path)}
       class={active ? "active" : ""}
       onClick={(e) => {
         e.preventDefault();

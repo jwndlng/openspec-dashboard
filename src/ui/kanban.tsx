@@ -5,7 +5,7 @@ import { NoRepos } from "./empty.tsx";
 import { EMPTY_FILTERS, parseFilters, serializeFilters, type Filters } from "./filters.ts";
 import { applyCommand, cdCommand, daysSince, relTime } from "./format.ts";
 import { assignRepoHues, groupByRepo, recentArchived } from "./repoGroups.ts";
-import { navigate } from "./routes.ts";
+import { currentQuery, href, navigate, replaceQuery } from "./url.ts";
 
 const ARCHIVED_LIMIT = 25;
 
@@ -149,7 +149,7 @@ function RepoHeader({ repo, now }: { repo: RepoSnapshot; now: number }) {
         <h1 class="crumbs">
           <a
             class="crumb-link"
-            href="/"
+            href={href("/")}
             onClick={(e) => {
               e.preventDefault();
               navigate("/");
@@ -197,7 +197,7 @@ function RepoNotFound() {
       <p>It is not tracked (any more). Enable it in Settings, or pick another one.</p>
       <a
         class="btn primary"
-        href="/"
+        href={href("/")}
         onClick={(e) => {
           e.preventDefault();
           navigate("/");
@@ -212,13 +212,13 @@ function RepoNotFound() {
 /** The combined board, or one repository's board when `repoId` is set. */
 export function Kanban({ snapshot, config, repoId }: { snapshot: Snapshot | null; config: Config | null; repoId?: string }) {
   // A repository board has no repo filter, so a stray `repos` key in the URL is dropped.
-  const [filters, setFiltersState] = useState<Filters>(() => ({ ...parseFilters(location.search), ...(repoId === undefined ? {} : { repos: [] }) }));
+  const [filters, setFiltersState] = useState<Filters>(() => ({ ...parseFilters(currentQuery()), ...(repoId === undefined ? {} : { repos: [] }) }));
   const now = Date.now();
 
   const setFilters = (patch: Partial<Filters>) => {
     const next = { ...filters, ...patch };
     setFiltersState(next);
-    history.replaceState(null, "", `${location.pathname}${serializeFilters(next)}`);
+    replaceQuery(serializeFilters(next));
   };
 
   const single = repoId !== undefined;

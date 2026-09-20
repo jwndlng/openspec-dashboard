@@ -23,12 +23,37 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
   return res.json() as Promise<T>;
 }
 
-export const api = {
+/** Everything the UI asks of a backend. The demo build implements it in memory, so a new operation needs both. */
+export interface Api {
+  state(): Promise<Snapshot>;
+  config(): Promise<Config>;
+  saveConfig(config: Config): Promise<Config>;
+  /** Read-only; pass the draft roots to discover against unsaved edits. */
+  discover(scanRoots?: string[]): Promise<DiscoverResult>;
+  scan(): Promise<ScanTriggerResult>;
+}
+
+export const httpApi: Api = {
   state: () => call<Snapshot>("/api/state"),
   config: () => call<Config>("/api/config"),
-  saveConfig: (config: Config) => call<Config>("/api/config", { method: "PUT", body: JSON.stringify(config) }),
-  /** Read-only; pass the draft roots to discover against unsaved edits. */
-  discover: (scanRoots?: string[]) =>
+  saveConfig: (config) => call<Config>("/api/config", { method: "PUT", body: JSON.stringify(config) }),
+  discover: (scanRoots) =>
     call<DiscoverResult>("/api/discover", { method: "POST", body: scanRoots ? JSON.stringify({ scanRoots }) : undefined }),
   scan: () => call<ScanTriggerResult>("/api/scan", { method: "POST" }),
+};
+
+let current: Api = httpApi;
+
+/** Chosen once by the entry point, before the first render. */
+export function setApi(impl: Api): void {
+  current = impl;
+}
+
+/** What components import; forwards to the implementation the entry point chose (HTTP unless told otherwise). */
+export const api: Api = {
+  state: () => current.state(),
+  config: () => current.config(),
+  saveConfig: (config) => current.saveConfig(config),
+  discover: (scanRoots) => current.discover(scanRoots),
+  scan: () => current.scan(),
 };
