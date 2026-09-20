@@ -22,12 +22,12 @@ The dashboard shows which changes need a proposal written or are ready to implem
 ## Capabilities
 
 ### New Capabilities
-- `agent-sessions`: opening and conducting interactive agent sessions from the dashboard — enablement and per-repository opt-in, the session starters and when they are offered, how the CLI is invoked (login, environment, permissions, working location), sending follow-up messages, session states and limits, stopping a turn and closing or cancelling a session, the transcript and resume hand-off, reopening after restart, session storage and retention, and failure modes (CLI missing, not logged in, usage limit, permission denied).
+- `agent-sessions`: opening and conducting interactive agent sessions from the dashboard — enablement and per-repository opt-in, the session starters and when they are offered, how the CLI is invoked (login, environment, permissions), the dedicated worktree each session works in and its clean-up, sending follow-up messages, session states and limits, stopping a turn and closing or cancelling a session, the transcript and resume hand-off, reopening after restart, session storage and retention, and failure modes (CLI missing, not logged in, usage limit, permission denied).
 
 ### Modified Capabilities
 - `dashboard-api`: adds session endpoints (open, list, read/stream transcript, send message, stop turn, close/cancel) with their validation and refusal cases; rewords "the dashboard never writes to tracked repositories" to the new boundary (the dashboard's code does not write; it may start the user's agent on request).
 - `kanban-board`: cards gain the session starters appropriate to their stage, a session badge (working / waiting for you / failed), and access to the session panel; existing copy actions remain.
-- `repo-discovery`: configuration gains the global agent-actions switch and per-repository session settings (opt-in, allowed tools, working location), editable in Settings.
+- `repo-discovery`: configuration gains the global agent-actions switch and per-repository session settings (opt-in, allowed tools), editable in Settings.
 
 ## Impact
 
