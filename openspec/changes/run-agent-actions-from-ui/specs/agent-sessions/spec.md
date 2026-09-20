@@ -68,18 +68,22 @@ A session MUST NOT work in the repository's main checkout. Opening a session SHA
 - **THEN** that worktree is reused rather than a second one created
 
 ### Requirement: Tool permissions are bounded and never bypassed
-Sessions SHALL run in a permission mode that does not prompt and denies every tool use that is not explicitly allowed. The allowed tools are the built-in default list (file read/search/edit, the `openspec` command, and local git status/diff/log/add/commit) plus entries the user added for that repository. The dashboard MUST NOT start the CLI with a permission-bypass mode or flag, MUST reject configuration entries that would introduce one, and MUST NOT offer free-form extra CLI arguments. A denied tool use SHALL appear in the transcript as denied.
+Sessions SHALL run in a permission mode that does not prompt and denies every tool use that is not explicitly allowed, and MUST NOT inherit the user's own global agent settings or permission rules — only the repository's project settings and the dashboard's allow-list apply. The allowed tools are the built-in default list (file read/search/edit, the `openspec` command, and local git status/diff/log/add/commit and branch rename) plus entries the user added for that repository. The dashboard MUST NOT start the CLI with a permission-bypass mode or flag, MUST reject configuration entries that would introduce one, and MUST NOT offer free-form extra CLI arguments. A denied tool use SHALL appear in the transcript as denied. The Settings view SHALL state that the agent CLI may still run its own small set of built-in read-only commands.
 
 #### Scenario: Command outside the allow-list
 - **WHEN** the agent tries to run `curl https://example.com` and the repository's allow-list does not permit it
 - **THEN** the call is denied without prompting, the transcript shows the denial, and the session continues
+
+#### Scenario: User-level allow rules are not inherited
+- **WHEN** the user's global agent settings allow `Bash(gh api *)` and a session's allow-list does not
+- **THEN** a `gh api` call in that session is denied
 
 #### Scenario: Bypass cannot be configured
 - **WHEN** a configuration is saved with an allowed-tools entry or command template containing a permission-bypass flag or mode
 - **THEN** the configuration is rejected
 
 ### Requirement: Session lifecycle, limits and control
-A session SHALL be in exactly one state of `queued`, `running`, `waiting`, `closed`, `failed`, `cancelled`, `interrupted`. At most one session per repository and change may be open (any state other than `closed`, `failed`, `cancelled`); a request to open another SHALL return the existing one. At most `maxRunning` sessions (default 2) may be `running`; further turns wait as `queued` in first-in-first-out order. **Stop** SHALL interrupt the current turn and leave the session `waiting`; **Close** SHALL end the session as `closed`; **Cancel** SHALL terminate the process immediately as `cancelled`. A process that ends unexpectedly SHALL make the session `failed` with a classified reason (`auth`, `usage-limit`, `cli-missing`, `crashed`).
+A session SHALL be in exactly one state of `queued`, `running`, `waiting`, `closed`, `failed`, `cancelled`, `interrupted`. At most one session per repository and change may be open (any state other than `closed`, `failed`, `cancelled`); a request to open another SHALL return the existing one. At most `maxRunning` sessions (default 2) may be `running`; further turns wait as `queued` in first-in-first-out order. **Stop** SHALL interrupt the current turn without ending the conversation and leave the session `waiting`; **Close** SHALL end the session as `closed`; **Cancel** SHALL terminate the process immediately as `cancelled`. A process that ends unexpectedly SHALL make the session `failed` with a classified reason (`auth`, `usage-limit`, `cli-missing`, `crashed`).
 
 #### Scenario: Running limit
 - **WHEN** two sessions are `running` with `maxRunning: 2` and a third is opened
@@ -120,7 +124,7 @@ Session metadata and transcripts SHALL be stored only under `~/.openspec-dashboa
 - **THEN** the child process is stopped and the session is recorded as `interrupted`
 
 ### Requirement: Worktree clean-up is offered only when safe
-When closing a session the dashboard SHALL offer to remove the session's worktree only if the worktree has no uncommitted changes and no commits that exist nowhere else (not ahead of its upstream, or no upstream and nothing ahead of the base branch). Removal SHALL happen only after the user confirms, using a non-forcing `git worktree remove`. Otherwise the worktree MUST be kept and the reason shown.
+When closing a session the dashboard SHALL offer to remove the session's worktree only if the worktree has no uncommitted changes and no commits that exist nowhere else (not ahead of its upstream, or no upstream and nothing ahead of the base branch). Removal SHALL happen only after the user confirms, by unlocking the worktree and using a non-forcing `git worktree remove`. Otherwise the worktree MUST be kept and the reason shown.
 
 #### Scenario: Unpushed work
 - **WHEN** the user closes a session whose worktree has commits that were not pushed

@@ -1,12 +1,16 @@
 ## 1. Spike: observe the real CLI before building (uses a little subscription quota)
 
-- [ ] 1.1 In a scratch git repository outside this project, with `ANTHROPIC_API_KEY` unset, run one short `claude -p --verbose --output-format stream-json` turn; confirm it runs on the subscription login and record the event types and the shape of `system/init`, assistant, tool and `result` events (assumptions A1, A2)
-- [ ] 1.2 Run with `--input-format stream-json --replay-user-messages`: send two user messages on stdin, confirm the process stays alive between turns, each turn ends with `result`, and record the exact input line format (A2); try SIGINT mid-turn and record what is emitted and whether the process survives
-- [ ] 1.3 Run with `--permission-mode dontAsk --allowedTools Read` and ask for a Bash command; record how the denial appears in the stream and that nothing prompts or hangs (A3)
-- [ ] 1.4 Send a project slash command as message text in a repository that has one; confirm it executes (A4)
-- [ ] 1.5 Run with `--worktree spike-a --session-id <uuid>`; record where the worktree is created, the branch name, what `cwd` the init event reports, whether an existing worktree of that name is reused, and how `--resume <uuid>` must be invoked (from which directory, with or without `--worktree`) to continue there (A5)
-- [ ] 1.6 Provoke and record an authentication failure (temporary empty config dir) and look up how a usage-limit error is reported (A6)
-- [ ] 1.7 Write the observations into `design.md` (replace the "assumed" list with facts; switch D2 to the per-message fallback if streaming input does not hold) and save trimmed real event lines as fixtures for the fake runner; remove the scratch repository and its worktrees
+- [x] 1.1 In a scratch git repository outside this project, with `ANTHROPIC_API_KEY` unset, run one short `claude -p --verbose --output-format stream-json` turn; confirm it runs on the subscription login and record the event types and the shape of `system/init`, assistant, tool and `result` events (assumptions A1, A2)
+- [x] 1.2 Run with `--input-format stream-json --replay-user-messages`: send two user messages on stdin, confirm the process stays alive between turns, each turn ends with `result`, and record the exact input line format (A2); try SIGINT mid-turn and record what is emitted and whether the process survives
+- [x] 1.3 Run with `--permission-mode dontAsk --allowedTools Read` and ask for a Bash command; record how the denial appears in the stream and that nothing prompts or hangs (A3)
+- [x] 1.4 Send a project slash command as message text in a repository that has one; confirm it executes (A4)
+- [x] 1.5 Run with `--worktree spike-a --session-id <uuid>`; record where the worktree is created, the branch name, what `cwd` the init event reports, whether an existing worktree of that name is reused, and how `--resume <uuid>` must be invoked (from which directory, with or without `--worktree`) to continue there (A5)
+- [x] 1.6 Provoke and record an authentication failure (temporary empty config dir) and look up how a usage-limit error is reported (A6)
+- [x] 1.7 Write the observations into `design.md` (replace the "assumed" list with facts; switch D2 to the per-message fallback if streaming input does not hold) and save trimmed real event lines as fixtures for the fake runner; remove the scratch repository and its worktrees
+
+> Spike done 2026-09-20: streaming input, slash commands, worktrees and resume behave as assumed; three corrections went
+> into design.md — user-level settings must be excluded (`--setting-sources project`) or the allow-list bounds nothing,
+> Stop is an in-band interrupt (SIGINT ends the process), and CLI worktrees are locked and on a `worktree-<name>` branch.
 
 ## 2. Configuration and types
 
@@ -25,7 +29,7 @@
 
 - [ ] 4.1 Define `Runner`/`RunnerProcess`/`RunnerEvent` in `src/server/sessions/runner.ts` per design D1
 - [ ] 4.2 Implement `fake-claude` test executable (`test/fixtures/fake-claude.ts`) speaking the observed protocol, scripted via environment variables: echo turns, denied tool call, auth failure exit, usage-limit error, hang until interrupted, crash
-- [ ] 4.3 Implement `claudeRunner.ts`: resolve binary, `available()` via `--version`, build the argument array (D2, D5, D6) without a shell, strip `ANTHROPIC_API_KEY`/`ANTHROPIC_AUTH_TOKEN` unless `passApiKeyEnv`, parse newline-delimited JSON into normalised events, write user messages to stdin, SIGINT for interrupt, kill with timeout escalation
+- [ ] 4.3 Implement `claudeRunner.ts`: resolve binary, `available()` via `--version`, build the argument array (D2, D5, D6: `--setting-sources project`, variadic flags as single `--flag=value`) without a shell, strip `ANTHROPIC_API_KEY`/`ANTHROPIC_AUTH_TOKEN` unless `passApiKeyEnv`, parse newline-delimited JSON into normalised events, write user messages to stdin, in-band interrupt control request with SIGINT fallback, kill with timeout escalation; warn when `apiKeySource` is not `none`
 - [ ] 4.4 Build the appended system prompt with the worktree rules (owned worktree/branch, never touch the main checkout, copy-and-commit the change directory when missing) and `--add-dir` for the change directory
 - [ ] 4.5 Tests with the fake: argument array contains no bypass flag and no shell is involved; environment stripping; event normalisation from the recorded fixtures; message with shell metacharacters arrives verbatim; interrupt and kill
 
@@ -35,7 +39,7 @@
 - [ ] 5.2 Implement `src/server/sessions/manager.ts`: state machine (D8), one open session per repository+change, FIFO queue against `maxRunning`, queued follow-ups, stop/close/cancel, failure classification, idle shutdown after `idleMinutes`, lazy restart with `--resume`
 - [ ] 5.3 Start-up reconciliation (`running` without process → `interrupted`) and shutdown handling in `src/server/index.ts` (stop children, mark `interrupted`)
 - [ ] 5.4 Starter availability from the snapshot (draft while an artifact is not done; implement in `Ready`/`Implementing`; never archived) and command templating over the validated change name
-- [ ] 5.5 Safe worktree removal: read-only checks (`git status --porcelain` in the worktree, nothing ahead of upstream/base via `rev-list`) and, only when clean and confirmed, `git worktree remove` without `--force`
+- [ ] 5.5 Safe worktree removal: read-only checks (`git status --porcelain` in the worktree, nothing ahead of upstream/base via `rev-list`) and, only when clean and confirmed, `git worktree unlock` then `git worktree remove` without `--force`
 - [ ] 5.6 Tests with the fake: full lifecycle, multi-turn follow-up keeps one CLI session id, running limit and queue order, duplicate open returns the existing session, stop keeps the conversation, cancel, crash → `failed/crashed`, auth and usage-limit reasons, idle stop then resume, reopen after simulated restart, retention, removal refused with dirty or unpushed worktree (temp git repositories)
 
 ## 6. API
