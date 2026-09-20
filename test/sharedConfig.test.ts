@@ -211,7 +211,7 @@ test("applyTo: writes once, then reports unchanged without touching the file; ke
   const repo = newRepoConfig(root, true);
   expect(await applyTo(repo, SHARED, ["security", "base"])).toEqual({ repoId: repo.id, result: "written" });
   expect((await stat(file)).mode & 0o777).toBe(0o640);
-  expect(await readdir(join(root, "openspec"))).toEqual(["changes", "config.yaml"]);
+  expect((await readdir(join(root, "openspec"))).sort()).toEqual(["changes", "config.yaml"]); // readdir order is platform-dependent
 
   const past = new Date("2026-01-01T00:00:00Z");
   await utimes(file, past, past);
