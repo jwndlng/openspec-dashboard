@@ -47,10 +47,11 @@ the proposal first. Agent sessions follow the same rule — see `CLAUDE.md`.
 
 ## Testing agent sessions
 
-Tests must never start the real agent CLI or use the network. Everything under `src/server/sessions/` is exercised
-through `test/fixtures/fake-claude.ts`, a small executable that speaks the CLI's stream-JSON protocol and is scripted
-with `FAKE_CLAUDE_MODE` (`echo`, `deny`, `auth`, `limit`, `hang`, `crash`). Its event shapes come from
-`test/fixtures/claude-stream/`, recorded once from the real CLI and sanitised — update both together.
+Tests must never start a real agent CLI or use the network. `test/fixtures/fake-agent.ts` is a small interactive program
+(prints how it was started, echoes what is typed, `exit`/`crash` end it); session tests run it in real pseudo-terminals
+against temp git repositories made from the synthetic fixtures, including the WebSocket that carries the terminal. If you
+change how agents are started or relayed, also run the compiled binary once (`bun run build`): pseudo-terminals and
+WebSockets must work inside the single executable.
 
 ## Demo site and screenshots
 

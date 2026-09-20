@@ -1,27 +1,31 @@
 ## ADDED Requirements
 
 ### Requirement: Agent session settings are part of the configuration
-The configuration SHALL contain an `agentSessions` object with `enabled` (default `false`), `maxRunning` (default `2`, minimum `1`), `idleMinutes` (default `30`), `claudePath` (default `claude`), `passApiKeyEnv` (default `false`) and `commands` (`draft`, `implement`, `archive`; each a template whose only placeholder is `{change}`), and each repository entry MAY carry `agent: { enabled, allowedTools }` (default absent, meaning included with no additional allowed tools; `enabled: false` excludes the repository). A configuration written before a command existed MUST load with that command's default. A configuration without these fields MUST load with the defaults. Validation MUST reject a `maxRunning` below 1, a command template with placeholders other than `{change}`, and any allowed-tools entry or template containing a permission-bypass mode or flag.
+The configuration SHALL contain an `agentSessions` object with `enabled` (default `false`), `agents` (at least one profile; default: the Claude Code profile) and `defaultAgent` (the id of one of them), and each repository entry MAY carry `agent: { enabled, agentId }` (default absent, meaning included and using the default agent; `enabled: false` excludes the repository). A profile has `id`, `name`, `command` (a non-empty list of arguments whose first element is the executable and in which `{prompt}` is the only placeholder), `prompts` (optionally one template each for `draft`, `implement`, `archive`, each containing `{change}` as its only placeholder), and optionally `resumeCommand` and `unsetEnv`. A configuration without these fields, or carrying settings of an earlier version of this feature, MUST load: missing fields take their defaults and unknown fields are dropped. Validation MUST reject duplicate agent ids, a `defaultAgent` or a repository `agentId` that names no configured agent, an empty command, unknown placeholders, a prompt without `{change}`, and any command, resume command or prompt containing a permission-bypass mode or flag.
 
 #### Scenario: Older configuration loads
-- **WHEN** the stored configuration has no `agentSessions` key
-- **THEN** it loads with agent sessions disabled and all defaults applied, and no repository excluded
+- **WHEN** the stored configuration has no `agentSessions` key, or has one written by the earlier transcript-based version
+- **THEN** it loads with the Claude Code profile as the only and default agent, the stored `enabled` value kept (`false` when absent), and no repository excluded
 
-#### Scenario: Invalid template
-- **WHEN** a configuration is saved with `commands.implement` set to `/opsx:apply {change} {branch}`
+#### Scenario: Unknown placeholder
+- **WHEN** a configuration is saved with an agent prompt `/opsx:apply {change} {branch}`
 - **THEN** it is rejected naming the unknown placeholder and the stored configuration is unchanged
 
-#### Scenario: Bypass entry rejected
-- **WHEN** a repository's `allowedTools` contains an entry naming a permission-bypass flag or mode
+#### Scenario: Bypass flag rejected
+- **WHEN** an agent's command contains a flag that switches off the agent's permission checks
 - **THEN** the configuration is rejected
 
+#### Scenario: Repository names a removed agent
+- **WHEN** a configuration is saved in which a repository selects an agent id that is not configured
+- **THEN** it is rejected
+
 ### Requirement: Settings expose agent sessions with their risks stated
-The Settings view SHALL provide a section for agent sessions containing the global switch, the availability of the agent CLI (found or not, with its version), `maxRunning`, the idle limit and the command templates, and for each tracked repository a toggle that is on by default and an editable list of additional allowed tools shown next to the built-in default list. The section MUST state plainly that enabling it lets an agent started from the dashboard modify files and run the allowed commands in a worktree of every tracked repository that is not switched off, using the user's own agent CLI login. It SHALL list worktrees created by sessions with their state. Per-repository controls MUST be inactive while the global switch is off.
+The Settings view SHALL provide a section for agent sessions containing the global switch; the list of agent profiles, each editable (name, command with one argument per line, the three prompts, resume command), removable while another remains, selectable as default, and marked with whether its executable was found on this machine; a way to add a profile and to restore the Claude Code preset; and for each tracked repository a toggle that is on by default and, when more than one agent is configured, a choice of agent. The section MUST state plainly that enabling it lets the dashboard start that program on this machine, that the agent can change files and run commands as the user allows it to, that each session works in its own worktree under the dashboard home and never in a main checkout, and that it applies to every tracked repository unless switched off. It SHALL list worktrees created by sessions with their state. The controls below the switch MUST be inactive while it is off.
 
 #### Scenario: Enabling and excluding one repository
-- **WHEN** the user turns on the global switch, switches repository `beta-soc` off, adds `Bash(bun run check*)` to the allowed tools of `demo-ops` and saves
-- **THEN** the configuration stores those values, cards of `demo-ops` and every other tracked repository offer session starters, and cards of `beta-soc` do not
+- **WHEN** the user turns on the global switch, switches repository `beta-soc` off and saves
+- **THEN** cards of every other tracked repository offer session starters and cards of `beta-soc` do not
 
-#### Scenario: CLI missing
-- **WHEN** the agent CLI cannot be found
-- **THEN** the section shows that it is missing and how to install it, and the global switch cannot be turned on
+#### Scenario: Adding an agent
+- **WHEN** the user adds an agent, enters its command one argument per line and an Implement prompt, and saves
+- **THEN** the agent is stored with that argument list, is offered in each repository's agent choice, and shows whether its executable was found

@@ -29,6 +29,31 @@ Constraints: no credentials handled by the dashboard; Anthropic's Agent SDK is n
 
 ## Decisions
 
+> **Revised 2026-09-21 — read D15–D19 first.** The first implementation (D1–D13) drove Claude Code through its
+> machine-readable stream and rendered a transcript of its own. In use that was the wrong product: it exposed the agent's
+> internals (every tool call and result) instead of the agent's interface, could never show the agent's own prompts, and
+> tied the feature to one vendor's protocol. D15–D19 replace it with the agent's own terminal and configurable agent
+> profiles. **Superseded:** D1 (runner interface), D2 (stream-JSON process), D3, D6 (allow-list and isolated settings),
+> D7's command templates (now per agent), D8 (queueing, idle shutdown, in-band stop), D9's transcript storage, D10's
+> event stream, D12 and D13. **Still valid:** D4's idea of removing API-key variables (now a profile field), D5's
+> "one worktree per session" (now created by the dashboard, D17), D11 (same-origin guard), D14 (one switch).
+> Observations O1–O8 remain true of the CLI but no longer shape the design.
+
+### D15 — A session is the agent's own terminal
+The server starts the agent attached to a pseudo-terminal (`Bun.spawn` with `terminal`, verified inside the compiled binary) in the session's worktree and relays bytes: output to every attached viewer, keystrokes and resizes back. The panel renders it with xterm.js, bundled and inlined like the rest of the UI (no network at runtime; the bundle grows from ~160 KB to ~500 KB). The dashboard does not parse, filter or summarise anything. Consequences that are the point: the user sees exactly the program they know; the agent's own questions — permission prompts, the folder-trust question Claude Code asks once per new directory, `/opsx:*` choices — work because a human answers them; slash commands, models and logins are the agent's business. A bounded scrollback (1 MiB) is kept per session so a viewer that attaches later, a second tab, or a reload first gets what was shown; its tail is stored when the session ends. *Alternative kept in mind*: a friendlier transcript (collapse tool calls, render Markdown) — cheaper, but still a worse copy of an interface that already exists, and still one vendor.
+
+### D16 — Agents are profiles
+`agentSessions.agents[]`: `id`, `name`, `command` (argument list; `{prompt}` is the only placeholder and is substituted as one whole argument), `prompts` per starter (`{change}` only), optional `resumeCommand` and `unsetEnv`; `defaultAgent`, and an optional `agentId` per repository. Claude Code ships as the preset (`claude {prompt}`, the `/opsx:*` prompts, `claude --continue`, API-key variables removed so its own login is used). Any other CLI is a profile the user adds; slash commands are agent-specific, so a plain-language prompt pointing at `openspec instructions …` is the portable default offered for new profiles. A command without `{prompt}` gets the prompt typed into its terminal after a short delay. A starter is offered only if the repository's agent has a prompt for it, and disabled when `Bun.which(command[0])` finds nothing. No shell is ever involved. Commands, resume commands and prompts containing a known permission-bypass flag are still rejected: the dashboard does not help switching an agent's checks off.
+
+### D17 — The dashboard creates the worktree, outside the repository
+`--worktree` was Claude-specific, so the dashboard now runs `git worktree add` itself — the second enumerated write next to worktree removal. The worktree lives at `~/.openspec-dashboard/worktrees/<repoId>/<name>`, not inside the repository: the repository's working tree never shows an untracked directory and nothing needs a `.gitignore` entry; only git's own worktree metadata and the branch are written in the repository. Existing worktree → reused; existing branch → checked out; otherwise `-b <branch>` from `origin/HEAD` as known locally, else `HEAD`. **No `git fetch`**: the dashboard does not talk to the network, and remotes behind a hardware key would block the request — the base is as fresh as the user's last fetch, and the agent can be asked to rebase. A change directory that exists only uncommitted in the main checkout is copied into the worktree (a write under the dashboard home). Removal keeps its read-only safety checks and the confirmation.
+
+### D18 — The terminal WebSocket has its own guard
+Whoever holds this socket types into an agent on this machine, so it is the most sensitive endpoint in the project. The JSON-content-type guard (D11) cannot protect it: a WebSocket handshake is a `GET`, allowed cross-origin, with no preflight. `webSocketRefusal` therefore requires a loopback `Host` (DNS rebinding) and an `Origin` that is the dashboard's own — browsers always send `Origin` on a handshake and pages cannot forge it; a missing `Origin` is refused, so non-browser clients must state one deliberately. Loopback-only binding (invariant 2) stays a precondition. Wire format: binary frames = terminal bytes, text frames = small JSON control messages.
+
+### D19 — Status is what a terminal can honestly tell
+`running`, `exited` (with code) and `failed` (could not start). "Waiting for you", cost and usage are not knowable from a byte stream and are no longer claimed; instead the server stamps `lastOutputAt` and the UI shows `quiet <n>m` after a minute of silence, which in practice is the same hint. Dropped with the transcript: the running-session cap and queue (interactive terminals are not batch jobs), idle shutdown, and sessions surviving a dashboard restart — a terminal cannot outlive its owner, so shutdown ends agents and **Resume** (the profile's resume command, in the same worktree) is the way back into the conversation.
+
 ### D1 — A `Runner` interface with one implementation: the `claude` CLI
 `src/server/sessions/runner.ts` defines `Runner { available(): Promise<Availability>; start(opts): RunnerProcess }` and `RunnerProcess { events: AsyncIterable<RunnerEvent>; send(text): void; interrupt(): void; kill(): void; exited: Promise<ExitInfo> }`. `claudeRunner.ts` is the only implementation. The binary is resolved from config `agentSessions.claudePath` (default `claude` on `PATH`); tests point it at a fake executable. *Why an interface*: tests, and later runners, without touching the session manager. *Not the Agent SDK*: needs an API key (see Context).
 
@@ -83,6 +108,8 @@ The first version required two opt-ins: the global switch *and* one per reposito
 
 ## Risks / Trade-offs
 
+- [Revision] A browser tab now carries a terminal on this machine → D18's origin check, loopback binding, feature off by default, and the agent's own permission prompts are what stand between a web page and code execution; Settings says so.
+- [Revision] Terminal status is coarse (D19) → stated in the UI rather than faked.
 - [CLI behaviour changes between versions] → observations O1–O8 are pinned as fixtures and exercised by the fake runner; the `Runner` interface localises changes; the detected CLI version is shown in Settings. The usage-limit classification (O6) is still an assumption.
 - [A browser click leads to code edits and command execution] → explicit global switch with per-repository exclusion (D14), loopback + D11, allow-list with `dontAsk`, no bypass reachable, worktree isolation, visible transcript, Stop/Cancel.
 - [Runaway usage of the subscription] → running-session cap, idle shutdown, per-session cost/usage shown, usage-limit errors surfaced distinctly.

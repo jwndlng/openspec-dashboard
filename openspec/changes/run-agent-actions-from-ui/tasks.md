@@ -84,3 +84,17 @@
 - [x] 10.3 `archive` session action: `SessionAction`, `availableActions()` (stage `done`), `commands.archive` with default `/opsx:archive {change}` (older configs load with the default), label and hint on the card
 - [x] 10.4 Archive sessions use worktree `archive-<change>` and branch `chore/archive-<change>`; default allow-list gains `git mv`/`mv`/`mkdir -p` confined to `openspec/`
 - [x] 10.5 Tests: default-included repository, excluded repository refused, archive only for `Done`, archive template/worktree/branch/allow-list, older config gets the archive default; specs, design (D14) and docs updated
+
+## 11. Revision: the agent's own terminal, and agents as profiles
+
+- [x] 11.1 Spike: `Bun.spawn` with a pseudo-terminal (write, resize, data callback) and the real interactive `claude` inside it; noted that it asks its folder-trust question once per new worktree, to be answered in the terminal
+- [x] 11.2 Shared model: `AgentProfile`, `agentSessions.{agents, defaultAgent}`, per-repository `agentId`; `Session` becomes `running | exited | failed` with `worktreePath`, `branch`, `lastOutputAt`, `resumable`; zod schema with placeholder and bypass validation; configs of the transcript-based version load (unknown keys dropped)
+- [x] 11.3 Remove the stream-JSON runner, parser, fake CLI, recorded fixtures, allow-list, queue/idle logic and their tests
+- [x] 11.4 `agents.ts` (profile per repository, availability via `Bun.which`, opening prompt, argument-list launch with typed-prompt fallback, environment), `terminal.ts` (pseudo-terminal process with hang-up then forced kill)
+- [x] 11.5 Worktrees created by the dashboard under `~/.openspec-dashboard/worktrees/`: reuse, existing branch, new branch from `origin/HEAD` else `HEAD`, no fetch; uncommitted change directory copied in; removal checks unchanged
+- [x] 11.6 Session manager: open/resume/close/remove, one running session per change, bounded scrollback with replay for late viewers, output tail stored at the end, `lastOutputAt`, shutdown and restart reconciliation
+- [x] 11.7 API: session routes, and the terminal WebSocket with its own same-origin guard (`webSocketRefusal`) and wire format; event stream removed
+- [x] 11.8 UI: xterm.js panel (theme tokens, fit to panel, reattach), card badges `running` / `quiet Nm` / ended / failed, starters limited to the agent's prompts, Settings with agent profiles and per-repository agent; terminal stylesheet inlined by the build; demo API updated
+- [x] 11.9 Tests with a fake interactive agent in real pseudo-terminals and temp git repositories: profiles and validation, launch arguments, worktree create/reuse/copy/remove, session lifecycle, typed prompt, resume, refusals create nothing, crash/shutdown/restart, socket guard, scrollback replay, input/resize round-trip, exit frame, ended-session output
+- [x] 11.10 Verified in the compiled binary: pseudo-terminal and WebSocket work in the single executable with the fake agent and with the real `claude`; foreign origin refused; main checkout's branch and status unchanged; worktree removed when clean; no stray processes
+- [x] 11.11 Specs (all four deltas), design D15–D19, README, `CLAUDE.md` and `CONTRIBUTING.md` updated

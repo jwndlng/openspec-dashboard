@@ -4,6 +4,12 @@ The dashboard shows which changes need a proposal written or are ready to implem
 
 ## What Changes
 
+> **Revised after first use.** The session is now the agent's own terminal shown in the dashboard, and the agent is a
+> configurable profile (any interactive CLI; Claude Code preset) — see design D15–D19. Where the bullets below describe
+> a parsed transcript, a tool allow-list, isolated settings, queueing or sessions surviving a restart, the specs and
+> design D15–D19 are authoritative.
+
+
 - **BREAKING** (project invariant): the dashboard can now *start a process that modifies a tracked repository*. The dashboard's own code still never writes to repositories (beyond what `create-change-from-dashboard` introduces); the writing is done by the user's own agent CLI, started only on an explicit click. The "read-only" promise in `CLAUDE.md` and the README is reworded accordingly.
 - **Off by default, one switch**: a global "Agent sessions" switch in Settings. Once on, sessions are available in every tracked repository; individual repositories can be switched off. While it is off, the UI shows no session starters and the API refuses to open sessions.
 - **Runner = the installed `claude` CLI on the user's login**: the server spawns `claude` in non-interactive print mode with streamed JSON output in the repository. It never reads, stores or forwards credentials, does not implement any login, and by default removes `ANTHROPIC_API_KEY` from the child environment so the session uses the CLI's existing subscription login instead of billing an API key (configurable). If the CLI is missing or not logged in, the action is disabled with an explanation.
