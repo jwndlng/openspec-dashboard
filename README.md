@@ -4,6 +4,15 @@ Local-first Kanban across every [OpenSpec](https://github.com/Fission-AI/OpenSpe
 Ships as a single Bun binary. Repositories stay the source of truth; the dashboard indexes them and is read-only
 towards them, with one explicit, previewed exception: applying [shared config profiles](#shared-openspec-config).
 
+**[Live demo →](https://jwndlng.github.io/openspec-dashboard/)** — the real UI on made-up sample data, nothing to install.
+
+<a href="https://jwndlng.github.io/openspec-dashboard/#/board">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://jwndlng.github.io/openspec-dashboard/screenshots/board-dark.png">
+    <img alt="The combined Kanban board: one column per lifecycle step from New to Archived, cards grouped and coloured by repository, with task progress, last activity, branch badges and warnings." src="https://jwndlng.github.io/openspec-dashboard/screenshots/board-light.png">
+  </picture>
+</a>
+
 ## Run
 
 Requires [Bun](https://bun.sh) ≥ 1.4 to build; the compiled binary needs nothing else.
@@ -15,6 +24,8 @@ bun run build                   # dist/openspec-dashboard (single binary, UI + f
 ./dist/openspec-dashboard       # opens the browser; --port N and --no-open are available
 bun test                        # unit + API tests against the fixture repos in test/fixtures
 bun run check                   # lint + typecheck + tests — what CI runs
+bun run build:demo              # dist/demo/index.html — the demo: same UI, in-memory API, sample data (open it from disk)
+bun run screenshots             # dist/demo/screenshots/*.png from the demo build (needs Chrome; CHROME_BIN overrides)
 ```
 
 First run: open **Settings** and add a workspace root such as `~/Workspace`. Discovery runs immediately and lists
@@ -49,10 +60,13 @@ what it found under **Discovered**; click **Enable** on the repos to track, then
   added, modified, removed and renamed requirements. A finished change without delta specs has nothing to sync and goes
   straight to Synced; `openspec archive` syncs and archives in one go, so cards often skip it. Done and Synced both count
   as "to archive".
-  Cards show repo, change, task progress, last activity, a matching branch/worktree, and a
+  Cards show repo, change, task progress, last activity, a matching branch/worktree (long branch names are
+  shortened in the middle so they stay inside the card; hover for the full name), and a
   "Copy apply command" action (`cd <repo> && claude "/opsx:apply <change>"`).
   Within each column, cards are **grouped by repository** (same order in every column), and every repository gets its
   own automatic, stable colour — on the group header, its cards and its filter chip — in both themes.
+  Click a group header to minimize the group to its name and count; groups in **Archived** start minimized. Choices are
+  remembered in the browser, and a text search always opens the groups that contain matches.
 - Filters: repo, text, stale-for-N-days, hide archived — kept in the URL. Bookmarks of the old combined board move from
   `/?repos=…` to `/board?repos=…`.
 - Theme: dark and light. Follows the OS appearance by default; the **Theme** button in the top bar cycles

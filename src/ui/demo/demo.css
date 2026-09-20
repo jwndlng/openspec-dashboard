@@ -1,0 +1,11 @@
+/* Demo build only: appended after styles.css by scripts/build-ui.ts. Tokens only, like the rest of the UI. */
+#app { display: flex; flex-direction: column; height: 100%; }
+#app > .app { flex: 1; min-height: 0; height: auto; }
+.demo-banner {
+  display: flex; align-items: center; justify-content: center; gap: var(--gap-1);
+  padding: 4px var(--gap-2); font-size: 12px;
+  background: var(--brand-softer); color: var(--brand-fg); border-bottom: 1px solid var(--brand-soft);
+}
+.demo-banner strong { text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600; }
+.demo-banner a { color: var(--brand-fg); text-decoration: underline; text-underline-offset: 2px; margin-left: var(--gap-1); }
+.demo-banner a:hover { color: var(--fg-heading); }

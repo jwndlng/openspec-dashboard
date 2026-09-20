@@ -1,5 +1,5 @@
 import type { Config } from "../shared/types.ts";
-import { navigate } from "./routes.ts";
+import { href, navigate } from "./url.ts";
 
 /** Shown by the overview and the boards while the snapshot has no repositories. */
 export function NoRepos({ config }: { config: Config | null }) {
@@ -11,7 +11,7 @@ export function NoRepos({ config }: { config: Config | null }) {
       {!enabled && (
         <a
           class="btn primary"
-          href="/settings"
+          href={href("/settings")}
           onClick={(e) => {
             e.preventDefault();
             navigate("/settings");
