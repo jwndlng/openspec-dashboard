@@ -52,5 +52,9 @@ jobs:
       - name: Smoke test binary
         run: ./dist/openspec-dashboard --help
 
+      # Published to GitHub Pages from main (pages.yml); building it here makes a broken demo block the pull request.
+      - name: Build demo
+        run: bun run build:demo
+
       - name: Tree is clean after a full cycle
         run: test -z "$(git status --porcelain)" || (git status --porcelain && exit 1)
