@@ -4,16 +4,16 @@
 :root {
   color-scheme: dark;
 
-  --bg-base: #080d16;
-  --bg-section: #0e1524;
-  --bg-raised: #111c30;
-  --bg-surface: #1a2640;
-  --bg-elevated: #243350;
+  --bg-base: #0b0d10;
+  --bg-section: #141618;
+  --bg-raised: #1a1c1f;
+  --bg-surface: #25272a;
+  --bg-elevated: #313437;
 
-  --fg-heading: #f0f5fa;
-  --fg-body: #8a9bb5;
-  --fg-subtle: #6a7a94;
-  --fg-disabled: #3a4a64;
+  --fg-heading: #f3f5f7;
+  --fg-body: #a0a3a8;
+  --fg-subtle: #82858a;
+  --fg-disabled: #474a4e;
 
   --brand: #71c7c5;
   --brand-strong: #4a9b99;
@@ -30,10 +30,10 @@
   --danger-border: #6b0028;
   --danger-bg: #3d001522;
 
-  --border: #71c7c52e;
-  --border-light: #71c7c514;
-  --border-subtle: #1a2640;
-  --border-strong: #71c7c56b;
+  --border: #b2b6bb2e;
+  --border-light: #b2b6bb14;
+  --border-subtle: #25272a;
+  --border-strong: #b2b6bb6b;
 
   /* Repository colours: the repo supplies --repo-hue, the theme supplies lightness and chroma. */
   --repo-l: 0.78;
