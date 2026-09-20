@@ -76,3 +76,11 @@
 > HEAD never changed, and worktree removal was refused because of unpushed commits. 9.4 used forged `Origin` headers, not
 > a real browser page. Four small turns cost about $0.54 on the CLI's default model — a per-repository model setting
 > (design Open Questions) is worth doing soon.
+
+## 10. Follow-up from first use: default-on repositories and an Archive starter
+
+- [x] 10.1 Repositories are included by default: `repoAgentEnabled()` in `src/shared/types.ts` (tracked and `agent.enabled !== false`), used by the session manager, the card controls and Settings; refusal message and status for an excluded repository unchanged (`403`)
+- [x] 10.2 Settings: the per-repository toggle defaults to on, the risk text says the switch covers every tracked repository, and the additional-allowed-tools editor folds away so a long repository list stays readable
+- [x] 10.3 `archive` session action: `SessionAction`, `availableActions()` (stage `done`), `commands.archive` with default `/opsx:archive {change}` (older configs load with the default), label and hint on the card
+- [x] 10.4 Archive sessions use worktree `archive-<change>` and branch `chore/archive-<change>`; default allow-list gains `git mv`/`mv`/`mkdir -p` confined to `openspec/`
+- [x] 10.5 Tests: default-included repository, excluded repository refused, archive only for `Done`, archive template/worktree/branch/allow-list, older config gets the archive default; specs, design (D14) and docs updated

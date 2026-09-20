@@ -5,12 +5,13 @@ import { parseToolList, resumeCommand, searchWithSession, sessionBadge, sessionF
 
 const session = (patch: Partial<Session>): Session => ({ id: "s", repoId: "r", change: "c", action: "implement", cliSessionId: "11111111-1111-4111-8111-111111111111", state: "waiting", createdAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-01T00:00:00Z", turns: 1, costUsd: 0, lastSeq: 1, ...patch });
 
-test("starters need the global switch and the repository's opt-in", () => {
+test("starters need the global switch; repositories are included unless switched off", () => {
   const repo = newRepoConfig("/w/demo-ops", true);
-  const make = (enabled: boolean, optIn: boolean) => ({ ...defaultConfig(), repos: [{ ...repo, agent: optIn ? { enabled: true, allowedTools: [] } : undefined }], agentSessions: { ...defaultAgentSessions(), enabled } });
+  const make = (enabled: boolean, included: boolean, tracked = true) => ({ ...defaultConfig(), repos: [{ ...repo, enabled: tracked, agent: included ? undefined : { enabled: false, allowedTools: [] } }], agentSessions: { ...defaultAgentSessions(), enabled } });
   expect(sessionsEnabledFor(make(true, true), repo.id)).toBe(true);
   expect(sessionsEnabledFor(make(false, true), repo.id)).toBe(false);
   expect(sessionsEnabledFor(make(true, false), repo.id)).toBe(false);
+  expect(sessionsEnabledFor(make(true, true, false), repo.id)).toBe(false); // untracked repositories never qualify
   expect(sessionsEnabledFor(null, repo.id)).toBe(false);
 });
 

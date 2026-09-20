@@ -28,8 +28,8 @@ bun test test/scanner.test.ts   # a single test file
    repository only in response to an explicit user action, only to the paths enumerated in the "never writes"
    requirement of `openspec/specs/dashboard-api/spec.md`, never deletes or moves anything there, and never runs a git
    command that writes (one enumerated exception below). Today that list has two entries: the managed sections of `openspec/config.yaml` (applying
-   shared config profiles, `src/server/sharedConfig.ts`), and — for agent sessions, which are off by default and need a
-   per-repository opt-in — removing a session's own worktree after the user confirmed and read-only checks proved
+   shared config profiles, `src/server/sharedConfig.ts`), and — for agent sessions, which are off by default (one global switch;
+   repositories can be excluded individually) — removing a session's own worktree after the user confirmed and read-only checks proved
    nothing would be lost (`git worktree unlock` + a non-forcing `git worktree remove`, the only git writes, in
    `src/server/sessions/worktree.ts`). Starting the user's agent CLI in a dedicated worktree on the user's click is
    not a write by the dashboard: what that agent changes is bounded by its allow-list and is the agent's doing. With

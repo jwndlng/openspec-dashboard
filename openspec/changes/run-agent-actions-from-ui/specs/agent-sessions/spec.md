@@ -1,15 +1,19 @@
 ## ADDED Requirements
 
-### Requirement: Agent sessions are disabled unless enabled globally and per repository
-Agent sessions SHALL be available only when the global `agentSessions.enabled` setting is true AND the repository has opted in. When either is false the UI MUST NOT show session starters for that repository and the API MUST refuse to open a session for it. A fresh or migrated configuration MUST have the feature disabled and no repository opted in.
+### Requirement: Agent sessions are off until enabled, then apply to every tracked repository
+Agent sessions SHALL be available only when the global `agentSessions.enabled` setting is true. Once it is, they apply to every tracked (enabled) repository by default; a repository MAY be excluded individually, and an excluded or untracked repository MUST NOT show session starters and MUST be refused by the API. A fresh or migrated configuration MUST have the feature disabled. A repository entry without agent settings counts as included.
 
 #### Scenario: Default configuration
 - **WHEN** the dashboard starts with a configuration that predates this feature
-- **THEN** agent sessions are disabled, no repository is opted in, and no card shows a session starter
+- **THEN** agent sessions are disabled and no card shows a session starter
 
-#### Scenario: Repository not opted in
-- **WHEN** agent sessions are enabled globally but repository `alpha-infra` has not opted in
-- **THEN** cards of `alpha-infra` show no session starter and opening a session for it is refused
+#### Scenario: One switch enables all tracked repositories
+- **WHEN** the user turns agent sessions on and has not changed any per-repository setting
+- **THEN** cards of every tracked repository offer the starters their stage allows
+
+#### Scenario: Repository switched off
+- **WHEN** agent sessions are enabled and repository `alpha-infra` is switched off for agent sessions
+- **THEN** cards of `alpha-infra` show no session starter and opening a session for it is refused, while other repositories are unaffected
 
 ### Requirement: Sessions run the user's installed agent CLI on the user's own login
 A session SHALL be conducted by the locally installed `claude` command-line program, started by the dashboard server without a shell from an argument array. The dashboard MUST NOT read, store, log or transmit credentials and MUST NOT offer a login flow. By default the child process environment MUST NOT contain `ANTHROPIC_API_KEY` or `ANTHROPIC_AUTH_TOKEN`, so that the CLI uses its stored subscription login; a setting MAY opt in to passing them through. When the CLI cannot be found, session starters SHALL be disabled with an explanation.
@@ -27,11 +31,15 @@ A session SHALL be conducted by the locally installed `claude` command-line prog
 - **THEN** the session becomes `failed` with reason `auth` and the panel tells the user to log in by running the CLI in a terminal
 
 ### Requirement: Session starters are fixed commands for a validated change
-The dashboard SHALL offer two session starters: **Draft artifacts**, available while at least one artifact of the change is not done, and **Implement**, available when the change is in `Ready` or `Implementing`; neither is offered for archived changes. The opening instruction SHALL be produced from a configured command template in which `{change}` is the only placeholder, replaced by the change name after it passed change-name validation. No other text from the browser may become part of the command line.
+The dashboard SHALL offer three session starters: **Draft artifacts**, available while at least one artifact of the change is not done; **Implement**, available when the change is in `Ready` or `Implementing`; and **Archive**, available when the change is in `Done` (every task complete, not yet archived). None is offered for archived changes. The opening instruction SHALL be produced from a configured command template in which `{change}` is the only placeholder, replaced by the change name after it passed change-name validation. No other text from the browser may become part of the command line.
 
 #### Scenario: Implement on a ready change
 - **WHEN** the user starts **Implement** on change `cache-api-calls` with the default templates
 - **THEN** the session's first user message is `/opsx:apply cache-api-calls`
+
+#### Scenario: Archive on a completed change
+- **WHEN** the user starts **Archive** on change `configurable-builder`, whose tasks are all complete, with the default templates
+- **THEN** the session's first user message is `/opsx:archive configurable-builder`, and **Implement** is not offered for that change
 
 #### Scenario: Starter not offered
 - **WHEN** a change has only a proposal
@@ -53,7 +61,7 @@ A session SHALL remain open after the opening instruction completes. While the a
 - **THEN** the agent receives exactly that text as a message and no shell interprets it
 
 ### Requirement: Every session works in its own git worktree
-A session MUST NOT work in the repository's main checkout. Opening a session SHALL make the agent CLI create or reuse a dedicated git worktree for the change on a branch named after the change, and the agent SHALL run there. The agent's instructions MUST state the worktree and branch it owns, forbid editing, staging, committing or switching branches in the main checkout, and direct it to copy the change's directory from the main checkout into the worktree and commit it first when it is missing there. The session record and panel SHALL show the worktree path and branch.
+A session MUST NOT work in the repository's main checkout. Opening a session SHALL make the agent CLI create or reuse a dedicated git worktree for the change on a branch named after the change (`feat/<change>`), and the agent SHALL run there. An **Archive** session SHALL use a worktree and branch of its own (`archive-<change>`, `chore/archive-<change>`) rather than the change's implementation worktree, which may still exist on an outdated base. The agent's instructions MUST state the worktree and branch it owns, forbid editing, staging, committing or switching branches in the main checkout, and direct it to copy the change's directory from the main checkout into the worktree and commit it first when it is missing there. The session record and panel SHALL show the worktree path and branch.
 
 #### Scenario: Two sessions in one repository
 - **WHEN** sessions are open for changes `audit-trail` and `upgrade-runtime` of the same repository
@@ -63,12 +71,16 @@ A session MUST NOT work in the repository's main checkout. Opening a session SHA
 - **WHEN** a session is opened for a change whose directory exists only uncommitted in the main checkout
 - **THEN** the agent is instructed to copy that directory into its worktree and commit it there before doing anything else
 
+#### Scenario: Archiving does not reuse the implementation worktree
+- **WHEN** a change was implemented in a session whose worktree still exists, and the user later starts **Archive** for it
+- **THEN** the archive session works in a separate worktree on a `chore/archive-<change>` branch
+
 #### Scenario: Existing worktree is reused
 - **WHEN** a session is opened for a change that already has a worktree from an earlier session
 - **THEN** that worktree is reused rather than a second one created
 
 ### Requirement: Tool permissions are bounded and never bypassed
-Sessions SHALL run in a permission mode that does not prompt and denies every tool use that is not explicitly allowed, and MUST NOT inherit the user's own global agent settings or permission rules — only the repository's project settings and the dashboard's allow-list apply. The allowed tools are the built-in default list (file read/search/edit, the `openspec` command, and local git status/diff/log/add/commit and branch rename) plus entries the user added for that repository. The dashboard MUST NOT start the CLI with a permission-bypass mode or flag, MUST reject configuration entries that would introduce one, and MUST NOT offer free-form extra CLI arguments. A denied tool use SHALL appear in the transcript as denied. The Settings view SHALL state that the agent CLI may still run its own small set of built-in read-only commands.
+Sessions SHALL run in a permission mode that does not prompt and denies every tool use that is not explicitly allowed, and MUST NOT inherit the user's own global agent settings or permission rules — only the repository's project settings and the dashboard's allow-list apply. The allowed tools are the built-in default list (file read/search/edit, the `openspec` command, local git status/diff/log/add/commit and branch rename, and creating or moving files inside `openspec/`, which archiving needs) plus entries the user added for that repository. The dashboard MUST NOT start the CLI with a permission-bypass mode or flag, MUST reject configuration entries that would introduce one, and MUST NOT offer free-form extra CLI arguments. A denied tool use SHALL appear in the transcript as denied. The Settings view SHALL state that the agent CLI may still run its own small set of built-in read-only commands.
 
 #### Scenario: Command outside the allow-list
 - **WHEN** the agent tries to run `curl https://example.com` and the repository's allow-list does not permit it

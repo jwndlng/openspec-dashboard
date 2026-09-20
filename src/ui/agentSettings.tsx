@@ -2,7 +2,7 @@
 // files in the opted-in repositories, so the section says so plainly.
 import { useEffect, useState } from "preact/hooks";
 import { DEFAULT_ALLOWED_TOOLS } from "../shared/agentDefaults.ts";
-import type { AgentAvailability, AgentSessionsConfig, Config, RepoConfig, Session } from "../shared/types.ts";
+import { repoAgentEnabled, type AgentAvailability, type AgentSessionsConfig, type Config, type RepoConfig, type Session } from "../shared/types.ts";
 import { api } from "./api.ts";
 import { parseToolList } from "./sessionState.ts";
 
@@ -27,7 +27,7 @@ export function AgentSettings({ draft, update }: Props) {
   const settings = draft.agentSessions;
   const set = (patch: Partial<AgentSessionsConfig>) => update({ agentSessions: { ...settings, ...patch } });
   const setRepo = (id: string, patch: Partial<NonNullable<RepoConfig["agent"]>>) =>
-    update({ repos: draft.repos.map((r) => (r.id === id ? { ...r, agent: { enabled: false, allowedTools: [], ...r.agent, ...patch } } : r)) });
+    update({ repos: draft.repos.map((r) => (r.id === id ? { ...r, agent: { enabled: true, allowedTools: [], ...r.agent, ...patch } } : r)) });
   const cliMissing = agent !== undefined && !agent.available;
   const worktrees = sessions.filter((s) => s.worktreePath);
 
@@ -36,7 +36,7 @@ export function AgentSettings({ draft, update }: Props) {
       <h2>Agent sessions</h2>
       <p class="hint">
         Lets you open an interactive agent session for a change from its card. <strong>Turning this on allows an agent started from the dashboard to edit files and run the
-        allowed commands</strong> in a dedicated git worktree of each repository you opt in below — never in the main checkout. It runs your own <code>claude</code> CLI on its
+        allowed commands</strong> in a dedicated git worktree of <strong>every tracked repository</strong> — never in the main checkout. Switch individual repositories off below. It runs your own <code>claude</code> CLI on its
         existing login; the dashboard does not handle credentials, and removes API-key variables from the agent's environment so your subscription is used.
       </p>
       <div class="row">
@@ -71,6 +71,10 @@ export function AgentSettings({ draft, update }: Props) {
             <input class="input mono grow" value={settings.commands.draft} onInput={(e) => set({ commands: { ...settings.commands, draft: e.currentTarget.value } })} />
           </label>
           <label class="check grow">
+            Archive
+            <input class="input mono grow" value={settings.commands.archive} onInput={(e) => set({ commands: { ...settings.commands, archive: e.currentTarget.value } })} />
+          </label>
+          <label class="check grow">
             Implement
             <input class="input mono grow" value={settings.commands.implement} onInput={(e) => set({ commands: { ...settings.commands, implement: e.currentTarget.value } })} />
           </label>
@@ -87,26 +91,31 @@ export function AgentSettings({ draft, update }: Props) {
             .map((repo) => (
               <div class="agent-repo" key={repo.id}>
                 <label class="check">
-                  <input type="checkbox" checked={repo.agent?.enabled === true} onChange={(e) => setRepo(repo.id, { enabled: e.currentTarget.checked })} />
+                  <input type="checkbox" checked={repoAgentEnabled(repo)} onChange={(e) => setRepo(repo.id, { enabled: e.currentTarget.checked })} />
                   <strong>{repo.name}</strong>
                 </label>
                 <span class="path hint" title={repo.path}>
                   {repo.path}
                 </span>
-                {repo.agent?.enabled && (
+                {repoAgentEnabled(repo) && (
+                  <details class="agent-tools">
+                    <summary class="hint">
+                      additional allowed tools{(repo.agent?.allowedTools.length ?? 0) > 0 ? ` (${repo.agent?.allowedTools.length})` : ""}
+                    </summary>
                   <label class="agent-tools">
                     <span class="hint">Additional allowed tools, one per line — e.g. <code>Bash(bun run check*)</code></span>
                     <textarea
                       class="input mono"
                       rows={2}
-                      value={(repo.agent.allowedTools ?? []).join("\n")}
+                      value={(repo.agent?.allowedTools ?? []).join("\n")}
                       onInput={(e) => setRepo(repo.id, { allowedTools: parseToolList(e.currentTarget.value) })}
                     />
                   </label>
+                  </details>
                 )}
               </div>
             ))}
-          {draft.repos.filter((r) => r.enabled).length === 0 && <span class="hint">Track a repository first; then it can opt in here.</span>}
+          {draft.repos.filter((r) => r.enabled).length === 0 && <span class="hint">No tracked repositories yet.</span>}
         </div>
       </fieldset>
 

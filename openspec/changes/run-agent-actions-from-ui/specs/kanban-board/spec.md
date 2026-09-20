@@ -1,10 +1,14 @@
 ## ADDED Requirements
 
 ### Requirement: Cards offer session starters and show session state
-When agent sessions are enabled and the card's repository has opted in, a card SHALL offer the session starters available for its change (**Draft artifacts** while an artifact is not done, **Implement** in `Ready` or `Implementing`; none for archived changes). A card whose change has an open session SHALL instead show a session badge — `working` while the session is running or queued, `waiting for you` while it awaits input, `failed` with the reason on hover — and activating the badge SHALL open the session panel. The existing copy actions remain available. When agent sessions are disabled or the repository has not opted in, cards MUST look and behave exactly as before.
+When agent sessions are enabled and the card's repository is tracked and not excluded, a card SHALL offer the session starters available for its change (**Draft artifacts** while an artifact is not done, **Implement** in `Ready` or `Implementing`, **Archive** in `Done`; none for archived changes). A card whose change has an open session SHALL instead show a session badge — `working` while the session is running or queued, `waiting for you` while it awaits input, `failed` with the reason on hover — and activating the badge SHALL open the session panel. The existing copy actions remain available. When agent sessions are disabled or the repository is excluded, cards MUST look and behave exactly as before.
 
-#### Scenario: Ready change in an opted-in repository
-- **WHEN** a change is in `Ready`, agent sessions are enabled and its repository has opted in
+#### Scenario: Done change offers Archive
+- **WHEN** a change is in `Done` and agent sessions are enabled
+- **THEN** the card offers **Archive** next to its "complete" badge
+
+#### Scenario: Ready change
+- **WHEN** a change is in `Ready`, agent sessions are enabled and its repository is not excluded
 - **THEN** the card offers **Implement** and still offers the copy action
 
 #### Scenario: Session waiting for input

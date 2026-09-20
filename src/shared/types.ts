@@ -79,7 +79,8 @@ export interface RepoConfig {
   path: string;
   name: string;
   enabled: boolean;
-  /** Agent-session opt-in for this repository; absent means not opted in. */
+  /** Per-repository agent-session settings. Absent means "included": once sessions are enabled globally they apply to
+   *  every tracked repository unless it is switched off here. */
   agent?: RepoAgentConfig;
 }
 
@@ -111,7 +112,8 @@ export interface Config {
   agentSessions: AgentSessionsConfig;
 }
 
-export type SessionAction = "draft" | "implement";
+export type SessionAction = "draft" | "implement" | "archive";
+export const SESSION_ACTIONS: readonly SessionAction[] = ["draft", "implement", "archive"];
 export type SessionState = "queued" | "running" | "waiting" | "closed" | "failed" | "cancelled" | "interrupted";
 export type SessionFailure = "auth" | "usage-limit" | "cli-missing" | "crashed";
 
@@ -163,12 +165,18 @@ export interface AgentAvailability {
   reason?: string;
 }
 
+/** Included unless explicitly switched off for this repository (the global switch is checked separately). */
+export function repoAgentEnabled(repo: Pick<RepoConfig, "enabled" | "agent">): boolean {
+  return repo.enabled && repo.agent?.enabled !== false;
+}
+
 /** The session starters a change currently qualifies for (before feature/opt-in checks). */
 export function availableActions(change: Pick<ChangeSnapshot, "archived" | "artifacts" | "stage">): SessionAction[] {
   if (change.archived) return [];
   const actions: SessionAction[] = [];
   if (change.artifacts.length === 0 || change.artifacts.some((a) => a.status !== "done")) actions.push("draft");
   if (change.stage === "ready" || change.stage === "implementing") actions.push("implement");
+  if (change.stage === "done") actions.push("archive"); // every task ticked, not archived yet
   return actions;
 }
 

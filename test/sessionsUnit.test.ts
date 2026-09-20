@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { defaultAgentSessions, defaultConfig, newRepoConfig, validateConfig } from "../src/server/config.ts";
 import { buildClaudeArgs, childEnv } from "../src/server/sessions/claudeRunner.ts";
 import { parseStreamLine, userMessageLine } from "../src/server/sessions/claudeStream.ts";
-import { DEFAULT_ALLOWED_TOOLS, renderCommand, worktreeSystemPrompt } from "../src/server/sessions/manager.ts";
+import { DEFAULT_ALLOWED_TOOLS, renderCommand, worktreeName, worktreeSystemPrompt } from "../src/server/sessions/manager.ts";
 import { availableActions } from "../src/shared/types.ts";
 import { FIXTURES } from "./helpers.ts";
 
@@ -15,7 +15,10 @@ test("config without agentSessions loads disabled with defaults; repos are not o
   const cfg = validateConfig({ ...old, repos: [newRepoConfig("/w/demo-ops", true)] });
   expect(cfg.agentSessions).toEqual(defaultAgentSessions());
   expect(cfg.agentSessions.enabled).toBe(false);
-  expect(cfg.repos[0].agent).toBeUndefined();
+  expect(cfg.repos[0].agent).toBeUndefined(); // absent = included once the global switch is on
+  expect(cfg.agentSessions.commands.archive).toBe("/opsx:archive {change}");
+  const older = validateConfig({ ...old, agentSessions: { enabled: true, commands: { draft: "/opsx:ff {change}", implement: "/opsx:apply {change}" } } });
+  expect(older.agentSessions.commands.archive).toBe("/opsx:archive {change}"); // configs written before Archive existed
 });
 
 test("agent settings validation: limits, placeholders and bypass attempts", () => {
@@ -32,12 +35,12 @@ test("agent settings validation: limits, placeholders and bypass attempts", () =
   }
 });
 
-test("starters: draft while an artifact is open, implement in Ready/Implementing, none when archived", () => {
+test("starters: draft while an artifact is open, implement in Ready/Implementing, archive when Done, none when archived", () => {
   const a = (...s: ("done" | "ready" | "blocked")[]) => s.map((status, i) => ({ id: `a${i}`, status }));
   expect(availableActions({ artifacts: a("done", "ready"), stage: "artifact" })).toEqual(["draft"]);
   expect(availableActions({ artifacts: a("done", "done"), stage: "ready" })).toEqual(["implement"]);
   expect(availableActions({ artifacts: a("done", "ready"), stage: "implementing" })).toEqual(["draft", "implement"]);
-  expect(availableActions({ artifacts: a("done", "done"), stage: "done" })).toEqual([]);
+  expect(availableActions({ artifacts: a("done", "done"), stage: "done" })).toEqual(["archive"]);
   expect(availableActions({ artifacts: a("done", "done"), stage: "archived", archived: "2026-06-18" })).toEqual([]);
 });
 
@@ -72,6 +75,9 @@ test("system prompt pins the agent to its worktree", () => {
   const prompt = worktreeSystemPrompt("/w/demo-ops", "cache-api-calls");
   expect(prompt).toContain("Never edit, stage, commit or switch branches in the main checkout at /w/demo-ops");
   expect(prompt).toContain("git branch -m feat/cache-api-calls");
+  expect(worktreeSystemPrompt("/w/demo-ops", "cache-api-calls", "archive")).toContain("git branch -m chore/archive-cache-api-calls");
+  expect(worktreeName("archive", "cache-api-calls")).toBe("archive-cache-api-calls");
+  expect(worktreeName("implement", "cache-api-calls")).toBe("cache-api-calls");
   expect(prompt).toContain("/w/demo-ops/openspec/changes/cache-api-calls");
 });
 

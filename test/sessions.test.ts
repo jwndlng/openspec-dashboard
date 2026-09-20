@@ -73,6 +73,27 @@ test("refusals: disabled, not opted in, unknown or invalid change, unavailable a
   expect(h.manager.list()).toEqual([]);
 });
 
+test("a repository without agent settings is included once sessions are enabled", async () => {
+  const h = track(await harness({ optIn: "absent" }));
+  const s = await h.manager.open({ repoId: h.repoId, change: "upgrade-runtime", action: "implement" });
+  await waitFor(() => state(h.manager, s.id) === "waiting", "turn in a default-included repository");
+});
+
+test("archive starter: only for Done changes, own worktree and branch, own template", async () => {
+  const h = track(await harness());
+  process.env.FAKE_CLAUDE_RECORD = join(home, "rec-archive.ndjson");
+  await expect(h.manager.open({ repoId: h.repoId, change: "upgrade-runtime", action: "archive" })).rejects.toMatchObject({ status: 400 }); // Ready, not Done
+  await expect(h.manager.open({ repoId: h.repoId, change: "configurable-builder", action: "implement" })).rejects.toMatchObject({ status: 400 }); // Done: nothing left to implement
+  const s = await h.manager.open({ repoId: h.repoId, change: "configurable-builder", action: "archive" });
+  await waitFor(() => state(h.manager, s.id) === "waiting", "archive turn");
+  expect((await h.manager.events(s.id, 0)).find((e) => e.kind === "user")?.text).toBe("/opsx:archive configurable-builder");
+  const [run] = await recorded(process.env.FAKE_CLAUDE_RECORD);
+  expect(run.argv.join(" ")).toContain("--worktree archive-configurable-builder");
+  expect(run.argv.join(" ")).toContain("git branch -m chore/archive-configurable-builder");
+  expect(run.argv.find((a) => a.startsWith("--allowedTools="))).toContain("Bash(mv openspec/*)");
+  expect(h.manager.get(s.id).worktreePath).toBe(join(h.repoPath, ".claude", "worktrees", "archive-configurable-builder"));
+});
+
 test("one open session per change; draft starter uses its own template", async () => {
   const h = track(await harness());
   const a = await h.manager.open({ repoId: h.repoId, change: "add-health-endpoint", action: "draft" });

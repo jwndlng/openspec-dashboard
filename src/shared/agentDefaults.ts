@@ -14,6 +14,10 @@ export const DEFAULT_ALLOWED_TOOLS: readonly string[] = [
   "Bash(git add *)",
   "Bash(git commit *)",
   "Bash(git branch -m *)",
+  // Archiving moves a change directory and syncs specs; confined to the openspec/ tree.
+  "Bash(git mv openspec/*)",
+  "Bash(mv openspec/*)",
+  "Bash(mkdir -p openspec/*)",
 ];
 
 /** Agent sessions ship disabled; nothing starts an agent until the user turns them on and opts a repository in. */
@@ -24,6 +28,6 @@ export function defaultAgentSessions(): AgentSessionsConfig {
     idleMinutes: 30,
     claudePath: "claude",
     passApiKeyEnv: false,
-    commands: { draft: "/opsx:ff {change}", implement: "/opsx:apply {change}" },
+    commands: { draft: "/opsx:ff {change}", implement: "/opsx:apply {change}", archive: "/opsx:archive {change}" },
   };
 }
