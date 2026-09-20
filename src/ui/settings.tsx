@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import type { Config, DiscoverResult, RepoConfig, Snapshot } from "../shared/types.ts";
+import { AgentSettings } from "./agentSettings.tsx";
 import { api, ApiError } from "./api.ts";
 import { SharedConfigPanel } from "./sharedConfig.tsx";
 
@@ -196,6 +197,7 @@ export function Settings({ config, snapshot, onSaved, onRescan }: Props) {
           </div>
         </section>
 
+        <AgentSettings draft={draft} update={update} />
         {/* Works on the saved config, not the draft above: it has its own save and only ever targets tracked repositories. */}
         {config && <SharedConfigPanel config={config} snapshot={snapshot} onApplied={onRescan} />}
       </div>

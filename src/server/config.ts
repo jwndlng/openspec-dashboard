@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { basename, dirname, isAbsolute } from "node:path";
 import { z } from "zod";
+import { defaultAgentSessions } from "../shared/agentDefaults.ts";
 import type { Config, RepoConfig } from "../shared/types.ts";
 import { configPath, dashboardHome, expandPath } from "./paths.ts";
 
@@ -17,11 +18,48 @@ const absolutePath = z
 
 const scanRootsSchema = z.array(absolutePath);
 
+// Anything that could switch off the agent CLI's permission checks must never come out of the config.
+const BYPASS = /bypassPermissions|dangerously|skip-permissions|--permission-mode/i;
+const noBypass = (value: string) => !BYPASS.test(value);
+
+// Entries are joined with commas into a single CLI argument, so an entry may not contain one or look like a flag.
+const allowedToolSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .refine((v) => !v.includes(",") && !v.startsWith("-"), { message: "must be a single tool pattern" })
+  .refine(noBypass, { message: "must not contain a permission-bypass mode or flag" });
+
+const commandTemplateSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .refine((v) => (v.match(/\{[^}]*\}/g) ?? []).every((p) => p === "{change}"), { message: "unknown placeholder; only {change} is supported" })
+  .refine((v) => v.includes("{change}"), { message: "must contain {change}" })
+  .refine(noBypass, { message: "must not contain a permission-bypass mode or flag" });
+
+
+export { defaultAgentSessions };
+
+const agentSessionsSchema = z
+  .object({
+    enabled: z.boolean().default(false),
+    maxRunning: z.number().int().min(1).default(2),
+    idleMinutes: z.number().int().min(1).default(30),
+    claudePath: z.string().trim().min(1).refine(noBypass, { message: "must not contain a permission-bypass mode or flag" }).default("claude"),
+    passApiKeyEnv: z.boolean().default(false),
+    commands: z
+      .object({ draft: commandTemplateSchema.default("/opsx:ff {change}"), implement: commandTemplateSchema.default("/opsx:apply {change}") })
+      .default({}),
+  })
+  .default({});
+
 const repoSchema = z.object({
   id: z.string().regex(/^[a-f0-9]{12}$/),
   path: absolutePath,
   name: z.string().trim().min(1),
   enabled: z.boolean(),
+  agent: z.object({ enabled: z.boolean(), allowedTools: z.array(allowedToolSchema).default([]) }).optional(),
 });
 
 export const configSchema = z
@@ -31,6 +69,7 @@ export const configSchema = z
     repos: z.array(repoSchema),
     pollIntervalSeconds: z.number().int().min(MIN_POLL_SECONDS),
     port: z.number().int().min(1024).max(65535),
+    agentSessions: agentSessionsSchema,
   })
   .superRefine((cfg, ctx) => {
     const ids = new Set<string>();
@@ -52,7 +91,7 @@ export class ConfigValidationError extends Error {
 }
 
 export function defaultConfig(): Config {
-  return { version: 1, scanRoots: [], repos: [], pollIntervalSeconds: DEFAULT_POLL_SECONDS, port: DEFAULT_PORT };
+  return { version: 1, scanRoots: [], repos: [], pollIntervalSeconds: DEFAULT_POLL_SECONDS, port: DEFAULT_PORT, agentSessions: defaultAgentSessions() };
 }
 
 /** Stable identity for a repository: 12 hex chars of the sha1 of its absolute path. */

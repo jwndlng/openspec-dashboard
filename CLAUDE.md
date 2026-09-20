@@ -27,8 +27,13 @@ bun test test/scanner.test.ts   # a single test file
 1. **Read-only towards tracked repositories, with enumerated exceptions.** The dashboard writes to a tracked
    repository only in response to an explicit user action, only to the paths enumerated in the "never writes"
    requirement of `openspec/specs/dashboard-api/spec.md`, never deletes or moves anything there, and never runs a git
-   command that writes. Today that list has one entry: the managed sections of `openspec/config.yaml` (applying
-   shared config profiles, `src/server/sharedConfig.ts`). Scanning, polling, discovery, previews and saving settings
+   command that writes (one enumerated exception below). Today that list has two entries: the managed sections of `openspec/config.yaml` (applying
+   shared config profiles, `src/server/sharedConfig.ts`), and — for agent sessions, which are off by default and need a
+   per-repository opt-in — removing a session's own worktree after the user confirmed and read-only checks proved
+   nothing would be lost (`git worktree unlock` + a non-forcing `git worktree remove`, the only git writes, in
+   `src/server/sessions/worktree.ts`). Starting the user's agent CLI in a dedicated worktree on the user's click is
+   not a write by the dashboard: what that agent changes is bounded by its allow-list and is the agent's doing. With
+   agent sessions disabled no process that can modify a repository is ever started. Scanning, polling, discovery, previews and saving settings
    write nothing to a repository. All other writes stay under `~/.openspec-dashboard/` (or `OPENSPEC_DASHBOARD_HOME`
    in tests). Git is invoked only with the read-only subcommands listed in that spec. Adding a path or a subcommand
    means changing that spec first.
@@ -48,6 +53,17 @@ bun test test/scanner.test.ts   # a single test file
 7. **Nothing from a real repository goes into this one.** No copied `openspec/` trees, repo names, paths, hostnames or
    people from other projects — not in fixtures, tests, specs, proposals or commit messages. Use made-up names
    (`demo-ops`, `alpha-infra`, `/w/acme/...`). Fixtures are generated, never copied. This repository may be public.
+
+## Agent sessions (`src/server/sessions/`)
+
+- The agent is only ever reached through the `Runner` interface; `claudeRunner.ts` is the one implementation and the
+  one place that knows CLI flags. It never reads or forwards credentials, never uses a shell, fixes the permission
+  mode to `dontAsk`, and starts with `--setting-sources project` so the user's personal allow rules cannot widen a
+  session's allow-list. Do not add a way to pass free-form CLI arguments or a permission-bypass mode.
+- Tests never start the real CLI or touch the network: they use `test/fixtures/fake-claude.ts`, which replays the
+  shapes recorded in `test/fixtures/claude-stream/`. When the CLI's format changes, update both together.
+- Session records live under `~/.openspec-dashboard/sessions/`; all writes for one session go through the store's
+  per-session queue.
 
 ## One agent, one worktree
 

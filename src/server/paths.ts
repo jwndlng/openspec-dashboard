@@ -10,6 +10,11 @@ export function configPath(): string {
   return join(dashboardHome(), "config.json");
 }
 
+/** Agent session records (metadata + transcript); never inside a repository. */
+export function sessionsDir(): string {
+  return join(dashboardHome(), "sessions");
+}
+
 export function sharedConfigPath(): string {
   return join(dashboardHome(), "shared-config.json");
 }

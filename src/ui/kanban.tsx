@@ -6,6 +6,7 @@ import { EMPTY_FILTERS, parseFilters, serializeFilters, type Filters } from "./f
 import { applyCommand, cdCommand, daysSince, relTime, splitBranchLabel } from "./format.ts";
 import { isMinimized, loadGroupState, saveGroupState, toggleGroup, type GroupOverrides } from "./groupState.ts";
 import { assignRepoHues, groupByRepo, recentArchived } from "./repoGroups.ts";
+import { SessionControls } from "./sessions.tsx";
 import { currentQuery, href, navigate, replaceQuery } from "./url.ts";
 
 const ARCHIVED_LIMIT = 25;
@@ -91,6 +92,7 @@ function ChangeCard({ card, now, showRepo }: { card: Card; now: number; showRepo
         {isComplete(card.stage) && age !== undefined && <span class="badge ok">✓ complete · {age}d</span>}
         {card.branchMatch && <BranchBadge branch={card.branchMatch} hint="a branch or worktree matches this change" />}
         {noTasks && <span class="badge warn">no tasks</span>}
+        <SessionControls card={card} />
         {card.warnings?.filter((w) => w !== "tasks file has no tasks").map((w) => (
           <span class="badge danger" title={w}>
             ⚠ error

@@ -4,6 +4,8 @@ import { createFetchHandler, type AppState } from "./api.ts";
 import { readSnapshot } from "./cache.ts";
 import { loadConfig } from "./config.ts";
 import { Scanner } from "./scanner.ts";
+import { ClaudeRunner } from "./sessions/claudeRunner.ts";
+import { SessionManager } from "./sessions/manager.ts";
 
 // With `type: "text"` Bun hands us the file contents; bun-types only knows the HTMLBundle shape.
 const indexHtml = indexHtmlAsset as unknown as string;
@@ -53,6 +55,12 @@ async function main(): Promise<void> {
     config,
     scanner: new Scanner(() => state.config, {}, (await readSnapshot()) ?? undefined),
   };
+  state.sessions = new SessionManager({
+    getConfig: () => state.config,
+    getSnapshot: () => state.scanner.snapshot,
+    runner: new ClaudeRunner(() => state.config.agentSessions.claudePath),
+  });
+  await state.sessions.init();
   state.scanner.start();
 
   const server = Bun.serve({
@@ -66,8 +74,11 @@ async function main(): Promise<void> {
 
   const shutdown = () => {
     state.scanner.stop();
-    server.stop(true);
-    process.exit(0);
+    // Children must not outlive the dashboard; sessions in flight become `interrupted` and can be resumed.
+    void (state.sessions?.shutdown() ?? Promise.resolve()).finally(() => {
+      server.stop(true);
+      process.exit(0);
+    });
   };
   process.on("SIGINT", shutdown);
   process.on("SIGTERM", shutdown);

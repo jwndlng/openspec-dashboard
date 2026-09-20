@@ -4,6 +4,7 @@
 //
 // Ages are relative to `now`, so the published demo never looks abandoned. Column and stage are derived with the
 // same rules the scanner uses, so the sample cannot disagree with the board.
+import { defaultAgentSessions } from "../../shared/agentDefaults.ts";
 import { deriveStage } from "../../shared/columns.ts";
 import type { ArtifactStatus, ChangeSnapshot, Config, RepoConfig, RepoSnapshot, Snapshot } from "../../shared/types.ts";
 
@@ -282,6 +283,7 @@ export function buildSample(now: number): Sample {
     repos: REPOS.map((r) => ({ id: r.id, path: repoPath(r.name), name: r.name, enabled: true })),
     pollIntervalSeconds: 60,
     port: 4711,
+    agentSessions: defaultAgentSessions(), // off: a static demo has no agent to start
   } satisfies Config;
 
   const candidates = CANDIDATES.map(([id, name]) => ({ id, path: repoPath(name), name: name.split("/").pop() ?? name, enabled: false })) satisfies RepoConfig[];

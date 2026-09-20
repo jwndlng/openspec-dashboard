@@ -2,7 +2,8 @@
 
 Local-first Kanban across every [OpenSpec](https://github.com/Fission-AI/OpenSpec) repository on this machine.
 Ships as a single Bun binary. Repositories stay the source of truth; the dashboard indexes them and is read-only
-towards them, with one explicit, previewed exception: applying [shared config profiles](#shared-openspec-config).
+towards them, with two explicit exceptions: applying [shared config profiles](#shared-openspec-config) (previewed), and the
+optional, off-by-default [agent sessions](#agent-sessions-optional-off-by-default).
 
 **[Live demo →](https://jwndlng.github.io/openspec-dashboard/)** — the real UI on made-up sample data, nothing to install.
 
@@ -72,10 +73,10 @@ what it found under **Discovered**; click **Enable** on the repos to track, then
 - Theme: dark and light. Follows the OS appearance by default; the **Theme** button in the top bar cycles
   System → Light → Dark. The choice is stored in the browser (`localStorage`), not in the config file.
 
-State lives in `~/.openspec-dashboard/` (`config.json`, `shared-config.json`, `cache/snapshot.json`). The dashboard
+State lives in `~/.openspec-dashboard/` (`config.json`, `shared-config.json`, `cache/snapshot.json`, `sessions/`). The dashboard
 only runs read-only `git` commands (`rev-parse`, `log`, `worktree list`, `status` — with optional locks disabled, so
 not even `.git/index` is refreshed), and scanning, polling, discovery and saving settings never write to a tracked
-repository. The single thing that does is described next.
+repository. The things that do are described next: shared config, and the opt-in agent sessions further down.
 
 ## Shared OpenSpec config
 
@@ -113,6 +114,28 @@ repositories you choose. A repository can carry several profiles; different repo
 - **Scripted API calls.** Because the dashboard can now modify files in your repositories, every non-GET API request
   must be same-origin: `Content-Type: application/json`, a loopback host, and no foreign `Origin`. `curl` needs
   `-H 'content-type: application/json'`; a web page in your browser cannot call these routes.
+
+## Agent sessions (optional, off by default)
+
+Open an interactive agent session for a change straight from its card: **Draft artifacts** while artifacts are missing,
+**Implement** once a change is ready. The dashboard starts your locally installed [`claude`](https://claude.com/claude-code)
+CLI on **its own existing login** — so a Claude subscription keeps being used; the dashboard never sees credentials and
+removes `ANTHROPIC_API_KEY`/`ANTHROPIC_AUTH_TOKEN` from the agent's environment unless you opt in to passing them.
+
+- **Enable it twice**: Settings → *Agent sessions* → turn it on, then opt in each repository. Until then no card shows a
+  starter and the API refuses to open sessions.
+- **It is a conversation**: the panel shows the live transcript; type follow-ups, press **Stop** to interrupt a turn
+  without losing the conversation, **Close** when done. "Copy resume command" continues the same conversation in your
+  terminal (`cd <worktree> && claude --resume <id>`). Sessions survive a dashboard restart.
+- **One agent, one worktree**: every session works in `.claude/worktrees/<change>` of the repository, never in your main
+  checkout. Closing offers to remove the worktree only when it is clean and fully pushed.
+- **Bounded permissions**: sessions run with `--permission-mode dontAsk` and an allow-list — file read/search/edit, the
+  `openspec` command and local `git status/diff/log/add/commit/branch -m` — plus what you add per repository (for example
+  `Bash(bun run check*)`). Anything else is denied without a prompt and shown in the transcript. Your personal Claude
+  settings and allow rules are *not* inherited (`--setting-sources project`); a repository's own `.claude/settings.json`
+  is. The CLI still runs its small built-in set of read-only commands. There is no way to pass a permission-bypass flag.
+- Limits: one open session per change, two agents working at once by default (more queue up), idle agent processes are
+  stopped after 30 minutes and resumed on your next message. Records live in `~/.openspec-dashboard/sessions/`.
 
 ## How it reads OpenSpec
 

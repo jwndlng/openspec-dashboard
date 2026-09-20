@@ -3,6 +3,8 @@ import type { Config, RepoSharedConfig, RepoSnapshot, SharedConfigApplyResult, S
 import type { Api } from "../api.ts";
 import { buildSample, DEMO_ROOT } from "./sampleData.ts";
 
+const NO_SESSIONS = "agent sessions need the dashboard server and a local agent CLI; they are not part of the demo";
+
 export interface DemoApiOptions {
   now?: () => number;
   /** Simulated round trip, long enough for loading states to show. */
@@ -114,5 +116,15 @@ export function createDemoApi({ now = Date.now, latencyMs = 150 }: DemoApiOption
       generatedAt = new Date(now()).toISOString();
       return reply({ results });
     },
+
+    // Agent sessions start a local CLI; there is nothing to start in a static demo, and its config keeps them off.
+    sessions: () => reply({ sessions: [], agent: { available: false, reason: "agent sessions are not available in the demo" } }),
+    openSession: () => Promise.reject(new Error(NO_SESSIONS)),
+    sendMessage: () => Promise.reject(new Error(NO_SESSIONS)),
+    stopSession: () => Promise.reject(new Error(NO_SESSIONS)),
+    cancelSession: () => Promise.reject(new Error(NO_SESSIONS)),
+    closeSession: () => Promise.reject(new Error(NO_SESSIONS)),
+    deleteSession: () => Promise.reject(new Error(NO_SESSIONS)),
+    worktreeStatus: () => Promise.reject(new Error(NO_SESSIONS)),
   };
 }

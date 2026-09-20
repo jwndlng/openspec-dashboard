@@ -6,6 +6,8 @@ import { Kanban } from "./kanban.tsx";
 import { Overview } from "./overview.tsx";
 import { enabledOnly } from "./overviewState.ts";
 import { type Route, routeFromPath } from "./routes.ts";
+import { SessionPanel } from "./sessionPanel.tsx";
+import { SessionProvider } from "./sessions.tsx";
 import { Settings } from "./settings.tsx";
 import { currentPath, href, navigate, onRouteChange } from "./url.ts";
 import { applyTheme, loadPreference, nextPreference, resolveTheme, savePreference, type ThemePreference } from "./theme.ts";
@@ -137,6 +139,7 @@ export function App() {
           </button>
         </span>
       </header>
+      <SessionProvider config={config}>
       <main class="main">
         {route.view === "settings" ? (
           <Settings config={config} snapshot={shown} onSaved={(c) => { setConfig(c); void loadState(); }} onRescan={reloadSoon} />
@@ -147,6 +150,8 @@ export function App() {
           <Kanban key={route.view === "repo" ? route.repoId : "all"} snapshot={shown} config={config} repoId={route.view === "repo" ? route.repoId : undefined} />
         )}
       </main>
+      <SessionPanel />
+      </SessionProvider>
     </div>
   );
 }
