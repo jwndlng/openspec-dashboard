@@ -4,6 +4,8 @@ import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import {
   availableActions,
+  repoAgentEnabled,
+  SESSION_ACTIONS,
   OPEN_SESSION_STATES,
   type AgentAvailability,
   type Config,
@@ -40,13 +42,23 @@ export function renderCommand(template: string, change: string): string {
   return template.replaceAll("{change}", change);
 }
 
-export function worktreeSystemPrompt(repoPath: string, change: string): string {
+/** Archiving gets a worktree of its own: the implementation worktree of the same change may still exist, on an old base. */
+export function worktreeName(action: SessionAction, change: string): string {
+  return action === "archive" ? `archive-${change}` : change;
+}
+
+export function sessionBranch(action: SessionAction, change: string): string {
+  return action === "archive" ? `chore/archive-${change}` : `feat/${change}`;
+}
+
+export function worktreeSystemPrompt(repoPath: string, change: string, action: SessionAction = "implement"): string {
   const changeDir = `openspec/changes/${change}`;
+  const branch = sessionBranch(action, change);
   return [
     `You were started by the OpenSpec dashboard to work on the change "${change}".`,
     `You run in your own git worktree of the repository at ${repoPath}. That worktree is yours alone.`,
     `Never edit, stage, commit or switch branches in the main checkout at ${repoPath}, and never touch another worktree.`,
-    `Before your first commit, rename your branch to feat/${change} with: git branch -m feat/${change}`,
+    `Before your first commit, rename your branch to ${branch} with: git branch -m ${branch}`,
     `If ${changeDir}/ does not exist in your worktree, copy it from ${join(repoPath, changeDir)} (you can read it), and commit it first.`,
     "Tool calls outside your allow-list are denied without a prompt; when that happens, say what you needed and carry on with what you can do.",
   ].join("\n");
@@ -127,14 +139,14 @@ export class SessionManager {
     const config = this.deps.getConfig();
     if (!config.agentSessions.enabled) throw new SessionError(403, "agent sessions are disabled");
     if (typeof input.change !== "string" || !CHANGE_NAME.test(input.change)) throw new SessionError(400, "invalid change name");
-    if (input.action !== "draft" && input.action !== "implement") throw new SessionError(400, "unknown action");
+    if (!SESSION_ACTIONS.includes(input.action as SessionAction)) throw new SessionError(400, "unknown action");
     const change = input.change;
-    const action: SessionAction = input.action;
+    const action = input.action as SessionAction;
 
     const repo = config.repos.find((r) => r.id === input.repoId);
     if (!repo) throw new SessionError(404, "unknown repository");
-    if (!repo.agent?.enabled) throw new SessionError(403, "this repository has not opted in to agent sessions");
     if (!repo.enabled) throw new SessionError(409, "the repository is not tracked");
+    if (!repoAgentEnabled(repo)) throw new SessionError(403, "agent sessions are switched off for this repository");
     const scanned = this.deps.getSnapshot().repos.find((r) => r.id === repo.id);
     if (!scanned?.ok) throw new SessionError(409, "the repository's last scan failed");
     const snapshot = scanned.changes.find((c) => c.name === change && !c.archived);
@@ -232,10 +244,10 @@ export class SessionManager {
     return this.deps.runner.start({
       cwd: fresh ? repo.path : (session.worktreePath as string),
       cliSessionId: session.cliSessionId,
-      mode: fresh ? { kind: "fresh", worktreeName: session.change } : { kind: "resume" },
+      mode: fresh ? { kind: "fresh", worktreeName: worktreeName(session.action, session.change) } : { kind: "resume" },
       allowedTools: [...DEFAULT_ALLOWED_TOOLS, ...(repo.agent?.allowedTools ?? [])],
       addDirs: [join(repo.path, "openspec", "changes", session.change)],
-      systemPrompt: worktreeSystemPrompt(repo.path, session.change),
+      systemPrompt: worktreeSystemPrompt(repo.path, session.change, session.action),
       passApiKeyEnv: config.agentSessions.passApiKeyEnv,
     });
   }

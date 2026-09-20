@@ -1,11 +1,11 @@
 // Pure helpers for the agent-session UI; free of DOM access at import time so they can be unit-tested.
-import { OPEN_SESSION_STATES, type Config, type Session } from "../shared/types.ts";
+import { OPEN_SESSION_STATES, repoAgentEnabled, type Config, type Session } from "../shared/types.ts";
 import { cdCommand } from "./format.ts";
 
-/** Session starters are shown only when the feature is on and this repository opted in. */
+/** Session starters are shown when the feature is on, for every tracked repository that has not been switched off. */
 export function sessionsEnabledFor(config: Config | null, repoId: string): boolean {
   if (!config?.agentSessions.enabled) return false;
-  return config.repos.some((r) => r.id === repoId && r.enabled && r.agent?.enabled === true);
+  return config.repos.some((r) => r.id === repoId && repoAgentEnabled(r));
 }
 
 /** The session a card should represent: the open one, otherwise the most recent failure (so its reason stays visible). */

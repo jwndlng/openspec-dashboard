@@ -72,13 +72,14 @@ export function SessionProvider({ config, children }: { config: Config | null; c
   return <Context.Provider value={value}>{children}</Context.Provider>;
 }
 
-const STARTER_LABEL: Record<SessionAction, string> = { draft: "Draft artifacts", implement: "Implement" };
+const STARTER_LABEL: Record<SessionAction, string> = { draft: "Draft artifacts", implement: "Implement", archive: "Archive" };
 const STARTER_HINT: Record<SessionAction, string> = {
   draft: "Open an agent session that writes this change's missing artifacts",
   implement: "Open an agent session that implements this change's tasks",
+  archive: "Open an agent session that archives this completed change and syncs its specs",
 };
 
-/** Rendered inside a card. Shows nothing at all unless the feature is on and the card's repository opted in. */
+/** Rendered inside a card. Shows nothing at all unless the feature is on and the card's repository has not been switched off. */
 export function SessionControls({ card }: { card: Pick<ChangeSnapshot, "repoId" | "name" | "archived" | "artifacts" | "stage"> }) {
   const ui = useSessionUi();
   const [starting, setStarting] = useState<SessionAction>();

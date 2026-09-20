@@ -21,7 +21,7 @@ Constraints: no credentials handled by the dashboard; Anthropic's Agent SDK is n
 **Goals:**
 - Open, conduct, stop, close and reopen a per-change conversation with the agent from the dashboard, on the user's Claude subscription.
 - Every session isolated in its own worktree and branch; nothing runs in the main checkout.
-- Off by default; explicit double opt-in; bounded tool permissions; never a permission bypass.
+- Off by default behind one explicit switch, with per-repository exclusion; bounded tool permissions; never a permission bypass.
 - Testable without the real CLI or network.
 
 **Non-Goals:**
@@ -58,7 +58,7 @@ Sessions start with `--setting-sources project`: the user's global Claude settin
 Default allow-list: `Read`, `Glob`, `Grep`, `Edit`, `Write`, `Bash(openspec *)`, `Bash(git status*)`, `Bash(git diff*)`, `Bash(git log*)`, `Bash(git add *)`, `Bash(git commit *)`, `Bash(git branch -m *)`. All entries are passed as one `--allowedTools=<a,b,…>` value (O8). Per repository the user can add entries (e.g. `Bash(bun run check*)`). Config validation rejects entries containing `bypassPermissions`/`dangerously`, and there is no free-form "extra arguments" setting, so the bypass flags cannot be reached from the UI. Denied calls appear in the transcript and in the turn's `permission_denials` (O3); the CLI's built-in read-only commands run regardless and are documented as such; the user answers in the session or widens the allow-list (takes effect on the next process start).
 
 ### D7 — Session starters are command templates over a validated name
-Config `agentSessions.commands` defaults: `draft: "/opsx:ff {change}"`, `implement: "/opsx:apply {change}"`. `{change}` is the only placeholder and is replaced with a name that passed `CHANGE_NAME`. `draft` is offered while any artifact is not done; `implement` in `Ready`/`Implementing`. Follow-ups are free text but only ever travel as JSON message content on stdin — never argv, never a shell.
+Config `agentSessions.commands` defaults: `draft: "/opsx:ff {change}"`, `implement: "/opsx:apply {change}"`, `archive: "/opsx:archive {change}"`. `{change}` is the only placeholder and is replaced with a name that passed `CHANGE_NAME`. `draft` is offered while any artifact is not done; `implement` in `Ready`/`Implementing`; `archive` in `Done`. An archive session gets its own worktree (`archive-<change>`) and branch (`chore/archive-<change>`): the implementation worktree of the same change may still exist on an old base, and the archive is a separate pull request by this project's conventions. The archive command asks questions (incomplete tasks, whether to sync delta specs); in a session those simply arrive as the agent's turn ending, and the user answers in the panel. Follow-ups are free text but only ever travel as JSON message content on stdin — never argv, never a shell.
 
 ### D8 — Session manager and state machine
 `queued → running ⇄ waiting → closed | failed | cancelled | interrupted`. One *open* session per (repo, change); a global cap on `running` sessions (default 2) — excess opens and follow-ups queue FIFO. `stop` sends an in-band interrupt control request, which ends the turn and keeps the process (O7) (→ `waiting`); if no `result` arrives within a few seconds it falls back to SIGINT, which ends the process, and the next message resumes the conversation; `close` ends the process gracefully (→ `closed`); `cancel` kills (→ `cancelled`). Non-zero exit without close → `failed` with the classified reason (`auth`, `usage-limit`, `cli-missing`, `crashed`). Dashboard shutdown stops children and marks `running`/`queued` sessions `interrupted`; they can be reopened (D2 resume).
@@ -67,7 +67,7 @@ Config `agentSessions.commands` defaults: `draft: "/opsx:ff {change}"`, `impleme
 `meta.json` (id, repoId, change, action, cliSessionId, worktree path, branch, state, timestamps, last error, per-turn cost/usage totals) written atomically; `events.ndjson` append-only normalised events with a monotonically increasing `seq`. Retention: newest 50 closed sessions; a transcript is capped at 20 MB (oldest tool-result bodies are elided first). Nothing is written to repositories; the source of truth for *what changed* stays the repository.
 
 ### D10 — API
-`POST /api/sessions` `{repoId, change, action}` · `GET /api/sessions` · `GET /api/sessions/:id` · `GET /api/sessions/:id/events?after=<seq>` as Server-Sent Events (honours `Last-Event-ID`) · `POST /api/sessions/:id/messages` `{text}` · `POST …/stop` · `POST …/close` `{removeWorktree?: boolean}` · `POST …/cancel`. `/api/state` is unchanged; the UI joins sessions to cards by `(repoId, change)`. Refusals: feature disabled, repo not opted in / not enabled / last scan failed, invalid or unknown change, open session exists (returns it), CLI unavailable.
+`POST /api/sessions` `{repoId, change, action}` · `GET /api/sessions` · `GET /api/sessions/:id` · `GET /api/sessions/:id/events?after=<seq>` as Server-Sent Events (honours `Last-Event-ID`) · `POST /api/sessions/:id/messages` `{text}` · `POST …/stop` · `POST …/close` `{removeWorktree?: boolean}` · `POST …/cancel`. `/api/state` is unchanged; the UI joins sessions to cards by `(repoId, change)`. Refusals: feature disabled, repo excluded / not tracked / last scan failed, invalid or unknown change, open session exists (returns it), CLI unavailable.
 
 ### D11 — Cross-site request protection: reuse the existing guard
 Any local web page can reach `127.0.0.1`, and session routes lead to code execution, so they must not be callable cross-site. By the time this change was implemented, `shared-openspec-config` had already landed `crossSiteRefusal` in `src/server/api.ts` for every non-GET `/api/` request (JSON content type — which forces a CORS preflight that is never approved —, a loopback `Host` against DNS rebinding, no cross-site `Sec-Fetch-Site`, and an `Origin` that is the dashboard's own). Session routes sit behind that same check; this change adds no second mechanism and no custom header. The requirement itself is specified by `shared-openspec-config`; this change only adds a scenario that session routes are covered. Reads, including the event stream, stay plain `GET`s and never have side effects.
@@ -78,10 +78,13 @@ Card: session starter button(s) when allowed, and a badge `working` / `waiting f
 ### D13 — Testing without the real agent
 `test/fixtures/fake-claude.ts` is a small executable that speaks the same stream-JSON protocol and is scripted through environment variables (echo turns, emit a denied tool call, exit with auth error, hang until interrupted). All automated tests use it; the spike's observations are turned into fixtures so the fake stays faithful. No test touches the network or the user's login.
 
+### D14 — One switch; repositories are included by default (revised after first use)
+The first version required two opt-ins: the global switch *and* one per repository. In use that was friction without much protection: with the switch on and nothing opted in, the board looked unchanged and the feature seemed missing, and someone who deliberately enables agent sessions wants them on the repositories they track. Now `agentSessions.enabled` is the one deliberate step; a repository is included unless its `agent.enabled` is `false` (absent means included, so existing configs need no migration). What still bounds a session is unchanged: off by default, tracked repositories only, a worktree per session, the allow-list, `dontAsk`, isolated settings, same-origin mutating routes. The trade-off is that turning the switch on now exposes every tracked repository at once, including work repositories — Settings says so next to the switch.
+
 ## Risks / Trade-offs
 
 - [CLI behaviour changes between versions] → observations O1–O8 are pinned as fixtures and exercised by the fake runner; the `Runner` interface localises changes; the detected CLI version is shown in Settings. The usage-limit classification (O6) is still an assumption.
-- [A browser click leads to code edits and command execution] → double opt-in, loopback + D11, allow-list with `dontAsk`, no bypass reachable, worktree isolation, visible transcript, Stop/Cancel.
+- [A browser click leads to code edits and command execution] → explicit global switch with per-repository exclusion (D14), loopback + D11, allow-list with `dontAsk`, no bypass reachable, worktree isolation, visible transcript, Stop/Cancel.
 - [Runaway usage of the subscription] → running-session cap, idle shutdown, per-session cost/usage shown, usage-limit errors surfaced distinctly.
 - [Zombie processes] → children are tracked, stopped on shutdown and on `cancel`; on start-up any `running` record without a live process becomes `interrupted`.
 - [Worktrees pile up] → close offers removal when safe; Settings lists worktrees created by sessions with their state.
@@ -90,7 +93,7 @@ Card: session starter button(s) when allowed, and a badge `working` / `waiting f
 
 ## Migration Plan
 
-Feature ships disabled: existing configs load with `agentSessions.enabled: false` and no per-repository opt-ins. Rollback = disable the switch; session records can be deleted from `~/.openspec-dashboard/sessions/`. The invariant wording in `CLAUDE.md`/README changes in the same pull request as the code.
+Feature ships disabled: existing configs load with `agentSessions.enabled: false` and no repository excluded. Rollback = disable the switch; session records can be deleted from `~/.openspec-dashboard/sessions/`. The invariant wording in `CLAUDE.md`/README changes in the same pull request as the code.
 
 ## Open Questions
 

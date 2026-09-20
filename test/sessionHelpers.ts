@@ -26,9 +26,10 @@ export interface Harness {
   newManager(extra?: Partial<ManagerDeps>): SessionManager;
 }
 
-export async function harness(overrides: { enabled?: boolean; optIn?: boolean; maxRunning?: number; allowedTools?: string[]; timing?: ManagerDeps["timing"] } = {}): Promise<Harness> {
+export async function harness(overrides: { enabled?: boolean; /** false switches the repository off; "absent" leaves the repo entry without an `agent` key (the default for every existing config). */
+  optIn?: boolean | "absent"; maxRunning?: number; allowedTools?: string[]; timing?: ManagerDeps["timing"] } = {}): Promise<Harness> {
   const repoPath = await tempFixtureRepo();
-  const repo = { ...newRepoConfig(repoPath, true), agent: overrides.optIn === false ? undefined : { enabled: true, allowedTools: overrides.allowedTools ?? [] } };
+  const repo = { ...newRepoConfig(repoPath, true), agent: overrides.optIn === "absent" ? undefined : { enabled: overrides.optIn !== false, allowedTools: overrides.allowedTools ?? [] } };
   const config: Config = {
     ...defaultConfig(),
     repos: [repo],

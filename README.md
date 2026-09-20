@@ -118,19 +118,21 @@ repositories you choose. A repository can carry several profiles; different repo
 ## Agent sessions (optional, off by default)
 
 Open an interactive agent session for a change straight from its card: **Draft artifacts** while artifacts are missing,
-**Implement** once a change is ready. The dashboard starts your locally installed [`claude`](https://claude.com/claude-code)
+**Implement** once a change is ready, **Archive** once every task is done. The dashboard starts your locally installed [`claude`](https://claude.com/claude-code)
 CLI on **its own existing login** — so a Claude subscription keeps being used; the dashboard never sees credentials and
 removes `ANTHROPIC_API_KEY`/`ANTHROPIC_AUTH_TOKEN` from the agent's environment unless you opt in to passing them.
 
-- **Enable it twice**: Settings → *Agent sessions* → turn it on, then opt in each repository. Until then no card shows a
-  starter and the API refuses to open sessions.
+- **One switch, off by default**: Settings → *Agent sessions* → turn it on and it applies to every tracked repository.
+  Switch individual repositories off in the same section. While it is off, no card shows a starter and the API refuses
+  to open sessions.
 - **It is a conversation**: the panel shows the live transcript; type follow-ups, press **Stop** to interrupt a turn
   without losing the conversation, **Close** when done. "Copy resume command" continues the same conversation in your
   terminal (`cd <worktree> && claude --resume <id>`). Sessions survive a dashboard restart.
 - **One agent, one worktree**: every session works in `.claude/worktrees/<change>` of the repository, never in your main
   checkout. Closing offers to remove the worktree only when it is clean and fully pushed.
 - **Bounded permissions**: sessions run with `--permission-mode dontAsk` and an allow-list — file read/search/edit, the
-  `openspec` command and local `git status/diff/log/add/commit/branch -m` — plus what you add per repository (for example
+  `openspec` command, local `git status/diff/log/add/commit/branch -m`, and moving files inside `openspec/` (for
+  archiving) — plus what you add per repository (for example
   `Bash(bun run check*)`). Anything else is denied without a prompt and shown in the transcript. Your personal Claude
   settings and allow rules are *not* inherited (`--setting-sources project`); a repository's own `.claude/settings.json`
   is. The CLI still runs its small built-in set of read-only commands. There is no way to pass a permission-bypass flag.

@@ -49,7 +49,11 @@ const agentSessionsSchema = z
     claudePath: z.string().trim().min(1).refine(noBypass, { message: "must not contain a permission-bypass mode or flag" }).default("claude"),
     passApiKeyEnv: z.boolean().default(false),
     commands: z
-      .object({ draft: commandTemplateSchema.default("/opsx:ff {change}"), implement: commandTemplateSchema.default("/opsx:apply {change}") })
+      .object({
+        draft: commandTemplateSchema.default("/opsx:ff {change}"),
+        implement: commandTemplateSchema.default("/opsx:apply {change}"),
+        archive: commandTemplateSchema.default("/opsx:archive {change}"),
+      })
       .default({}),
   })
   .default({});
