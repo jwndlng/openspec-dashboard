@@ -28,11 +28,22 @@ docs(openspec): add dedupe-discovery
 chore(openspec): archive kanban-dashboard-mvp, discover-on-root-change
 ```
 
-## Working in parallel
+## Working in parallel: one worktree per change
 
-Several sessions (people or agents) may have changes in flight at once. Stay within the files your change lists under
-**Impact** in its proposal; if you need to touch something another in-flight change owns, say so in the proposal first.
-Prefer a separate `git worktree` per change over sharing one working tree.
+Several sessions (people or agents) have changes in flight at once, so nobody works in the main checkout. Each change
+gets its own `git worktree` and branch:
+
+```sh
+git fetch origin
+git worktree add .claude/worktrees/<change-name> -b feat/<change-name> origin/main
+cd .claude/worktrees/<change-name> && bun install
+# … edit, bun run check, commit, push, open the pull request …
+git worktree remove .claude/worktrees/<change-name>      # after the merge
+```
+
+The main checkout stays on `main` and is only read from (and used to run the dashboard). Stay within the files your
+change lists under **Impact** in its proposal; if you need to touch something another in-flight change owns, say so in
+the proposal first. Agent sessions follow the same rule — see `CLAUDE.md`.
 
 ## Toolchain
 

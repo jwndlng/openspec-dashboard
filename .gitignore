@@ -28,3 +28,6 @@ Thumbs.db
 
 # Local, per-user agent settings (commands and skills under .claude/ stay tracked)
 .claude/settings.local.json
+
+# Per-session git worktrees (one per agent session / change, see CLAUDE.md)
+.claude/worktrees/
