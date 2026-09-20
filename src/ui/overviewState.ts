@@ -1,6 +1,6 @@
 // Projects overview: URL state, row derivation and sorting. Pure, shared by the view and its tests.
 import { isComplete } from "../shared/columns.ts";
-import type { Config, RepoSnapshot, Snapshot } from "../shared/types.ts";
+import type { Config, RepoSharedConfig, RepoSnapshot, Snapshot } from "../shared/types.ts";
 
 /**
  * The snapshot restricted to repositories enabled in the config. Saving Settings triggers a rescan without waiting
@@ -69,6 +69,7 @@ export interface OverviewRow {
   toArchive: number;
   archived: number;
   lastUpdatedAt?: string;
+  sharedConfig?: RepoSharedConfig;
 }
 
 function newestActivity(repo: RepoSnapshot): string | undefined {
@@ -131,6 +132,7 @@ export function overviewRows(snapshot: Snapshot): OverviewRow[] {
       archived,
       // Snapshots cached by older versions, and repos that never scanned cleanly, have no repo-level date.
       lastUpdatedAt: repo.lastUpdatedAt ?? newestActivity(repo),
+      sharedConfig: repo.sharedConfig,
     };
   });
   addHints(rows);

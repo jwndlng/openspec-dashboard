@@ -1,4 +1,4 @@
-import type { Config, DiscoverResult, ScanTriggerResult, Snapshot } from "../shared/types.ts";
+import type { Config, DiscoverResult, ScanTriggerResult, SharedConfig, SharedConfigApplyResult, SharedConfigAssignment, SharedConfigPreview, Snapshot } from "../shared/types.ts";
 
 export class ApiError extends Error {
   constructor(readonly status: number, message: string, readonly issues: string[] = []) {
@@ -31,4 +31,12 @@ export const api = {
   discover: (scanRoots?: string[]) =>
     call<DiscoverResult>("/api/discover", { method: "POST", body: scanRoots ? JSON.stringify({ scanRoots }) : undefined }),
   scan: () => call<ScanTriggerResult>("/api/scan", { method: "POST" }),
+  sharedConfig: () => call<SharedConfig>("/api/shared-config"),
+  /** Stores the profiles in the dashboard home; never writes to a repository. */
+  saveSharedConfig: (config: SharedConfig) => call<SharedConfig>("/api/shared-config", { method: "PUT", body: JSON.stringify(config) }),
+  previewSharedConfig: (assignments: SharedConfigAssignment[]) =>
+    call<{ previews: SharedConfigPreview[] }>("/api/shared-config/preview", { method: "POST", body: JSON.stringify({ assignments }) }),
+  /** The one call that writes to tracked repositories: the managed sections of `openspec/config.yaml`. */
+  applySharedConfig: (assignments: SharedConfigAssignment[]) =>
+    call<{ results: SharedConfigApplyResult[] }>("/api/shared-config/apply", { method: "POST", body: JSON.stringify({ assignments }) }),
 };

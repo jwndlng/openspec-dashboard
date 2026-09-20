@@ -170,6 +170,17 @@ function RepoHeader({ repo, now }: { repo: RepoSnapshot; now: number }) {
             {repo.worktrees.length} {repo.worktrees.length === 1 ? "worktree" : "worktrees"}
           </span>
         )}
+        {repo.sharedConfig?.unreadable && (
+          <span class="badge danger" title="openspec/config.yaml is missing, not valid YAML, or has malformed shared-config markers">
+            ⚙ config unreadable
+          </span>
+        )}
+        {repo.sharedConfig?.applied.map((p) => (
+          <span key={p.id} class={`badge ${p.state === "in-sync" ? "" : "warn"}`} title="Shared OpenSpec config profile carried by openspec/config.yaml">
+            ⚙ {p.id}
+            {p.state === "in-sync" ? "" : ` · ${p.state}`}
+          </span>
+        ))}
         {updated && (
           <span class="badge" title={repo.lastUpdatedAt}>
             updated {updated === "just now" ? updated : `${updated} ago`}

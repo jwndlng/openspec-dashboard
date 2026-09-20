@@ -33,18 +33,18 @@
 
 ## 5. UI
 
-- [ ] 5.1 `src/ui/api.ts`: client functions for the four endpoints
-- [ ] 5.2 Settings: "Shared OpenSpec config" panel with a profile list (add with a slug id derived from the name, rename, delete, reorder) and, for the selected profile, a context textarea with a live UTF-8 byte counter against 50KB and rules grouped by artifact id (ids suggested from schemas in the snapshot, free text allowed; add/remove/reorder entries), and its own Save button independent of the scan-config save bar
-- [ ] 5.3 Settings: assignment grid — enabled repositories × profiles, checkboxes pre-filled from each repository's carried profiles, per-cell state, orphaned profiles and `unreadable` shown per row, column header toggles a profile for all rows, pending rows (selection differs from the file, or carries an outdated/orphaned profile) marked, "Preview & apply" for the pending rows (apply always goes through the preview dialog)
-- [ ] 5.4 Preview dialog: pure line-diff helper (`src/ui/lineDiff.ts`, unit-tested) rendering collapsed unchanged runs and `+`/`−` lines with text markers as well as colour; refusals listed with reasons; one confirm button that applies only the non-refused selection; results shown per repository afterwards
-- [ ] 5.5 Projects overview: carried profile names per row with a warning badge for `outdated`/`orphaned` and danger for `unreadable` (text + colour, shown only when a profile exists, nothing for a repository carrying none); repository board header: one badge per carried profile
-- [ ] 5.6 Styles in `src/ui/styles.css` using existing tokens only; check both themes and a narrow window (dialog scrolls inside itself, page body does not)
+- [x] 5.1 `src/ui/api.ts`: client functions for the four endpoints
+- [x] 5.2 Settings: "Shared OpenSpec config" panel with a profile list (add with a slug id derived from the name, rename, delete, reorder) and, for the selected profile, a context textarea with a live UTF-8 byte counter against 50KB and rules grouped by artifact id (ids suggested from schemas in the snapshot, free text allowed; add/remove/reorder entries), and its own Save button independent of the scan-config save bar
+- [x] 5.3 Settings: assignment grid — enabled repositories × profiles, checkboxes pre-filled from each repository's carried profiles, per-cell state, orphaned profiles and `unreadable` shown per row, column header toggles a profile for all rows, pending rows (selection differs from the file, or carries an outdated/orphaned profile) marked, "Preview & apply" for the pending rows (apply always goes through the preview dialog)
+- [x] 5.4 Preview dialog: pure line-diff helper (`src/ui/lineDiff.ts`, unit-tested) rendering collapsed unchanged runs and `+`/`−` lines with text markers as well as colour; refusals listed with reasons; one confirm button that applies only the non-refused selection; results shown per repository afterwards
+- [x] 5.5 Projects overview: carried profile names per row with a warning badge for `outdated`/`orphaned` and danger for `unreadable` (text + colour, shown only when a profile exists, nothing for a repository carrying none); repository board header: one badge per carried profile
+- [x] 5.6 Styles in `src/ui/styles.css` using existing tokens only; check both themes and a narrow window (dialog scrolls inside itself, page body does not)
 
 ## 6. Invariant wording, docs and verification
 
-- [ ] 6.1 Reword `CLAUDE.md` invariant 1 to the new boundary (writes only on explicit user action, only enumerated paths, never deletes, no writing git commands) and list `openspec/config.yaml` managed sections as the enumerated path; align wording with `create-change-from-dashboard` if it has landed
-- [ ] 6.2 Update `README.md`: the shared config feature, the managed-section markers, what apply does and does not touch, that results are uncommitted changes to review, the 50KB guard, and the JSON content-type requirement for scripted non-GET API calls
-- [ ] 6.3 Run `bun run check`
-- [ ] 6.4 Build the binary and, against a throwaway dashboard home with copies of two real `openspec/config.yaml` files in temp git repos, run save → preview → apply → edit shared → apply → apply empty through the compiled binary; confirm states, diffs, byte-identical restoration and `git status` output
-- [ ] 6.5 Browser check with `bun run dev` against throwaway repos only (do not apply to the user's real repositories during verification): editor, byte counter, preview dialog, partial refusal, badges on overview and repository header, both themes
+- [x] 6.1 Reword `CLAUDE.md` invariant 1 to the new boundary (writes only on explicit user action, only enumerated paths, never deletes, no writing git commands) and list `openspec/config.yaml` managed sections as the enumerated path; align wording with `create-change-from-dashboard` if it has landed
+- [x] 6.2 Update `README.md`: the shared config feature, the managed-section markers, what apply does and does not touch, that results are uncommitted changes to review, the 50KB guard, and the JSON content-type requirement for scripted non-GET API calls
+- [x] 6.3 Run `bun run check`
+- [x] 6.4 Build the binary and, against a throwaway dashboard home with copies of two real `openspec/config.yaml` files in temp git repos, run save → preview → apply → edit shared → apply → apply empty through the compiled binary; confirm states, diffs, byte-identical restoration and `git status` output
+- [x] 6.5 Browser check with `bun run dev` against throwaway repos only (do not apply to the user's real repositories during verification): editor, byte counter, preview dialog, partial refusal, badges on overview and repository header, both themes
 - [ ] 6.6 Before archiving, rebase the `dashboard-api` never-writes delta on the then-current main spec text (other in-flight changes modify the same requirement)
