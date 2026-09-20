@@ -12,6 +12,8 @@
   "scripts": {
     "dev": "bun run scripts/build-ui.ts && bun run src/server/index.ts",
     "build:ui": "bun run scripts/build-ui.ts",
+    "build:demo": "bun run scripts/build-ui.ts demo",
+    "screenshots": "bun run scripts/screenshots.ts",
     "build": "bun run scripts/build-ui.ts && bun build --compile src/server/index.ts --outfile dist/openspec-dashboard && rm -f .*.bun-build",
     "test": "bun test",
     "typecheck": "tsc --noEmit",
@@ -22,6 +24,7 @@
   "dependencies": {
     "@fission-ai/openspec": "^1.13.0",
     "preact": "^10.24.0",
+    "yaml": "^2.9.1",
     "zod": "^3.23.0"
   },
   "devDependencies": {

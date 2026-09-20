@@ -2,7 +2,8 @@ import { createHash } from "node:crypto";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { basename, dirname, isAbsolute } from "node:path";
 import { z } from "zod";
-import type { AgentSessionsConfig, Config, RepoConfig } from "../shared/types.ts";
+import { defaultAgentSessions } from "../shared/agentDefaults.ts";
+import type { Config, RepoConfig } from "../shared/types.ts";
 import { configPath, dashboardHome, expandPath } from "./paths.ts";
 
 export const DEFAULT_PORT = 4711;
@@ -37,16 +38,8 @@ const commandTemplateSchema = z
   .refine((v) => v.includes("{change}"), { message: "must contain {change}" })
   .refine(noBypass, { message: "must not contain a permission-bypass mode or flag" });
 
-export function defaultAgentSessions(): AgentSessionsConfig {
-  return {
-    enabled: false,
-    maxRunning: 2,
-    idleMinutes: 30,
-    claudePath: "claude",
-    passApiKeyEnv: false,
-    commands: { draft: "/opsx:ff {change}", implement: "/opsx:apply {change}" },
-  };
-}
+
+export { defaultAgentSessions };
 
 const agentSessionsSchema = z
   .object({

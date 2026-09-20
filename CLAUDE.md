@@ -24,18 +24,23 @@ bun test test/scanner.test.ts   # a single test file
 
 ## Invariants — do not break these
 
-1. **The dashboard's own code never changes a tracked repository.** All writes stay under `~/.openspec-dashboard/`
-   (or `OPENSPEC_DASHBOARD_HOME` in tests). Git is invoked only with the read-only subcommands listed in
-   `openspec/specs/dashboard-api/spec.md`; adding one means changing that spec. Two deliberate, narrow exceptions,
-   both part of agent sessions (off by default, per-repository opt-in): on the user's click the dashboard may *start
-   the user's agent CLI* in a dedicated worktree — what that agent changes is the agent's doing, bounded by its
-   allow-list — and, only after the user confirms and read-only checks prove nothing would be lost, it may run
-   `git worktree unlock` + a non-forcing `git worktree remove` on a session's worktree. With agent sessions disabled
-   no process that can modify a repository is ever started.
-2. **Loopback only, and mutating requests must come from the dashboard's own UI.** The server binds `127.0.0.1` and
-   has no auth. Because any web page can send requests to localhost, every non-GET request must pass the guard in
-   `src/server/api.ts` (`rejectCrossSite`: JSON content type, `X-OpenSpec-Dashboard` header, loopback Host, matching
-   Origin). New mutating routes get it automatically; never add a side-effecting GET.
+1. **Read-only towards tracked repositories, with enumerated exceptions.** The dashboard writes to a tracked
+   repository only in response to an explicit user action, only to the paths enumerated in the "never writes"
+   requirement of `openspec/specs/dashboard-api/spec.md`, never deletes or moves anything there, and never runs a git
+   command that writes (one enumerated exception below). Today that list has two entries: the managed sections of `openspec/config.yaml` (applying
+   shared config profiles, `src/server/sharedConfig.ts`), and — for agent sessions, which are off by default and need a
+   per-repository opt-in — removing a session's own worktree after the user confirmed and read-only checks proved
+   nothing would be lost (`git worktree unlock` + a non-forcing `git worktree remove`, the only git writes, in
+   `src/server/sessions/worktree.ts`). Starting the user's agent CLI in a dedicated worktree on the user's click is
+   not a write by the dashboard: what that agent changes is bounded by its allow-list and is the agent's doing. With
+   agent sessions disabled no process that can modify a repository is ever started. Scanning, polling, discovery, previews and saving settings
+   write nothing to a repository. All other writes stay under `~/.openspec-dashboard/` (or `OPENSPEC_DASHBOARD_HOME`
+   in tests). Git is invoked only with the read-only subcommands listed in that spec. Adding a path or a subcommand
+   means changing that spec first.
+2. **Loopback only.** The server binds `127.0.0.1`; there is no auth because nothing else can reach it.
+2a. **Mutating API routes are same-origin only.** Every non-GET `/api/` request passes `crossSiteRefusal` in
+   `src/server/api.ts` (JSON content type, loopback host, own origin). Loopback binding alone does not stop a web page
+   in the same browser; do not add a mutating route that bypasses the guard.
 3. **`@fission-ai/openspec` internals only through `src/server/openspecAdapter.ts`.** Do not call the library's
    `resolveSchema`/`loadChangeContext`: they locate files via `import.meta.url`, which does not exist inside the
    compiled binary. The adapter embeds the schema at build time. Anything that works under `bun run` but reads files

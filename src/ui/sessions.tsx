@@ -5,6 +5,7 @@ import { useCallback, useContext, useEffect, useMemo, useState } from "preact/ho
 import { availableActions, type AgentAvailability, type ChangeSnapshot, type Config, type Session, type SessionAction } from "../shared/types.ts";
 import { api } from "./api.ts";
 import { searchWithSession, sessionBadge, sessionForChange, sessionIdFromSearch, sessionsEnabledFor } from "./sessionState.ts";
+import { currentQuery, replaceQuery } from "./url.ts";
 
 const POLL_MS = 3000;
 
@@ -29,7 +30,7 @@ export function SessionProvider({ config, children }: { config: Config | null; c
   const [sessions, setSessions] = useState<Session[]>([]);
   const [agent, setAgent] = useState<AgentAvailability>();
   const [error, setError] = useState<string>();
-  const [panelId, setPanelId] = useState<string | undefined>(() => sessionIdFromSearch(location.search));
+  const [panelId, setPanelId] = useState<string | undefined>(() => sessionIdFromSearch(currentQuery()));
 
   const refresh = useCallback(async () => {
     try {
@@ -51,7 +52,7 @@ export function SessionProvider({ config, children }: { config: Config | null; c
 
   const openPanel = useCallback((id: string | undefined) => {
     setPanelId(id);
-    history.replaceState(null, "", `${location.pathname}${searchWithSession(location.search, id)}`);
+    replaceQuery(searchWithSession(currentQuery(), id)); // works in both routing modes (path and hash)
   }, []);
 
   const start = useCallback(

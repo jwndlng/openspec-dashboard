@@ -87,8 +87,8 @@ Activating a repository row SHALL navigate to `/repo/<repoId>` without a page re
 - **THEN** the URL becomes `/repo/<id of beta-soc>` and only `beta-soc` changes are shown in Kanban columns
 
 #### Scenario: Columns follow the repository's schema
-- **WHEN** most repositories use `spec-driven` but repository `fit` uses a schema whose artifacts are `brief` and `plan`
-- **THEN** the board for `fit` shows `Brief` and `Plan` as its artifact columns and not the `spec-driven` ones
+- **WHEN** most repositories use `spec-driven` but repository `gamma-lab` uses a schema whose artifacts are `brief` and `plan`
+- **THEN** the board for `gamma-lab` shows `Brief` and `Plan` as its artifact columns and not the `spec-driven` ones
 
 #### Scenario: Deep link
 - **WHEN** the user opens `/repo/<id>?stale=14` in a new tab

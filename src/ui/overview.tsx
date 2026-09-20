@@ -4,7 +4,9 @@ import type { Config, Snapshot } from "../shared/types.ts";
 import { NoRepos } from "./empty.tsx";
 import { relTime } from "./format.ts";
 import { filterRows, type OverviewRow, type OverviewState, overviewRows, parseOverviewState, type SortKey, serializeOverviewState, sortRows, toggleSort } from "./overviewState.ts";
-import { navigate, repoPath } from "./routes.ts";
+import { repoPath } from "./routes.ts";
+import { summarize } from "./sharedConfigState.ts";
+import { currentQuery, href, navigate, replaceQuery } from "./url.ts";
 
 /** Plain left-click only, so modifier-clicks and text selection keep their browser behaviour. */
 function isPlainClick(e: MouseEvent): boolean {
@@ -12,31 +14,38 @@ function isPlainClick(e: MouseEvent): boolean {
 }
 
 function Row({ row, stages, now }: { row: OverviewRow; stages: string[]; now: number }) {
-  const href = repoPath(row.id);
+  const path = repoPath(row.id);
   const idle = row.open === 0;
+  // Profile ids rather than names: they are readable slugs and need no extra request here.
+  const shared = summarize(row.sharedConfig, []);
   return (
     <tr
       class={idle ? "idle" : ""}
       title={`${row.path} · ${row.archived} archived`}
       onClick={(e) => {
         if (!isPlainClick(e) || getSelection()?.toString()) return;
-        navigate(href);
+        navigate(path);
       }}
     >
       <th scope="row" class="repo-name">
         <a
           class="repo-link"
-          href={href}
+          href={href(path)}
           onClick={(e) => {
             if (!isPlainClick(e)) return;
             e.preventDefault();
             e.stopPropagation();
-            navigate(href);
+            navigate(path);
           }}
         >
           {row.name}
         </a>
         {row.hint && <span class="path-hint mono">{row.hint}/</span>}
+        {shared && (
+          <span class={shared.level === "ok" ? "path-hint" : `badge ${shared.level}`} title="Shared OpenSpec config profiles carried by openspec/config.yaml">
+            ⚙ {shared.text}
+          </span>
+        )}
         {!row.ok && (
           <span class="badge danger" title={row.error}>
             ⚠ scan failed
@@ -66,12 +75,12 @@ function Row({ row, stages, now }: { row: OverviewRow; stages: string[]; now: nu
 }
 
 export function Overview({ snapshot, config }: { snapshot: Snapshot | null; config: Config | null }) {
-  const [state, setStateRaw] = useState<OverviewState>(() => parseOverviewState(location.search));
+  const [state, setStateRaw] = useState<OverviewState>(() => parseOverviewState(currentQuery()));
   const now = Date.now();
 
   const setState = (next: OverviewState) => {
     setStateRaw(next);
-    history.replaceState(null, "", `${location.pathname}${serializeOverviewState(next)}`);
+    replaceQuery(serializeOverviewState(next));
   };
 
   const rows = useMemo(() => (snapshot ? overviewRows(snapshot) : []), [snapshot]);

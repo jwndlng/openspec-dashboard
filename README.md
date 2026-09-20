@@ -1,7 +1,18 @@
 # openspec-dashboard
 
 Local-first Kanban across every [OpenSpec](https://github.com/Fission-AI/OpenSpec) repository on this machine.
-Ships as a single Bun binary. Repositories stay the source of truth; the dashboard only indexes them.
+Ships as a single Bun binary. Repositories stay the source of truth; the dashboard indexes them and is read-only
+towards them, with two explicit exceptions: applying [shared config profiles](#shared-openspec-config) (previewed), and the
+optional, off-by-default [agent sessions](#agent-sessions-optional-off-by-default).
+
+**[Live demo →](https://jwndlng.github.io/openspec-dashboard/)** — the real UI on made-up sample data, nothing to install.
+
+<a href="https://jwndlng.github.io/openspec-dashboard/#/board">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://jwndlng.github.io/openspec-dashboard/screenshots/board-dark.png">
+    <img alt="The combined Kanban board: one column per lifecycle step from New to Archived, cards grouped and coloured by repository, with task progress, last activity, branch badges and warnings." src="https://jwndlng.github.io/openspec-dashboard/screenshots/board-light.png">
+  </picture>
+</a>
 
 ## Run
 
@@ -14,6 +25,8 @@ bun run build                   # dist/openspec-dashboard (single binary, UI + f
 ./dist/openspec-dashboard       # opens the browser; --port N and --no-open are available
 bun test                        # unit + API tests against the fixture repos in test/fixtures
 bun run check                   # lint + typecheck + tests — what CI runs
+bun run build:demo              # dist/demo/index.html — the demo: same UI, in-memory API, sample data (open it from disk)
+bun run screenshots             # dist/demo/screenshots/*.png from the demo build (needs Chrome; CHROME_BIN overrides)
 ```
 
 First run: open **Settings** and add a workspace root such as `~/Workspace`. Discovery runs immediately and lists
@@ -53,14 +66,54 @@ what it found under **Discovered**; click **Enable** on the repos to track, then
   "Copy apply command" action (`cd <repo> && claude "/opsx:apply <change>"`).
   Within each column, cards are **grouped by repository** (same order in every column), and every repository gets its
   own automatic, stable colour — on the group header, its cards and its filter chip — in both themes.
+  Click a group header to minimize the group to its name and count; groups in **Archived** start minimized. Choices are
+  remembered in the browser, and a text search always opens the groups that contain matches.
 - Filters: repo, text, stale-for-N-days, hide archived — kept in the URL. Bookmarks of the old combined board move from
   `/?repos=…` to `/board?repos=…`.
 - Theme: dark and light. Follows the OS appearance by default; the **Theme** button in the top bar cycles
   System → Light → Dark. The choice is stored in the browser (`localStorage`), not in the config file.
 
-State lives in `~/.openspec-dashboard/` (`config.json`, `cache/snapshot.json`, `sessions/`). The dashboard's own code never
-changes a tracked repository (agent sessions, below, are the opt-in exception) and only runs read-only `git` commands (`rev-parse`, `log`, `worktree list`, `status` — with optional locks disabled, so
-not even `.git/index` is refreshed).
+State lives in `~/.openspec-dashboard/` (`config.json`, `shared-config.json`, `cache/snapshot.json`, `sessions/`). The dashboard
+only runs read-only `git` commands (`rev-parse`, `log`, `worktree list`, `status` — with optional locks disabled, so
+not even `.git/index` is refreshed), and scanning, polling, discovery and saving settings never write to a tracked
+repository. The things that do are described next: shared config, and the opt-in agent sessions further down.
+
+## Shared OpenSpec config
+
+Every OpenSpec project can give agents extra guidance in `openspec/config.yaml`: a `context` text injected into every
+artifact instruction, and per-artifact `rules`. **Settings → Shared OpenSpec config** lets you keep that guidance once,
+as named **profiles** (say `base` for conventions every project shares, `security`, `frontend`), and merge it into the
+repositories you choose. A repository can carry several profiles; different repositories can carry different ones.
+
+- **What is written.** Only `openspec/config.yaml`, and only *managed sections*: one marked block per profile at the
+  start of `context`, and rule entries with a marker comment. `schema`, every other key, all comments, and the
+  project's own context and rules are left exactly as they are.
+  ```yaml
+  context: |
+    <!-- openspec-dashboard:shared:begin base — managed by openspec-dashboard, edits here are overwritten -->
+    We use conventional commits.
+    <!-- openspec-dashboard:shared:end base -->
+
+    Tech stack: Go.                       # the project's own — never touched
+  rules:
+    proposal:
+      - Always include Non-goals # openspec-dashboard:shared:base
+      - Mention the on-call impact        # the project's own — never touched
+  ```
+- **When.** Only when you tick profiles in the repositories × profiles grid, open the preview (an exact diff per
+  repository) and confirm. Saving profiles writes nothing to any repository. No git command is run: each repository
+  ends up with an ordinary uncommitted change to review and commit — or discard with `git checkout`.
+- **State comes from the files.** Which profiles a repository carries is read from the markers, not remembered by the
+  dashboard: `in sync`, `outdated` (the profile changed since, or someone edited inside the block) or `orphaned` (the
+  profile was deleted here). Projects and the repository header show it. Unticking a profile and applying removes its
+  sections; unticking everything restores the file byte for byte (one exception: a project's own one-line quoted
+  `context` comes back as a `|` block with the same value).
+- **Refused, never half-done.** A `config.yaml` that is missing, not valid YAML or has damaged markers is left alone,
+  as is a repository that is not enabled. Apply also refuses when shared plus own context would pass 50KB, because
+  OpenSpec silently ignores the whole context above that size. Writes are atomic.
+- **Scripted API calls.** Because the dashboard can now modify files in your repositories, every non-GET API request
+  must be same-origin: `Content-Type: application/json`, a loopback host, and no foreign `Origin`. `curl` needs
+  `-H 'content-type: application/json'`; a web page in your browser cannot call these routes.
 
 ## Agent sessions (optional, off by default)
 

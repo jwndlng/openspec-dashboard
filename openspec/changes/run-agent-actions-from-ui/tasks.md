@@ -21,9 +21,9 @@
 
 ## 3. Cross-site request protection
 
-- [x] 3.1 If `create-change-from-dashboard` has already landed a guard for mutating routes, reuse it; otherwise implement one guard in `src/server/api.ts` (JSON content type, `X-OpenSpec-Dashboard: 1`, matching `Origin`/`Host`) applied to every non-GET/HEAD route
-- [x] 3.2 Send the header from every mutating call in `src/ui/api.ts`
-- [x] 3.3 Tests: foreign `Origin`, missing header and wrong content type are `403` for `PUT /api/config`, `POST /api/scan`, `POST /api/discover` and the new routes; the UI's own requests pass
+- [x] 3.1 Reuse the guard for mutating routes: `shared-openspec-config` landed `crossSiteRefusal` in `src/server/api.ts` first, so session routes go behind it and no second mechanism or custom header is added
+- [x] 3.2 Session calls in `src/ui/api.ts` go through the shared `call()` helper (JSON content type), in the typed `Api` interface with a demo implementation that rejects them
+- [x] 3.3 Tests: foreign `Origin`, cross-site `Sec-Fetch-Site` and a non-JSON content type are `403` for the session routes and the existing mutating routes; the UI's own requests pass
 
 ## 4. Runner
 

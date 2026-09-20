@@ -52,6 +52,23 @@ through `test/fixtures/fake-claude.ts`, a small executable that speaks the CLI's
 with `FAKE_CLAUDE_MODE` (`echo`, `deny`, `auth`, `limit`, `hang`, `crash`). Its event shapes come from
 `test/fixtures/claude-stream/`, recorded once from the real CLI and sanitised — update both together.
 
+## Demo site and screenshots
+
+The [live demo](https://jwndlng.github.io/openspec-dashboard/) is the real UI built with `bun run build:demo`: the
+entry point `src/ui/demo/main.tsx` swaps the HTTP API for an in-memory one and switches to hash routing. It is
+published from `main` by `.github/workflows/pages.yml`; nothing generated is committed.
+
+- **Sample data is fiction, always.** `src/ui/demo/sampleData.ts` holds invented repositories under `/home/demo/` and
+  invented change names. Never paste names or paths from a real dashboard; tests fail on anything shaped like a real
+  home directory, in the sample and in the built demo.
+- **A new API operation needs a demo implementation.** Add it to `interface Api` in `src/ui/api.ts` and type checking
+  fails until `src/ui/demo/demoApi.ts` has it too. If it makes no sense without a server, reject with a clear message.
+- **The URL goes through `src/ui/url.ts`.** Components never touch `location` or `history` directly (a test checks), so
+  every view keeps working in both routing modes.
+- **Screenshots come from the demo build only:** `bun run build:demo && bun run screenshots`. The script takes no URL
+  on purpose. The README embeds the published ones, so they follow `main` on their own.
+- A new board feature is worth a sample change that shows it — the demo is the first thing a newcomer sees.
+
 ## Toolchain
 
 Bun is pinned in `.bun-version` (and `packageManager`). Upgrading Bun is a deliberate commit of its own — the compiled

@@ -15,6 +15,10 @@ export function sessionsDir(): string {
   return join(dashboardHome(), "sessions");
 }
 
+export function sharedConfigPath(): string {
+  return join(dashboardHome(), "shared-config.json");
+}
+
 export function cachePath(): string {
   return join(dashboardHome(), "cache", "snapshot.json");
 }

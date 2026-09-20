@@ -21,23 +21,8 @@ The dashboard's own code MUST confine its filesystem writes to `~/.openspec-dash
 
 ## ADDED Requirements
 
-### Requirement: Mutating requests are protected against cross-site use
-Every request with a method other than `GET` or `HEAD` MUST be rejected with `403` unless it carries `Content-Type: application/json`, the header `X-OpenSpec-Dashboard: 1`, and an `Origin` (when present) and `Host` that match the dashboard's own address. The check SHALL be implemented once and apply to all mutating routes, existing and new.
-
-#### Scenario: Request from another origin
-- **WHEN** a page served from `https://example.com` sends `POST /api/sessions` to the dashboard
-- **THEN** the response is `403` and no session is opened
-
-#### Scenario: Missing custom header
-- **WHEN** `POST /api/scan` is sent without the `X-OpenSpec-Dashboard` header
-- **THEN** the response is `403` and no scan is started
-
-#### Scenario: The dashboard's own UI
-- **WHEN** the UI sends a mutating request with the required headers from the dashboard's origin
-- **THEN** the request is processed
-
 ### Requirement: Session endpoints
-The API SHALL provide: `POST /api/sessions` with `{ repoId, change, action }` to open a session (returning the existing open session for that repository and change if there is one); `GET /api/sessions` to list sessions; `GET /api/sessions/<id>` for one session's metadata; `GET /api/sessions/<id>/events?after=<seq>` streaming transcript events as Server-Sent Events in sequence order and honouring `Last-Event-ID`; `POST /api/sessions/<id>/messages` with `{ text }`; `POST /api/sessions/<id>/stop`; `POST /api/sessions/<id>/close` with optional `{ removeWorktree }`; `POST /api/sessions/<id>/cancel`; and `DELETE /api/sessions/<id>` for an ended session. Opening MUST be refused with `403` when agent sessions are disabled or the repository has not opted in, with `404` for an unknown repository or change, with `409` when the repository is disabled or its last scan failed, with `400` for an invalid change name, unknown action or an action not available in the change's stage, and with `503` when the agent CLI is unavailable. `GET /api/state` SHALL remain unchanged.
+The API SHALL provide: `POST /api/sessions` with `{ repoId, change, action }` to open a session (returning the existing open session for that repository and change if there is one); `GET /api/sessions` to list sessions; `GET /api/sessions/<id>` for one session's metadata; `GET /api/sessions/<id>/events?after=<seq>` streaming transcript events as Server-Sent Events in sequence order and honouring `Last-Event-ID`; `POST /api/sessions/<id>/messages` with `{ text }`; `POST /api/sessions/<id>/stop`; `POST /api/sessions/<id>/close` with optional `{ removeWorktree }`; `POST /api/sessions/<id>/cancel`; and `DELETE /api/sessions/<id>` for an ended session. Opening MUST be refused with `403` when agent sessions are disabled or the repository has not opted in, with `404` for an unknown repository or change, with `409` when the repository is disabled or its last scan failed, with `400` for an invalid change name, unknown action or an action not available in the change's stage, and with `503` when the agent CLI is unavailable. All session routes other than `GET` are mutating and therefore subject to the same-origin protection that applies to every mutating API request. `GET /api/state` SHALL remain unchanged.
 
 #### Scenario: Open and stream
 - **WHEN** `POST /api/sessions` succeeds and the client then requests the events stream
@@ -50,6 +35,10 @@ The API SHALL provide: `POST /api/sessions` with `{ repoId, change, action }` to
 #### Scenario: Duplicate open
 - **WHEN** a session for repository `r` and change `c` is open and `POST /api/sessions` is sent again for `r` and `c`
 - **THEN** the response contains the existing session and no second process is started
+
+#### Scenario: Session routes are same-origin only
+- **WHEN** a page from another origin sends `POST /api/sessions` or `POST /api/sessions/<id>/messages`
+- **THEN** the response is `403`, no session is opened and no message is delivered
 
 #### Scenario: Feature disabled
 - **WHEN** agent sessions are disabled and `POST /api/sessions` is called

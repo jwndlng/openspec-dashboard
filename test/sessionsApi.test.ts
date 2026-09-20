@@ -6,7 +6,7 @@ import type { Session, SessionEvent } from "../src/shared/types.ts";
 import { useTempHome } from "./helpers.ts";
 import { harness, recorded, waitFor, type Harness } from "./sessionHelpers.ts";
 
-const UI = { "content-type": "application/json", "x-openspec-dashboard": "1" };
+const UI = { "content-type": "application/json" };
 let cleanup: () => Promise<void>;
 let home: string;
 const servers: { stop: () => Promise<void> }[] = [];
@@ -63,8 +63,8 @@ test("cross-site protection covers every mutating route, old and new", async () 
   for (const [method, path] of [["PUT", "/api/config"], ["POST", "/api/scan"], ["POST", "/api/discover"], ["POST", "/api/sessions"], ["DELETE", "/api/sessions/abc"]] as const) {
     const send = (headers: Record<string, string>) => fetch(base + path, { method, headers, body: method === "DELETE" ? undefined : JSON.stringify(body) });
     expect((await send({ ...UI, origin: "https://example.com" })).status).toBe(403);
-    expect((await send({ "content-type": "application/json" })).status).toBe(403);
-    expect((await send({ "x-openspec-dashboard": "1", "content-type": "text/plain" })).status).toBe(403);
+    expect((await send({ "content-type": "text/plain" })).status).toBe(403);
+    expect((await send({ ...UI, "sec-fetch-site": "cross-site" })).status).toBe(403);
     expect((await send({ ...UI, origin: base })).status).not.toBe(403);
   }
   expect((await fetch(`${base}/api/state`, { headers: { origin: "https://example.com" } })).status).toBe(200); // reads stay open
