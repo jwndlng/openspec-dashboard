@@ -41,8 +41,25 @@ bun test test/scanner.test.ts   # a single test file
    people from other projects — not in fixtures, tests, specs, proposals or commit messages. Use made-up names
    (`demo-ops`, `alpha-infra`, `/w/acme/...`). Fixtures are generated, never copied. This repository may be public.
 
-## Working alongside other sessions
+## One agent, one worktree
 
-This working tree is often shared by several agent sessions. Stay inside the files listed under **Impact** in your
-change's proposal, do not switch branches or rewrite the index of a shared tree, and never commit or revert work that
-belongs to another change without the user's confirmation.
+Several agent sessions work on this repository at the same time. **Every agent session that changes files works in its
+own git worktree on its own branch — never in the main checkout, and never in another session's worktree.**
+
+1. Before your first edit, create a worktree from the latest `origin/main`, on a branch named after your OpenSpec change:
+   ```sh
+   git fetch origin
+   git worktree add .claude/worktrees/<change-name> -b feat/<change-name> origin/main   # or fix/…, chore/…, docs/…
+   cd .claude/worktrees/<change-name> && bun install
+   ```
+   With the Claude Code CLI, `claude --worktree <change-name>` does the same. `.claude/worktrees/` is git-ignored.
+2. Do all edits, `bun run check`, commits and the push from inside that worktree. One change = one worktree = one
+   branch = one pull request (see `CONTRIBUTING.md`).
+3. If your change's `openspec/changes/<change-name>/` directory exists only uncommitted in the main checkout, copy it
+   into your worktree first and commit it there; do not edit it in the main checkout.
+4. When the pull request is merged, remove your worktree: `git worktree remove .claude/worktrees/<change-name>`.
+
+In the main checkout you may read, run the dashboard and run read-only commands. Do not edit files there, do not switch
+its branch, do not stage or commit in it, and never commit, revert or "tidy up" work that belongs to another session
+without the user's confirmation. Stay inside the files listed under **Impact** in your change's proposal; if you must
+touch a file another in-flight change owns, say so in your proposal first.
