@@ -47,4 +47,4 @@
 - [x] 6.3 Run `bun run check`
 - [x] 6.4 Build the binary and, against a throwaway dashboard home with copies of two real `openspec/config.yaml` files in temp git repos, run save → preview → apply → edit shared → apply → apply empty through the compiled binary; confirm states, diffs, byte-identical restoration and `git status` output
 - [x] 6.5 Browser check with `bun run dev` against throwaway repos only (do not apply to the user's real repositories during verification): editor, byte counter, preview dialog, partial refusal, badges on overview and repository header, both themes
-- [ ] 6.6 Before archiving, rebase the `dashboard-api` never-writes delta on the then-current main spec text (other in-flight changes modify the same requirement)
+- [x] 6.6 Before archiving, rebase the `dashboard-api` never-writes delta on the then-current main spec text (other in-flight changes modify the same requirement) — checked at archive time: main's text was unchanged, no rebase needed
