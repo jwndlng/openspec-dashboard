@@ -3,6 +3,15 @@
 Local-first, read-only Kanban across every [OpenSpec](https://github.com/Fission-AI/OpenSpec) repository on this machine.
 Ships as a single Bun binary. Repositories stay the source of truth; the dashboard only indexes them.
 
+**[Live demo →](https://jwndlng.github.io/openspec-dashboard/)** — the real UI on made-up sample data, nothing to install.
+
+<a href="https://jwndlng.github.io/openspec-dashboard/#/board">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://jwndlng.github.io/openspec-dashboard/screenshots/board-dark.png">
+    <img alt="The combined Kanban board: one column per lifecycle step from New to Archived, cards grouped and coloured by repository, with task progress, last activity, branch badges and warnings." src="https://jwndlng.github.io/openspec-dashboard/screenshots/board-light.png">
+  </picture>
+</a>
+
 ## Run
 
 Requires [Bun](https://bun.sh) ≥ 1.4 to build; the compiled binary needs nothing else.
@@ -14,6 +23,8 @@ bun run build                   # dist/openspec-dashboard (single binary, UI + f
 ./dist/openspec-dashboard       # opens the browser; --port N and --no-open are available
 bun test                        # unit + API tests against the fixture repos in test/fixtures
 bun run check                   # lint + typecheck + tests — what CI runs
+bun run build:demo              # dist/demo/index.html — the demo: same UI, in-memory API, sample data (open it from disk)
+bun run screenshots             # dist/demo/screenshots/*.png from the demo build (needs Chrome; CHROME_BIN overrides)
 ```
 
 First run: open **Settings** and add a workspace root such as `~/Workspace`. Discovery runs immediately and lists
