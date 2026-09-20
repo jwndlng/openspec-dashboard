@@ -3,7 +3,7 @@ import { boardColumns, isComplete } from "../shared/columns.ts";
 import type { ChangeSnapshot, Config, RepoSnapshot, Snapshot } from "../shared/types.ts";
 import { NoRepos } from "./empty.tsx";
 import { EMPTY_FILTERS, parseFilters, serializeFilters, type Filters } from "./filters.ts";
-import { applyCommand, cdCommand, daysSince, relTime } from "./format.ts";
+import { applyCommand, cdCommand, daysSince, relTime, splitBranchLabel } from "./format.ts";
 import { assignRepoHues, groupByRepo, recentArchived } from "./repoGroups.ts";
 import { navigate } from "./routes.ts";
 
@@ -39,6 +39,23 @@ function CopyButton({ text, label = "Copy apply" }: { text: string; label?: stri
   );
 }
 
+/**
+ * Branch name that never outgrows its container: the head is clipped with an ellipsis, the tail always
+ * shows. All characters stay in the DOM (copyable); the full name is the tooltip and accessible name.
+ */
+function BranchBadge({ branch, hint }: { branch: string; hint: string }) {
+  const { head, tail } = splitBranchLabel(branch);
+  return (
+    <span class="badge brand mono truncate" title={`${branch} — ${hint}`} role="img" aria-label={`branch ${branch}`}>
+      <span aria-hidden="true">⎇</span>
+      <span class="text" aria-hidden="true">
+        <span class="head">{head}</span>
+        {tail && <span class="tail">{tail}</span>}
+      </span>
+    </span>
+  );
+}
+
 function Meter({ done, total }: { done: number; total: number }) {
   const full = total > 0 && done === total;
   const pct = total > 0 ? Math.round((done / total) * 100) : 0;
@@ -71,11 +88,7 @@ function ChangeCard({ card, now, showRepo }: { card: Card; now: number; showRepo
           {card.archived ? `archived ${card.archived}` : `${relTime(card.lastActivityAt, now)} ago`}
         </span>
         {isComplete(card.stage) && age !== undefined && <span class="badge ok">✓ complete · {age}d</span>}
-        {card.branchMatch && (
-          <span class="badge brand mono" title="a branch or worktree matches this change">
-            ⎇ {card.branchMatch}
-          </span>
-        )}
+        {card.branchMatch && <BranchBadge branch={card.branchMatch} hint="a branch or worktree matches this change" />}
         {noTasks && <span class="badge warn">no tasks</span>}
         {card.warnings?.filter((w) => w !== "tasks file has no tasks").map((w) => (
           <span class="badge danger" title={w}>
@@ -160,11 +173,7 @@ function RepoHeader({ repo, now }: { repo: RepoSnapshot; now: number }) {
           <span class="sep">/</span>
           {repo.name}
         </h1>
-        {repo.currentBranch && (
-          <span class="badge brand mono" title="current branch">
-            ⎇ {repo.currentBranch}
-          </span>
-        )}
+        {repo.currentBranch && <BranchBadge branch={repo.currentBranch} hint="current branch" />}
         {repo.worktrees.length > 0 && (
           <span class="badge" title={repo.worktrees.map((w) => `${w.branch} — ${w.path}`).join("\n")}>
             {repo.worktrees.length} {repo.worktrees.length === 1 ? "worktree" : "worktrees"}

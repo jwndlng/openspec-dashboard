@@ -48,7 +48,8 @@ what it found under **Discovered**; click **Enable** on the repos to track, then
   added, modified, removed and renamed requirements. A finished change without delta specs has nothing to sync and goes
   straight to Synced; `openspec archive` syncs and archives in one go, so cards often skip it. Done and Synced both count
   as "to archive".
-  Cards show repo, change, task progress, last activity, a matching branch/worktree, and a
+  Cards show repo, change, task progress, last activity, a matching branch/worktree (long branch names are
+  shortened in the middle so they stay inside the card; hover for the full name), and a
   "Copy apply command" action (`cd <repo> && claude "/opsx:apply <change>"`).
   Within each column, cards are **grouped by repository** (same order in every column), and every repository gets its
   own automatic, stable colour — on the group header, its cards and its filter chip — in both themes.
