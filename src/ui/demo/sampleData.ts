@@ -297,6 +297,7 @@ export function buildSample(now: number): Sample {
   const config = {
     version: 1,
     scanRoots: [DEMO_ROOT],
+    ignorePaths: [],
     repos: REPOS.map((r) => ({ id: r.id, path: repoPath(r.name), name: r.name, enabled: true })),
     pollIntervalSeconds: 60,
     port: 4711,

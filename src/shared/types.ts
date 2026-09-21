@@ -143,6 +143,8 @@ export interface AgentSessionsConfig {
 export interface Config {
   version: 1;
   scanRoots: string[];
+  /** Absolute path prefixes discovery never descends into or reports. Tracked repositories below them stay tracked. */
+  ignorePaths: string[];
   repos: RepoConfig[];
   pollIntervalSeconds: number;
   port: number;
@@ -241,9 +243,20 @@ export function availableActions(change: Pick<ChangeSnapshot, "archived" | "arti
   return actions;
 }
 
+/** Another known repository with the same `origin` remote: probably a second clone, but never merged or hidden. */
+export interface SameRemoteRepo {
+  name: string;
+  path: string;
+  /** In the saved config (enabled or not), as opposed to another candidate. */
+  tracked: boolean;
+}
+
+/** A discovery candidate. `sameRemoteAs` is information for the user and is dropped when the candidate is enabled. */
+export type DiscoveredRepo = RepoConfig & { sameRemoteAs?: SameRemoteRepo[] };
+
 export interface DiscoverResult {
   /** Repositories found under the roots that are not in the config yet. Never persisted by discovery. */
-  candidates: RepoConfig[];
+  candidates: DiscoveredRepo[];
   errors: { root: string; message: string }[];
 }
 

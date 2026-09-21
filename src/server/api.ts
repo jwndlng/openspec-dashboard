@@ -1,5 +1,5 @@
 import type { Config, DiscoverResult, RepoConfig, ScanTriggerResult, SharedConfigApplyResult, SharedConfigAssignment, SharedConfigPreview } from "../shared/types.ts";
-import { ConfigValidationError, saveConfig, validateConfig, validateScanRoots } from "./config.ts";
+import { ConfigValidationError, saveConfig, validateConfig, validateIgnorePaths, validateScanRoots } from "./config.ts";
 import { discoverRepos } from "./discover.ts";
 import type { Scanner } from "./scanner.ts";
 import { applyTo, EMPTY_SHARED_CONFIG, loadSharedConfig, previewFor, SharedConfigValidationError, saveSharedConfig } from "./sharedConfig.ts";
@@ -58,11 +58,12 @@ async function putConfig(state: AppState, req: Request): Promise<Response> {
 }
 
 /**
- * Read-only: walks the roots from the body (the UI's unsaved draft) or, without
- * a body, the saved ones. Never touches `state.config`.
+ * Read-only: walks the roots and honours the ignore paths from the body (the UI's unsaved draft) or, where the body
+ * has none, the saved ones. Never touches `state.config`.
  */
 async function postDiscover(state: AppState, req: Request): Promise<Response> {
   let roots = state.config.scanRoots;
+  let ignorePaths = state.config.ignorePaths;
   const text = await req.text();
   if (text.trim()) {
     let body: unknown;
@@ -71,17 +72,16 @@ async function postDiscover(state: AppState, req: Request): Promise<Response> {
     } catch {
       return json({ error: "body must be JSON" }, 400);
     }
-    const scanRoots = (body as { scanRoots?: unknown } | null)?.scanRoots;
-    if (scanRoots !== undefined) {
-      try {
-        roots = validateScanRoots(scanRoots);
-      } catch (err) {
-        if (err instanceof ConfigValidationError) return json({ error: err.message, issues: err.issues }, 400);
-        throw err;
-      }
+    const draft = body as { scanRoots?: unknown; ignorePaths?: unknown } | null;
+    try {
+      if (draft?.scanRoots !== undefined) roots = validateScanRoots(draft.scanRoots);
+      if (draft?.ignorePaths !== undefined) ignorePaths = validateIgnorePaths(draft.ignorePaths);
+    } catch (err) {
+      if (err instanceof ConfigValidationError) return json({ error: err.message, issues: err.issues }, 400);
+      throw err;
     }
   }
-  const result: DiscoverResult = await discoverRepos(state.config.repos, roots);
+  const result: DiscoverResult = await discoverRepos(state.config.repos, roots, ignorePaths);
   return json(result);
 }
 

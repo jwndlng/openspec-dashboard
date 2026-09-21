@@ -79,12 +79,13 @@ export function createDemoApi({ now = Date.now, latencyMs = 150 }: DemoApiOption
       config = structuredClone(next);
       return reply(config);
     },
-    discover: (scanRoots) => {
+    discover: (scanRoots, ignorePaths) => {
       const roots = scanRoots ?? config.scanRoots;
+      const ignored = (path: string) => (ignorePaths ?? config.ignorePaths).some((p) => path === p || path.startsWith(`${p.replace(/\/+$/, "")}/`));
       const inDemo = (root: string) => root === DEMO_ROOT || root.startsWith(`${DEMO_ROOT}/`) || DEMO_ROOT.startsWith(`${root.replace(/\/+$/, "")}/`);
       const tracked = new Set(config.repos.map((r) => r.id));
       return reply({
-        candidates: roots.some(inDemo) ? sample.candidates.filter((c) => !tracked.has(c.id)) : [],
+        candidates: roots.some(inDemo) ? sample.candidates.filter((c) => !tracked.has(c.id) && !ignored(c.path)) : [],
         errors: roots.filter((root) => !inDemo(root)).map((root) => ({ root, message: "The demo cannot read your disk; only the sample workspace exists here." })),
       });
     },

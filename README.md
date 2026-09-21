@@ -41,6 +41,17 @@ what it found under **Discovered**; click **Enable** on the repos to track, then
   **Rediscover**, and never writes to the config. Only repos you enable are stored; forgetting (×) a tracked repo
   returns it to the discovered list. Configs from earlier versions may still hold disabled entries for every repo
   that was discovered back then — they stay under **Tracked** and can be forgotten individually.
+  - **One directory, one repository.** Roots, ignored paths and repository paths are stored canonically (`~` expanded,
+    symlinks resolved, on-disk casing), so `~/Workspace/alpha` and `~/workspace/alpha` — or a symlinked root — never
+    list a repository twice. A config from an earlier version is migrated on load: paths are canonicalised and entries
+    that turn out to be the same directory are merged (the enabled one and its name win).
+  - **Ignored paths** keep an area out of discovery, e.g. a directory of bulk checkouts: add it under *Workspace
+    roots*, or click **Ignore** on a candidate. They only affect discovery — a repository that is already tracked
+    stays tracked until you forget it.
+  - **Second clones.** Repositories sharing a display name show the distinguishing part of their parent path, and a
+    candidate whose name is taken is enabled as `<name> (<parent dir>)`. A candidate with the same `origin` remote as
+    another known repository gets a *same remote as …* badge. That is information only: repositories are never merged
+    or hidden by remote, because distinct projects can share one.
 - **Projects** (`/`, the landing page) — one row per tracked repository: open changes per stage, open total, how many
   are complete but not archived, scan errors, and when the repository was last updated. Sorted newest-updated first;
   click a column header to sort by name, open or to-archive (again to reverse), search by name — kept in the URL.
@@ -75,7 +86,7 @@ what it found under **Discovered**; click **Enable** on the repos to track, then
   System → Light → Dark. The choice is stored in the browser (`localStorage`), not in the config file.
 
 State lives in `~/.openspec-dashboard/` (`config.json`, `shared-config.json`, `cache/snapshot.json`, `sessions/`, `worktrees/`). The dashboard
-only runs read-only `git` commands (`rev-parse`, `log`, `worktree list`, `status` — with optional locks disabled, so
+only runs read-only `git` commands (`rev-parse`, `log`, `worktree list`, `status`, `config --get` — with optional locks disabled, so
 not even `.git/index` is refreshed), and scanning, polling, discovery and saving settings never write to a tracked
 repository. The things that do are described next: shared config, and the opt-in agent sessions further down.
 
