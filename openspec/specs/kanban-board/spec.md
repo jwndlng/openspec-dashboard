@@ -158,7 +158,7 @@ Each card SHALL offer a "Copy apply command" action that copies `cd <repoPath> &
 - **THEN** the clipboard contains `cd /Users/x/Workspace/acme/forum-admin && claude "/opsx:apply multi-tenant-sync"`
 
 ### Requirement: Visual design follows the dashboard token set
-The UI SHALL define its colours as two token sets sharing the same token names: the dark set defined in design.md (backgrounds `#080d16`…`#243350`, teal brand `#71c7c5`) and a light set (backgrounds `#f6f8fb`…`#d3dbe6`, teal brand `#1f8a88`). Both themes SHALL share Space Grotesk for text, JetBrains Mono for identifiers and a 4px radius, with fonts bundled locally. Component styles MUST reference colour tokens only and MUST NOT contain literal colour values. In both themes, text and status colours SHALL have a contrast ratio of at least 4.5:1 against the backgrounds they are rendered on. The UI MUST render correctly without network access.
+The UI SHALL define its colours as two token sets sharing the same token names: the dark set defined in design.md (neutral grey backgrounds `#0b0d10`…`#313437`, teal brand `#71c7c5`) and a light set (backgrounds `#f6f8fb`…`#d3dbe6`, teal brand `#1f8a88`). The dark theme's background, text and border tokens SHALL be near-neutral greys with at most a slight cool tint; in the dark theme teal SHALL be used only as an accent (focus, active state, primary actions, progress) and MUST NOT be the colour of panel or card borders. Both themes SHALL share Space Grotesk for text, JetBrains Mono for identifiers and a 4px radius, with fonts bundled locally. Component styles MUST reference colour tokens only and MUST NOT contain literal colour values. In both themes, text and status colours SHALL have a contrast ratio of at least 4.5:1 against the backgrounds they are rendered on. The UI MUST render correctly without network access.
 
 #### Scenario: Offline rendering
 - **WHEN** the dashboard is opened with no network connectivity
@@ -171,6 +171,14 @@ The UI SHALL define its colours as two token sets sharing the same token names: 
 #### Scenario: Status badges readable in light theme
 - **WHEN** the light theme is active and a card shows success, warning and danger badges
 - **THEN** each badge's text has a contrast ratio of at least 4.5:1 against the card background and is still accompanied by a text label
+
+#### Scenario: Dark ground is neutral grey
+- **WHEN** the dark theme is active
+- **THEN** the page, column, card and panel backgrounds are near-neutral greys whose red, green and blue channels differ by no more than 6 of 255, and panel and card borders are grey rather than teal
+
+#### Scenario: Subtle text readable on dark cards
+- **WHEN** the dark theme is active and a card shows heading, body and subtle text
+- **THEN** each has a contrast ratio of at least 4.5:1 against the card background
 
 ### Requirement: Cards are grouped by repository within each column
 Within every column, including the expanded `Archived` column, the board SHALL group cards by repository: all cards of one repository SHALL be adjacent, under a group header showing the repository name and the number of cards in that group. Groups SHALL be ordered by repository name, case-insensitively, and the order SHALL be the same in every column. Within a group, cards SHALL keep the order they would have had without grouping. A repository with no visible cards in a column SHALL NOT produce a group there. Column counts SHALL remain the total number of cards in the column. Grouping SHALL be applied after filtering, and in the `Archived` column after selecting the most recently archived changes, so it never changes which cards are shown.
