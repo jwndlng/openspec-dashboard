@@ -415,3 +415,14 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: 
 .agent-repo .path { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-mono); font-size: 11px; }
 .agent-tools { display: flex; flex-direction: column; gap: 4px; }
 .agent-tools textarea { resize: vertical; }
+.open-work { position: relative; }
+.btn.attention { color: var(--warning); border-color: var(--warning-border); }
+.open-work-list {
+  position: absolute; top: calc(100% + 6px); right: 0; z-index: 15; width: min(720px, 92vw); max-height: 70vh; overflow: auto;
+  display: flex; flex-direction: column; gap: 6px; padding: var(--gap-1);
+  background: var(--bg-raised); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: 0 12px 32px #0006;
+}
+.open-work-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gap-1); padding: 6px 0; border-top: 1px solid var(--border-light); }
+.open-work-what { display: flex; flex-direction: column; flex: 1; min-width: 180px; }
+.open-work-what .hint { font-size: 11px; color: var(--fg-subtle); word-break: break-all; }
+.session-work { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gap-1); }

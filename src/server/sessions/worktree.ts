@@ -20,8 +20,12 @@ export interface Removable {
   reason?: string;
 }
 
-/** Read-only: is the worktree clean and is every commit on it also reachable from somewhere else? */
-export async function checkWorktreeRemovable(worktreePath: string): Promise<Removable> {
+/**
+ * Read-only: is the worktree clean, and is every commit on it also reachable from somewhere else — or is its work
+ * merged (`merged`, from the work status)? Removing a worktree never deletes its branch, so merged work whose upstream
+ * was deleted after a squash merge can go as well.
+ */
+export async function checkWorktreeRemovable(worktreePath: string, merged = false): Promise<Removable> {
   try {
     if (!(await stat(worktreePath)).isDirectory()) return { removable: false, reason: "worktree path is not a directory" };
   } catch {
@@ -30,6 +34,7 @@ export async function checkWorktreeRemovable(worktreePath: string): Promise<Remo
   const status = await git(worktreePath, ["status", "--porcelain", "--untracked-files=all"]);
   if (!status.ok) return { removable: false, reason: "could not read the worktree's status" };
   if (status.out) return { removable: false, reason: "the worktree has uncommitted changes" };
+  if (merged) return { removable: true };
 
   const upstream = await git(worktreePath, ["rev-list", "--count", "@{u}..HEAD"]);
   if (upstream.ok) {
@@ -46,8 +51,8 @@ export async function checkWorktreeRemovable(worktreePath: string): Promise<Remo
 }
 
 /** `git worktree unlock` (the CLI leaves its worktrees locked) followed by a non-forcing `git worktree remove`. */
-export async function removeWorktree(repoPath: string, worktreePath: string): Promise<Removable> {
-  const check = await checkWorktreeRemovable(worktreePath);
+export async function removeWorktree(repoPath: string, worktreePath: string, merged = false): Promise<Removable> {
+  const check = await checkWorktreeRemovable(worktreePath, merged);
   if (!check.removable) return check;
   await git(repoPath, ["worktree", "unlock", worktreePath]); // fails harmlessly when it was not locked
   const removed = await git(repoPath, ["worktree", "remove", worktreePath]);

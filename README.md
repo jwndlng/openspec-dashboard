@@ -140,6 +140,13 @@ the dashboard shows it, passes your keystrokes on, and interprets nothing.
   terminal shows what happened meanwhile. Cards show `running`, `quiet 12m` (the terminal has been silent — the agent is
   probably waiting for you) or how the session ended. **Resume** starts the agent's resume command in the same worktree.
   Stopping the dashboard ends its agents; their output stays viewable.
+- **Nothing is left behind**: every session worktree gets a work status, also after its session ended or its record
+  was deleted — `3 uncommitted`, `2 not pushed`, `pushed` or `merged` — shown on the card and in **Open work** in the
+  top bar, which lists all of them across repositories and highlights work nobody touched for a day (pushed: a week).
+  It is read from local git only, so "pushed" and "merged" are as of your last `git fetch`; squash merges are
+  recognised. **Ship** asks the agent to commit, push and open a pull request (the prompt is editable per agent) — the
+  dashboard itself never commits or pushes. Once the work is merged, clean-up offers to remove the worktree; the branch
+  is kept.
 - **What protects you**: the feature is off until you enable it; the server only listens on `127.0.0.1`; the terminal
   WebSocket and every mutating route accept only the dashboard's own origin, so another web page cannot type into your
   agent; agents are started without a shell from the argument list you configured; and what an agent may do is decided

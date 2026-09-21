@@ -3,10 +3,10 @@
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
 import { useEffect, useRef, useState } from "preact/hooks";
-import type { Session } from "../shared/types.ts";
+import { SHIPPABLE_WORK, type Session } from "../shared/types.ts";
 import { api, terminalSocketUrl } from "./api.ts";
 import { cdCommand } from "./format.ts";
-import { sessionBadge } from "./sessionState.ts";
+import { sessionBadge, workBadge } from "./sessionState.ts";
 import { useSessionUi } from "./sessions.tsx";
 
 function Copy({ text, label }: { text: string; label: string }) {
@@ -89,9 +89,9 @@ function TerminalView({ sessionId, onExit }: { sessionId: string; onExit: () => 
   );
 }
 
-function CloseDialog({ session, onDone, onCancel }: { session: Session; onDone: () => void; onCancel: () => void }) {
+function CloseDialog({ session, merged, onDone, onCancel }: { session: Session; merged: boolean; onDone: () => void; onCancel: () => void }) {
   const [status, setStatus] = useState<{ removable: boolean; reason?: string }>();
-  const [remove, setRemove] = useState(false);
+  const [remove, setRemove] = useState(merged); // merged work: removing the worktree is what is left to do
   const [busy, setBusy] = useState(false);
   useEffect(() => {
     api.worktreeStatus(session.id).then(setStatus).catch(() => setStatus({ removable: false, reason: "could not check the worktree" }));
@@ -114,7 +114,7 @@ function CloseDialog({ session, onDone, onCancel }: { session: Session; onDone: 
           disabled={busy}
           onClick={async () => {
             setBusy(true);
-            await api.closeSession(session.id, remove).catch(() => undefined);
+            await api.closeSession(session.id, remove && status?.removable === true).catch(() => undefined);
             onDone();
           }}
         >
@@ -144,6 +144,10 @@ export function SessionPanel() {
   if (!id) return null;
   const badge = session ? sessionBadge(session) : undefined;
   const repo = ui.config?.repos.find((r) => r.id === session?.repoId);
+  const worktree = session && ui.worktrees.find((w) => w.path === session.worktreePath);
+  const work = worktree && workBadge(worktree, ui.sessions);
+  const shippable = worktree !== undefined && SHIPPABLE_WORK.includes(worktree.work.state);
+  const merged = worktree?.work.state === "merged";
 
   const act = async (fn: () => Promise<unknown>) => {
     try {
@@ -179,8 +183,36 @@ export function SessionPanel() {
             </span>
           </div>
         )}
+        {work && (
+          <div class="session-work">
+            <span class={`badge ${work.tone}`} title={work.title}>
+              {work.label}
+            </span>
+            <span class="hint">{merged && session?.state !== "running" ? `${work.title}: use Clean up.` : work.title}</span>
+          </div>
+        )}
         {session && (
           <div class="row">
+            {shippable && (
+              <button
+                type="button"
+                class="btn sm primary"
+                title={
+                  session.state === "running"
+                    ? `Types a prompt into the terminal asking ${session.agentName} to commit, push and open a pull request`
+                    : `Starts ${session.agentName} in this worktree with a prompt to commit, push and open a pull request`
+                }
+                onClick={() =>
+                  act(async () => {
+                    const wasRunning = session.state === "running";
+                    await api.shipSession(session.id);
+                    if (!wasRunning) setGeneration((n) => n + 1);
+                  })
+                }
+              >
+                ⇪ Ship
+              </button>
+            )}
             {session.state !== "running" && session.resumable && (
               <button
                 type="button"
@@ -220,6 +252,7 @@ export function SessionPanel() {
         {confirmClose && session && (
           <CloseDialog
             session={session}
+            merged={merged && session.state !== "running"}
             onCancel={() => setConfirmClose(false)}
             onDone={() => {
               setConfirmClose(false);

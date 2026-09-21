@@ -7,7 +7,7 @@ import { Overview } from "./overview.tsx";
 import { enabledOnly } from "./overviewState.ts";
 import { type Route, routeFromPath } from "./routes.ts";
 import { SessionPanel } from "./sessionPanel.tsx";
-import { SessionProvider } from "./sessions.tsx";
+import { OpenWork, SessionProvider } from "./sessions.tsx";
 import { Settings } from "./settings.tsx";
 import { currentPath, href, navigate, onRouteChange } from "./url.ts";
 import { applyTheme, loadPreference, nextPreference, resolveTheme, savePreference, type ThemePreference } from "./theme.ts";
@@ -112,6 +112,7 @@ export function App() {
 
   return (
     <div class="app">
+      <SessionProvider config={config}>
       <header class="topbar">
         <div class="brand">
           <span class="dot" />
@@ -123,6 +124,7 @@ export function App() {
           {link("/settings", "Settings", route.view === "settings")}
         </nav>
         <div class="spacer" />
+        <OpenWork />
         {failing.map((r) => (
           <span class="badge danger" title={r.error}>
             ⚠ {r.name}
@@ -139,7 +141,6 @@ export function App() {
           </button>
         </span>
       </header>
-      <SessionProvider config={config}>
       <main class="main">
         {route.view === "settings" ? (
           <Settings config={config} snapshot={shown} onSaved={(c) => { setConfig(c); void loadState(); }} onRescan={reloadSoon} />

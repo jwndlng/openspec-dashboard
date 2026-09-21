@@ -101,7 +101,7 @@ export interface AgentProfile {
    *  the prompt is typed into the terminal once the agent has started. */
   command: string[];
   /** Opening prompt per session starter; `{change}` is the only placeholder. A starter without a prompt is not offered. */
-  prompts: Partial<Record<SessionAction, string>>;
+  prompts: Partial<Record<PromptKey, string>>;
   /** Continues this agent's latest conversation in the same directory, e.g. ["claude", "--continue"]. */
   resumeCommand?: string[];
   /** Environment variables removed for the agent, e.g. API keys so a CLI's own login is used. */
@@ -125,6 +125,42 @@ export interface Config {
 
 export type SessionAction = "draft" | "implement" | "archive";
 export const SESSION_ACTIONS: readonly SessionAction[] = ["draft", "implement", "archive"];
+/** `ship` is a prompt, not a starter: it asks the agent of an existing session to commit, push and open a pull request. */
+export type PromptKey = SessionAction | "ship";
+/** Agent-neutral on purpose, so every profile can ship without being configured for it. */
+export const DEFAULT_SHIP_PROMPT =
+  "Ship the work in this worktree: commit everything that belongs to it with a Conventional Commit message, push the branch, and open a pull request against the default branch if there is none yet. Do not merge it. Tell me the pull request URL.";
+
+/**
+ * What became of the work in a session's worktree, from local git only (nothing is fetched, so `merged` is as of the
+ * user's last fetch). `clean`: no commit the base lacks; `missing`: the directory is not a worktree (any more).
+ */
+export type WorkState = "missing" | "clean" | "uncommitted" | "unpushed" | "pushed" | "merged";
+export const SHIPPABLE_WORK: readonly WorkState[] = ["uncommitted", "unpushed", "pushed"];
+
+export interface WorkStatus {
+  state: WorkState;
+  /** Files for `uncommitted`, commits for `unpushed`. */
+  count?: number;
+  /** What the branch was compared with, e.g. `origin/main`. */
+  base?: string;
+}
+
+/** A directory under the dashboard's worktrees folder; it outlives session records, so it is listed on its own. */
+export interface SessionWorktree {
+  repoId: string;
+  name: string;
+  path: string;
+  change: string;
+  action: SessionAction;
+  branch?: string;
+  work: WorkStatus;
+  /** Latest of the branch's last commit and its session's last update. */
+  lastActivityAt?: string;
+  /** Most recent session in this worktree, if its record still exists. */
+  sessionId?: string;
+}
+
 /** A session is a process in a terminal: it runs, or it has ended. `failed` means it could not be started. */
 export type SessionState = "running" | "exited" | "failed";
 

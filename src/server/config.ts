@@ -38,11 +38,19 @@ const promptSchema = z
   .refine((v) => v.includes("{change}"), { message: "must contain {change}" })
   .refine(noBypass, { message: BYPASS_MESSAGE });
 
+// Ship is plain language about the worktree the agent already sits in, so it does not have to name the change.
+const shipPromptSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .refine(placeholdersOnly(["{change}"]), { message: "unknown placeholder; only {change} is supported" })
+  .refine(noBypass, { message: BYPASS_MESSAGE });
+
 const agentProfileSchema = z.object({
   id: z.string().regex(/^[a-z0-9][a-z0-9-]{0,31}$/, { message: "lower-case letters, digits and dashes" }),
   name: z.string().trim().min(1),
   command: commandSchema,
-  prompts: z.object({ draft: promptSchema.optional(), implement: promptSchema.optional(), archive: promptSchema.optional() }).default({}),
+  prompts: z.object({ draft: promptSchema.optional(), implement: promptSchema.optional(), archive: promptSchema.optional(), ship: shipPromptSchema.optional() }).default({}),
   resumeCommand: z.array(z.string().min(1).refine(noBypass, { message: BYPASS_MESSAGE })).min(1).optional(),
   unsetEnv: z.array(z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/)).optional(),
 });

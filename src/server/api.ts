@@ -169,7 +169,7 @@ async function sessionRoutes(state: AppState, req: Request, url: URL, server?: S
   const [, , , id, sub] = url.pathname.split("/"); // /api/sessions/<id>/<sub>
   try {
     if (!id) {
-      if (req.method === "GET") return json({ sessions: sessions.list(), agents: sessions.agents() });
+      if (req.method === "GET") return json({ sessions: sessions.list(), agents: sessions.agents(), worktrees: await sessions.worktrees() });
       if (req.method === "POST") return json(await sessions.open(await readJson(req)), 201);
     } else if (!sub) {
       if (req.method === "GET") return json(sessions.get(id));
@@ -188,6 +188,7 @@ async function sessionRoutes(state: AppState, req: Request, url: URL, server?: S
       return json(await sessions.worktreeStatus(id));
     } else if (req.method === "POST") {
       if (sub === "resume") return json(await sessions.resume(id));
+      if (sub === "ship") return json(await sessions.ship(id));
       if (sub === "close") return json(await sessions.close(id, { removeWorktree: (await readJson(req)).removeWorktree === true }));
     }
   } catch (err) {
@@ -301,6 +302,16 @@ export function crossSiteRefusal(req: Request): string | undefined {
 }
 
 /** Builds the `fetch` handler for Bun.serve (design.md D8). */
+async function postWorktreeRemove(state: AppState, req: Request): Promise<Response> {
+  if (!state.sessions) return json({ error: "agent sessions are not available" }, 403);
+  try {
+    return json(await state.sessions.removeWorktreeByName(await readJson(req)));
+  } catch (err) {
+    if (err instanceof SessionError) return json({ error: err.message }, err.status);
+    throw err;
+  }
+}
+
 export function createFetchHandler({ state, indexHtml }: AppOptions): (req: Request, server?: ServerLike) => Promise<Response> {
   return async (req, server) => {
     const url = new URL(req.url);
@@ -312,6 +323,7 @@ export function createFetchHandler({ state, indexHtml }: AppOptions): (req: Requ
         if (refusal) return json({ error: refusal }, 403);
       }
       if (pathname === "/api/sessions" || pathname.startsWith("/api/sessions/")) return sessionRoutes(state, req, url, server);
+      if (req.method === "POST" && pathname === "/api/worktrees/remove") return postWorktreeRemove(state, req);
       if (req.method === "GET" && pathname === "/api/state") return json(state.scanner.snapshot);
       if (req.method === "GET" && pathname === "/api/config") return json(state.config);
       if (req.method === "PUT" && pathname === "/api/config") return putConfig(state, req);

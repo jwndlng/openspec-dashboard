@@ -3,17 +3,19 @@
 // fans output out to attached terminals and takes their input. It does not interpret what the agent prints.
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
-import { availableActions, OPEN_SESSION_STATES, repoAgentEnabled, SESSION_ACTIONS, type AgentAvailability, type Config, type Session, type SessionAction, type Snapshot } from "../../shared/types.ts";
+import { availableActions, OPEN_SESSION_STATES, repoAgentEnabled, SESSION_ACTIONS, SHIPPABLE_WORK, type AgentAvailability, type Config, type Session, type SessionAction, type SessionWorktree, type Snapshot } from "../../shared/types.ts";
 import { worktreesDir } from "../paths.ts";
 import { CHANGE_NAME } from "../source.ts";
-import { agentEnv, agentFor, availability, launchCommand, openingPrompt } from "./agents.ts";
+import { agentEnv, agentFor, availability, launchCommand, openingPrompt, shipPrompt } from "./agents.ts";
 import { SessionStore } from "./store.ts";
 import { spawnTerminal, type TerminalProcess } from "./terminal.ts";
+import { listWorktrees, readWorkStatus, WORKTREE_NAME } from "./workStatus.ts";
 import { checkWorktreeRemovable, copyChangeIfMissing, ensureWorktree, removeWorktree, type Removable } from "./worktree.ts";
 
 export const SCROLLBACK_BYTES = 1024 * 1024;
 const TYPE_PROMPT_DELAY_MS = 1500;
 const OUTPUT_STAMP_MS = 5000;
+const WORKTREES_TTL_MS = 15_000;
 
 export class SessionError extends Error {
   constructor(
@@ -77,6 +79,7 @@ export class SessionManager {
   private sessions = new Map<string, Session>();
   private live = new Map<string, Live>();
   private readonly store: SessionStore;
+  private worktreeCache?: { at: number; list: Promise<SessionWorktree[]> };
 
   constructor(private readonly deps: ManagerDeps) {
     this.store = deps.store ?? new SessionStore();
@@ -160,21 +163,43 @@ export class SessionManager {
     return session;
   }
 
-  /** Continues the agent's latest conversation in the session's worktree, in the same session record. */
-  async resume(id: string): Promise<Session> {
-    const session = this.get(id);
-    if (session.state === "running") return session;
+  /**
+   * Every session worktree with what became of its work. Cached briefly (the UI polls) and shared while in flight;
+   * anything that changes a worktree's state drops the cache. With the feature off, no git runs at all.
+   */
+  worktrees(): Promise<SessionWorktree[]> {
+    const config = this.deps.getConfig();
+    if (!config.agentSessions.enabled) return Promise.resolve([]);
+    const cached = this.worktreeCache;
+    if (cached && Date.now() - cached.at < WORKTREES_TTL_MS) return cached.list;
+    const list = listWorktrees(config.repos, this.list());
+    this.worktreeCache = { at: Date.now(), list };
+    list.catch(() => {
+      if (this.worktreeCache?.list === list) this.worktreeCache = undefined;
+    });
+    return list;
+  }
+
+  private forgetWorktrees(): void {
+    this.worktreeCache = undefined;
+  }
+
+  /** Checks shared by everything that starts an agent again in an existing session's worktree. */
+  private async prepareRestart(session: Session) {
     const config = this.deps.getConfig();
     if (!config.agentSessions.enabled) throw new SessionError(403, "agent sessions are disabled");
     const agent = config.agentSessions.agents.find((a) => a.id === session.agentId);
-    if (!agent?.resumeCommand) throw new SessionError(400, "this agent has no resume command configured");
-    if (!Bun.which(agent.resumeCommand[0])) throw new SessionError(503, `${agent.name} was not found (${agent.resumeCommand[0]})`);
-    const running = this.list().find((s) => s.id !== id && s.repoId === session.repoId && s.change === session.change && s.state === "running");
+    if (!agent) throw new SessionError(409, "this session's agent is no longer configured");
+    const running = this.list().find((s) => s.id !== session.id && s.repoId === session.repoId && s.change === session.change && s.state === "running");
     if (running) throw new SessionError(409, "another session for this change is running");
     const repo = config.repos.find((r) => r.id === session.repoId);
     if (!repo) throw new SessionError(409, "the repository is no longer configured");
+    return { agent, repo };
+  }
+
+  private async restart(session: Session, repoPath: string, argv: string[], env: Record<string, string>, typed?: string): Promise<void> {
     try {
-      await ensureWorktree(repo.path, session.worktreePath, session.branch);
+      await ensureWorktree(repoPath, session.worktreePath, session.branch);
     } catch (err) {
       throw new SessionError(500, err instanceof Error ? err.message : String(err));
     }
@@ -182,7 +207,53 @@ export class SessionManager {
     session.exitCode = undefined;
     session.error = undefined;
     await this.touch(session);
-    this.start(session, [...agent.resumeCommand], agentEnv(agent, process.env));
+    this.start(session, argv, env, typed);
+  }
+
+  /**
+   * Asks the agent to commit, push and open a pull request; the dashboard does none of that itself. A running agent
+   * gets the prompt typed into its terminal; an ended one is started again in the worktree, continuing its
+   * conversation when it can, so it still knows what it did.
+   */
+  async ship(id: string): Promise<Session> {
+    const session = this.get(id);
+    const { agent, repo } = await this.prepareRestart(session);
+    const { work } = await readWorkStatus(repo.path, session.worktreePath);
+    if (!SHIPPABLE_WORK.includes(work.state)) throw new SessionError(409, `there is nothing to ship (${work.state})`);
+    const prompt = shipPrompt(agent, session.change);
+    this.forgetWorktrees();
+    const proc = this.live.get(id)?.proc;
+    if (session.state === "running" && proc) {
+      proc.write(`${prompt}\r`);
+      return session;
+    }
+    const launch = agent.resumeCommand ? { argv: [...agent.resumeCommand], typed: prompt } : launchCommand(agent, prompt);
+    if (!Bun.which(launch.argv[0])) throw new SessionError(503, `${agent.name} was not found (${launch.argv[0]})`);
+    await this.restart(session, repo.path, launch.argv, agentEnv(agent, process.env), launch.typed);
+    return session;
+  }
+
+  /** For worktrees whose session record is gone; the path is built here, never taken from the request. */
+  async removeWorktreeByName(input: { repoId?: unknown; name?: unknown }): Promise<Removable> {
+    if (typeof input.name !== "string" || !WORKTREE_NAME.test(input.name)) throw new SessionError(400, "invalid worktree name");
+    const repo = this.deps.getConfig().repos.find((r) => r.id === input.repoId);
+    if (!repo) throw new SessionError(404, "unknown repository");
+    const path = join(worktreesDir(), repo.id, input.name);
+    if (this.list().some((s) => s.worktreePath === path && s.state === "running")) throw new SessionError(409, "a session is running in this worktree");
+    const { work } = await readWorkStatus(repo.path, path);
+    if (work.state === "missing") throw new SessionError(404, "unknown worktree");
+    this.forgetWorktrees();
+    return removeWorktree(repo.path, path, work.state === "merged");
+  }
+
+  /** Continues the agent's latest conversation in the session's worktree, in the same session record. */
+  async resume(id: string): Promise<Session> {
+    const session = this.get(id);
+    if (session.state === "running") return session;
+    const { agent, repo } = await this.prepareRestart(session);
+    if (!agent.resumeCommand) throw new SessionError(400, "this agent has no resume command configured");
+    if (!Bun.which(agent.resumeCommand[0])) throw new SessionError(503, `${agent.name} was not found (${agent.resumeCommand[0]})`);
+    await this.restart(session, repo.path, [...agent.resumeCommand], agentEnv(agent, process.env));
     return session;
   }
 
@@ -225,6 +296,7 @@ export class SessionManager {
     session.state = "exited";
     session.exitCode = exitCode;
     if (error) session.error = error;
+    this.forgetWorktrees();
     const live = this.live.get(session.id);
     if (live) await this.store.saveOutput(session.id, live.scrollback.bytes()).catch(() => undefined);
     await this.touch(session);
@@ -264,13 +336,20 @@ export class SessionManager {
     let worktree: Removable | undefined;
     if (options.removeWorktree) {
       const repo = this.deps.getConfig().repos.find((r) => r.id === session.repoId);
-      worktree = repo ? await removeWorktree(repo.path, session.worktreePath) : { removable: false, reason: "the repository is no longer configured" };
+      worktree = repo ? await removeWorktree(repo.path, session.worktreePath, await this.isMerged(repo.path, session)) : { removable: false, reason: "the repository is no longer configured" };
+      this.forgetWorktrees();
     }
     return { session, worktree };
   }
 
-  worktreeStatus(id: string): Promise<Removable> {
-    return checkWorktreeRemovable(this.get(id).worktreePath);
+  private async isMerged(repoPath: string, session: Session): Promise<boolean> {
+    return (await readWorkStatus(repoPath, session.worktreePath)).work.state === "merged";
+  }
+
+  async worktreeStatus(id: string): Promise<Removable> {
+    const session = this.get(id);
+    const repo = this.deps.getConfig().repos.find((r) => r.id === session.repoId);
+    return checkWorktreeRemovable(session.worktreePath, repo ? await this.isMerged(repo.path, session) : false);
   }
 
   async remove(id: string): Promise<void> {
