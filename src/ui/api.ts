@@ -1,4 +1,5 @@
-import type { ShipResult, WorkStatus } from "../shared/types.ts";
+import type { ActivityPage, ShipResult, WorkStatus } from "../shared/types.ts";
+import type { ActivityQuery } from "../shared/activity.ts";
 import type { AgentAvailability, Config, DiscoverResult, ScanTriggerResult, Session, SessionAction, SessionWorktree, SharedConfig, SharedConfigApplyResult, SharedConfigAssignment, SharedConfigPreview, Snapshot } from "../shared/types.ts";
 import { socketOrigin } from "./url.ts";
 
@@ -28,6 +29,8 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
 /** Everything the UI asks of a backend. The demo build implements it in memory, so a new operation needs both. */
 export interface Api {
   state(): Promise<Snapshot>;
+  /** What the dashboard observed, newest first. Read-only history; nothing else depends on it. */
+  activity(query?: ActivityQuery): Promise<ActivityPage>;
   config(): Promise<Config>;
   saveConfig(config: Config): Promise<Config>;
   /** Read-only; pass the draft roots to discover against unsaved edits. */
@@ -58,8 +61,20 @@ export interface Api {
   promptSession(id: string, action: SessionAction): Promise<Session>;
 }
 
+export function activityQueryString(query: ActivityQuery): string {
+  const params = new URLSearchParams();
+  if (query.limit !== undefined) params.set("limit", String(query.limit));
+  if (query.before) params.set("before", query.before);
+  if (query.repos?.length) params.set("repos", query.repos.join(","));
+  if (query.kinds?.length) params.set("kinds", query.kinds.join(","));
+  if (query.since !== undefined) params.set("since", query.since);
+  const text = params.toString();
+  return text ? `?${text}` : "";
+}
+
 export const httpApi: Api = {
   state: () => call<Snapshot>("/api/state"),
+  activity: (query = {}) => call<ActivityPage>(`/api/activity${activityQueryString(query)}`),
   config: () => call<Config>("/api/config"),
   saveConfig: (config) => call<Config>("/api/config", { method: "PUT", body: JSON.stringify(config) }),
   discover: (scanRoots) =>
@@ -90,6 +105,7 @@ export function setApi(impl: Api): void {
 /** What components import; forwards to the implementation the entry point chose (HTTP unless told otherwise). */
 export const api: Api = {
   state: () => current.state(),
+  activity: (query) => current.activity(query),
   config: () => current.config(),
   saveConfig: (config) => current.saveConfig(config),
   discover: (scanRoots) => current.discover(scanRoots),

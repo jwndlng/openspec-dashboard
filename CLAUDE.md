@@ -48,8 +48,10 @@ bun test test/scanner.test.ts   # a single test file
    relative to a module path must also be verified in `dist/openspec-dashboard`.
 4. **No network at runtime.** The UI is one HTML file with inlined JS, CSS and fonts; do not add CDN links, remote
    fonts or fetches to other hosts.
-5. **The repository is the source of truth.** The dashboard indexes; it never stores facts about changes that are not
-   derivable from the repositories.
+5. **The repository is the source of truth.** The dashboard indexes; everything it shows about the *current state* of a
+   change is derived from the repositories. The one thing it keeps that cannot be re-derived is history: the activity
+   log (`~/.openspec-dashboard/activity.jsonl`, `src/server/activity/`) records what the dashboard observed and when.
+   It is never an input to scanning, columns, counts or actions, and deleting it loses history only.
 6. **Change names reaching git or the file system are validated** (`CHANGE_NAME` in `src/server/source.ts`).
 7. **Nothing from a real repository goes into this one.** No copied `openspec/` trees, repo names, paths, hostnames or
    people from other projects — not in fixtures, tests, specs, proposals or commit messages. Use made-up names

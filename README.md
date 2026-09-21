@@ -34,6 +34,12 @@ what it found under **Discovered**; click **Enable** on the repos to track, then
 
 ## What it does
 
+- **Activity** (`/activity`) — what happened, newest first and grouped by day: changes created, moving to another
+  column, archived or removed, tasks being ticked (shown collapsed, e.g. `3/12 → 7/12`), repositories being tracked or
+  failing to scan, and agent sessions starting, ending and shipping. It is detected by comparing each scan with the
+  previous one, so it also catches up on what happened while the dashboard was not running. Filter by repository and by
+  kind; the navigation entry shows how many events are new since you last looked. A repository seen for the first time
+  adds one line, not one per change.
 - **Settings** — one page with a section navigation at the top-left that scrolls with the content, like a table of
   contents (jump to a section, see which one is in view,
   link to one with `?section=discovered`; it shows how many discovered repositories are waiting). Workspace roots, discovery of repos containing `openspec/config.yaml` (4 levels deep; skips
@@ -75,7 +81,9 @@ what it found under **Discovered**; click **Enable** on the repos to track, then
 - Theme: dark and light. Follows the OS appearance by default; the **Theme** button in the top bar cycles
   System → Light → Dark. The choice is stored in the browser (`localStorage`), not in the config file.
 
-State lives in `~/.openspec-dashboard/` (`config.json`, `shared-config.json`, `cache/snapshot.json`, `sessions/`, `worktrees/`). The dashboard
+State lives in `~/.openspec-dashboard/` (`config.json`, `shared-config.json`, `cache/snapshot.json`, `activity.jsonl`, `sessions/`, `worktrees/`).
+`activity.jsonl` is the history behind the Activity view: append-only, bounded, and the one thing here that cannot be
+rebuilt from your repositories — deleting it loses that history and nothing else. The dashboard
 only runs read-only `git` commands (`rev-parse`, `log`, `worktree list`, `status` — with optional locks disabled, so
 not even `.git/index` is refreshed), and scanning, polling, discovery and saving settings never write to a tracked
 repository. The things that do are described next: shared config, and the opt-in agent sessions further down.

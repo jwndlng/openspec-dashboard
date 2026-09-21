@@ -24,6 +24,11 @@ export function sharedConfigPath(): string {
   return join(dashboardHome(), "shared-config.json");
 }
 
+/** History of what the dashboard observed. A log, not a cache: it cannot be rebuilt, and nothing but the feed reads it. */
+export function activityLogPath(): string {
+  return join(dashboardHome(), "activity.jsonl");
+}
+
 export function cachePath(): string {
   return join(dashboardHome(), "cache", "snapshot.json");
 }

@@ -1,10 +1,11 @@
 // Client-side routes. Kept free of DOM access at import time so it can be unit-tested.
-export type Route = { view: "overview" } | { view: "board" } | { view: "repo"; repoId: string } | { view: "settings" };
+export type Route = { view: "overview" } | { view: "board" } | { view: "activity" } | { view: "repo"; repoId: string } | { view: "settings" };
 
 export function routeFromPath(pathname: string): Route {
   const path = pathname.replace(/\/+$/, "");
   if (path === "/settings") return { view: "settings" };
   if (path === "/board") return { view: "board" };
+  if (path === "/activity") return { view: "activity" };
   const repo = /^\/repo\/([^/]+)$/.exec(path);
   if (repo) {
     try {

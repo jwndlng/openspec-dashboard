@@ -1,7 +1,8 @@
 // In-memory stand-in for the dashboard server. Nothing is read from or written to anywhere: a reload starts over.
+import { pageEvents } from "../../shared/activity.ts";
 import type { Config, RepoSharedConfig, RepoSnapshot, SharedConfigApplyResult, SharedConfigPreview, SharedProfile, Snapshot } from "../../shared/types.ts";
 import type { Api } from "../api.ts";
-import { buildSample, DEMO_ROOT } from "./sampleData.ts";
+import { buildSample, DEMO_ROOT, buildActivity } from "./sampleData.ts";
 
 const NO_SESSIONS = "agent sessions need the dashboard server and a local agent CLI; they are not part of the demo";
 
@@ -61,6 +62,8 @@ export function createDemoApi({ now = Date.now, latencyMs = 150 }: DemoApiOption
     return { desired: profiles.filter((p) => profileIds.includes(p.id)) };
   };
 
+  const activityLog = buildActivity(sample.snapshot, now());
+
   const snapshot = (): Snapshot => ({
     generatedAt,
     repos: config.repos
@@ -74,6 +77,8 @@ export function createDemoApi({ now = Date.now, latencyMs = 150 }: DemoApiOption
 
   return {
     state: () => reply(snapshot()),
+    // Built once from the sample, like a log that was written while the sample came about; filtered and paged like the real one.
+    activity: (query) => reply(pageEvents(activityLog, query)),
     config: () => reply(config),
     saveConfig: (next) => {
       config = structuredClone(next);
