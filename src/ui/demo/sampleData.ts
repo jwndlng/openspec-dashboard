@@ -5,7 +5,7 @@
 // Ages are relative to `now`, so the published demo never looks abandoned. Column and stage are derived with the
 // same rules the scanner uses, so the sample cannot disagree with the board.
 import { deriveStage } from "../../shared/columns.ts";
-import type { AgentProfile, ArtifactStatus, ChangeSnapshot, Config, RepoConfig, RepoSnapshot, SharedProfile, Snapshot } from "../../shared/types.ts";
+import type { ActivityEvent, AgentProfile, ArtifactStatus, ChangeSnapshot, Config, RepoConfig, RepoSnapshot, SharedProfile, Snapshot } from "../../shared/types.ts";
 
 /** Appears in the demo bundle only; test/demoBundle.test.ts uses it to tell the two bundles apart. */
 export const DEMO_MARKER = "openspec-dashboard-demo-build";
@@ -332,4 +332,45 @@ export function buildSample(now: number): Sample {
   const candidates = CANDIDATES.map(([id, name]) => ({ id, path: repoPath(name), name: name.split("/").pop() ?? name, enabled: false })) satisfies RepoConfig[];
 
   return { snapshot: { generatedAt: iso(0), repos }, config, candidates };
+}
+
+const FLOW = ["New", "Proposal", "Design", "Specs", "Tasks", "Ready", "Implementing", "Done", "Synced"];
+
+/**
+ * A feed that fits the sample: what would have been observed on the way to the snapshot's state. Derived from the
+ * sample itself, so it only ever contains the made-up names above.
+ */
+export function buildActivity(snapshot: Snapshot, now: number): ActivityEvent[] {
+  type Draft = { at: number; repo: RepoSnapshot; rest: Record<string, unknown> };
+  const drafts: Draft[] = [];
+  const HOUR = DAY / 24;
+  for (const repo of snapshot.repos) {
+    drafts.push({ at: now - 30 * DAY, repo, rest: { kind: "repo-tracked", openChanges: repo.changes.filter((c) => !c.archived).length } });
+    for (const change of repo.changes) {
+      const last = change.lastActivityAt ? Date.parse(change.lastActivityAt) : now - 3 * DAY;
+      if (change.archived) {
+        const at = Date.parse(`${change.archived}T16:30:00`);
+        if (now - at < 21 * DAY) drafts.push({ at, repo, rest: { kind: "change-archived", change: change.name, from: "Synced" } });
+        continue;
+      }
+      const step = FLOW.indexOf(change.column);
+      if (step <= 1) drafts.push({ at: last, repo, rest: { kind: "change-created", change: change.name, to: change.column } });
+      else drafts.push({ at: last - (change.column === "Implementing" ? 2 * HOUR : 0), repo, rest: { kind: "change-moved", change: change.name, from: FLOW[step - 1], to: change.column, ...(change.tasks ? { tasks: change.column === "Implementing" ? { done: 0, total: change.tasks.total } : change.tasks } : {}) } });
+      if (change.column === "Implementing" && change.tasks && change.tasks.done > 0) {
+        const { done, total } = change.tasks;
+        const mid = Math.max(0, done - 2);
+        drafts.push({ at: last - HOUR, repo, rest: { kind: "session-started", change: change.name, action: "implement", agentName: "Claude Code" } });
+        if (mid > 0) drafts.push({ at: last - 40 * 60_000, repo, rest: { kind: "tasks-progress", change: change.name, column: "Implementing", from: { done: 0, total }, to: { done: mid, total } } });
+        drafts.push({ at: last - 15 * 60_000, repo, rest: { kind: "tasks-progress", change: change.name, column: "Implementing", from: { done: mid, total }, to: { done, total } } });
+        drafts.push({ at: last, repo, rest: { kind: "session-ended", change: change.name, exitCode: 0 } });
+      }
+    }
+  }
+  return drafts
+    .filter((d) => d.at <= now)
+    .sort((a, b) => a.at - b.at)
+    .map((d, i) => {
+      const at = new Date(d.at).toISOString();
+      return { v: 1, id: `demo${String(i).padStart(6, "0")}`, at, detectedAt: at, repoId: d.repo.id, repoName: d.repo.name, ...d.rest } as ActivityEvent;
+    });
 }

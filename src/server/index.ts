@@ -1,6 +1,8 @@
 // CLI entry point: `openspec-dashboard [--port N] [--no-open]`.
 import indexHtmlAsset from "../../dist/ui/index.html" with { type: "text" };
 import { createFetchHandler, createWebSocketHandlers, type AppState, type TerminalSocketData } from "./api.ts";
+import { diffSnapshots, sessionEvent } from "./activity/events.ts";
+import { ActivityLog } from "./activity/log.ts";
 import { readSnapshot } from "./cache.ts";
 import { loadConfig } from "./config.ts";
 import { Scanner } from "./scanner.ts";
@@ -50,13 +52,22 @@ async function main(): Promise<void> {
   const { config, warning } = await loadConfig();
   if (warning) console.warn(`warning: ${warning}`);
 
+  // History for the Activity view: what changed between consecutive snapshots, plus what the session manager reports.
+  const activity = new ActivityLog();
+  await activity.load();
   const state: AppState = {
     config,
-    scanner: new Scanner(() => state.config, {}, (await readSnapshot()) ?? undefined),
+    activity,
+    scanner: new Scanner(
+      () => state.config,
+      { onSnapshots: (previous, next) => void activity.append(diffSnapshots(previous, next, { now: new Date(), pollIntervalSeconds: state.config.pollIntervalSeconds })) },
+      (await readSnapshot()) ?? undefined,
+    ),
   };
   state.sessions = new SessionManager({
     getConfig: () => state.config,
     getSnapshot: () => state.scanner.snapshot,
+    onActivity: (session, what) => void activity.append([sessionEvent(session, state.config.repos.find((r) => r.id === session.repoId)?.name ?? session.repoId, what)]),
   });
   await state.sessions.init();
   state.scanner.start();

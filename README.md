@@ -43,6 +43,12 @@ what it found under **Discovered**; click **Enable** on the repos to track, then
 
 ## What it does
 
+- **Activity** (`/activity`) — what happened, newest first and grouped by day: changes created, moving to another
+  column, archived or removed, tasks being ticked (shown collapsed, e.g. `3/12 → 7/12`), repositories being tracked or
+  failing to scan, and agent sessions starting, ending and shipping. It is detected by comparing each scan with the
+  previous one, so it also catches up on what happened while the dashboard was not running. Filter by repository and by
+  kind; the navigation entry shows how many events are new since you last looked. A repository seen for the first time
+  adds one line, not one per change.
 - **Settings** — one page with a section navigation at the top-left that scrolls with the content, like a table of
   contents (jump to a section, see which one is in view,
   link to one with `?section=discovered`; it shows how many discovered repositories are waiting). Workspace roots, discovery of repos containing `openspec/config.yaml` (4 levels deep; skips
@@ -95,7 +101,9 @@ what it found under **Discovered**; click **Enable** on the repos to track, then
 - Theme: dark and light. Follows the OS appearance by default; the **Theme** button in the top bar cycles
   System → Light → Dark. The choice is stored in the browser (`localStorage`), not in the config file.
 
-State lives in `~/.openspec-dashboard/` (`config.json`, `shared-config.json`, `cache/snapshot.json`, `sessions/`, `worktrees/`). The dashboard
+State lives in `~/.openspec-dashboard/` (`config.json`, `shared-config.json`, `cache/snapshot.json`, `activity.jsonl`, `sessions/`, `worktrees/`).
+`activity.jsonl` is the history behind the Activity view: append-only, bounded, and the one thing here that cannot be
+rebuilt from your repositories — deleting it loses that history and nothing else. The dashboard
 only runs read-only `git` commands (`rev-parse`, `log`, `worktree list`, `status`, `config --get` — with optional locks disabled, so
 not even `.git/index` is refreshed), and scanning, polling, discovery and saving settings never write to a tracked
 repository, and none of them contacts a remote. The things that do are described next: the Pull button, shared config,
@@ -187,10 +195,11 @@ the dashboard shows it, passes your keystrokes on, and interprets nothing.
   probably waiting for you) or how the session ended. **Resume** starts the agent's resume command in the same worktree.
   Stopping the dashboard ends its agents; their output stays viewable.
 - **Default responses**: while a session is running, the panel offers `Yes, go ahead`, `Yes, create a PR` and
-<<<<<<< HEAD
-  `No, stop here` under the terminal. A click types that text into the terminal and focuses it; you press Enter to send.
-  It deliberately does not press Enter for you: the dashboard cannot know whether the agent shows a text prompt or a
-  selection menu, and in a menu Enter would confirm whatever option is highlighted.
+  `No, stop here` under the terminal. One click sends it: the text is typed, and Enter follows as soon as the agent's
+  terminal shows the text back — which a text prompt does and a selection menu does not. At a menu (a permission or
+  trust question) nothing is confirmed: the text stays typed, and the panel tells you it was not sent. Ship and opening
+  prompts that are typed after start-up are sent the same way, so an agent that opens with a dialog is never answered
+  for you.
 - **A dock, not a side panel**: terminals sit in a dock across the bottom of the window — wide and short, the shape
   terminal output has — with the board fully usable above it. Drag its top edge (or use the arrow keys on it) to
   resize; the height is remembered in the browser. **Maximise** gives it the window, **Collapse** leaves only the tabs.
@@ -198,14 +207,6 @@ the dashboard shows it, passes your keystrokes on, and interprets nothing.
   that is not shown opens in a free pane, or replaces the pane you are in once three are shown; a pane's ✕ closes the
   pane, never the session. The link in the address bar carries the shown sessions. On narrow windows one pane shows.
 - **Several at once**: the dock has a tab per running session, so you switch between agents without hiding anything.
-=======
-  `No, stop here` under the terminal. One click sends it: the text is typed, and Enter follows as soon as the agent's
-  terminal shows the text back — which a text prompt does and a selection menu does not. At a menu (a permission or
-  trust question) nothing is confirmed: the text stays typed, and the panel tells you it was not sent. Ship and opening
-  prompts that are typed after start-up are sent the same way, so an agent that opens with a dialog is never answered
-  for you.
-- **Several at once**: the panel has a tab per running session, so you switch between agents without hiding anything.
->>>>>>> origin/main
   A card keeps offering the step that fits the change's stage while its session runs: after *Draft artifacts* has
   finished, **↳ Implement** types the next prompt into the same terminal — you press Enter, because the dashboard cannot
   know whether the agent is showing a prompt or a menu. Archiving always gets its own session and worktree. The ✕ on a

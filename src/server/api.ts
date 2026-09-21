@@ -1,3 +1,5 @@
+import { ACTIVITY_KINDS, type ActivityKind } from "../shared/types.ts";
+import { MAX_PAGE, type ActivityLog, type PageQuery } from "./activity/log.ts";
 import type { Config, DiscoverResult, RepoConfig, ScanTriggerResult, SharedConfigApplyResult, SharedConfigAssignment, SharedConfigPreview } from "../shared/types.ts";
 import { ConfigValidationError, saveConfig, validateConfig, validateIgnorePaths, validateScanRoots } from "./config.ts";
 import { discoverRepos } from "./discover.ts";
@@ -11,6 +13,8 @@ export interface AppState {
   scanner: Scanner;
   /** Absent in contexts that never run agent sessions (some tests); the routes then answer 403. */
   sessions?: SessionManager;
+  /** History for the Activity view. Absent in contexts that record none; the endpoint then answers with an empty feed. */
+  activity?: ActivityLog;
 }
 
 /** The part of Bun's server object the handler needs: upgrading the terminal request to a WebSocket. */
@@ -344,6 +348,26 @@ export function crossSiteRefusal(req: Request): string | undefined {
   return undefined;
 }
 
+/** Read-only; the feed is history and never an input to anything else. */
+function getActivity(state: AppState, url: URL): Response {
+  const params = url.searchParams;
+  const list = (name: string) => (params.get(name) ?? "").split(",").filter(Boolean);
+  const query: PageQuery = {};
+  if (params.has("limit")) {
+    const limit = Number(params.get("limit"));
+    if (!Number.isInteger(limit) || limit < 1 || limit > MAX_PAGE) return json({ error: `limit must be an integer between 1 and ${MAX_PAGE}` }, 400);
+    query.limit = limit;
+  }
+  const kinds = list("kinds");
+  const unknown = kinds.filter((k) => !ACTIVITY_KINDS.includes(k as ActivityKind));
+  if (unknown.length > 0) return json({ error: `unknown kind: ${unknown.join(", ")}` }, 400);
+  query.kinds = kinds as ActivityKind[];
+  query.repos = list("repos");
+  if (params.has("before")) query.before = params.get("before") ?? undefined;
+  if (params.has("since")) query.since = params.get("since") ?? "";
+  return json(state.activity?.page(query) ?? { events: [] });
+}
+
 /** Builds the `fetch` handler for Bun.serve (design.md D8). */
 async function postWorktreeRemove(state: AppState, req: Request): Promise<Response> {
   if (!state.sessions) return json({ error: "agent sessions are not available" }, 403);
@@ -368,6 +392,7 @@ export function createFetchHandler({ state, indexHtml }: AppOptions): (req: Requ
       if (pathname === "/api/sessions" || pathname.startsWith("/api/sessions/")) return sessionRoutes(state, req, url, server);
       if (req.method === "POST" && pathname === "/api/worktrees/remove") return postWorktreeRemove(state, req);
       if (req.method === "GET" && pathname === "/api/state") return json(state.scanner.snapshot);
+      if (req.method === "GET" && pathname === "/api/activity") return getActivity(state, url);
       if (req.method === "GET" && pathname === "/api/config") return json(state.config);
       if (req.method === "PUT" && pathname === "/api/config") return putConfig(state, req);
       if (req.method === "POST" && pathname === "/api/discover") return postDiscover(state, req);

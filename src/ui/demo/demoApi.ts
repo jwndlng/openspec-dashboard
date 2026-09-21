@@ -1,8 +1,9 @@
 // In-memory stand-in for the dashboard server. Nothing is read from or written to anywhere: a reload starts over.
+import { pageEvents } from "../../shared/activity.ts";
 import type { Config, PullResult, RepoSharedConfig, RepoSnapshot, SharedConfigApplyResult, SharedConfigPreview, SharedProfile, Snapshot } from "../../shared/types.ts";
 import type { Api } from "../api.ts";
 import { createDemoSessions } from "./demoSessions.ts";
-import { buildSample, DEMO_CARRIED, DEMO_PROFILES, DEMO_ROOT } from "./sampleData.ts";
+import { buildActivity, buildSample, DEMO_CARRIED, DEMO_PROFILES, DEMO_ROOT } from "./sampleData.ts";
 import type { Clock } from "./transcripts.ts";
 
 
@@ -91,6 +92,7 @@ export function createDemoApi({ now = Date.now, latencyMs = 150, clock }: DemoAp
     repos: config.repos.filter((r) => r.enabled).map((r) => sample.snapshot.repos.find((s) => s.id === r.id) ?? emptyRepo(r.id, r.name, r.path)),
   });
 
+  const activityLog = buildActivity(sample.snapshot, now());
   /** Long enough to see "Pulling…", like a fetch over a network would be. */
   const PULL_MS = Math.min(900, latencyMs * 6);
   const pulled = new Set<string>();
@@ -122,6 +124,8 @@ export function createDemoApi({ now = Date.now, latencyMs = 150, clock }: DemoAp
 
   return {
     state: () => reply(snapshot()),
+    // Built once from the sample, like a log that was written while the sample came about; filtered and paged like the real one.
+    activity: (query) => reply(pageEvents(activityLog, query)),
     config: () => reply(config),
     saveConfig: (next) => {
       config = structuredClone(next);
