@@ -4,7 +4,7 @@ import type { Dirent } from "node:fs";
 import { readdir, readFile, stat } from "node:fs/promises";
 import { dirname, join, relative } from "node:path";
 import type { Worktree } from "../shared/types.ts";
-import { currentBranch, defaultBranch, isGitRepo, lastCommitDate, statusPaths, worktrees } from "./git.ts";
+import { currentBranch, defaultBranch, isGitRepo, lastCommitDate, statusPaths, subdirectory, worktrees } from "./git.ts";
 
 export const CHANGE_NAME = /^[A-Za-z0-9._-]+$/;
 const ARCHIVE_PREFIX = /^(\d{4}-\d{2}-\d{2})-(.+)$/;
@@ -50,6 +50,8 @@ export interface RepoSource {
   /** The default branch as known locally (no remote is asked); undefined when it cannot be told. */
   defaultBranch(): Promise<string | undefined>;
   worktrees(): Promise<Worktree[]>;
+  /** The project's directory below the git top level; empty when the project is the repository. */
+  subdirectory(): Promise<string>;
   /** Committer date of the last commit touching `absPath` inside the repo. */
   lastActivity(absPath: string): Promise<string | undefined>;
   /** Modified and untracked files under `openspec/`, per git. Empty for non-git repositories or on failure. */
@@ -171,6 +173,10 @@ export class LocalRepoSource implements RepoSource {
 
   worktrees(): Promise<Worktree[]> {
     return worktrees(this.path);
+  }
+
+  subdirectory(): Promise<string> {
+    return subdirectory(this.path);
   }
 
   lastActivity(absPath: string): Promise<string | undefined> {

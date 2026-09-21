@@ -43,15 +43,32 @@ export function leadingCopy(copies: ChangeCopy[]): ChangeCopy {
  * One change per name from the active copies of every checkout. `archivedOnMain` maps a change name to the date it was
  * archived in the main checkout: a worktree copy of such a change is a leftover on a branch cut before the archive and
  * is dropped — unless it was created after the archive, which makes it a new change reusing the name.
+ *
+ * `pending` are archives found only in linked worktrees (the main checkout does not have them yet). Archived is the
+ * furthest stage there is, so such an archive leads: the change is reported once, as archived, from that worktree, and
+ * the active copies that still exist — usually a main checkout that has not been updated — become its other checkouts.
+ * The same name-reuse exception applies.
  */
-export function mergeChanges(copies: ChangeCopy[], archivedOnMain: Map<string, string>): ChangeSnapshot[] {
+export function mergeChanges(copies: ChangeCopy[], archivedOnMain: Map<string, string>, pending: ChangeCopy[] = []): ChangeSnapshot[] {
+  const pendingByName = new Map<string, ChangeCopy>();
+  const byDateThenPath = (a: ChangeCopy, b: ChangeCopy) => (b.change.archived ?? "").localeCompare(a.change.archived ?? "") || a.checkout.path.localeCompare(b.checkout.path);
+  for (const copy of [...pending].sort(byDateThenPath)) if (!pendingByName.has(copy.change.name)) pendingByName.set(copy.change.name, copy);
+
   const byName = new Map<string, ChangeCopy[]>();
+  const superseded = new Map<string, ChangeCopy[]>();
   for (const copy of copies) {
-    const archived = archivedOnMain.get(copy.change.name);
+    const name = copy.change.name;
+    const archived = archivedOnMain.get(name);
     if (!copy.checkout.isMain && archived !== undefined && !((copy.change.created ?? "") > archived)) continue;
-    byName.set(copy.change.name, [...(byName.get(copy.change.name) ?? []), copy]);
+    const archivedElsewhere = pendingByName.get(name)?.change.archived;
+    const target = archivedElsewhere !== undefined && !((copy.change.created ?? "") > archivedElsewhere) ? superseded : byName;
+    target.set(name, [...(target.get(name) ?? []), copy]);
   }
-  return [...byName.values()].map((group) => {
+  const archivedInWorktrees = [...pendingByName.values()].map((lead): ChangeSnapshot => {
+    const others = [...(superseded.get(lead.change.name) ?? [])].sort(compareCopies);
+    return { ...lead.change, checkout: lead.checkout, otherCheckouts: others.length ? others.map((o) => ({ ...o.checkout, column: o.change.column })) : undefined };
+  });
+  const active = [...byName.values()].map((group) => {
     const sorted = [...group].sort(compareCopies);
     const [lead, ...rest] = sorted;
     // Every branch carries main's committed changes along, so most worktrees hold a copy that says nothing new.
@@ -66,4 +83,5 @@ export function mergeChanges(copies: ChangeCopy[], archivedOnMain: Map<string, s
       otherCheckouts: others.length ? others.map((o) => ({ ...o.checkout, column: o.change.column })) : undefined,
     };
   });
+  return [...active, ...archivedInWorktrees];
 }

@@ -81,6 +81,11 @@ export async function worktrees(cwd: string): Promise<Worktree[]> {
   return out ? parseWorktrees(out) : [];
 }
 
+/** Where `cwd` sits below its repository's top level (`""` at the top level), so the same project can be found in a linked worktree. */
+export async function subdirectory(cwd: string): Promise<string> {
+  return ((await git(cwd, ["rev-parse", "--show-prefix"]))?.trim() ?? "").replace(/\/+$/, "");
+}
+
 /** Committer date (ISO 8601) of the last commit touching `relPath`, or undefined if none. */
 export async function lastCommitDate(cwd: string, relPath: string): Promise<string | undefined> {
   const out = (await git(cwd, ["log", "-1", "--format=%cI", "--", relPath]))?.trim();

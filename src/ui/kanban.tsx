@@ -5,7 +5,7 @@ import { NoRepos } from "./empty.tsx";
 import { EMPTY_FILTERS, parseFilters, serializeFilters, type Filters } from "./filters.ts";
 import { PullButton } from "./pull.tsx";
 import { branchNotice } from "./pullState.ts";
-import { applyCommand, cdCommand, checkoutHint, daysSince, relTime, splitBranchLabel } from "./format.ts";
+import { applyCommand, cdCommand, checkoutHint, daysSince, pendingArchiveHint, relTime, splitBranchLabel } from "./format.ts";
 import { isMinimized, loadGroupState, saveGroupState, toggleGroup, type GroupOverrides } from "./groupState.ts";
 import { assignRepoHues, groupByRepo, recentArchived } from "./repoGroups.ts";
 import { SessionControls } from "./sessions.tsx";
@@ -78,6 +78,7 @@ function Meter({ done, total }: { done: number; total: number }) {
 function ChangeCard({ card, now, showRepo }: { card: Card; now: number; showRepo: boolean }) {
   const age = daysSince(card.lastActivityAt, now);
   const noTasks = card.warnings?.includes("tasks file has no tasks");
+  const pending = pendingArchiveHint(card);
   return (
     <article class="card repo-tint" style={repoHue(card.hue)}>
       {/* On a single-repository board the header already names the repo, so the change name takes the top row. */}
@@ -93,6 +94,11 @@ function ChangeCard({ card, now, showRepo }: { card: Card; now: number; showRepo
           {card.archived ? `archived ${card.archived}` : `${relTime(card.lastActivityAt, now)} ago`}
         </span>
         {isComplete(card.stage) && age !== undefined && <span class="badge ok">✓ complete · {age}d</span>}
+        {pending && (
+          <span class="badge warn" title={pending.title}>
+            ⑂ {pending.label}
+          </span>
+        )}
         {card.branchMatch && <BranchBadge branch={card.branchMatch} hint={checkoutHint(card)} />}
         {noTasks && <span class="badge warn">no tasks</span>}
         <SessionControls card={card} />

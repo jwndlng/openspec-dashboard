@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { currentSection, parseSection, rowScrollLeft, SECTION_IDS, serializeSection } from "../src/ui/settingsSections.ts";
+import { currentSection, navOffset, parseSection, rowScrollLeft, SECTION_IDS, serializeSection } from "../src/ui/settingsSections.ts";
 import { hrefWithQuery } from "../src/ui/url.ts";
 
 test("parseSection accepts known ids only", () => {
@@ -83,5 +83,17 @@ test("the navigation never scrolls the page to reveal itself", async () => {
   const source = await Bun.file(new URL("../src/ui/settingsNav.tsx", import.meta.url)).text();
   const calls = source.match(/^.*\.scrollIntoView\(.*$/gm) ?? [];
   expect(calls).toHaveLength(1);
-  expect(calls[0]).toContain("target.scrollIntoView");
+  // The jump's own scroll: to the section, or on narrow screens to the row that was just placed above it.
+  expect(calls[0]).toContain("scrollTarget.scrollIntoView");
+  expect(source.indexOf("scrollTarget.scrollIntoView")).toBeLessThan(source.indexOf("// Follow manual scrolling."));
+});
+
+test("navOffset puts the navigation beside the section without leaving the page", () => {
+  expect(navOffset(0, 215, 2300)).toBe(0);
+  expect(navOffset(640, 215, 2300)).toBe(640);
+  // A short last section: the navigation's bottom stops at the end of the page.
+  expect(navOffset(2200, 215, 2300)).toBe(2085);
+  // Never negative, even if the navigation were taller than the page.
+  expect(navOffset(100, 500, 300)).toBe(0);
+  expect(navOffset(-5, 215, 2300)).toBe(0);
 });

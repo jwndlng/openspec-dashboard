@@ -379,8 +379,9 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: 
   width: 100%; max-width: 1320px; margin: 0 auto;
   display: grid; grid-template-columns: minmax(168px, 200px) minmax(0, 1fr); align-items: start;
 }
-.settings-nav { padding: var(--gap-2) 0 var(--gap-2) var(--gap-2); }
-.settings-nav ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+/* --nav-offset: set on a jump, so the navigation lands beside the section jumped to (see useSectionNav). */
+.settings-nav { padding: var(--gap-2) 0 var(--gap-2) var(--gap-2); position: relative; top: var(--nav-offset, 0px); }
+.settings-nav ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; position: relative; }
 .settings-link {
   display: flex; align-items: center; justify-content: space-between; gap: var(--gap-1);
   padding: 5px 8px; border-radius: var(--radius); color: var(--fg-body);
@@ -392,7 +393,7 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: 
 .settings-nav .count { flex: none; font-family: var(--font-mono); font-size: 11px; font-weight: 400; color: var(--fg-subtle); }
 .settings-link.attention .count { color: var(--brand-fg); background: var(--brand-softer); border: 1px solid var(--brand-soft); border-radius: var(--radius); padding: 0 5px; }
 .settings { padding: var(--gap-2); max-width: 1100px; width: 100%; margin: 0 auto; display: grid; gap: var(--gap-2); align-content: start; }
-.settings-section { display: grid; min-width: 0; border-radius: var(--radius); scroll-margin-top: var(--gap-1); }
+.settings-section { display: grid; min-width: 0; border-radius: var(--radius); scroll-margin-top: var(--gap-2); }
 .settings-section:focus { outline: none; }
 .settings-section:focus-visible { outline: 1px solid var(--border-strong); outline-offset: 2px; }
 .panel { background: var(--bg-section); border: 1px solid var(--border-light); border-radius: var(--radius); padding: var(--gap-2); display: flex; flex-direction: column; gap: var(--gap-1); }
@@ -410,8 +411,12 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: 
 .savebar { position: sticky; bottom: 0; display: flex; gap: var(--gap-1); align-items: center; padding: var(--gap-1) var(--gap-2); background: var(--bg-section); border-top: 1px solid var(--border-light); }
 
 @media (max-width: 720px) {
-  .settings-layout { grid-template-columns: minmax(0, 1fr); }
-  .settings-nav { padding: var(--gap-1) var(--gap-2); border-bottom: 1px solid var(--border-light); }
+  /* One flat column: the row and the sections are items of the same grid, so `order` can put the row directly above
+     the section jumped to without covering anything. */
+  .settings-layout { grid-template-columns: minmax(0, 1fr); gap: var(--gap-2); padding: var(--gap-2); }
+  .settings { display: contents; }
+  .settings-section { order: var(--section-order); }
+  .settings-nav { order: var(--nav-order, 0); top: 0; padding: 0 0 var(--gap-1); border-bottom: 1px solid var(--border-light); }
   .settings-nav ul { flex-direction: row; overflow-x: auto; gap: 4px; }
   .settings-nav li { flex: none; }
   .settings-link { border-left: 0; border-bottom: 2px solid transparent; }
@@ -440,6 +445,8 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: 
 /* The terminal fills what the default responses leave; its ResizeObserver refits it when the row comes and goes. */
 .session-terminal-area { position: relative; flex: 1; min-height: 0; }
 .session-terminal-host { position: absolute; inset: 6px 0 6px 8px; }
+.session-unsent { flex: none; display: flex; align-items: flex-start; gap: 6px; margin: 6px 8px 0; }
+.session-unsent span { flex: 1; }
 .session-replies {
   flex: none; display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
   padding: 6px 8px; background: var(--bg-section); border-top: 1px solid var(--border-light);

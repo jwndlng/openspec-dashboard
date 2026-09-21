@@ -108,8 +108,9 @@ export function EndSessionDialog() {
               title={`Asks ${session.agentName} to commit, push and open a pull request instead of ending`}
               onClick={() =>
                 run(async () => {
-                  await api.shipSession(session.id);
+                  const result = await api.shipSession(session.id);
                   ui.openPanel(session.id);
+                  ui.reportUnsent(result.submitted ? undefined : session.id);
                 })
               }
             >

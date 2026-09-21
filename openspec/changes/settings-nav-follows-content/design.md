@@ -55,9 +55,24 @@ Today's `entry.scrollIntoView(...)` scrolls every scrollable ancestor that is ne
 
 Unchanged: a user jump focuses the section wrapper with `preventScroll`; `scroll-margin-top` on the wrappers keeps a little air above a jumped-to section. The nav column gets `padding-top` equal to the sections' so the first entry lines up with the first panel.
 
+### D6. On a jump the navigation is re-anchored beside the target section
+
+Added after first use: with D1 alone, a jump left the navigation behind at the top of the page — it did not "move with the content", it got lost. Now a jump (a click, or a `?section=` link on load) moves the navigation to the section jumped to:
+
+- **Wide:** the nav is `position: relative` with `top: var(--nav-offset)`. The offset is the target section's distance from the first section, clamped by a pure helper to `[0, layoutHeight − navHeight]` so the nav never sticks out below the page (short last sections). Relative positioning does not affect layout, so section positions — and therefore view tracking — are unaffected.
+- **Narrow:** the row cannot sit *beside* a section, and offsetting it would cover content. Instead the single-column layout is flattened (`.settings { display: contents }`) so the row and the section wrappers are items of one grid, and CSS `order` places the row directly above the target (`--nav-order` on the nav, `--section-order` on each wrapper; both only applied at ≤ 720px). The jump then scrolls to the row, which puts the row at the top of the view with the section right under it. DOM order is unchanged, so keyboard order stays navigation-first.
+- The placement is written imperatively (two custom properties on the nav element) in the same task as the scroll, so the layout is final before `scrollIntoView` runs and no render cycle sits between them. The nav element has no `style` prop, so re-renders do not reset it.
+- **Home:** when the page is scrolled back to the very top (`scrollTop = 0`) the navigation returns to its home position; a jump to the first section is the same thing. A window resize re-applies the placement for the current anchor, because the wide offset is measured in pixels.
+- **Layout changes after a jump.** The wide offset is a pixel value, so it goes stale when a panel above the target changes height — which happens right after a deep link (discovery results arrive and the Discovered panel grows: measured as the section ending up 85px below the top with the navigation left behind) and whenever the user enables a repository. A `ResizeObserver` on the layout re-places the navigation for the current anchor, and if the user has not scrolled since the jump it also re-scrolls, so the section jumped to stays at the top. The narrow row likewise re-reveals its current entry when its own width changes (the page's scrollbar appearing is enough to cut it off).
+- No transition on the move: with smooth scrolling the nav is out of view during the travel and is simply there on arrival; animating `top` over a whole page would send it flying through the view.
+
+*Alternative — `position: sticky`*: always visible, but that is the pinned behaviour the maintainer asked to get rid of; re-anchoring keeps "scrolls away with the page" for manual scrolling and only brings the nav along when the *navigation itself* caused the move. *Alternative — move the nav in the component tree (render it before the target section)*: no CSS tricks, but remounting loses the row's scroll position and focus, and cannot express "beside" on wide screens.
+
 ## Risks / Trade-offs
 
-- [After a jump the navigation is gone until the user scrolls back up — for hopping between distant sections this is more work than before] → accepted by the maintainer's choice; the pinned behaviour is one `position: sticky` away, and a "back to top" affordance is listed as a non-goal to revisit.
+- [After a jump the navigation was gone until the user scrolled back up] → resolved by D6.
+- [On narrow screens the visual order (row above the target section) differs from the DOM order (row first)] → focus order stays logical (navigation, then sections); the row is a landmark (`nav`) reachable by assistive technology regardless of its visual position.
+- [After scrolling up from a jumped-to section the navigation is not at the top of the page until the very top is reached] → it snaps home at `scrollTop = 0`; verified over CDP.
 - [A lurking `scrollIntoView` on nav elements would make the page jump while scrolling] → D4 removes the only one; a test asserts `settingsNav.tsx` contains `scrollIntoView` only for the section target.
 - [The scroll listener moves to a different element; if the ref is attached to the wrong node the marker silently stops updating] → verified with real wheel events over CDP (the same script used to measure today's behaviour): marker and `?section=` must change while the nav's position changes with the scroll.
 - [`settings-page` is not in `openspec/specs/` until `add-settings-nav` is archived] → archive that change first; this change's deltas are MODIFIED-only and would otherwise have nothing to modify.

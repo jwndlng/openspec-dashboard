@@ -3,11 +3,12 @@
 // fans output out to attached terminals and takes their input. It does not interpret what the agent prints.
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
-import { availableActions, OPEN_SESSION_STATES, repoAgentEnabled, SESSION_ACTIONS, SHIPPABLE_WORK, type AgentAvailability, type Config, type Session, type SessionAction, type SessionWorktree, type Snapshot, type WorkStatus } from "../../shared/types.ts";
+import { availableActions, OPEN_SESSION_STATES, repoAgentEnabled, SESSION_ACTIONS, SHIPPABLE_WORK, type AgentAvailability, type Config, type Session, type SessionAction, type SessionWorktree, type Snapshot, type WorkStatus, type ShipResult } from "../../shared/types.ts";
 import { worktreesDir } from "../paths.ts";
 import { CHANGE_NAME } from "../source.ts";
 import { agentEnv, agentFor, availability, launchCommand, openingPrompt, shipPrompt } from "./agents.ts";
 import { SessionStore } from "./store.ts";
+import { submitText, validSubmission, type SubmitOptions } from "./submit.ts";
 import { spawnTerminal, type TerminalProcess } from "./terminal.ts";
 import { listWorktrees, readWorkStatus, WORKTREE_NAME } from "./workStatus.ts";
 import { checkWorktreeRemovable, copyChangeIfMissing, ensureWorktree, linkedWorktreeOf, removeWorktree, type Removable } from "./worktree.ts";
@@ -68,6 +69,8 @@ interface Live {
   scrollback: Scrollback;
   viewers: Set<Viewer>;
   lastStamp: number;
+  /** Tail of the submissions to this terminal: they run one after another so text and Enter never interleave. */
+  submitting?: Promise<unknown>;
 }
 
 export interface ManagerDeps {
@@ -76,6 +79,8 @@ export interface ManagerDeps {
   store?: SessionStore;
   /** Test seam; the real delay gives an agent time to draw its prompt before text is typed into it. */
   typePromptDelayMs?: number;
+  /** Test seam for how long a submission waits for its echo and before Enter. */
+  submitTimings?: SubmitOptions;
 }
 
 export class SessionManager {
@@ -231,7 +236,7 @@ export class SessionManager {
    * gets the prompt typed into its terminal; an ended one is started again in the worktree, continuing its
    * conversation when it can, so it still knows what it did.
    */
-  async ship(id: string): Promise<Session> {
+  async ship(id: string): Promise<ShipResult> {
     const session = this.get(id);
     const { agent, repo } = await this.prepareRestart(session);
     const { work } = await readWorkStatus(repo.path, session.worktreePath);
@@ -240,13 +245,14 @@ export class SessionManager {
     this.forgetWorktrees();
     const proc = this.live.get(id)?.proc;
     if (session.state === "running" && proc) {
-      proc.write(`${prompt}\r`);
-      return session;
+      const { submitted } = await this.submit(id, prompt);
+      return { ...session, submitted };
     }
     const launch = agent.resumeCommand ? { argv: [...agent.resumeCommand], typed: prompt } : launchCommand(agent, prompt);
     if (!Bun.which(launch.argv[0])) throw new SessionError(503, `${agent.name} was not found (${launch.argv[0]})`);
     await this.restart(session, repo.path, launch.argv, agentEnv(agent, process.env), launch.typed);
-    return session;
+    // Handed to a starting agent (as its argument, or submitted once it has started); the terminal shows how that went.
+    return { ...session, submitted: true };
   }
 
   /**
@@ -316,7 +322,8 @@ export class SessionManager {
     }
     live.proc = proc;
     if (typed) {
-      const timer = setTimeout(() => live.proc === proc && proc.write(`${typed}\r`), this.deps.typePromptDelayMs ?? TYPE_PROMPT_DELAY_MS);
+      // Submitted, not written blind: an agent that opens with a dialog instead of a prompt must not get an Enter.
+      const timer = setTimeout(() => live.proc === proc && void this.submit(session.id, typed).catch(() => {}), this.deps.typePromptDelayMs ?? TYPE_PROMPT_DELAY_MS);
       (timer as { unref?: () => void }).unref?.();
     }
     void proc.exited.then((code) => {
@@ -362,6 +369,35 @@ export class SessionManager {
 
   write(id: string, data: string): void {
     this.live.get(id)?.proc?.write(data);
+  }
+
+  /**
+   * Sends text on the user's behalf: typed, and submitted with a separate Enter only once the agent's terminal has
+   * shown it (see submit.ts). Keystrokes never come through here — they go through `write`, unobserved.
+   */
+  submit(id: string, text: unknown): Promise<{ submitted: boolean }> {
+    const session = this.get(id);
+    if (!validSubmission(text)) throw new SessionError(400, "only plain text of at most 4096 characters can be submitted");
+    const live = this.live.get(id);
+    const proc = live?.proc;
+    if (session.state !== "running" || !live || !proc) throw new SessionError(409, "the session is not running");
+    const run = async () => {
+      if (live.proc !== proc) return { submitted: false };
+      return submitText(
+        {
+          write: (data) => live.proc === proc && proc.write(data),
+          onOutput: (listener) => {
+            live.viewers.add(listener);
+            return () => live.viewers.delete(listener);
+          },
+        },
+        text,
+        this.deps.submitTimings,
+      );
+    };
+    const result = (live.submitting ?? Promise.resolve()).then(run, run);
+    live.submitting = result.catch(() => {});
+    return result;
   }
 
   resize(id: string, cols: number, rows: number): void {
