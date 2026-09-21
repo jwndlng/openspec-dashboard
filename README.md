@@ -29,6 +29,15 @@ bun run build:demo              # dist/demo/index.html — the demo: same UI, in
 bun run screenshots             # dist/demo/screenshots/*.png from the demo build (needs Chrome; CHROME_BIN overrides)
 ```
 
+**What the demo simulates.** The demo is the real UI on an in-memory API. Besides the sample board it starts with
+agent sessions switched on and a made-up agent ("Demo Agent"): cards show running sessions and work status
+(`3 uncommitted`, `2 unpushed`, `pushed`, `merged`), the top bar lists open work, and you can start, answer, Ship, close
+and remove — all in memory, reset by a reload. A session's terminal plays a **hand-written recording** into the same
+terminal view the dashboard uses; nothing runs on the page and what you type goes nowhere. Recordings live in
+`src/ui/demo/transcripts.ts` and are *written*, never captured: `bun run check` fails if a recording or any demo
+session data contains a real-looking home directory, an e-mail address, a URL or a host name, and the product build is
+checked to contain none of the demo's data.
+
 First run: open **Settings** and add a workspace root such as `~/Workspace`. Discovery runs immediately and lists
 what it found under **Discovered**; click **Enable** on the repos to track, then save.
 

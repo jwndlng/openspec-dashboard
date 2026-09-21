@@ -56,6 +56,28 @@ export interface Api {
   worktreeStatus(id: string): Promise<{ removable: boolean; reason?: string; work?: WorkStatus }>;
   /** Types a starter's prompt into the running session's terminal; Enter stays with the user. */
   promptSession(id: string, action: SessionAction): Promise<Session>;
+  /**
+   * The byte stream of a session's terminal. Part of this interface — not a WebSocket opened by the view — so that a
+   * backend without a server (the demo) can stand in for it.
+   */
+  openTerminal(id: string, handlers: TerminalHandlers): TerminalConnection;
+}
+
+export interface TerminalHandlers {
+  onOpen(): void;
+  /** Raw terminal output, to be written to the terminal view as it is. */
+  onData(bytes: Uint8Array): void;
+  /** The agent's process ended. */
+  onExit(): void;
+  onClose(): void;
+}
+
+export type TerminalMessage = { type: "input"; data: string } | { type: "resize"; cols: number; rows: number };
+
+export interface TerminalConnection {
+  /** Dropped while the connection is not open. */
+  send(message: TerminalMessage): void;
+  close(): void;
 }
 
 export const httpApi: Api = {
@@ -78,6 +100,25 @@ export const httpApi: Api = {
   deleteSession: (id) => call<{ deleted: boolean }>(`/api/sessions/${id}`, { method: "DELETE" }),
   worktreeStatus: (id) => call<{ removable: boolean; reason?: string; work?: WorkStatus }>(`/api/sessions/${id}/worktree`),
   promptSession: (id, action) => call<Session>(`/api/sessions/${id}/prompt`, { method: "POST", body: JSON.stringify({ action }) }),
+  openTerminal: (id, handlers) => {
+    const socket = new WebSocket(terminalSocketUrl(id));
+    socket.binaryType = "arraybuffer";
+    socket.onopen = () => handlers.onOpen();
+    socket.onmessage = (event) => {
+      if (typeof event.data === "string") {
+        if (JSON.parse(event.data).type === "exit") handlers.onExit();
+      } else {
+        handlers.onData(new Uint8Array(event.data as ArrayBuffer));
+      }
+    };
+    socket.onclose = () => handlers.onClose();
+    return {
+      send: (message) => {
+        if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(message));
+      },
+      close: () => socket.close(),
+    };
+  },
 };
 
 let current: Api = httpApi;
@@ -107,6 +148,7 @@ export const api: Api = {
   deleteSession: (...args) => current.deleteSession(...args),
   worktreeStatus: (...args) => current.worktreeStatus(...args),
   promptSession: (...args) => current.promptSession(...args),
+  openTerminal: (...args) => current.openTerminal(...args),
 };
 
 /** Where the terminal of a session is served: a WebSocket on the dashboard's own host. */
