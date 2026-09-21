@@ -172,9 +172,9 @@ repositories you choose. A repository can carry several profiles; different repo
 ## Agent sessions (optional, off by default)
 
 Start an agent for a change straight from its card — **Draft artifacts** while artifacts are missing, **Implement** once
-a change is ready, **Archive** once every task is done — and it opens **in a terminal inside the dashboard**. It is the
-same program you would run in your own terminal, with its own login, settings, slash commands and permission prompts;
-the dashboard shows it, passes your keystrokes on, and interprets nothing.
+a change is ready, **Archive** once every task is done (columns **Done** and **Synced**) — and it opens **in a terminal
+inside the dashboard**. It is the same program you would run in your own terminal, with its own login, settings, slash
+commands and permission prompts; the dashboard shows it, passes your keystrokes on, and interprets nothing.
 
 - **One switch, off by default**: Settings → *Agent sessions*. Once on it applies to every tracked repository; switch
   individual repositories off in the same section. While it is off, no card shows a starter and the API refuses.
@@ -184,6 +184,14 @@ the dashboard shows it, passes your keystrokes on, and interprets nothing.
   its environment so its own login — for example a subscription — is used). Add any other CLI that runs interactively
   in a terminal, pick a default, and choose a different agent per repository if you like. The dashboard never handles
   credentials.
+- **Archive syncs first**: the preconfigured Archive prompt tells the agent to sync the change's delta specs into
+  `openspec/specs/` and then archive, without asking whether to sync; with nothing left to sync it archives right away.
+  The agent does both in the archive worktree under its own permission prompts — the dashboard writes no specs and moves
+  no change. It is an ordinary prompt: to get the question back, or to archive without syncing, edit it in Settings
+  (remove it and the starter disappears). A saved configuration that still has the former default,
+  `/opsx:archive {change}`, verbatim on the `claude` profile is read as the new prompt — so word it differently if you
+  want the old behaviour, e.g. `/opsx:archive {change} and ask me before syncing`. Edited prompts and other profiles are
+  never changed.
 - **One agent, one worktree**: before starting the agent the dashboard creates a git worktree for the session on
   `feat/<change>` (archiving: `chore/archive-<change>`) under `~/.openspec-dashboard/worktrees/` — outside the
   repository, so your main checkout's branch, index and files are never touched and no untracked directory appears in

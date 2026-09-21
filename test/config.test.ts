@@ -4,6 +4,7 @@ import { realpathSync } from "node:fs";
 import { mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { ConfigValidationError, defaultAgentSessions, defaultConfig, loadConfig, newRepoConfig, repoId, saveConfig, validateConfig, validateIgnorePaths } from "../src/server/config.ts";
+import { CLAUDE_PROFILE } from "../src/shared/agentDefaults.ts";
 import { tempDir, useTempHome } from "./helpers.ts";
 
 let home: string;
@@ -69,6 +70,40 @@ test("corrupt config is backed up and reset", async () => {
   const { config, warning } = await loadConfig();
   expect(config.port).toBe(4711);
   expect(warning).toMatch(/moved to/);
+});
+
+const FORMER_ARCHIVE = "/opsx:archive {change}";
+const withArchive = (archive: string | undefined, id = "claude") => {
+  const { archive: _current, ...prompts } = CLAUDE_PROFILE.prompts;
+  const agent = { ...CLAUDE_PROFILE, id, prompts: archive === undefined ? prompts : { ...prompts, archive } };
+  return { ...defaultConfig(), agentSessions: { enabled: true, agents: [agent], defaultAgent: id } };
+};
+const archiveOf = (input: unknown) => validateConfig(input).agentSessions.agents[0].prompts.archive;
+
+test("the former preconfigured Archive prompt is read as the current one; anything else is the user's", () => {
+  const current = CLAUDE_PROFILE.prompts.archive;
+  expect(current).not.toBe(FORMER_ARCHIVE);
+  expect(archiveOf(withArchive(FORMER_ARCHIVE))).toBe(current);
+  expect(archiveOf(withArchive(`  ${FORMER_ARCHIVE}\n`))).toBe(current); // compared after the schema's trim
+  const edited = "/opsx:archive {change} and ask me before syncing";
+  expect(archiveOf(withArchive(edited))).toBe(edited);
+  expect(archiveOf(withArchive(undefined))).toBeUndefined(); // a removed starter stays removed
+  expect(archiveOf(withArchive(FORMER_ARCHIVE, "my-agent"))).toBe(FORMER_ARCHIVE); // not the preconfigured profile
+  const upgraded = validateConfig(withArchive(FORMER_ARCHIVE)).agentSessions.agents[0];
+  expect(upgraded.prompts).toEqual(CLAUDE_PROFILE.prompts); // the other prompts are untouched
+});
+
+test("a config file with the former Archive prompt loads upgraded, is not rewritten by loading, and saves the new prompt", async () => {
+  const path = join(home, "config.json");
+  const former = `${JSON.stringify(withArchive(FORMER_ARCHIVE), null, 2)}\n`;
+  await writeFile(path, former, "utf8");
+  const { config, warning } = await loadConfig();
+  expect(warning).toBeUndefined();
+  expect(config.agentSessions.agents[0].prompts.archive).toBe(CLAUDE_PROFILE.prompts.archive);
+  expect(await readFile(path, "utf8")).toBe(former);
+  await saveConfig(config);
+  expect(JSON.parse(await readFile(path, "utf8")).agentSessions.agents[0].prompts.archive).toBe(CLAUDE_PROFILE.prompts.archive);
+  expect((await loadConfig()).config.agentSessions.agents[0].prompts.archive).toBe(CLAUDE_PROFILE.prompts.archive);
 });
 
 test("config without ignorePaths loads with an empty list", async () => {

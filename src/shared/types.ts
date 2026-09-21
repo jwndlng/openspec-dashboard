@@ -253,7 +253,7 @@ export function availableActions(change: Pick<ChangeSnapshot, "archived" | "arti
   const actions: SessionAction[] = [];
   if (change.artifacts.length === 0 || change.artifacts.some((a) => a.status !== "done")) actions.push("draft");
   if (change.stage === "ready" || change.stage === "implementing") actions.push("implement");
-  if (change.stage === "done") actions.push("archive"); // every task ticked, not archived yet
+  if (change.stage === "done" || change.stage === "synced") actions.push("archive"); // every task ticked, not archived yet
   return actions;
 }
 

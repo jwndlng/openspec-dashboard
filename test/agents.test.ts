@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import { defaultAgentSessions, defaultConfig, newRepoConfig, validateConfig } from "../src/server/config.ts";
 import { agentEnv, agentFor, launchCommand, openingPrompt } from "../src/server/sessions/agents.ts";
 import { Scrollback, sessionBranch, worktreeName } from "../src/server/sessions/manager.ts";
+import { CLAUDE_PROFILE, FORMER_ARCHIVE_PROMPTS } from "../src/shared/agentDefaults.ts";
 import { availableActions, type Session } from "../src/shared/types.ts";
 import { agentForRepo, parseArgLines, searchWithShown, sessionBadge, sessionForChange, shownFromSearch, sessionsEnabledFor, slugId, startersFor } from "../src/ui/sessionState.ts";
 import { fakeProfile } from "./sessionHelpers.ts";
@@ -15,7 +16,21 @@ test("defaults: disabled, Claude Code preconfigured on its own login", () => {
   expect(d.agents.map((a) => a.id)).toEqual(["claude"]);
   expect(d.agents[0].command).toEqual(["claude", "{prompt}"]);
   expect(d.agents[0].unsetEnv).toContain("ANTHROPIC_API_KEY");
-  expect(d.agents[0].prompts.archive).toBe("/opsx:archive {change}");
+});
+
+test("the preconfigured Archive prompt syncs the specs first without asking, as one line", () => {
+  const archive = defaultAgentSessions().agents[0].prompts.archive ?? "";
+  expect(archive.startsWith("/opsx:archive {change}")).toBe(true);
+  expect(archive).toMatch(/sync the delta specs/);
+  expect(archive).toMatch(/without asking/);
+  expect(archive).toMatch(/already in sync, archive right away/);
+  expect(archive).not.toContain("\n");
+  expect(FORMER_ARCHIVE_PROMPTS).toEqual(["/opsx:archive {change}"]);
+  expect(FORMER_ARCHIVE_PROMPTS).not.toContain(archive);
+  const prompt = openingPrompt(CLAUDE_PROFILE, "archive", "cache-api-calls") ?? "";
+  expect(prompt.startsWith("/opsx:archive cache-api-calls — sync")).toBe(true);
+  expect(launchCommand(CLAUDE_PROFILE, prompt)).toEqual({ argv: ["claude", prompt] }); // one argument
+  expect(validateConfig(withAgents([CLAUDE_PROFILE])).agentSessions.agents[0].prompts.archive).toBe(archive); // passes the prompt rules
 });
 
 test("configs from the transcript-based version load: their keys are dropped, defaults fill in", () => {
@@ -73,11 +88,15 @@ test("starters: stage decides, narrowed to the prompts the agent has", () => {
   expect(availableActions({ artifacts: a("done", "ready"), stage: "artifact" })).toEqual(["draft"]);
   expect(availableActions({ artifacts: a("done", "done"), stage: "ready" })).toEqual(["implement"]);
   expect(availableActions({ artifacts: a("done", "done"), stage: "done" })).toEqual(["archive"]);
+  expect(availableActions({ artifacts: a("done", "done"), stage: "synced" })).toEqual(["archive"]);
+  expect(availableActions({ artifacts: a("done", "done"), stage: "implementing" })).toEqual(["implement"]);
   expect(availableActions({ artifacts: a("done", "done"), stage: "archived", archived: "2026-06-18" })).toEqual([]);
   const repo = newRepoConfig("/w/demo-ops", true);
   const cfg = { ...base, repos: [repo], agentSessions: { enabled: true, agents: [fakeProfile({ prompts: { implement: "x {change}" } })], defaultAgent: "fake" } };
   expect(startersFor(cfg, { repoId: repo.id, artifacts: a("done", "done"), stage: "ready" })).toEqual(["implement"]);
   expect(startersFor(cfg, { repoId: repo.id, artifacts: a("done", "done"), stage: "done" })).toEqual([]); // no archive prompt
+  const archiving = { ...cfg, agentSessions: { ...cfg.agentSessions, agents: [fakeProfile({ prompts: { archive: "a {change}" } })] } };
+  for (const stage of ["done", "synced"] as const) expect(startersFor(archiving, { repoId: repo.id, artifacts: a("done", "done"), stage })).toEqual(["archive"]);
   expect(sessionsEnabledFor(cfg, repo.id)).toBe(true);
   expect(sessionsEnabledFor({ ...cfg, repos: [{ ...repo, agent: { enabled: false } }] }, repo.id)).toBe(false);
   expect(sessionsEnabledFor({ ...cfg, agentSessions: { ...cfg.agentSessions, enabled: false } }, repo.id)).toBe(false);

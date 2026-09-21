@@ -131,6 +131,21 @@ test("one running session per change; archive gets its own worktree and branch; 
   expect(view.text()).toContain(`cwd=${await realpath(a.worktreePath)}`);
 });
 
+test("archive is offered in Synced too: the delta is already in the main specs, only archiving is left", async () => {
+  const h = track(await harness());
+  const delta = await readFile(join(h.repoPath, "openspec", "changes", "bump-toolchain", "specs", "bump-toolchain", "spec.md"), "utf8");
+  await mkdir(join(h.repoPath, "openspec", "specs", "bump-toolchain"), { recursive: true });
+  await writeFile(join(h.repoPath, "openspec", "specs", "bump-toolchain", "spec.md"), `# bump-toolchain\n\n## Purpose\n\nToolchain bumps.\n\n${delta.replace("## ADDED Requirements", "## Requirements")}`);
+  git(h.repoPath, "add", "-A");
+  git(h.repoPath, "commit", "-q", "-m", "sync specs");
+  h.snapshot.repos[0] = await scanRepo(h.config.repos[0]);
+  expect(h.snapshot.repos[0].changes.find((c) => c.name === "bump-toolchain")).toMatchObject({ stage: "synced", column: "Synced" });
+
+  const arch = await h.manager.open({ repoId: h.repoId, change: "bump-toolchain", action: "archive" });
+  expect(arch).toMatchObject({ state: "running", action: "archive", branch: "chore/archive-bump-toolchain" });
+  expect(arch.worktreePath.endsWith("archive-bump-toolchain")).toBe(true);
+});
+
 test("refusals", async () => {
   const open = (h: { manager: SessionManager; repoId: string }, change: unknown, action: unknown = "implement") => h.manager.open({ repoId: h.repoId, change, action });
   await expect(open(track(await harness({ enabled: false })), "upgrade-runtime")).rejects.toMatchObject({ status: 403 });
