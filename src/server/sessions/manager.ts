@@ -280,7 +280,7 @@ export class SessionManager {
     if (!text) throw new SessionError(400, `${session.agentName} has no "${action}" prompt configured`);
     proc.write(text);
     session.action = action;
-    void this.touch(session);
+    this.touchLater(session);
     return session;
   }
 
@@ -317,7 +317,7 @@ export class SessionManager {
     } catch (err) {
       session.state = "failed";
       session.error = `could not start the agent: ${err instanceof Error ? err.message : String(err)}`;
-      void this.touch(session);
+      this.touchLater(session);
       return;
     }
     live.proc = proc;
@@ -340,7 +340,7 @@ export class SessionManager {
     session.lastOutputAt = new Date(now).toISOString();
     if (now - live.lastStamp > OUTPUT_STAMP_MS) {
       live.lastStamp = now;
-      void this.touch(session);
+      this.touchLater(session);
     }
   }
 
@@ -459,6 +459,17 @@ export class SessionManager {
           await this.end(session, null, "the dashboard was stopped while this session was running");
         }),
     );
+    // Nothing of ours may still be writing once shutdown has returned (the caller may remove the directory next).
+    await this.store.idle();
+  }
+
+  /**
+   * Bookkeeping nobody waits for (the timestamp of the latest output, a recorded action). It is best effort: a failed
+   * write must not surface as an unhandled rejection, which would take the whole dashboard down over a timestamp.
+   * Anything that matters is saved by a caller that awaits `touch` and sees the error.
+   */
+  private touchLater(session: Session): void {
+    void this.touch(session).catch(() => undefined);
   }
 
   private async touch(session: Session): Promise<void> {

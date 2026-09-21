@@ -4,7 +4,7 @@ import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
 import { useEffect, useRef, useState } from "preact/hooks";
 import { SHIPPABLE_WORK, type SessionAction } from "../shared/types.ts";
-import { api, terminalSocketUrl } from "./api.ts";
+import { api, type TerminalMessage } from "./api.ts";
 import { cdCommand } from "./format.ts";
 import { DEFAULT_QUICK_REPLIES, NOT_SUBMITTED_NOTICE, replyHint, replyMessage, type QuickReply } from "./quickReplies.ts";
 import {
@@ -64,7 +64,7 @@ function TerminalView({ sessionId, running, onExit }: { sessionId: string; runni
   const host = useRef<HTMLDivElement>(null);
   const [status, setStatus] = useState<"connecting" | "open" | "closed">("connecting");
   // The effect below owns the terminal and its socket; the default responses reach them through this ref.
-  const live = useRef<{ send: (message: object) => void; focus: () => void }>();
+  const live = useRef<{ send: (message: TerminalMessage) => void; focus: () => void }>();
   // The ref is the guard (it holds within one tick, where state would still be stale); the state only greys the button.
   const guard = useRef(new Set<string>());
   const [guarded, setGuarded] = useState<readonly string[]>([]);
@@ -129,27 +129,23 @@ function TerminalView({ sessionId, running, onExit }: { sessionId: string; runni
     term.open(el);
     fit.fit();
 
-    const socket = new WebSocket(terminalSocketUrl(sessionId));
-    socket.binaryType = "arraybuffer";
-    const send = (message: object) => socket.readyState === WebSocket.OPEN && socket.send(JSON.stringify(message));
-    const sendSize = () => send({ type: "resize", cols: term.cols, rows: term.rows });
+    // The stream comes from the API layer: a WebSocket in the product, a scripted recording in the demo.
+    const connection = api.openTerminal(sessionId, {
+      onOpen: () => {
+        setStatus("open");
+        sendSize();
+        if (wantsFocus.current) term.focus(); // with several panes, only the one the user is in takes the keyboard
+      },
+      onData: (bytes) => term.write(bytes),
+      onExit,
+      onSubmitted: (ok) => onSubmitted.current(ok),
+      onClose: () => setStatus("closed"),
+    });
+    const send = (message: TerminalMessage) => connection.send(message);
+    function sendSize() {
+      send({ type: "resize", cols: term.cols, rows: term.rows });
+    }
     live.current = { send, focus: () => term.focus() };
-
-    socket.onopen = () => {
-      setStatus("open");
-      sendSize();
-      if (wantsFocus.current) term.focus(); // with several panes, only the one the user is in takes the keyboard
-    };
-    socket.onmessage = (event) => {
-      if (typeof event.data === "string") {
-        const frame = JSON.parse(event.data) as { type?: string; ok?: boolean };
-        if (frame.type === "exit") onExit();
-        else if (frame.type === "submitted") onSubmitted.current(frame.ok === true);
-      } else {
-        term.write(new Uint8Array(event.data as ArrayBuffer));
-      }
-    };
-    socket.onclose = () => setStatus("closed");
 
     const input = term.onData((data) => send({ type: "input", data }));
     const resized = term.onResize(sendSize);
@@ -161,7 +157,7 @@ function TerminalView({ sessionId, running, onExit }: { sessionId: string; runni
       observer.disconnect();
       input.dispose();
       resized.dispose();
-      socket.close();
+      connection.close();
       term.dispose();
     };
   }, [sessionId, onExit]);

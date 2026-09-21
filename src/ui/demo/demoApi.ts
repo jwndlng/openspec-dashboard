@@ -1,22 +1,34 @@
 // In-memory stand-in for the dashboard server. Nothing is read from or written to anywhere: a reload starts over.
 import type { Config, RepoSharedConfig, RepoSnapshot, SharedConfigApplyResult, SharedConfigPreview, SharedProfile, Snapshot } from "../../shared/types.ts";
 import type { Api } from "../api.ts";
-import { buildSample, DEMO_ROOT } from "./sampleData.ts";
+import { createDemoSessions } from "./demoSessions.ts";
+import { buildSample, DEMO_CARRIED, DEMO_PROFILES, DEMO_ROOT } from "./sampleData.ts";
+import type { Clock } from "./transcripts.ts";
 
-const NO_SESSIONS = "agent sessions need the dashboard server and a local agent CLI; they are not part of the demo";
 
 export interface DemoApiOptions {
   now?: () => number;
   /** Simulated round trip, long enough for loading states to show. */
   latencyMs?: number;
+  /** Drives the scripted terminals; tests pass one they advance by hand. */
+  clock?: Clock;
 }
 
-export function createDemoApi({ now = Date.now, latencyMs = 150 }: DemoApiOptions = {}): Api {
+export function createDemoApi({ now = Date.now, latencyMs = 150, clock }: DemoApiOptions = {}): Api {
   const sample = buildSample(now());
   let config: Config = sample.config;
   let generatedAt = sample.snapshot.generatedAt;
 
   const reply = <T>(value: T): Promise<T> => new Promise((resolve) => setTimeout(() => resolve(structuredClone(value)), latencyMs));
+
+  /** Like `reply`, for operations that can refuse: the refusal arrives as a rejected promise, as over HTTP. */
+  const attempt = <T>(operation: () => T): Promise<T> => {
+    try {
+      return reply(operation());
+    } catch (err) {
+      return new Promise((_, reject) => setTimeout(() => reject(err), latencyMs));
+    }
+  };
 
   // A repository enabled from the discovered list has never been scanned: it shows up empty, like a fresh one would.
   const emptyRepo = (id: string, name: string, path: string): RepoSnapshot => ({
@@ -33,8 +45,20 @@ export function createDemoApi({ now = Date.now, latencyMs = 150 }: DemoApiOption
 
   // Shared config, simulated: the demo has no files, so it remembers which profile (and which version of it) each
   // sample repository "carries" and renders a stand-in config.yaml for the preview.
-  let profiles: SharedProfile[] = [];
-  const carried = new Map<string, SharedProfile[]>();
+  // Seeded, so Projects shows carried profiles at first sight. A `stale` entry carries an older wording of its profile,
+  // which is exactly what "outdated" means.
+  let profiles: SharedProfile[] = structuredClone(DEMO_PROFILES);
+  const carried = new Map<string, SharedProfile[]>(
+    sample.snapshot.repos.flatMap((r) => {
+      const entries = DEMO_CARRIED[r.name];
+      if (!entries) return [];
+      const applied = entries.flatMap(({ id, stale }) => {
+        const profile = DEMO_PROFILES.find((p) => p.id === id);
+        return profile ? [stale ? { ...profile, context: profile.context.split("\n")[0] } : structuredClone(profile)] : [];
+      });
+      return [[r.id, applied] as [string, SharedProfile[]]];
+    }),
+  );
   const same = (a: SharedProfile, b: SharedProfile) => a.context === b.context && JSON.stringify(a.rules) === JSON.stringify(b.rules);
 
   const sharedState = (repoId: string): RepoSharedConfig => ({
@@ -61,6 +85,12 @@ export function createDemoApi({ now = Date.now, latencyMs = 150 }: DemoApiOption
     return { desired: profiles.filter((p) => profileIds.includes(p.id)) };
   };
 
+  /** The board without session worktrees: what the sessions themselves are validated against. */
+  const baseSnapshot = (): Snapshot => ({
+    generatedAt,
+    repos: config.repos.filter((r) => r.enabled).map((r) => sample.snapshot.repos.find((s) => s.id === r.id) ?? emptyRepo(r.id, r.name, r.path)),
+  });
+
   const snapshot = (): Snapshot => ({
     generatedAt,
     repos: config.repos
@@ -68,9 +98,13 @@ export function createDemoApi({ now = Date.now, latencyMs = 150 }: DemoApiOption
       .map((r) => {
         const known = sample.snapshot.repos.find((s) => s.id === r.id);
         const repo = known ? { ...known, name: r.name } : emptyRepo(r.id, r.name, r.path);
-        return profiles.length > 0 ? { ...repo, sharedConfig: sharedState(r.id) } : repo;
+        // A session's worktree is a worktree of its repository, so `git worktree list` — the snapshot — has it too.
+        const withSessions = config.agentSessions.enabled ? { ...repo, worktrees: [...repo.worktrees, ...demoSessions.gitWorktrees(r.id)] } : repo;
+        return profiles.length > 0 ? { ...withSessions, sharedConfig: sharedState(r.id) } : withSessions;
       }),
   });
+
+  const demoSessions: ReturnType<typeof createDemoSessions> = createDemoSessions({ now, clock, getConfig: () => config, getSnapshot: () => baseSnapshot() });
 
   return {
     state: () => reply(snapshot()),
@@ -117,15 +151,16 @@ export function createDemoApi({ now = Date.now, latencyMs = 150 }: DemoApiOption
       return reply({ results });
     },
 
-    // Agent sessions start a local CLI; there is nothing to start in a static demo, and its config keeps them off.
-    sessions: () => reply({ sessions: [], agents: [], worktrees: [] }),
-    openSession: () => Promise.reject(new Error(NO_SESSIONS)),
-    resumeSession: () => Promise.reject(new Error(NO_SESSIONS)),
-    shipSession: () => Promise.reject(new Error(NO_SESSIONS)),
-    removeWorktree: () => Promise.reject(new Error(NO_SESSIONS)),
-    closeSession: () => Promise.reject(new Error(NO_SESSIONS)),
-    deleteSession: () => Promise.reject(new Error(NO_SESSIONS)),
-    worktreeStatus: () => Promise.reject(new Error(NO_SESSIONS)),
-    promptSession: () => Promise.reject(new Error(NO_SESSIONS)),
+    // Agent sessions are simulated: state lives in memory, terminals play hand-written recordings, nothing is started.
+    sessions: () => reply(demoSessions.list()),
+    openSession: (repoId, change, action) => attempt(() => demoSessions.open(repoId, change, action)),
+    resumeSession: (id) => attempt(() => demoSessions.resume(id)),
+    shipSession: (id) => attempt(() => demoSessions.ship(id)),
+    removeWorktree: (repoId, name) => attempt(() => demoSessions.removeWorktree(repoId, name)),
+    closeSession: (id, removeWorktree) => attempt(() => demoSessions.close(id, removeWorktree)),
+    deleteSession: (id) => attempt(() => demoSessions.delete(id)),
+    worktreeStatus: (id) => attempt(() => demoSessions.status(id)),
+    promptSession: (id, action) => attempt(() => demoSessions.prompt(id, action)),
+    openTerminal: (id, handlers) => demoSessions.terminal(id, handlers),
   };
 }

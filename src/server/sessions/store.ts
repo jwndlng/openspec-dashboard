@@ -20,6 +20,11 @@ export class SessionStore {
     return next;
   }
 
+  /** Resolves once every write queued so far has finished, whether it succeeded or not. */
+  async idle(): Promise<void> {
+    await Promise.all(this.writes.values());
+  }
+
   private dir(id: string): string {
     if (!SESSION_ID.test(id)) throw new Error(`invalid session id: ${id}`);
     return join(sessionsDir(), id);
