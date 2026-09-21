@@ -141,3 +141,14 @@ The Settings view SHALL provide a section for agent sessions containing the glob
 #### Scenario: Adding an agent
 - **WHEN** the user adds an agent, enters its command one argument per line and an Implement prompt, and saves
 - **THEN** the agent is stored with that argument list, is offered in each repository's agent choice, and shows whether its executable was found
+
+### Requirement: An agent profile may carry a Ship prompt
+An agent profile MAY contain a `ship` prompt next to its starter prompts. It is validated like them except that the `{change}` placeholder is optional. Settings SHALL offer it for editing and show the default that applies when it is empty. Configs without it MUST load unchanged.
+
+#### Scenario: Existing config
+- **WHEN** a config written before this change is loaded
+- **THEN** it loads without warning and Ship uses the default prompt
+
+#### Scenario: Bypass flag in a Ship prompt
+- **WHEN** a config's Ship prompt contains a permission-bypass flag
+- **THEN** the config is rejected like any other prompt containing one
