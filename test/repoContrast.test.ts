@@ -1,8 +1,10 @@
-// Guards the 4.5:1 rule for repository-coloured text on the tinted group panel (kanban-board spec).
+// Guards the colour rules of the kanban-board spec: 4.5:1 for repository-coloured text on the tinted group panel
+// and for every status role on a badge, and that repository hues never come near a status hue or the accent.
 // Token values are read from styles.css so tuning a token re-runs the check against the real numbers.
 import { expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { MIN_HUE_GAP, REPO_HUES } from "../src/ui/repoGroups.ts";
 
 const css = readFileSync(join(import.meta.dir, "..", "src", "ui", "styles.css"), "utf8");
 
@@ -68,7 +70,18 @@ function contrast(x: Rgb, y: Rgb): number {
   return (hi + 0.05) / (lo + 0.05);
 }
 
-const HUES = Array.from({ length: 24 }, (_, i) => i * 15);
+/** The roles a status label may use (kanban-board: "Status labels use a semantic colour palette"). */
+const ROLES = ["info", "branch", "success", "warning", "danger"] as const;
+/** Grounds a badge is ever painted on: its own, and the card it usually sits in. */
+const BADGE_GROUNDS = ["--bg-section", "--bg-raised"] as const;
+/** The accent, which must stay out of the status palette and out of the repository hues. */
+const ACCENTS = ["--brand", "--brand-fg"] as const;
+
+/** Shortest distance between two hue angles, in degrees. */
+function hueGap(a: number, b: number): number {
+  const d = Math.abs(a - b) % 360;
+  return d > 180 ? 360 - d : d;
+}
 
 for (const [theme, selector] of [["dark", ":root"], ["light", ':root[data-theme="light"]']] as const) {
   test(`repository name keeps 4.5:1 on the tinted group panel in the ${theme} theme`, () => {
@@ -79,7 +92,7 @@ for (const [theme, selector] of [["dark", ":root"], ["light", ':root[data-theme=
     const section = hexToLinear(token(block, "--bg-section"));
     expect(share).toBeGreaterThan(0);
 
-    for (const h of HUES) {
+    for (const h of REPO_HUES) {
       const repo: Lch = { l, c, h };
       const panel = lchToLinear(mixOklch(repo, linearToLch(section), share));
       const ratio = contrast(lchToLinear(repo), panel);
@@ -99,13 +112,58 @@ for (const [theme, selector] of [["dark", ":root"], ["light", ':root[data-theme=
 
     for (const name of ["--bg-base", "--bg-section"]) {
       const background = hexToLinear(token(block, name));
-      for (const h of HUES) {
+      for (const h of REPO_HUES) {
         const ratio = contrast(lchToLinear(repoOf(h)), background);
         if (ratio < 4.5) throw new Error(`${theme} hue ${h} on ${name}: contrast ${ratio.toFixed(2)} < 4.5`);
       }
     }
   });
 }
+
+for (const [theme, selector] of [["dark", ":root"], ["light", ':root[data-theme="light"]']] as const) {
+  test(`every status role keeps 4.5:1 on both badge grounds in the ${theme} theme`, () => {
+    const block = themeBlock(selector);
+    for (const role of ROLES) {
+      const fg = hexToLinear(token(block, `--${role}`));
+      for (const ground of BADGE_GROUNDS) {
+        const ratio = contrast(fg, hexToLinear(token(block, ground)));
+        if (ratio < 4.5) throw new Error(`${theme} --${role} on ${ground}: contrast ${ratio.toFixed(2)} < 4.5`);
+      }
+    }
+  });
+
+  test(`no repository hue comes within ${MIN_HUE_GAP}° of a status role or the accent in the ${theme} theme`, () => {
+    const block = themeBlock(selector);
+    const reserved = [...ROLES.map((r) => `--${r}`), ...ACCENTS].map((name) => ({
+      name,
+      hue: linearToLch(hexToLinear(token(block, name))).h,
+    }));
+    for (const repo of REPO_HUES) {
+      for (const { name, hue } of reserved) {
+        const gap = hueGap(repo, hue);
+        if (gap < MIN_HUE_GAP) throw new Error(`${theme}: repository hue ${repo} is ${gap.toFixed(1)}° from ${name} (${hue.toFixed(1)}°)`);
+      }
+    }
+  });
+}
+
+test("no badge role is painted in the brand accent", () => {
+  // The accent belongs to focus, primary actions and progress. A status wearing it is the bug this palette fixed.
+  const rules = [...css.matchAll(/^\.badge(\.[\w-]+)*\s*\{([^}]*)\}/gm)].map((m) => m[0]);
+  expect(rules.length).toBeGreaterThan(4);
+  for (const rule of rules) expect(rule).not.toMatch(/var\(--brand/);
+  for (const role of ROLES) expect(css).toContain(`.badge.${role} { color: var(--${role});`);
+});
+
+test("the repository hues are distinct and spread", () => {
+  expect(new Set(REPO_HUES).size).toBe(REPO_HUES.length);
+  expect(REPO_HUES.length).toBe(19);
+  const sorted = [...REPO_HUES].sort((a, b) => a - b);
+  for (let i = 0; i < sorted.length; i++) {
+    const gap = hueGap(sorted[i], sorted[(i + 1) % sorted.length]);
+    if (gap < MIN_HUE_GAP) throw new Error(`repository hues ${sorted[i]} and ${sorted[(i + 1) % sorted.length]} are only ${gap.toFixed(1)}° apart`);
+  }
+});
 
 test("colour math sanity: white on black is 21:1 and sRGB round-trips through OKLCH", () => {
   expect(contrast(hexToLinear("#ffffff"), hexToLinear("#000000"))).toBeCloseTo(21, 5);

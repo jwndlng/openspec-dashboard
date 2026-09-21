@@ -19,9 +19,12 @@ const wt = (name: string, work: WorkStatus, hours = 1, patch: Partial<SessionWor
 const running = (id: string) => ({ id, state: "running" }) as Session;
 
 test("badges say what is left to do, in words", () => {
-  expect(workBadge(wt("a", { state: "uncommitted", count: 3 }), [], NOW)).toMatchObject({ label: "✎ 3 uncommitted", tone: "warn" });
+  // Everything short of merged is work in a branch, so it wears one role; merged is the one finished state.
+  expect(workBadge(wt("a", { state: "uncommitted", count: 3 }), [], NOW)).toMatchObject({ label: "✎ 3 uncommitted", tone: "branch" });
+  expect(workBadge(wt("a", { state: "unpushed", count: 1 }), [], NOW)).toMatchObject({ tone: "branch" });
   expect(workBadge(wt("a", { state: "unpushed", count: 1 }), [], NOW)?.title).toContain("1 commit exist");
-  expect(workBadge(wt("a", { state: "pushed", base: "origin/main" }), [], NOW)).toMatchObject({ label: "⇡ pushed", tone: "brand" });
+  expect(workBadge(wt("a", { state: "pushed", base: "origin/main" }), [], NOW)).toMatchObject({ label: "⇡ pushed", tone: "branch" });
+  expect(workBadge(wt("a", { state: "merged", base: "origin/main" }), [], NOW)).toMatchObject({ label: "✓ merged", tone: "success" });
   expect(workBadge(wt("a", { state: "merged", base: "origin/main" }), [], NOW)?.title).toContain("as of your last fetch");
   expect(workBadge(wt("a", { state: "clean" }), [], NOW)).toBeUndefined();
   expect(workBadge(wt("a", { state: "missing" }), [], NOW)).toBeUndefined();
@@ -33,6 +36,8 @@ test("open work goes stale after a day, pushed work after a week, and never whil
   expect(workBadge(wt("a", { state: "uncommitted", count: 2 }, 72), [], NOW)).toMatchObject({ label: "✎ 2 uncommitted · 3d", tone: "danger" });
   expect(staleAge(wt("a", { state: "pushed" }, 72), [], NOW)).toBeUndefined();
   expect(staleAge(wt("a", { state: "pushed" }, 8 * 24), [], NOW)).toBe("8d");
+  // A pushed branch may simply be waiting for review, so going stale only warns.
+  expect(workBadge(wt("a", { state: "pushed" }, 8 * 24), [], NOW)).toMatchObject({ label: "⇡ pushed · 8d", tone: "warning" });
   expect(staleAge(wt("a", { state: "merged" }, 900), [], NOW)).toBeUndefined();
   expect(staleAge(wt("a", { state: "unpushed", count: 1 }, 72, { sessionId: "s1" }), [running("s1")], NOW)).toBeUndefined();
 });

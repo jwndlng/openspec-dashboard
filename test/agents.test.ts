@@ -106,8 +106,9 @@ const session = (patch: Partial<Session>): Session => ({ id: "s", repoId: "r", c
 
 test("badges are honest about what a terminal can tell", () => {
   const now = Date.parse("2026-01-01T01:00:00Z");
-  expect(sessionBadge(session({ lastOutputAt: "2026-01-01T00:59:50Z" }), now)).toMatchObject({ icon: "●", label: "running", tone: "brand", live: true });
-  expect(sessionBadge(session({ lastOutputAt: "2026-01-01T00:50:00Z" }), now)).toMatchObject({ icon: "◆", label: "quiet 10m", tone: "warn" });
+  // An agent that is up is one thing, so running and quiet share the live role; the words and the motion separate them.
+  expect(sessionBadge(session({ lastOutputAt: "2026-01-01T00:59:50Z" }), now)).toMatchObject({ icon: "●", label: "running", tone: "info", live: true });
+  expect(sessionBadge(session({ lastOutputAt: "2026-01-01T00:50:00Z" }), now)).toMatchObject({ icon: "◆", label: "quiet 10m", tone: "info" });
   expect(sessionBadge(session({ state: "exited", exitCode: 0 }), now)).toMatchObject({ label: "ended", tone: "" });
   expect(sessionBadge(session({ state: "exited", exitCode: 3 }), now)).toMatchObject({ icon: "⚠", label: "ended (3)", tone: "danger" });
   expect(sessionBadge(session({ state: "failed", error: "no such file" }), now)).toMatchObject({ tone: "danger", title: "no such file" });

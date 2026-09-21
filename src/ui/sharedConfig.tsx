@@ -66,8 +66,8 @@ function PreviewDialog({ previews, names, onApply, onClose }: { previews: Shared
               <details key={p.repoId} open={!p.refusal && p.after !== p.before}>
                 <summary>
                   <span class="mono">{names.get(p.repoId) ?? p.repoId}</span>
-                  {p.refusal ? <span class="badge danger">refused</span> : p.after === p.before ? <span class="badge">no change</span> : <span class="badge brand">will change</span>}
-                  {result && <span class={`badge ${result.result === "written" ? "ok" : result.result === "refused" ? "danger" : ""}`}>{result.result}</span>}
+                  {p.refusal ? <span class="badge danger">refused</span> : p.after === p.before ? <span class="badge">no change</span> : <span class="badge info">will change</span>}
+                  {result && <span class={`badge ${result.result === "written" ? "success" : result.result === "refused" ? "danger" : ""}`}>{result.result}</span>}
                 </summary>
                 {(p.refusal || result?.reason) && <div class="notice danger">{result?.reason ?? p.refusal}</div>}
                 {!p.refusal && p.after !== p.before && <Diff before={p.before} after={p.after} />}
@@ -304,7 +304,7 @@ export function SharedConfigPanel({ config, snapshot, onApplied }: { config: Con
         <button type="button" class="btn primary" onClick={save} disabled={!dirty || busy || draft.some((p) => !p.name.trim())}>
           Save profiles
         </button>
-        {dirty && <span class="badge warn">unsaved profile changes</span>}
+        {dirty && <span class="badge warning">unsaved profile changes</span>}
         {message && <span class={`notice ${message.kind}`}>{message.text}</span>}
       </div>
 
@@ -341,7 +341,7 @@ export function SharedConfigPanel({ config, snapshot, onApplied }: { config: Con
                             <label class="check">
                               <input type="checkbox" disabled={!usable} checked={row.selected.includes(p.id)} onChange={(e) => toggle(row.repoId, p.id, e.currentTarget.checked, row.selected)} aria-label={`${p.name} for ${row.name}`} />
                               {state === "in-sync" && <span class="hint">in sync</span>}
-                              {state === "outdated" && <span class="badge warn">outdated</span>}
+                              {state === "outdated" && <span class="badge warning">outdated</span>}
                             </label>
                           </td>
                         );
@@ -354,11 +354,11 @@ export function SharedConfigPanel({ config, snapshot, onApplied }: { config: Con
                           </span>
                         )}
                         {orphans.map((o) => (
-                          <span key={o.id} class="badge warn" title="Sections of a profile that no longer exists; applying removes them">
+                          <span key={o.id} class="badge warning" title="Sections of a profile that no longer exists; applying removes them">
                             orphaned: {o.id}
                           </span>
                         ))}
-                        {isPending(row, profiles) && <span class="badge brand">pending</span>}
+                        {isPending(row, profiles) && <span class="badge info">pending</span>}
                       </td>
                     </tr>
                   );

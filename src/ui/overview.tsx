@@ -55,7 +55,7 @@ function Row({ row, stages, now }: { row: OverviewRow; stages: string[]; now: nu
           </span>
         )}
         {notice && (
-          <span class="badge warn" title={notice.long}>
+          <span class="badge warning" title={notice.long}>
             ⎇ {notice.short}
           </span>
         )}
@@ -72,7 +72,7 @@ function Row({ row, stages, now }: { row: OverviewRow; stages: string[]; now: nu
             </td>
           ))}
           <td class="num total">{row.open}</td>
-          <td class="num">{row.toArchive > 0 ? <span class="badge warn">{row.toArchive} to archive</span> : <span class="zero">·</span>}</td>
+          <td class="num">{row.toArchive > 0 ? <span class="badge warning">{row.toArchive} to archive</span> : <span class="zero">·</span>}</td>
         </>
       )}
       <td class="when" title={row.lastUpdatedAt ?? "no activity date"}>

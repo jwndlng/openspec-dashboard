@@ -61,6 +61,6 @@ test("summaries for the overview", () => {
   expect(summarize(undefined, PROFILES)).toBeUndefined();
   expect(summarize(carrying(), PROFILES)).toBeUndefined();
   expect(summarize(carrying(["base", "in-sync"], ["security", "in-sync"]), PROFILES)).toEqual({ text: "Base, Security", level: "ok" });
-  expect(summarize(carrying(["base", "outdated"], ["gone", "orphaned"]), PROFILES)).toEqual({ text: "Base (outdated), gone (orphaned)", level: "warn" });
+  expect(summarize(carrying(["base", "outdated"], ["gone", "orphaned"]), PROFILES)).toEqual({ text: "Base (outdated), gone (orphaned)", level: "warning" });
   expect(summarize({ unreadable: true, applied: [] }, PROFILES)).toEqual({ text: "config unreadable", level: "danger" });
 });

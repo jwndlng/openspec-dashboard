@@ -3,7 +3,7 @@ import type { PullResult, RepoSnapshot } from "../shared/types.ts";
 
 export interface PullOutcome {
   label: string;
-  tone: "" | "ok" | "warn" | "danger";
+  tone: "" | "success" | "warning" | "danger";
   /** Tooltip: the reason in full, and anything else worth knowing. */
   detail: string;
 }
@@ -17,16 +17,16 @@ export function pullOutcome(result: PullResult): PullOutcome {
   switch (result.update) {
     case "fast-forwarded": {
       const n = result.commits ?? 0;
-      return { label: `+${n} ${n === 1 ? "commit" : "commits"}`, tone: "ok", detail: `Fast-forwarded ${result.branch ?? "the checkout"} to ${result.upstream ?? "its upstream"}.${hooks}` };
+      return { label: `+${n} ${n === 1 ? "commit" : "commits"}`, tone: "success", detail: `Fast-forwarded ${result.branch ?? "the checkout"} to ${result.upstream ?? "its upstream"}.${hooks}` };
     }
     case "up-to-date":
       return { label: "up to date", tone: "", detail: `${result.branch ?? "The checkout"} already has everything from ${result.upstream ?? "its upstream"}.` };
     case "skipped":
       return result.fetched
-        ? { label: "fetched only", tone: "warn", detail: `Fetched, but the checkout was not updated: ${why}.` }
+        ? { label: "fetched only", tone: "warning", detail: `Fetched, but the checkout was not updated: ${why}.` }
         : { label: "nothing to pull", tone: "", detail: result.reason ?? "" };
     case "refused":
-      return { label: "refused", tone: "warn", detail: `Fetched, but the checkout was left as it is: ${why}.` };
+      return { label: "refused", tone: "warning", detail: `Fetched, but the checkout was left as it is: ${why}.` };
     case "failed":
       return { label: "failed", tone: "danger", detail: `Could not fetch: ${why}.` };
   }
@@ -39,7 +39,7 @@ export function pullOutcome(result: PullResult): PullOutcome {
  */
 export function pullNeedsReport(result: PullResult): boolean {
   const { tone } = pullOutcome(result);
-  return tone === "warn" || tone === "danger";
+  return tone === "warning" || tone === "danger";
 }
 
 export interface BranchNotice {

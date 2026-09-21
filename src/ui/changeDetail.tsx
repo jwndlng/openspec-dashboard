@@ -108,7 +108,7 @@ export function DetailHeader({ repo, change, from, selectedFilePath, now }: { re
           <span class="sep">/</span>
           <span class="mono change-name">{change.name}</span>
         </h1>
-        <span class="badge brand">{change.column}</span>
+        <span class="badge">{change.column}</span>
         {change.branchMatch && <BranchBadge branch={change.branchMatch} hint="a branch or worktree matches this change" />}
       </div>
       <div class="row">
