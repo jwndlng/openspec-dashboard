@@ -28,6 +28,11 @@ export function href(path: string, routing: RoutingMode = mode): string {
   return routing === "hash" ? `#${path}` : path;
 }
 
+/** Like `href`, with a query ("" or "?…"). In hash mode the query belongs to the document, so it comes before the fragment. */
+export function hrefWithQuery(path: string, query: string, routing: RoutingMode = mode): string {
+  return routing === "hash" ? `${query || "?"}#${path}` : `${path}${query}`;
+}
+
 /** The URL to push when navigating to an app route. Like a plain link, it starts the new view without a query. */
 export function navigateUrl(loc: Pick<LocationParts, "pathname">, path: string, routing: RoutingMode = mode): string {
   return routing === "hash" ? `${loc.pathname}#${path}` : path;

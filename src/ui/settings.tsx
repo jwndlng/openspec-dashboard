@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "preact/hooks";
 import type { Config, DiscoverResult, RepoConfig, Snapshot } from "../shared/types.ts";
 import { AgentSettings } from "./agentSettings.tsx";
 import { api, ApiError } from "./api.ts";
+import { SettingsNav, type SettingsSection, SettingsSections, useSectionNav } from "./settingsNav.tsx";
 import { SharedConfigPanel } from "./sharedConfig.tsx";
 
 interface Props {
@@ -28,28 +29,8 @@ export function Settings({ config, snapshot, onSaved, onRescan }: Props) {
     if (config && !dirty) setDraft(config);
   }, [config, dirty]);
 
-  const loaded = config !== null;
-  useEffect(() => {
-    if (config && config.scanRoots.length > 0) void runDiscovery(config.scanRoots);
-  }, [loaded]);
-
-  if (!draft) return <div class="settings">Loading…</div>;
-
-  const update = (patch: Partial<Config>) => {
-    setDraft({ ...draft, ...patch });
-    setDirty(true);
-    setMessage(null);
-  };
-  const updateRepo = (id: string, patch: Partial<RepoConfig>) =>
-    update({ repos: draft.repos.map((r) => (r.id === id ? { ...r, ...patch } : r)) });
-
-  const addRoot = () => {
-    const root = newRoot.trim();
-    if (!root || draft.scanRoots.includes(root)) return;
-    setRoots([...draft.scanRoots, root]);
-    setNewRoot("");
-  };
-
+  // Defined before the early return below: the effect that calls it also runs for a render that returned early
+  // (Settings opened directly, config still loading), where a later `const` would not be initialised yet.
   /**
    * Read-only preview of what is under `roots` (usually the unsaved draft roots).
    * Runs overlap when roots are edited quickly; only the latest response is applied.
@@ -77,6 +58,34 @@ export function Settings({ config, snapshot, onSaved, onRescan }: Props) {
       if (seq === discoverSeq.current) setDiscovering(false);
     }
   };
+
+  const loaded = config !== null;
+  useEffect(() => {
+    if (config && config.scanRoots.length > 0) void runDiscovery(config.scanRoots);
+  }, [loaded]);
+
+  // Hooks first: the ids are all the hook needs, and they are known before the draft is.
+  const scroller = useRef<HTMLDivElement>(null);
+  const sectionIds = draft ? ["roots", "tracked", "discovered", "scanning", "agents", ...(config ? ["shared-config"] : [])] : [];
+  const nav = useSectionNav(scroller, sectionIds);
+
+  if (!draft) return <div class="settings">Loading…</div>;
+
+  const update = (patch: Partial<Config>) => {
+    setDraft({ ...draft, ...patch });
+    setDirty(true);
+    setMessage(null);
+  };
+  const updateRepo = (id: string, patch: Partial<RepoConfig>) =>
+    update({ repos: draft.repos.map((r) => (r.id === id ? { ...r, ...patch } : r)) });
+
+  const addRoot = () => {
+    const root = newRoot.trim();
+    if (!root || draft.scanRoots.includes(root)) return;
+    setRoots([...draft.scanRoots, root]);
+    setNewRoot("");
+  };
+
 
   const setRoots = (scanRoots: string[]) => {
     update({ scanRoots });
@@ -107,9 +116,12 @@ export function Settings({ config, snapshot, onSaved, onRescan }: Props) {
   const newCandidates = candidates.filter((c) => !draftIds.has(c.id));
   const enabledCount = draft.repos.filter((r) => r.enabled).length;
 
-  return (
-    <>
-      <div class="settings">
+  // One list drives both the navigation and the page, so a panel cannot exist without its navigation entry.
+  const sections: SettingsSection[] = [
+    {
+      id: "roots",
+      label: "Workspace roots",
+      content: (
         <section class="panel">
           <h2>Workspace roots</h2>
           <p class="hint">Directories to search (4 levels deep) for repositories containing <code>openspec/config.yaml</code>. Discovery runs whenever the roots change and only previews what it finds — nothing is tracked until you enable it.</p>
@@ -139,7 +151,13 @@ export function Settings({ config, snapshot, onSaved, onRescan }: Props) {
             </div>
           ))}
         </section>
-
+      ),
+    },
+    {
+      id: "tracked",
+      label: "Tracked repositories",
+      count: `${enabledCount}/${draft.repos.length}`,
+      content: (
         <section class="panel">
           <h2>Tracked repositories · {enabledCount} of {draft.repos.length} enabled</h2>
           <p class="hint">Only enabled repositories are scanned and shown on the board. Names are display-only. Forgetting (×) a repository returns it to the discovered list.</p>
@@ -161,7 +179,14 @@ export function Settings({ config, snapshot, onSaved, onRescan }: Props) {
             {draft.repos.length === 0 && <span class="hint">Nothing tracked yet — enable a discovered repository below.</span>}
           </div>
         </section>
-
+      ),
+    },
+    {
+      id: "discovered",
+      label: "Discovered",
+      count: discovering ? "…" : String(newCandidates.length),
+      attention: !discovering && newCandidates.length > 0,
+      content: (
         <section class="panel">
           <h2>Discovered · {newCandidates.length} not tracked{discovering ? " · discovering…" : ""}</h2>
           <p class="hint">Repositories found under the workspace roots. Enable the ones to track, then save.</p>
@@ -184,7 +209,12 @@ export function Settings({ config, snapshot, onSaved, onRescan }: Props) {
             )}
           </div>
         </section>
-
+      ),
+    },
+    {
+      id: "scanning",
+      label: "Scanning",
+      content: (
         <section class="panel">
           <h2>Scanning</h2>
           <div class="row">
@@ -196,10 +226,20 @@ export function Settings({ config, snapshot, onSaved, onRescan }: Props) {
             <span class="hint">· port {draft.port} (change in <code>~/.openspec-dashboard/config.json</code>, restart to apply)</span>
           </div>
         </section>
+      ),
+    },
+    { id: "agents", label: "Agent sessions", content: <AgentSettings draft={draft} update={update} /> },
+    // Works on the saved config, not the draft above: it has its own save and only ever targets tracked repositories.
+    ...(config ? [{ id: "shared-config", label: "Shared OpenSpec config", content: <SharedConfigPanel config={config} snapshot={snapshot} onApplied={onRescan} /> }] : []),
+  ];
 
-        <AgentSettings draft={draft} update={update} />
-        {/* Works on the saved config, not the draft above: it has its own save and only ever targets tracked repositories. */}
-        {config && <SharedConfigPanel config={config} snapshot={snapshot} onApplied={onRescan} />}
+  return (
+    <>
+      <div class="settings-layout">
+        <SettingsNav sections={sections} current={nav.current} onJump={nav.jump} />
+        <div class="settings" ref={scroller}>
+          <SettingsSections sections={sections} />
+        </div>
       </div>
       <div class="savebar">
         <button type="button" class="btn primary" onClick={save} disabled={!dirty || saving}>
