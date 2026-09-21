@@ -35,7 +35,12 @@ export interface ChangeListing {
 export interface RepoSource {
   readonly path: string;
   exists(): Promise<boolean>;
-  listChanges(): Promise<ChangeListing>;
+  /** `archived: false` skips the archive, which is only ever read from a repository's main checkout. */
+  listChanges(options?: { archived?: boolean }): Promise<ChangeListing>;
+  /** The same kind of source for another checkout of this repository (a linked worktree). */
+  forCheckout(path: string): RepoSource;
+  /** Modification time of one directory entry itself (not its contents), in ms; undefined when it does not exist. */
+  mtimeMs(absPath: string): Promise<number | undefined>;
   readText(absPath: string): Promise<string | undefined>;
   /** Names of the directories directly inside `absDir`; empty when it does not exist. */
   listDirs(absDir: string): Promise<string[]>;
@@ -69,7 +74,19 @@ export class LocalRepoSource implements RepoSource {
     }
   }
 
-  async listChanges(): Promise<ChangeListing> {
+  forCheckout(path: string): RepoSource {
+    return new LocalRepoSource(path);
+  }
+
+  async mtimeMs(absPath: string): Promise<number | undefined> {
+    try {
+      return (await stat(absPath)).mtimeMs;
+    } catch {
+      return undefined;
+    }
+  }
+
+  async listChanges({ archived: withArchive = true }: { archived?: boolean } = {}): Promise<ChangeListing> {
     const active: ChangeDirEntry[] = [];
     const archived: ChangeDirEntry[] = [];
     const warnings: string[] = [];
@@ -85,7 +102,7 @@ export class LocalRepoSource implements RepoSource {
       active.push({ name, dir: join(changesRoot, name) });
     }
 
-    for (const dirName of await listDirs(archiveRoot)) {
+    for (const dirName of withArchive ? await listDirs(archiveRoot) : []) {
       const dir = join(archiveRoot, dirName);
       const match = ARCHIVE_PREFIX.exec(dirName);
       const name = match ? match[2] : dirName;

@@ -1,0 +1,269 @@
+import { afterAll, beforeAll, expect, test } from "bun:test";
+import { mkdir, readdir, readFile, rm, stat, utimes, writeFile } from "node:fs/promises";
+import { join, relative } from "node:path";
+import { newRepoConfig } from "../src/server/config.ts";
+import { discoverRepos } from "../src/server/discover.ts";
+import { scanRepo, WORKTREE_LIMIT } from "../src/server/scanner.ts";
+import { LocalRepoSource, type RepoSource } from "../src/server/source.ts";
+import type { RepoSnapshot } from "../src/shared/types.ts";
+import { tempDir, useTempHome } from "./helpers.ts";
+
+const COMMIT_DATE = "2026-03-01T10:00:00+01:00";
+const at = (iso: string | undefined) => Date.parse(iso ?? "");
+
+let cleanup: () => Promise<void>;
+const temps: string[] = [];
+beforeAll(async () => {
+  ({ cleanup } = await useTempHome());
+});
+afterAll(async () => {
+  for (const t of temps) await rm(t, { recursive: true, force: true });
+  await cleanup();
+});
+
+async function git(cwd: string, ...args: string[]): Promise<string> {
+  const proc = Bun.spawn(["git", "-c", "user.name=t", "-c", "user.email=t@example.invalid", "-c", "commit.gpgsign=false", "-c", "init.defaultBranch=main", ...args], {
+    cwd,
+    stdout: "pipe",
+    stderr: "pipe",
+    env: { ...process.env, GIT_AUTHOR_DATE: COMMIT_DATE, GIT_COMMITTER_DATE: COMMIT_DATE },
+  });
+  const out = await new Response(proc.stdout).text();
+  if ((await proc.exited) !== 0) throw new Error(`git ${args.join(" ")}: ${await new Response(proc.stderr).text()}`);
+  return out;
+}
+
+interface ChangeSpec {
+  artifacts?: ("proposal" | "design" | "specs" | "tasks")[];
+  tasks?: string;
+  created?: string;
+  delta?: string;
+}
+
+/** Writes a spec-driven change directory with the given artifacts present. */
+async function writeChange(root: string, name: string, { artifacts = ["proposal"], tasks = "- [ ] 1.1 a\n- [ ] 1.2 b\n", created = "2026-02-01", delta }: ChangeSpec = {}): Promise<string> {
+  const dir = join(root, "openspec", "changes", name);
+  await mkdir(join(dir, "specs", "auth"), { recursive: true });
+  await writeFile(join(dir, ".openspec.yaml"), `schema: spec-driven\ncreated: ${created}\n`);
+  if (artifacts.includes("proposal")) await writeFile(join(dir, "proposal.md"), "# p\n");
+  if (artifacts.includes("design")) await writeFile(join(dir, "design.md"), "# d\n");
+  if (artifacts.includes("specs")) await writeFile(join(dir, "specs", "auth", "spec.md"), delta ?? "## ADDED Requirements\n\n### Requirement: Two-factor\nSHALL 2FA.\n\n#### Scenario: works\n- **WHEN** x\n- **THEN** y\n");
+  if (artifacts.includes("tasks")) await writeFile(join(dir, "tasks.md"), tasks);
+  return dir;
+}
+
+/** A committed repository with `openspec/` and a main spec; returns its root (inside a temp dir registered for clean-up). */
+async function repo(): Promise<string> {
+  const base = await tempDir("osd-wt-");
+  temps.push(base);
+  const root = join(base, "alpha-infra");
+  await mkdir(join(root, "openspec", "specs", "auth"), { recursive: true });
+  await mkdir(join(root, "openspec", "changes"), { recursive: true });
+  await writeFile(join(root, "openspec", "config.yaml"), "schema: spec-driven\n");
+  await writeFile(join(root, "openspec", "specs", "auth", "spec.md"), "# auth\n\n## Purpose\nx\n\n## Requirements\n\n### Requirement: Login\nUsers SHALL log in.\n\n#### Scenario: works\n- **WHEN** x\n- **THEN** y\n");
+  await writeFile(join(root, "openspec", "changes", ".gitkeep"), "");
+  await git(root, "init", "-q");
+  await git(root, "add", "-A");
+  await git(root, "commit", "-q", "-m", "init");
+  return root;
+}
+
+async function worktree(root: string, path: string, branch?: string): Promise<string> {
+  await git(root, "worktree", "add", "-q", ...(branch ? ["-b", branch] : ["--detach"]), path);
+  // git reports resolved paths (/private/var on macOS); use what git says so comparisons are exact
+  const listed = (await git(root, "worktree", "list", "--porcelain")).split("\n").filter((l) => l.startsWith("worktree ")).map((l) => l.slice(9));
+  return listed.find((p) => p.endsWith(path.split("/").slice(-2).join("/"))) ?? path;
+}
+
+/** Sets the mtime of a directory tree, files and directories alike. */
+async function backdate(dir: string, when: Date): Promise<void> {
+  for (const entry of await readdir(dir, { withFileTypes: true })) {
+    const p = join(dir, entry.name);
+    if (entry.isDirectory()) await backdate(p, when);
+    else await utimes(p, when, when);
+  }
+  await utimes(dir, when, when);
+}
+
+const ALL = ["proposal", "design", "specs", "tasks"] as const;
+const byName = (snap: RepoSnapshot, name: string) => snap.changes.filter((c) => c.name === name);
+const scan = (root: string, source?: RepoSource) => scanRepo(newRepoConfig(root, true), source);
+
+test("a change that exists only, uncommitted, in a worktree is on the board with that worktree's progress and branch", async () => {
+  const root = await repo();
+  const wt = await worktree(root, join(root, ".claude", "worktrees", "audit"), "wip/compliance");
+  const dir = await writeChange(wt, "audit-trail", { artifacts: [...ALL], tasks: "- [x] 1.1 a\n- [ ] 1.2 b\n- [ ] 1.3 c\n" });
+  // Backdate everything, then move one file: the expectation must not depend on when the test runs.
+  await backdate(dir, new Date("2026-09-01T00:00:00Z"));
+  const mtime = new Date("2026-09-10T08:00:00Z");
+  await utimes(join(dir, "tasks.md"), mtime, mtime);
+
+  const snap = await scan(root);
+  expect([snap.ok, snap.warnings]).toEqual([true, undefined]);
+  const [change, ...rest] = byName(snap, "audit-trail");
+  expect(rest).toEqual([]);
+  expect([change.column, change.tasks, change.branchMatch]).toEqual(["Implementing", { done: 1, total: 3 }, "wip/compliance"]);
+  expect(change.checkout).toEqual({ path: wt, branch: "wip/compliance", isMain: false });
+  expect(change.otherCheckouts).toBeUndefined();
+  // untracked files count: the change's time, and the repository's, is that edit — not the old commit
+  expect(at(change.lastActivityAt)).toBe(mtime.getTime());
+  expect(at(snap.lastUpdatedAt)).toBe(mtime.getTime());
+});
+
+test("copies are merged: further along in a worktree leads; a stale worktree copy does not", async () => {
+  const root = await repo();
+  await writeChange(root, "audit-trail");
+  await writeChange(root, "upgrade-runtime", { artifacts: [...ALL], tasks: "- [x] 1.1 a\n- [x] 1.2 b\n- [ ] 1.3 c\n" });
+  await git(root, "add", "-A");
+  await git(root, "commit", "-q", "-m", "proposals");
+  const ahead = await worktree(root, join(root, ".claude", "worktrees", "audit-trail"), "feat/audit-trail");
+  const stale = await worktree(root, join(root, "..", "sibling-upgrade"), "feat/upgrade-runtime"); // outside the repository directory
+  await writeChange(ahead, "audit-trail", { artifacts: [...ALL], tasks: "- [x] 1.1 a\n- [ ] 1.2 b\n" });
+  await writeChange(stale, "upgrade-runtime", { artifacts: ["proposal"] }); // behind main: the branch never got the later artifacts
+  for (const f of ["design.md", "tasks.md"]) await rm(join(stale, "openspec", "changes", "upgrade-runtime", f), { force: true });
+  await rm(join(stale, "openspec", "changes", "upgrade-runtime", "specs"), { recursive: true, force: true });
+
+  const snap = await scan(root);
+  const [audit] = byName(snap, "audit-trail");
+  expect(byName(snap, "audit-trail")).toHaveLength(1);
+  expect([audit.column, audit.checkout?.path, audit.branchMatch]).toEqual(["Implementing", ahead, "feat/audit-trail"]);
+  expect(audit.otherCheckouts).toEqual([{ path: root, branch: "main", isMain: true, column: "Proposal" }]);
+
+  const [upgrade] = byName(snap, "upgrade-runtime");
+  expect(byName(snap, "upgrade-runtime")).toHaveLength(1);
+  expect([upgrade.column, upgrade.checkout?.isMain, upgrade.tasks]).toEqual(["Implementing", true, { done: 2, total: 3 }]);
+  expect(upgrade.otherCheckouts).toEqual([{ path: stale, branch: "feat/upgrade-runtime", isMain: false, column: "Proposal" }]);
+  // a clean copy reports the commit date, not the moment the worktree was checked out
+  expect(at(upgrade.lastActivityAt)).toBeGreaterThanOrEqual(at(COMMIT_DATE));
+});
+
+test("archived on main wins over a stale active copy; a later-created change of the same name is a new change", async () => {
+  const root = await repo();
+  await writeChange(root, "audit-trail", { created: "2026-09-10" });
+  await git(root, "add", "-A");
+  await git(root, "commit", "-q", "-m", "proposal");
+  const stale = await worktree(root, join(root, ".claude", "worktrees", "stale"), "feat/stale");
+  // main archives it afterwards; the worktree's branch still has it as active
+  await mkdir(join(root, "openspec", "changes", "archive"), { recursive: true });
+  await git(root, "mv", "openspec/changes/audit-trail", "openspec/changes/archive/2026-09-20-audit-trail");
+  await git(root, "commit", "-q", "-m", "archive");
+
+  let snap = await scan(root);
+  expect(byName(snap, "audit-trail").map((c) => [c.column, c.archived])).toEqual([["Archived", "2026-09-20"]]);
+  expect((await readdir(join(stale, "openspec", "changes"))).includes("audit-trail")).toBe(true); // the stale copy is really there
+
+  const reused = await worktree(root, join(root, ".claude", "worktrees", "reused"), "feat/audit-trail-v2");
+  await rm(join(reused, "openspec", "changes", "audit-trail"), { recursive: true, force: true });
+  await writeChange(reused, "audit-trail", { created: "2026-10-02", artifacts: ["proposal", "design"] });
+  snap = await scan(root);
+  expect(byName(snap, "audit-trail").map((c) => [c.column, c.checkout?.path ?? "main-archive"]).sort()).toEqual([["Archived", "main-archive"], ["Design", reused]].sort());
+
+  // an archive directory inside a worktree is never read
+  await mkdir(join(reused, "openspec", "changes", "archive", "2026-01-01-ghost"), { recursive: true });
+  await writeFile(join(reused, "openspec", "changes", "archive", "2026-01-01-ghost", "proposal.md"), "# x\n");
+  expect(byName(await scan(root), "ghost")).toEqual([]);
+});
+
+test("spec sync is judged in the change's own checkout", async () => {
+  const root = await repo();
+  const wt = await worktree(root, join(root, ".claude", "worktrees", "two-factor"), "feat/two-factor");
+  await writeChange(wt, "two-factor", { artifacts: [...ALL], tasks: "- [x] 1.1 a\n" });
+  expect((await scan(root)).changes.find((c) => c.name === "two-factor")?.column).toBe("Done");
+  const spec = join(wt, "openspec", "specs", "auth", "spec.md");
+  await writeFile(spec, `${await readFile(spec, "utf8")}\n### Requirement: Two-factor\nSHALL 2FA.\n\n#### Scenario: works\n- **WHEN** x\n- **THEN** y\n`);
+  const change = (await scan(root)).changes.find((c) => c.name === "two-factor")!;
+  expect([change.specsSynced, change.column]).toEqual([true, "Synced"]); // main's specs still lack it
+});
+
+test("detached, prunable and failing worktrees: read, skipped, warned about — never fatal", async () => {
+  const root = await repo();
+  const detached = await worktree(root, join(root, ".claude", "worktrees", "detached"));
+  const gone = await worktree(root, join(root, ".claude", "worktrees", "gone"), "feat/gone");
+  const broken = await worktree(root, join(root, ".claude", "worktrees", "broken"), "feat/broken");
+  await writeChange(detached, "from-detached");
+  await writeChange(gone, "from-gone");
+  await writeChange(broken, "from-broken");
+  await writeChange(root, "from-main");
+  await rm(gone, { recursive: true, force: true });
+
+  class OneBroken extends LocalRepoSource {
+    override forCheckout(path: string): RepoSource {
+      if (path !== broken) return new OneBroken(path);
+      return new (class extends LocalRepoSource {
+        override listChanges(): ReturnType<LocalRepoSource["listChanges"]> {
+          return Promise.reject(new Error("disk says no"));
+        }
+      })(path);
+    }
+  }
+  const snap = await scan(root, new OneBroken(root));
+  expect(snap.ok).toBe(true);
+  expect(snap.changes.map((c) => c.name).sort()).toEqual(["from-detached", "from-main"]);
+  const fromDetached = snap.changes.find((c) => c.name === "from-detached")!;
+  expect([fromDetached.checkout?.branch, fromDetached.branchMatch]).toEqual([undefined, undefined]);
+  expect(snap.warnings).toEqual(["worktree feat/broken: disk says no"]);
+  expect(snap.worktrees.find((w) => w.path === gone)?.prunable).toBe(true);
+});
+
+test(`at most ${WORKTREE_LIMIT} worktrees are read, the most recently changed first, and the rest are counted in a warning`, async () => {
+  const root = await repo();
+  const total = WORKTREE_LIMIT + 3;
+  for (let i = 0; i < total; i++) {
+    const wt = await worktree(root, join(root, ".claude", "worktrees", `w${i}`), `feat/w${i}`);
+    await writeChange(wt, `change-${String(i).padStart(2, "0")}`);
+    const when = new Date(Date.UTC(2026, 8, 1 + i)); // w0 oldest … newest last
+    await utimes(join(wt, "openspec", "changes"), when, when);
+  }
+  const snap = await scan(root);
+  const names = snap.changes.map((c) => c.name).sort();
+  expect(names).toHaveLength(WORKTREE_LIMIT);
+  expect(names[0]).toBe("change-03"); // the three oldest were left out
+  expect(snap.warnings).toEqual([`3 of ${total} worktrees were not read (limit ${WORKTREE_LIMIT}; the most recently changed ones are)`]);
+}, 60_000);
+
+test("scanning writes nothing: main checkout, linked worktrees and the shared .git are byte-for-byte untouched", async () => {
+  const root = await repo();
+  const wt = await worktree(root, join(root, ".claude", "worktrees", "dirty"), "feat/dirty");
+  await writeChange(wt, "audit-trail", { artifacts: [...ALL] });
+  await writeChange(root, "from-main");
+  // stale stat info in both indexes: exactly the situation in which an unguarded `git status` rewrites them
+  const old = new Date("2026-01-01T00:00:00Z");
+  await utimes(join(root, "openspec", "config.yaml"), old, old);
+  await utimes(join(wt, "openspec", "config.yaml"), old, old);
+
+  const fingerprint = async (dir: string): Promise<Record<string, string>> => {
+    const out: Record<string, string> = {};
+    const visit = async (d: string): Promise<void> => {
+      for (const entry of await readdir(d, { withFileTypes: true })) {
+        const p = join(d, entry.name);
+        if (entry.isDirectory()) await visit(p);
+        else {
+          const s = await stat(p);
+          out[relative(dir, p)] = `${s.size}:${s.mtimeMs}`;
+        }
+      }
+    };
+    await visit(dir);
+    return out;
+  };
+  const indexes = [join(root, ".git", "index"), join(root, ".git", "worktrees", "dirty", "index")];
+  const before = { tree: await fingerprint(root), indexes: await Promise.all(indexes.map((p) => readFile(p))) };
+  const snap = await scan(root);
+  expect(snap.changes.map((c) => c.name).sort()).toEqual(["audit-trail", "from-main"]);
+  expect(await fingerprint(root)).toEqual(before.tree); // includes .git and the in-repo worktree
+  for (const [i, p] of indexes.entries()) expect(Buffer.compare(before.indexes[i], await readFile(p))).toBe(0);
+});
+
+test("unchanged elsewhere: non-git repositories scan as before, and discovery still does not offer worktrees as repositories", async () => {
+  const plain = await tempDir("osd-plain-");
+  temps.push(plain);
+  await writeChange(plain, "solo");
+  await writeFile(join(plain, "openspec", "config.yaml"), "schema: spec-driven\n");
+  const snap = await scan(plain);
+  if (!snap.isGit) expect(snap.changes.map((c) => [c.name, c.checkout])).toEqual([["solo", undefined]]);
+
+  const root = await repo();
+  await worktree(root, join(root, "..", "sibling-worktree"), "feat/sibling");
+  const found = await discoverRepos([], [join(root, "..")]);
+  expect(found.candidates.map((c) => c.path.split("/").pop())).toEqual(["alpha-infra"]);
+});

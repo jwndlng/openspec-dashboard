@@ -36,7 +36,10 @@ interface SampleChange {
   /** Age of the last activity in days. */
   age: number;
   synced?: boolean;
+  /** When it is one of the repository's worktree branches, the change lives in that worktree. */
   branch?: string;
+  /** The column of the main checkout's (older) copy, for a change whose work continues in a worktree. */
+  onMain?: string;
   warnings?: string[];
 }
 
@@ -65,6 +68,18 @@ function artifacts(written: Written): ArtifactStatus[] {
   }));
 }
 
+const worktreePath = (r: SampleRepo, branch: string) => `${repoPath(r.name)}-worktrees/${branch.replace("/", "-")}`;
+
+/** Where a sample change "lives": in the worktree that has its branch checked out, else in the main checkout. */
+function checkouts(r: SampleRepo, c: SampleChange): Pick<ChangeSnapshot, "checkout" | "otherCheckouts"> {
+  const main = { path: repoPath(r.name), branch: r.branch, isMain: true };
+  const inWorktree = c.branch !== undefined && (r.worktrees ?? []).includes(c.branch);
+  return {
+    checkout: inWorktree ? { path: worktreePath(r, c.branch as string), branch: c.branch, isMain: false } : main,
+    otherCheckouts: inWorktree && c.onMain ? [{ ...main, column: c.onMain }] : undefined,
+  };
+}
+
 const REPOS: SampleRepo[] = [
   {
     id: "a71c02e9",
@@ -73,7 +88,8 @@ const REPOS: SampleRepo[] = [
     updated: 2,
     worktrees: ["feat/add-rate-limiting"],
     changes: [
-      { name: "add-rate-limiting", tasks: [9, 14], age: 0.1, branch: "feat/add-rate-limiting" },
+      // proposed on main, being implemented in a worktree: one card, led by the worktree's copy
+      { name: "add-rate-limiting", tasks: [9, 14], age: 0.1, branch: "feat/add-rate-limiting", onMain: "Proposal" },
       { name: "paginate-list-endpoints", tasks: [3, 22], age: 2 },
       { name: "migrate-to-postgres-16", tasks: [0, 31], age: 5 },
       { name: "structured-error-codes", written: "specs", age: 1 },
@@ -242,6 +258,7 @@ export function buildSample(now: number): Sample {
         created: day(c.age + 6),
         lastActivityAt: iso(c.age * DAY),
         branchMatch: c.branch,
+        ...checkouts(r, c),
         specsSynced: c.synced,
         warnings: c.warnings,
         ...deriveStage(input),
@@ -271,7 +288,7 @@ export function buildSample(now: number): Sample {
       scannedAt: iso(r.error ? 3 * HOUR : 0),
       isGit: true,
       currentBranch: r.branch,
-      worktrees: (r.worktrees ?? []).map((branch) => ({ branch, path: `${repoPath(r.name)}-worktrees/${branch.replace("/", "-")}` })),
+      worktrees: [{ path: repoPath(r.name), branch: r.branch, isMain: true }, ...(r.worktrees ?? []).map((branch) => ({ branch, path: worktreePath(r, branch) }))],
       lastUpdatedAt: iso(r.updated * HOUR),
       changes: [...open, ...archived],
     } satisfies RepoSnapshot;

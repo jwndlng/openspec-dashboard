@@ -66,3 +66,24 @@ test("dates move with now, so ages never grow", () => {
   expect(age(later, NOW + 180 * 24 * 3_600_000)).toBe(age(sample, NOW));
   expect(later.snapshot.generatedAt).not.toBe(sample.snapshot.generatedAt);
 });
+
+test("the sample shows worktree-agnostic changes: one that lives in a worktree and is also, further back, on main", () => {
+  const sample = buildSample(Date.parse("2026-06-01T12:00:00.000Z"));
+  const changes = sample.snapshot.repos.flatMap((r) => r.changes.map((c) => ({ repo: r, change: c })));
+  const inWorktree = changes.filter(({ change }) => change.checkout && !change.checkout.isMain);
+  expect(inWorktree.length).toBeGreaterThanOrEqual(3);
+  for (const { repo, change } of inWorktree) {
+    // it lives in one of its repository's worktrees, on that worktree's branch
+    const worktree = repo.worktrees.find((w) => w.path === change.checkout?.path);
+    expect([change.name, worktree?.isMain, worktree?.branch]).toEqual([change.name, undefined, change.branchMatch]);
+  }
+  const both = inWorktree.find(({ change }) => change.otherCheckouts?.length)!;
+  expect(both.change.otherCheckouts).toEqual([{ path: both.repo.path, branch: both.repo.currentBranch, isMain: true, column: "Proposal" }]);
+  expect(both.change.column).not.toBe("Proposal"); // led by the copy that is further along
+  // every repository lists its main checkout first, like `git worktree list` does; names are unique per repository
+  for (const repo of sample.snapshot.repos) {
+    if (repo.worktrees.length) expect([repo.name, repo.worktrees[0].isMain, repo.worktrees[0].path]).toEqual([repo.name, true, repo.path]);
+    const active = repo.changes.filter((c) => !c.archived).map((c) => c.name);
+    expect(new Set(active).size).toBe(active.length);
+  }
+});

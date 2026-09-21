@@ -180,6 +180,11 @@ export function SessionPanel() {
           <div class="row hint">
             <span title="the agent's own git worktree">
               {session.worktreePath} · <span class="mono">{session.branch}</span>
+              {session.adopted && (
+                <span class="badge" title="This branch was already checked out in a worktree created outside the dashboard, so the agent works there. The dashboard will not remove it.">
+                  adopted worktree
+                </span>
+              )}
             </span>
           </div>
         )}

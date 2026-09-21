@@ -10,7 +10,7 @@ test("task progress counts mixed list markers", () => {
   expect(parseTaskProgress("")).toEqual({ done: 0, total: 0 });
 });
 
-test("worktree porcelain parsing", () => {
+test("worktree porcelain parsing: main first, detached kept, flags read", () => {
   const porcelain = [
     "worktree /repo",
     "HEAD abc",
@@ -24,11 +24,26 @@ test("worktree porcelain parsing", () => {
     "HEAD 123",
     "detached",
     "",
+    "worktree /elsewhere/gone",
+    "HEAD 456",
+    "branch refs/heads/feat/gone",
+    "prunable gitdir file points to non-existent location",
+    "",
+    "worktree /elsewhere/locked",
+    "HEAD 789",
+    "branch refs/heads/feat/locked",
+    "locked in use",
+    "",
   ].join("\n");
   expect(parseWorktrees(porcelain)).toEqual([
-    { path: "/repo", branch: "main" },
+    { path: "/repo", branch: "main", isMain: true },
     { path: "/repo/.worktrees/feat", branch: "feat/structured-report-format" },
+    { path: "/repo/.worktrees/detached", detached: true },
+    { path: "/elsewhere/gone", branch: "feat/gone", prunable: true },
+    { path: "/elsewhere/locked", branch: "feat/locked" },
   ]);
+  expect(parseWorktrees("worktree /bare.git\nbare\n\nworktree /wt\nHEAD a\nbranch refs/heads/x\n")).toEqual([{ path: "/bare.git", bare: true, isMain: true }, { path: "/wt", branch: "x" }]);
+  expect(parseWorktrees("")).toEqual([]);
 });
 
 const A = (...pairs: [string, ArtifactStatus["status"]][]): ArtifactStatus[] => pairs.map(([id, status]) => ({ id, status }));

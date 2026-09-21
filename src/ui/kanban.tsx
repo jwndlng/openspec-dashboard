@@ -3,7 +3,7 @@ import { boardColumns, isComplete } from "../shared/columns.ts";
 import type { ChangeSnapshot, Config, RepoSnapshot, Snapshot } from "../shared/types.ts";
 import { NoRepos } from "./empty.tsx";
 import { EMPTY_FILTERS, parseFilters, serializeFilters, type Filters } from "./filters.ts";
-import { applyCommand, cdCommand, daysSince, relTime, splitBranchLabel } from "./format.ts";
+import { applyCommand, cdCommand, checkoutHint, daysSince, relTime, splitBranchLabel } from "./format.ts";
 import { isMinimized, loadGroupState, saveGroupState, toggleGroup, type GroupOverrides } from "./groupState.ts";
 import { assignRepoHues, groupByRepo, recentArchived } from "./repoGroups.ts";
 import { SessionControls } from "./sessions.tsx";
@@ -81,7 +81,8 @@ function ChangeCard({ card, now, showRepo }: { card: Card; now: number; showRepo
       {/* On a single-repository board the header already names the repo, so the change name takes the top row. */}
       <div class="repo">
         {showRepo ? <span>{card.repoName}</span> : <span class="name">{card.name}</span>}
-        {!card.archived && <CopyButton text={applyCommand(card.repoPath, card.name)} />}
+        {/* Apply where the change lives: for a change in a worktree that is the worktree, never the main checkout. */}
+        {!card.archived && <CopyButton text={applyCommand(card.checkout?.path ?? card.repoPath, card.name)} />}
       </div>
       {showRepo && <div class="name">{card.name}</div>}
       {card.tasks && card.tasks.total > 0 && <Meter done={card.tasks.done} total={card.tasks.total} />}
@@ -90,7 +91,7 @@ function ChangeCard({ card, now, showRepo }: { card: Card; now: number; showRepo
           {card.archived ? `archived ${card.archived}` : `${relTime(card.lastActivityAt, now)} ago`}
         </span>
         {isComplete(card.stage) && age !== undefined && <span class="badge ok">✓ complete · {age}d</span>}
-        {card.branchMatch && <BranchBadge branch={card.branchMatch} hint="a branch or worktree matches this change" />}
+        {card.branchMatch && <BranchBadge branch={card.branchMatch} hint={checkoutHint(card)} />}
         {noTasks && <span class="badge warn">no tasks</span>}
         <SessionControls card={card} />
         {card.warnings?.filter((w) => w !== "tasks file has no tasks").map((w) => (
@@ -203,7 +204,7 @@ function RepoHeader({ repo, now }: { repo: RepoSnapshot; now: number }) {
         </h1>
         {repo.currentBranch && <BranchBadge branch={repo.currentBranch} hint="current branch" />}
         {repo.worktrees.length > 0 && (
-          <span class="badge" title={repo.worktrees.map((w) => `${w.branch} — ${w.path}`).join("\n")}>
+          <span class="badge" title={repo.worktrees.map((w) => `${w.branch ?? "detached"} — ${w.path}`).join("\n")}>
             {repo.worktrees.length} {repo.worktrees.length === 1 ? "worktree" : "worktrees"}
           </span>
         )}

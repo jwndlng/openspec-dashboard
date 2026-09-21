@@ -28,8 +28,18 @@ export interface ChangeSnapshot {
   archived?: string;
   /** Committer date of the last commit touching the change dir, or newest mtime. */
   lastActivityAt?: string;
-  /** Branch or worktree branch whose name contains the change name. */
+  /**
+   * The branch of the linked worktree the change's data comes from; for a change that lives in the main checkout, the
+   * first branch or worktree branch whose name contains the change name.
+   */
   branchMatch?: string;
+  /**
+   * The checkout this change's data comes from: the leading copy among all checkouts holding the change. Absent in
+   * snapshots cached by older versions and for non-git repositories.
+   */
+  checkout?: ChangeCheckout;
+  /** Other checkouts that hold a copy of this change, with the column that copy alone would be in. */
+  otherCheckouts?: (ChangeCheckout & { column: string })[];
   /**
    * Whether the delta specs are already reflected in `openspec/specs/`. Only set for non-archived changes whose tasks
    * are all complete — the one place where it decides the column (`Done` vs `Synced`).
@@ -42,9 +52,25 @@ export interface ChangeSnapshot {
   warnings?: string[];
 }
 
+/** A checkout of a repository as `git worktree list` reports it: the main working tree or a linked worktree. */
 export interface Worktree {
   path: string;
-  branch: string;
+  /** Absent when HEAD is detached. */
+  branch?: string;
+  detached?: boolean;
+  /** The repository's main working tree (git lists it first); everything else is a linked worktree. */
+  isMain?: boolean;
+  /** git considers it removable, typically because its directory is gone. */
+  prunable?: boolean;
+  /** A bare repository entry: there is no working tree to read. */
+  bare?: boolean;
+}
+
+/** Where a change's data was read from. */
+export interface ChangeCheckout {
+  path: string;
+  branch?: string;
+  isMain: boolean;
 }
 
 export interface RepoSnapshot {
@@ -176,8 +202,13 @@ export interface Session {
   state: SessionState;
   exitCode?: number | null;
   error?: string;
-  /** The session's own git worktree, under the dashboard home. */
+  /** The worktree the agent runs in: the session's own, under the dashboard home — or an adopted one. */
   worktreePath: string;
+  /**
+   * The worktree already existed with the session's branch checked out (git allows a branch in one worktree only), so
+   * the session runs there. The dashboard did not create it and never removes it.
+   */
+  adopted?: boolean;
   branch: string;
   createdAt: string;
   updatedAt: string;

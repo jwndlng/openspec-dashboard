@@ -156,6 +156,25 @@ the dashboard shows it, passes your keystrokes on, and interprets nothing.
 
 ## How it reads OpenSpec
 
+**Changes are read from every checkout, not just the main one.** Work usually happens in git worktrees — one per change
+— and a board that only looked at the main checkout would show a change only after it was merged *and* pulled. For a git
+repository the scanner reads active changes from the main checkout and from every linked worktree `git worktree list`
+reports, wherever it lives on disk (up to 12 per repository, most recently changed first; a worktree that is gone or
+unreadable is skipped with a warning).
+
+- **One card per change.** Copies of the same change are merged; the card shows the copy that is furthest along
+  (then: more artifacts and tasks done, more recent, main checkout first). Its branch badge is the branch of the
+  checkout it lives in, the tooltip names the worktree and any other checkout whose copy is at a different stage, and
+  "Copy apply command" `cd`s into that checkout — not into the main one.
+- **Archived on main wins.** Branches cut before an archive still carry the change as active; such leftovers are
+  ignored (unless the copy was created after the archive, which makes it a new change reusing the name). Archives and
+  main specs are always read from the main checkout.
+- Progress, last activity (uncommitted edits in a worktree count) and Done-vs-Synced are evaluated in the checkout the
+  change lives in. A repository's "last updated" covers its worktrees too.
+- **Agent sessions** copy a change from wherever it lives. If the branch a session would use (`feat/<change>`) is
+  already checked out in one of your worktrees — git allows a branch in one worktree only — the session *adopts* that
+  worktree instead of failing; the panel says so, and the dashboard never removes a worktree it did not create.
+
 Artifact status is computed in-process with `@fission-ai/openspec`'s artifact-graph primitives (no CLI shell-outs),
 using the package's bundled `spec-driven` schema embedded at build time; a repo-local `openspec/schemas/<name>/`
 takes precedence. Task progress comes from `tasks.md` checkboxes, dates from `.openspec.yaml` and the archive
