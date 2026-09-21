@@ -178,8 +178,12 @@ unreadable is skipped with a warning).
   checkout it lives in, the tooltip names the worktree and any other checkout whose copy is at a different stage, and
   "Copy apply command" `cd`s into that checkout — not into the main one.
 - **Archived on main wins.** Branches cut before an archive still carry the change as active; such leftovers are
-  ignored (unless the copy was created after the archive, which makes it a new change reusing the name). Archives and
-  main specs are always read from the main checkout.
+  ignored (unless the copy was created after the archive, which makes it a new change reusing the name).
+- **Archived in a worktree counts too.** Agents archive on a branch in a worktree, and the main checkout only catches up
+  when that branch is merged *and* pulled. An archive that only a worktree has therefore leads like any other furthest
+  stage: the card is in Archived with a badge `on <branch> · not in main checkout`, and its tooltip names the checkouts
+  that still hold an active copy. Archives the main checkout has are read from there only; main specs always are.
+- A project in a subdirectory of its git repository is read from that same subdirectory of every worktree.
 - Progress, last activity (uncommitted edits in a worktree count) and Done-vs-Synced are evaluated in the checkout the
   change lives in. A repository's "last updated" covers its worktrees too.
 - **Agent sessions** copy a change from wherever it lives. If the branch a session would use (`feat/<change>`) is
