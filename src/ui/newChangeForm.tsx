@@ -1,6 +1,7 @@
-import { useState } from "preact/hooks";
+import { useMemo, useState } from "preact/hooks";
 import { CHANGE_NAME_PATTERN } from "../shared/types.ts";
 import { api, ApiError } from "./api.ts";
+import { focusOnce } from "./focus.ts";
 
 /**
  * Small inline form on the repository board header: a change name (validated live against `CHANGE_NAME_PATTERN`) and an
@@ -12,6 +13,7 @@ export function NewChangeForm({ repoId, repoName, onClose, onCreated }: { repoId
   const [prompt, setPrompt] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const focusName = useMemo(focusOnce, []); // one stable ref: the name field is focused when the form opens, never again
 
   const trimmed = name.trim();
   const nameError = trimmed === "" ? "required" : CHANGE_NAME_PATTERN.test(trimmed) ? null : "only letters, digits, dots, dashes and underscores";
@@ -42,7 +44,7 @@ export function NewChangeForm({ repoId, repoName, onClose, onCreated }: { repoId
             type="text"
             value={name}
             placeholder="add-audit-trail"
-            ref={(el) => el?.focus()}
+            ref={focusName}
             onInput={(e) => setName((e.currentTarget as HTMLInputElement).value)}
           />
           {trimmed !== "" && nameError && <span class="hint danger">{nameError}</span>}
