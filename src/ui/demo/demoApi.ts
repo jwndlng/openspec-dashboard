@@ -1,5 +1,5 @@
 // In-memory stand-in for the dashboard server. Nothing is read from or written to anywhere: a reload starts over.
-import type { Config, RepoSharedConfig, RepoSnapshot, SharedConfigApplyResult, SharedConfigPreview, SharedProfile, Snapshot } from "../../shared/types.ts";
+import type { Config, PullResult, RepoSharedConfig, RepoSnapshot, SharedConfigApplyResult, SharedConfigPreview, SharedProfile, Snapshot } from "../../shared/types.ts";
 import type { Api } from "../api.ts";
 import { createDemoSessions } from "./demoSessions.ts";
 import { buildSample, DEMO_CARRIED, DEMO_PROFILES, DEMO_ROOT } from "./sampleData.ts";
@@ -91,6 +91,20 @@ export function createDemoApi({ now = Date.now, latencyMs = 150, clock }: DemoAp
     repos: config.repos.filter((r) => r.enabled).map((r) => sample.snapshot.repos.find((s) => s.id === r.id) ?? emptyRepo(r.id, r.name, r.path)),
   });
 
+  /** Long enough to see "Pulling…", like a fetch over a network would be. */
+  const PULL_MS = Math.min(900, latencyMs * 6);
+  const pulled = new Set<string>();
+  const simulatedPull = (repoId: string): PullResult | undefined => {
+    const repo = snapshot().repos.find((r) => r.id === repoId);
+    if (!repo?.ok || !repo.isGit) return undefined;
+    const base = { repoId, fetched: true, branch: repo.currentBranch, upstream: `origin/${repo.currentBranch}`, defaultBranch: repo.defaultBranch };
+    if (repo.onDefaultBranch === false) return { ...base, update: "skipped", reason: `on ${repo.currentBranch}, not ${repo.defaultBranch}; only fetched` };
+    if (pulled.has(repoId)) return { ...base, update: "up-to-date" };
+    pulled.add(repoId);
+    // a made-up but stable number of new commits per sample repository
+    return { ...base, update: "fast-forwarded", commits: 1 + (Number.parseInt(repoId.slice(0, 2), 16) % 5) };
+  };
+
   const snapshot = (): Snapshot => ({
     generatedAt,
     repos: config.repos
@@ -121,6 +135,18 @@ export function createDemoApi({ now = Date.now, latencyMs = 150, clock }: DemoAp
         candidates: roots.some(inDemo) ? sample.candidates.filter((c) => !tracked.has(c.id)) : [],
         errors: roots.filter((root) => !inDemo(root)).map((root) => ({ root, message: "The demo cannot read your disk; only the sample workspace exists here." })),
       });
+    },
+    // A pull in the demo contacts nothing: it answers with what the dashboard would say for such a repository.
+    pullRepo: (repoId) => {
+      const result = simulatedPull(repoId);
+      if (!result) return new Promise((_, reject) => setTimeout(() => reject(new Error("not a tracked, successfully scanned git repository")), latencyMs));
+      generatedAt = new Date(now()).toISOString();
+      return new Promise((resolve) => setTimeout(() => resolve(structuredClone(result)), PULL_MS));
+    },
+    pullAll: () => {
+      const results = snapshot().repos.flatMap((r) => simulatedPull(r.id) ?? []);
+      generatedAt = new Date(now()).toISOString();
+      return new Promise((resolve) => setTimeout(() => resolve(structuredClone({ results })), PULL_MS));
     },
     scan: () => {
       generatedAt = new Date(now()).toISOString();

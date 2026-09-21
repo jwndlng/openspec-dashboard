@@ -316,6 +316,11 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: 
 .diff .del { color: var(--danger); }
 .diff .skip { color: var(--fg-disabled); }
 
+/* ---- Pull ---- */
+.pull { display: inline-flex; align-items: center; gap: 6px; }
+.row-actions { text-align: right; white-space: nowrap; }
+.visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+
 /* ---- Projects overview ---- */
 .overview { flex: 1; min-height: 0; overflow: auto; padding: var(--gap-2); }
 .projects { width: 100%; border-collapse: collapse; background: var(--bg-section); border: 1px solid var(--border-light); border-radius: var(--radius); }

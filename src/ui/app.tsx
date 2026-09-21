@@ -4,6 +4,7 @@ import { api } from "./api.ts";
 import { relTime } from "./format.ts";
 import { Kanban } from "./kanban.tsx";
 import { Overview } from "./overview.tsx";
+import { PullProvider } from "./pull.tsx";
 import { enabledOnly } from "./overviewState.ts";
 import { type Route, routeFromPath } from "./routes.ts";
 import { EndSessionDialog } from "./endSessionDialog.tsx";
@@ -112,6 +113,7 @@ export function App() {
   );
 
   return (
+    <PullProvider onPulled={reloadSoon}>
     <div class="app">
       <SessionProvider config={config} snapshot={shown}>
       <header class="topbar">
@@ -156,5 +158,6 @@ export function App() {
       <EndSessionDialog />
       </SessionProvider>
     </div>
+    </PullProvider>
   );
 }

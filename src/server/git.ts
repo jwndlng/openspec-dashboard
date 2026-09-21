@@ -35,6 +35,19 @@ export async function currentBranch(cwd: string): Promise<string | undefined> {
 }
 
 /**
+ * The repository's default branch as it is known locally — never asks the remote: what `origin/HEAD` points to, else a
+ * local `main`, else a local `master`.
+ */
+export async function defaultBranch(cwd: string): Promise<string | undefined> {
+  const head = (await git(cwd, ["symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"]))?.trim();
+  if (head) return head.replace(/^origin\//, "");
+  for (const candidate of ["main", "master"]) {
+    if ((await git(cwd, ["show-ref", "--verify", "--quiet", `refs/heads/${candidate}`])) !== undefined) return candidate;
+  }
+  return undefined;
+}
+
+/**
  * Parses `git worktree list --porcelain`: one entry per record, in git's order — the main working tree first, then the
  * linked worktrees. Detached worktrees have no branch.
  */
