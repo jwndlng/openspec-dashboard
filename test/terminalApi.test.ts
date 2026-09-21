@@ -141,6 +141,33 @@ test("terminal socket: scrollback, typing, resize, exit — and no entry from an
   for (const c of [first, second, late]) c.close();
 });
 
+test("terminal socket: submit sends text on the user's behalf and answers only the socket that asked", async () => {
+  const h = await harness();
+  const { http, ws } = await serve(h);
+  const session = (await (await post(`${http}/api/sessions`, { repoId: h.repoId, change: "upgrade-runtime", action: "implement" })).json()) as Session;
+  const url = `${ws}/api/sessions/${session.id}/terminal`;
+  const asking = connect(url, http);
+  const watching = connect(url, http);
+  expect(await asking.opened).toBe(true);
+  expect(await watching.opened).toBe(true);
+  await waitFor(() => asking.text().includes("fake-agent ready"), "banner");
+
+  const submitted = (c: { frames: () => string[] }) => c.frames().map((f) => JSON.parse(f)).filter((f) => f.type === "submitted");
+  asking.send({ type: "submit", data: "Yes, go ahead" });
+  await waitFor(() => submitted(asking).length === 1, "the answer frame", 10_000);
+  expect(submitted(asking)).toEqual([{ type: "submitted", ok: true }]);
+  await waitFor(() => watching.text().includes("you said: Yes, go ahead"), "the agent received the line; every viewer sees it");
+  expect(submitted(watching)).toEqual([]);
+
+  // not plain text: refused without touching the terminal, and still answered
+  asking.send({ type: "submit", data: "two\rlines" });
+  asking.send({ type: "submit", data: 7 });
+  await waitFor(() => submitted(asking).length === 3, "refusals are answered too");
+  expect(submitted(asking).slice(1)).toEqual([{ type: "submitted", ok: false }, { type: "submitted", ok: false }]);
+  expect(asking.text()).not.toContain("you said: two");
+  for (const c of [asking, watching]) c.close();
+});
+
 test("feature off: nothing can be opened", async () => {
   const h = await harness({ enabled: false });
   const { http } = await serve(h);
