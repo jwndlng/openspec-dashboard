@@ -126,8 +126,9 @@ interface TerminalSocket {
 
 /**
  * Wire format: server → client binary frames are raw terminal output (first the scrollback), and one text frame
- * `{"type":"exit"}` when the process ends; client → server text frames are `{"type":"input","data":…}` and
- * `{"type":"resize","cols":…,"rows":…}`.
+ * `{"type":"exit"}` when the process ends; client → server text frames are `{"type":"input","data":…}` (keystrokes,
+ * passed on unobserved), `{"type":"resize","cols":…,"rows":…}` and `{"type":"submit","data":…}` — text sent on the
+ * user's behalf, answered to that socket with `{"type":"submitted","ok":…}` (`false`: typed, but Enter was withheld).
  */
 export function createWebSocketHandlers(state: AppState) {
   return {
@@ -155,6 +156,17 @@ export function createWebSocketHandlers(state: AppState) {
         return;
       }
       if (parsed.type === "input" && typeof parsed.data === "string") state.sessions.write(ws.data.sessionId, parsed.data);
+      else if (parsed.type === "submit") {
+        const answer = (ok: boolean) => ws.send(JSON.stringify({ type: "submitted", ok }));
+        try {
+          state.sessions.submit(ws.data.sessionId, parsed.data).then(
+            (result) => answer(result.submitted),
+            () => answer(false),
+          );
+        } catch {
+          answer(false); // not running, or not plain text
+        }
+      }
       else if (parsed.type === "resize" && typeof parsed.cols === "number" && typeof parsed.rows === "number") state.sessions.resize(ws.data.sessionId, parsed.cols, parsed.rows);
     },
     close(ws: TerminalSocket) {

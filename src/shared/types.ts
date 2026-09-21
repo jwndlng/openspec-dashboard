@@ -154,6 +154,10 @@ export const SESSION_ACTIONS: readonly SessionAction[] = ["draft", "implement", 
 /** `ship` is a prompt, not a starter: it asks the agent of an existing session to commit, push and open a pull request. */
 export type PromptKey = SessionAction | "ship";
 /** Agent-neutral on purpose, so every profile can ship without being configured for it. */
+/** What Ship answers: the session, and whether the prompt was submitted. `false` means the agent of a running session
+ *  did not show the typed prompt (it may be showing a menu), so Enter was not pressed and nothing was confirmed. */
+export type ShipResult = Session & { submitted: boolean };
+
 export const DEFAULT_SHIP_PROMPT =
   "Ship the work in this worktree: commit everything that belongs to it with a Conventional Commit message, push the branch, and open a pull request against the default branch if there is none yet. Do not merge it. Tell me the pull request URL.";
 
