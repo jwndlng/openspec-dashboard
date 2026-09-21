@@ -34,17 +34,30 @@ export async function currentBranch(cwd: string): Promise<string | undefined> {
   return out && out !== "HEAD" ? out : undefined;
 }
 
-/** Parses `git worktree list --porcelain` into path/branch pairs (detached worktrees are omitted). */
+/**
+ * Parses `git worktree list --porcelain`: one entry per record, in git's order — the main working tree first, then the
+ * linked worktrees. Detached worktrees have no branch.
+ */
 export function parseWorktrees(porcelain: string): Worktree[] {
   const result: Worktree[] = [];
-  let path: string | undefined;
+  let current: Worktree | undefined;
   for (const line of porcelain.split("\n")) {
     if (line.startsWith("worktree ")) {
-      path = line.slice("worktree ".length);
-    } else if (line.startsWith("branch ") && path) {
-      result.push({ path, branch: line.slice("branch ".length).replace(/^refs\/heads\//, "") });
+      current = { path: line.slice("worktree ".length) };
+      if (result.length === 0) current.isMain = true;
+      result.push(current);
+    } else if (!current) {
+      // stray line before the first record
+    } else if (line.startsWith("branch ")) {
+      current.branch = line.slice("branch ".length).replace(/^refs\/heads\//, "");
+    } else if (line === "detached") {
+      current.detached = true;
+    } else if (line === "bare") {
+      current.bare = true;
+    } else if (line === "prunable" || line.startsWith("prunable ")) {
+      current.prunable = true;
     } else if (line === "") {
-      path = undefined;
+      current = undefined;
     }
   }
   return result;

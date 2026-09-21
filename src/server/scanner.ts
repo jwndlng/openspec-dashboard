@@ -2,6 +2,7 @@ import { join, sep } from "node:path";
 import { deriveStage } from "../shared/columns.ts";
 import type { ChangeSnapshot, Config, RepoConfig, RepoSnapshot, SharedConfig, Snapshot, Worktree } from "../shared/types.ts";
 import { emptySnapshot, writeSnapshot } from "./cache.ts";
+import { type ChangeCopy, mergeChanges } from "./mergeChanges.ts";
 import { readChangeArtifacts } from "./openspecAdapter.ts";
 import { loadSharedConfig, repoSharedConfig } from "./sharedConfig.ts";
 import { changeSpecsSynced } from "./specSync.ts";
@@ -31,7 +32,7 @@ export function parseMarker(text: string | undefined): Marker {
 
 function findBranchMatch(name: string, branch: string | undefined, worktrees: Worktree[]): string | undefined {
   if (branch?.includes(name)) return branch;
-  return worktrees.find((w) => w.branch.includes(name))?.branch;
+  return worktrees.find((w) => w.branch?.includes(name))?.branch;
 }
 
 /** Latest of several instants. Compared as instants because commit dates carry an offset and mtimes are UTC. */
@@ -50,10 +51,21 @@ function newestDirty(files: DirtyFile[], under: string): string | undefined {
   return newest ? new Date(newest).toISOString() : undefined;
 }
 
+/** At most this many linked worktrees are read per repository; the most recently touched ones win. */
+export const WORKTREE_LIMIT = 12;
+const WORKTREE_CONCURRENCY = 3;
+const WORKTREE_TIMEOUT_MS = 10_000;
+
+/** One checkout of a repository being scanned: the main working tree or a linked worktree. */
 interface RepoContext {
   repo: RepoConfig;
+  /** Reads from this checkout. */
   source: RepoSource;
+  /** This checkout's directory; changes, specs and git commands are resolved against it. */
+  root: string;
+  isMain: boolean;
   isGit: boolean;
+  /** The branch checked out here. */
   branch?: string;
   worktrees: Worktree[];
   /** Files under `openspec/` that differ from HEAD, with their mtimes. */
@@ -69,7 +81,7 @@ async function scanChange(ctx: RepoContext, entry: ChangeDirEntry, withGit: bool
   let artifacts: ChangeSnapshot["artifacts"] = [];
   let tasksPath: string | undefined;
   try {
-    const info = readChangeArtifacts(ctx.repo.path, entry.name, {
+    const info = readChangeArtifacts(ctx.root, entry.name, {
       changeDir: entry.dir,
       schemaName: marker.schema ?? ctx.projectSchema,
       skipSpecs: marker.skipSpecs,
@@ -113,7 +125,8 @@ async function scanChange(ctx: RepoContext, entry: ChangeDirEntry, withGit: bool
     archived: entry.archived,
     lastActivityAt,
     specsSynced,
-    branchMatch: entry.archived ? undefined : findBranchMatch(entry.name, ctx.branch, ctx.worktrees),
+    // In the main checkout the branch is a guess from names; a linked worktree's copy is on that worktree's branch.
+    branchMatch: entry.archived ? undefined : ctx.isMain ? findBranchMatch(entry.name, ctx.branch, ctx.worktrees) : ctx.branch,
     stage,
     column,
     warnings: warnings.length ? warnings : undefined,
@@ -136,14 +149,85 @@ export async function scanRepo(repo: RepoConfig, source: RepoSource = new LocalR
   const lastUpdatedAt = isGit
     ? latestIso(await source.lastActivity(openspecDir), newestDirty(dirty, openspecDir))
     : await source.newestMtime(openspecDir);
-  const ctx: RepoContext = { repo, source, isGit, branch, worktrees, dirty, projectSchema };
+  const ctx: RepoContext = { repo, source, root: repo.path, isMain: true, isGit, branch, worktrees, dirty, projectSchema };
 
   const listing = await source.listChanges();
-  const changes: ChangeSnapshot[] = [];
-  for (const entry of listing.active) changes.push(await scanChange(ctx, entry, true));
-  for (const [i, entry] of listing.archived.entries()) changes.push(await scanChange(ctx, entry, i < ARCHIVED_ACTIVITY_LIMIT));
+  const warnings = [...listing.warnings];
+  const mainCheckout = { path: repo.path, branch, isMain: true };
+  const copies: ChangeCopy[] = [];
+  for (const entry of listing.active) copies.push({ change: await scanChange(ctx, entry, true), checkout: mainCheckout });
+  const archived: ChangeSnapshot[] = [];
+  for (const [i, entry] of listing.archived.entries()) archived.push(await scanChange(ctx, entry, i < ARCHIVED_ACTIVITY_LIMIT));
 
-  return { ...base, ok: true, warnings: listing.warnings.length ? listing.warnings : undefined, isGit, currentBranch: branch, worktrees, lastUpdatedAt, sharedConfig, changes };
+  // Work happens in linked worktrees; a board that only read the main checkout would show none of it.
+  const fromWorktrees = await scanWorktrees(ctx);
+  copies.push(...fromWorktrees.copies);
+  warnings.push(...fromWorktrees.warnings);
+
+  // Newest archive date per name: `listing.archived` is sorted newest first, so the first one seen wins.
+  const archivedOnMain = new Map<string, string>();
+  for (const change of archived) if (change.archived && !archivedOnMain.has(change.name)) archivedOnMain.set(change.name, change.archived);
+  const active = isGit ? mergeChanges(copies, archivedOnMain) : copies.map((c) => c.change);
+  const changes = [...active, ...archived];
+
+  return {
+    ...base,
+    ok: true,
+    warnings: warnings.length ? warnings : undefined,
+    isGit,
+    currentBranch: branch,
+    worktrees,
+    // A repository whose only activity is in a worktree is still an active repository.
+    lastUpdatedAt: latestIso(lastUpdatedAt, ...active.map((c) => c.lastActivityAt)),
+    sharedConfig,
+    changes,
+  };
+}
+
+const worktreeLabel = (w: Worktree) => w.branch ?? w.path;
+
+/** Active changes of every readable linked worktree. A worktree that cannot be read becomes a warning, never an error. */
+async function scanWorktrees(main: RepoContext): Promise<{ copies: ChangeCopy[]; warnings: string[] }> {
+  const warnings: string[] = [];
+  const candidates: { worktree: Worktree; source: RepoSource; mtime: number }[] = [];
+  for (const worktree of main.worktrees) {
+    if (worktree.isMain || worktree.prunable || worktree.bare || worktree.path === main.root) continue;
+    const source = main.source.forCheckout(worktree.path);
+    const mtime = await source.mtimeMs(join(worktree.path, "openspec", "changes")).catch(() => undefined);
+    if (mtime !== undefined) candidates.push({ worktree, source, mtime });
+  }
+  candidates.sort((a, b) => b.mtime - a.mtime || a.worktree.path.localeCompare(b.worktree.path));
+  const selected = candidates.slice(0, WORKTREE_LIMIT);
+  if (candidates.length > selected.length) warnings.push(`${candidates.length - selected.length} of ${candidates.length} worktrees were not read (limit ${WORKTREE_LIMIT}; the most recently changed ones are)`);
+
+  const results: ChangeCopy[][] = new Array(selected.length).fill([]);
+  let next = 0;
+  const worker = async (): Promise<void> => {
+    while (next < selected.length) {
+      const index = next++;
+      const { worktree, source } = selected[index];
+      try {
+        results[index] = await withTimeout(scanWorktree(main, worktree, source), WORKTREE_TIMEOUT_MS, `worktree ${worktreeLabel(worktree)}`);
+      } catch (err) {
+        warnings.push(`worktree ${worktreeLabel(worktree)}: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(WORKTREE_CONCURRENCY, selected.length) }, worker));
+  return { copies: results.flat(), warnings };
+}
+
+async function scanWorktree(main: RepoContext, worktree: Worktree, source: RepoSource): Promise<ChangeCopy[]> {
+  const listing = await source.listChanges({ archived: false });
+  if (listing.active.length === 0) return [];
+  // A branch may carry its own config; it is that checkout's changes it applies to.
+  const projectSchema = parseMarker(await source.readText(join(worktree.path, "openspec", "config.yaml"))).schema ?? main.projectSchema;
+  const dirty = await source.dirtyFiles().catch(() => []);
+  const ctx: RepoContext = { ...main, source, root: worktree.path, isMain: false, branch: worktree.branch, dirty, projectSchema };
+  const checkout = { path: worktree.path, branch: worktree.branch, isMain: false };
+  const copies: ChangeCopy[] = [];
+  for (const entry of listing.active) copies.push({ change: await scanChange(ctx, entry, true), checkout });
+  return copies;
 }
 
 function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {

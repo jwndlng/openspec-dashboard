@@ -203,7 +203,7 @@ function RepoHeader({ repo, now }: { repo: RepoSnapshot; now: number }) {
         </h1>
         {repo.currentBranch && <BranchBadge branch={repo.currentBranch} hint="current branch" />}
         {repo.worktrees.length > 0 && (
-          <span class="badge" title={repo.worktrees.map((w) => `${w.branch} — ${w.path}`).join("\n")}>
+          <span class="badge" title={repo.worktrees.map((w) => `${w.branch ?? "detached"} — ${w.path}`).join("\n")}>
             {repo.worktrees.length} {repo.worktrees.length === 1 ? "worktree" : "worktrees"}
           </span>
         )}
