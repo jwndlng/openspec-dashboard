@@ -30,8 +30,8 @@ export interface Api {
   state(): Promise<Snapshot>;
   config(): Promise<Config>;
   saveConfig(config: Config): Promise<Config>;
-  /** Read-only; pass the draft roots to discover against unsaved edits. */
-  discover(scanRoots?: string[]): Promise<DiscoverResult>;
+  /** Read-only; pass the draft roots and ignore paths to discover against unsaved edits. */
+  discover(scanRoots?: string[], ignorePaths?: string[]): Promise<DiscoverResult>;
   scan(): Promise<ScanTriggerResult>;
   /**
    * Fetches the repository's remote and fast-forwards its main checkout when that is safe. The only operation that
@@ -96,8 +96,8 @@ export const httpApi: Api = {
   state: () => call<Snapshot>("/api/state"),
   config: () => call<Config>("/api/config"),
   saveConfig: (config) => call<Config>("/api/config", { method: "PUT", body: JSON.stringify(config) }),
-  discover: (scanRoots) =>
-    call<DiscoverResult>("/api/discover", { method: "POST", body: scanRoots ? JSON.stringify({ scanRoots }) : undefined }),
+  discover: (scanRoots, ignorePaths) =>
+    call<DiscoverResult>("/api/discover", { method: "POST", body: scanRoots || ignorePaths ? JSON.stringify({ scanRoots, ignorePaths }) : undefined }),
   scan: () => call<ScanTriggerResult>("/api/scan", { method: "POST" }),
   pullRepo: (repoId) => call<PullResult>(`/api/repos/${encodeURIComponent(repoId)}/pull`, { method: "POST" }),
   pullAll: () => call<{ results: PullResult[] }>("/api/pull", { method: "POST" }),
@@ -149,7 +149,7 @@ export const api: Api = {
   state: () => current.state(),
   config: () => current.config(),
   saveConfig: (config) => current.saveConfig(config),
-  discover: (scanRoots) => current.discover(scanRoots),
+  discover: (scanRoots, ignorePaths) => current.discover(scanRoots, ignorePaths),
   scan: () => current.scan(),
   pullRepo: (repoId) => current.pullRepo(repoId),
   pullAll: () => current.pullAll(),

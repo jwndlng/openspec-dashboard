@@ -34,6 +34,25 @@ export async function currentBranch(cwd: string): Promise<string | undefined> {
   return out && out !== "HEAD" ? out : undefined;
 }
 
+/** URL of the `origin` remote as configured; undefined without one or outside a git repository. Reads config only. */
+export async function originUrl(cwd: string): Promise<string | undefined> {
+  return (await git(cwd, ["config", "--get", "remote.origin.url"]))?.trim() || undefined;
+}
+
+/**
+ * `host/org/repo` for the scp-style (`git@host:org/repo.git`) and URL (`https://host/org/repo`, `ssh://git@host/…`)
+ * forms of a remote, so that two clones of one project compare equal whatever protocol they use. The host is
+ * lower-cased; user, port, a trailing slash and `.git` are dropped. Anything else (a local path) is returned trimmed.
+ */
+export function normalizeRemote(url: string): string | undefined {
+  const trimmed = url.trim();
+  if (!trimmed) return undefined;
+  const match = /^[a-z][a-z0-9+.-]*:\/\/(?:[^@/]*@)?([^/:]+)(?::\d+)?\/(.+)$/i.exec(trimmed) ?? /^(?:[^@/]+@)?([^/:]+):(?!\/)(.+)$/.exec(trimmed);
+  if (!match) return trimmed.replace(/\/+$/, "");
+  const path = match[2].replace(/\/+$/, "").replace(/\.git$/, "").replace(/^\/+/, "");
+  return `${match[1].toLowerCase()}/${path}`;
+}
+
 /**
  * The repository's default branch as it is known locally — never asks the remote: what `origin/HEAD` points to, else a
  * local `main`, else a local `master`.
