@@ -1,7 +1,7 @@
 # dashboard-api Specification
 
 ## Purpose
-Defines the single-binary loopback server and its JSON API (state, config, discover, scan), the shared-config endpoints, the cross-site protection of mutating requests, and the guarantee that the dashboard writes to tracked repositories only on an explicit user action and only to enumerated paths.
+Defines the single-binary loopback server and its JSON API (state, config, discover, scan, activity), the shared-config endpoints, the cross-site protection of mutating requests, and the guarantee that the dashboard writes to tracked repositories only on an explicit user action and only to enumerated paths.
 
 ## Requirements
 
@@ -59,6 +59,29 @@ The dashboard SHALL be built with `bun build --compile` into one executable that
 #### Scenario: Trigger
 - **WHEN** no scan is running and `POST /api/scan` is called
 - **THEN** the response is `{ started: true }` and a new snapshot is available afterwards
+
+### Requirement: Activity endpoint
+`GET /api/activity` SHALL return `{ events, nextBefore?, newestId?, newerThanSince? }`: recorded activity newest first, with consecutive task progress of one change already collapsed. It SHALL accept `limit` (1–500, default 100), `before` (an event id; only older events are returned), `repos` (comma-separated repository ids), `kinds` (comma-separated event kinds) and `since` (an event id, possibly empty). `nextBefore` SHALL be present when older events matching the filters exist; `newestId` SHALL be the id of the newest recorded event regardless of filters, and absent when there is none. When `since` is given, `newerThanSince` SHALL be the number of recorded events newer than that id regardless of filters — all of them for an empty `since`. Invalid parameters MUST return `400` with a message. The endpoint MUST NOT modify anything, and it MUST NOT return file system paths, terminal output or prompt text.
+
+#### Scenario: Nothing recorded
+- **WHEN** no activity has been recorded
+- **THEN** the response is `{ "events": [] }`
+
+#### Scenario: Paging
+- **WHEN** 250 events exist and the client requests `limit=100`, then repeats the request with `before` set to the returned `nextBefore`
+- **THEN** the first response holds the newest 100 events and a `nextBefore`, the second the next 100, and no event appears twice
+
+#### Scenario: Filtering
+- **WHEN** the client requests `repos=<id of demo-ops>&kinds=session-started,session-ended`
+- **THEN** only those kinds of events of that repository are returned, and `newestId` is still the newest event overall
+
+#### Scenario: Counting what is new
+- **WHEN** 5 events were recorded after the event with id `X` and the client requests `limit=1&since=X`
+- **THEN** the response holds the newest event and `newerThanSince: 5`
+
+#### Scenario: Invalid limit
+- **WHEN** the client requests `limit=0`
+- **THEN** the response is `400` with a message
 
 ### Requirement: The dashboard never writes to tracked repositories
 The dashboard MUST NOT write to a tracked repository except in response to an explicit user action, and then only as enumerated here: (1) `openspec/config.yaml`, where only the managed sections of the `context` and `rules` keys are modified (applying shared OpenSpec config profiles); (2) for agent sessions, creating a git worktree and its branch for a session (`git worktree add`, preceded by `git worktree prune`), with the worktree's directory placed under `~/.openspec-dashboard/worktrees/` and never inside the repository's working tree, and removing such a worktree with a non-forcing `git worktree remove` after the user confirmed and read-only checks proved that it holds no uncommitted change and no work that exists nowhere else; (3) the pull action: `git fetch` from the repository's own remote followed by a fast-forward-only `git merge` of the main checkout's upstream, with repository hooks disabled, as specified in the `repository-pull` capability. Apart from those worktree commands the dashboard MUST NOT delete or move anything in a tracked repository. Apart from the pull action it MUST NOT change the main checkout's index or working tree and MUST NOT contact a remote, and it MUST NOT change the main checkout's branch at all. The pull action MUST NOT run except on the user's explicit request for that repository (or for all repositories): never on a timer, during a scan, on page load or as a side effect of another operation. All other filesystem writes MUST be confined to `~/.openspec-dashboard/`. Scanning, polling, discovery, previews, reading work statuses and saving any dashboard setting MUST NOT write to a tracked repository. Apart from the worktree commands and the pull action's `fetch` and `merge --ff-only` above, git MUST only be invoked with read-only subcommands (`rev-parse`, `log`, `worktree list`, `status`, `show-ref`, `symbolic-ref`, `for-each-ref`, `rev-list`, `diff`). Because `git status` refreshes the index by default, every git invocation MUST run with optional locks disabled (`GIT_OPTIONAL_LOCKS=0`) so that not even `.git/index` is rewritten. When agent sessions are enabled, the dashboard MAY start the user's configured agent in a session's worktree on the user's explicit request; what that agent changes, commits or pushes is the agent's doing under its own permission prompts and is never done by the dashboard's own code. With agent sessions disabled the dashboard MUST NOT start any process that can modify a repository.
