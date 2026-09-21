@@ -145,6 +145,12 @@ the dashboard shows it, passes your keystrokes on, and interprets nothing.
   `No, stop here` under the terminal. A click types that text into the terminal and focuses it; you press Enter to send.
   It deliberately does not press Enter for you: the dashboard cannot know whether the agent shows a text prompt or a
   selection menu, and in a menu Enter would confirm whatever option is highlighted.
+- **Several at once**: the panel has a tab per running session, so you switch between agents without hiding anything.
+  A card keeps offering the step that fits the change's stage while its session runs: after *Draft artifacts* has
+  finished, **↳ Implement** types the next prompt into the same terminal — you press Enter, because the dashboard cannot
+  know whether the agent is showing a prompt or a menu. Archiving always gets its own session and worktree. The ✕ on a
+  running badge ends a session from the card; the dialog warns — loudly when files or commits exist only in the
+  worktree — and offers **Ship instead**.
 - **Nothing is left behind**: every session worktree gets a work status, also after its session ended or its record
   was deleted — `3 uncommitted`, `2 not pushed`, `pushed` or `merged` — shown on the card and in **Open work** in the
   top bar, which lists all of them across repositories and highlights work nobody touched for a day (pushed: a week).

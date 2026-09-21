@@ -2,21 +2,28 @@
 // card shows (starter buttons, or a badge that opens the session panel).
 import { createContext, type ComponentChildren } from "preact";
 import { useCallback, useContext, useEffect, useMemo, useState } from "preact/hooks";
-import type { AgentAvailability, ChangeSnapshot, Config, Session, SessionAction, SessionWorktree } from "../shared/types.ts";
+import type { AgentAvailability, ChangeSnapshot, Config, Session, SessionAction, SessionWorktree, Snapshot } from "../shared/types.ts";
 import { api } from "./api.ts";
 import { cdCommand, relTime } from "./format.ts";
-import { agentForRepo, openWork, type SessionBadge, searchWithSession, sessionBadge, sessionForChange, sessionIdFromSearch, sessionsEnabledFor, startersFor, workBadge, worktreeForChange } from "./sessionState.ts";
+import { agentForRepo, openWork, type SessionBadge, searchWithSession, nextStepFor, sessionBadge, sessionsForChange, sessionIdFromSearch, sessionsEnabledFor, startersFor, workBadge, worktreeForChange } from "./sessionState.ts";
 import { currentQuery, replaceQuery } from "./url.ts";
 
 const POLL_MS = 3000;
 
 interface SessionUi {
   config: Config | null;
+  snapshot: Snapshot | null;
   sessions: Session[];
   agents: AgentAvailability[];
   /** Every session worktree with what became of its work; outlives session records. */
   worktrees: SessionWorktree[];
   panelId?: string;
+  /** The session the end-session dialog is open for. */
+  endingId?: string;
+  /** Bumped whenever the terminal should take the keyboard (after something was typed into it for the user). */
+  focusTick: number;
+  /** Opens the end-session dialog; nothing is ended before the user confirms there. */
+  requestEnd(id: string | undefined): void;
   error?: string;
   openPanel(id: string | undefined): void;
   start(repoId: string, change: string, action: SessionAction): Promise<void>;
@@ -24,11 +31,11 @@ interface SessionUi {
 }
 
 const noop = async () => {};
-const Context = createContext<SessionUi>({ config: null, sessions: [], agents: [], worktrees: [], openPanel: () => {}, start: noop, refresh: noop });
+const Context = createContext<SessionUi>({ config: null, snapshot: null, sessions: [], agents: [], worktrees: [], focusTick: 0, requestEnd: () => {}, openPanel: () => {}, start: noop, refresh: noop });
 
 export const useSessionUi = () => useContext(Context);
 
-export function SessionProvider({ config, children }: { config: Config | null; children: ComponentChildren }) {
+export function SessionProvider({ config, snapshot = null, children }: { config: Config | null; snapshot?: Snapshot | null; children: ComponentChildren }) {
   const enabled = config?.agentSessions.enabled === true;
   const [sessions, setSessions] = useState<Session[]>([]);
   const [agents, setAgents] = useState<AgentAvailability[]>([]);
@@ -60,20 +67,25 @@ export function SessionProvider({ config, children }: { config: Config | null; c
     replaceQuery(searchWithSession(currentQuery(), id)); // works in both routing modes (path and hash)
   }, []);
 
+  const [endingId, requestEnd] = useState<string>();
+  const [focusTick, setFocusTick] = useState(0);
+
   const start = useCallback(
     async (repoId: string, change: string, action: SessionAction) => {
       try {
-        const session = await api.openSession(repoId, change, action);
+        const into = nextStepFor(sessions, repoId, change, action).promptSessionId;
+        const session = into ? await api.promptSession(into, action) : await api.openSession(repoId, change, action);
+        if (into) setFocusTick((n) => n + 1);
         await refresh();
         openPanel(session.id);
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err));
       }
     },
-    [refresh, openPanel],
+    [refresh, openPanel, sessions],
   );
 
-  const value = useMemo(() => ({ config, sessions, agents, worktrees, panelId, error, openPanel, start, refresh }), [config, sessions, agents, worktrees, panelId, error, openPanel, start, refresh]);
+  const value = useMemo(() => ({ config, snapshot, sessions, agents, worktrees, panelId, endingId, focusTick, requestEnd, error, openPanel, start, refresh }), [config, snapshot, sessions, agents, worktrees, panelId, endingId, focusTick, error, openPanel, start, refresh]);
   return <Context.Provider value={value}>{children}</Context.Provider>;
 }
 
@@ -216,42 +228,46 @@ export function SessionControls({ card }: { card: Pick<ChangeSnapshot, "repoId" 
   if (!sessionsEnabledFor(ui.config, card.repoId)) return null;
 
   const worktree = worktreeForChange(ui.worktrees, card.repoId, card.name);
-  const work = worktree && <WorkBadge worktree={worktree} />;
-  const session = sessionForChange(ui.sessions, card.repoId, card.name);
-  if (session) {
-    const badge = sessionBadge(session);
-    return (
-      <>
-        <SessionBadgeView badge={badge} onClick={() => ui.openPanel(session.id)} />
-        {work}
-      </>
-    );
-  }
-
-  const actions = startersFor(ui.config, card);
-  if (actions.length === 0) return work || null;
+  const shown = sessionsForChange(ui.sessions, card.repoId, card.name);
   const agent = agentForRepo(ui.config, card.repoId);
   const found = ui.agents.find((a) => a.id === agent?.id);
   const unavailable = found && !found.available ? `${found.name} was not found on this machine — check its command in Settings` : undefined;
   return (
     <>
-      {work}
-      {actions.map((action) => (
-        <button
-          type="button"
-          class="btn sm session-start"
-          key={action}
-          title={unavailable ?? `${STARTER_HINT[action]} (${agent?.name})`}
-          disabled={Boolean(unavailable) || starting !== undefined}
-          onClick={async () => {
-            setStarting(action);
-            await ui.start(card.repoId, card.name, action);
-            setStarting(undefined);
-          }}
-        >
-          {starting === action ? "Starting…" : `▶ ${STARTER_LABEL[action]}`}
-        </button>
+      {shown.map((session) => (
+        <span class="session-chip" key={session.id}>
+          <SessionBadgeView badge={sessionBadge(session)} onClick={() => ui.openPanel(session.id)} />
+          {session.state === "running" && (
+            <button type="button" class="badge-x" aria-label={`End the session for ${session.change}`} title="End this session…" onClick={() => ui.requestEnd(session.id)}>
+              ✕
+            </button>
+          )}
+        </span>
       ))}
+      {worktree && <WorkBadge worktree={worktree} />}
+      {startersFor(ui.config, card).map((action) => {
+        // The change's running session takes the next step as typed input; only archiving always starts its own.
+        const step = nextStepFor(ui.sessions, card.repoId, card.name, action);
+        if (step.blocked) return null;
+        const intoRunning = step.promptSessionId !== undefined;
+        const blockedBy = intoRunning ? undefined : unavailable;
+        return (
+          <button
+            type="button"
+            class="btn sm session-start"
+            key={action}
+            title={blockedBy ?? (intoRunning ? `Types the “${STARTER_LABEL[action]}” prompt into the running session — press Enter there to send it` : `${STARTER_HINT[action]} (${agent?.name})`)}
+            disabled={Boolean(blockedBy) || starting !== undefined}
+            onClick={async () => {
+              setStarting(action);
+              await ui.start(card.repoId, card.name, action);
+              setStarting(undefined);
+            }}
+          >
+            {starting === action ? "Starting…" : `${intoRunning ? "↳" : "▶"} ${STARTER_LABEL[action]}`}
+          </button>
+        );
+      })}
     </>
   );
 }

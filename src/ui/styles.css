@@ -482,3 +482,25 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: 
   from { background-position: 100% 0; }
   to { background-position: -50% 0; }
 }
+
+/* ---- Several sessions: tabs in the panel, a close control on the running badge, the end-session dialog ---- */
+.session-tabs { display: flex; gap: 2px; padding: 6px var(--gap-2) 0; overflow-x: auto; border-bottom: 1px solid var(--border-light); background: var(--bg-base); }
+.session-tab {
+  display: inline-flex; align-items: center; gap: 6px; flex: none; max-width: 320px; padding: 5px 10px; cursor: pointer;
+  font: inherit; font-size: 12px; color: var(--fg-body); background: transparent;
+  border: 1px solid transparent; border-bottom: 0; border-radius: var(--radius) var(--radius) 0 0;
+}
+.session-tab .mono { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.session-tab .hint { font-size: 11px; color: var(--fg-subtle); }
+.session-tab:hover { color: var(--fg-heading); }
+.session-tab.active { color: var(--fg-heading); background: var(--bg-section); border-color: var(--border-light); }
+.session-chip { display: inline-flex; align-items: stretch; gap: 2px; }
+.badge-x {
+  padding: 0 5px; cursor: pointer; font: inherit; font-size: 10px; line-height: 16px; color: var(--fg-subtle);
+  background: var(--bg-section); border: 1px solid var(--border-light); border-radius: var(--radius);
+}
+.badge-x:hover, .badge-x:focus-visible { color: var(--danger); border-color: var(--danger-border); }
+.end-overlay { z-index: 30; }
+.end-dialog { width: min(520px, 100%); }
+.btn.danger { color: var(--danger); border-color: var(--danger-border); background: var(--danger-bg); }
+.btn.danger:hover { background: var(--danger); color: var(--bg-base); }

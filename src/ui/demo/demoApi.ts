@@ -126,5 +126,6 @@ export function createDemoApi({ now = Date.now, latencyMs = 150 }: DemoApiOption
     closeSession: () => Promise.reject(new Error(NO_SESSIONS)),
     deleteSession: () => Promise.reject(new Error(NO_SESSIONS)),
     worktreeStatus: () => Promise.reject(new Error(NO_SESSIONS)),
+    promptSession: () => Promise.reject(new Error(NO_SESSIONS)),
   };
 }

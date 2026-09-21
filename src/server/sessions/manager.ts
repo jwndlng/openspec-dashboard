@@ -3,7 +3,7 @@
 // fans output out to attached terminals and takes their input. It does not interpret what the agent prints.
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
-import { availableActions, OPEN_SESSION_STATES, repoAgentEnabled, SESSION_ACTIONS, SHIPPABLE_WORK, type AgentAvailability, type Config, type Session, type SessionAction, type SessionWorktree, type Snapshot } from "../../shared/types.ts";
+import { availableActions, OPEN_SESSION_STATES, repoAgentEnabled, SESSION_ACTIONS, SHIPPABLE_WORK, type AgentAvailability, type Config, type Session, type SessionAction, type SessionWorktree, type Snapshot, type WorkStatus } from "../../shared/types.ts";
 import { worktreesDir } from "../paths.ts";
 import { CHANGE_NAME } from "../source.ts";
 import { agentEnv, agentFor, availability, launchCommand, openingPrompt, shipPrompt } from "./agents.ts";
@@ -128,7 +128,9 @@ export class SessionManager {
     if (!snapshot) throw new SessionError(404, "unknown change");
     if (!availableActions(snapshot).includes(action)) throw new SessionError(400, `"${action}" is not available for this change in its current stage`);
 
-    const existing = this.list().find((s) => s.repoId === repo.id && s.change === change && OPEN_SESSION_STATES.includes(s.state));
+    // One running session per worktree. Archiving has a worktree of its own, so it may run next to the change's other session.
+    const archiving = action === "archive";
+    const existing = this.list().find((s) => s.repoId === repo.id && s.change === change && (s.action === "archive") === archiving && OPEN_SESSION_STATES.includes(s.state));
     if (existing) return existing;
 
     const agent = agentFor(config, repo);
@@ -202,8 +204,8 @@ export class SessionManager {
     if (!config.agentSessions.enabled) throw new SessionError(403, "agent sessions are disabled");
     const agent = config.agentSessions.agents.find((a) => a.id === session.agentId);
     if (!agent) throw new SessionError(409, "this session's agent is no longer configured");
-    const running = this.list().find((s) => s.id !== session.id && s.repoId === session.repoId && s.change === session.change && s.state === "running");
-    if (running) throw new SessionError(409, "another session for this change is running");
+    const running = this.list().find((s) => s.id !== session.id && s.worktreePath === session.worktreePath && s.state === "running");
+    if (running) throw new SessionError(409, "another session is running in this worktree");
     const repo = config.repos.find((r) => r.id === session.repoId);
     if (!repo) throw new SessionError(409, "the repository is no longer configured");
     return { agent, repo };
@@ -244,6 +246,35 @@ export class SessionManager {
     const launch = agent.resumeCommand ? { argv: [...agent.resumeCommand], typed: prompt } : launchCommand(agent, prompt);
     if (!Bun.which(launch.argv[0])) throw new SessionError(503, `${agent.name} was not found (${launch.argv[0]})`);
     await this.restart(session, repo.path, launch.argv, agentEnv(agent, process.env), launch.typed);
+    return session;
+  }
+
+  /**
+   * The next step of a change, in the session that is already running for it: the starter's prompt is typed into the
+   * terminal. Never Enter — a terminal cannot tell us whether the agent shows a prompt or a menu, and in a menu Enter
+   * would confirm whatever is highlighted. Archive is not typed here: it belongs in its own worktree.
+   */
+  prompt(id: string, input: { action?: unknown }): Session {
+    const session = this.get(id);
+    const config = this.deps.getConfig();
+    if (!config.agentSessions.enabled) throw new SessionError(403, "agent sessions are disabled");
+    if (!SESSION_ACTIONS.includes(input.action as SessionAction)) throw new SessionError(400, "unknown action");
+    const action = input.action as SessionAction;
+    if (action === "archive" || session.action === "archive") throw new SessionError(400, "archiving runs in its own session");
+    const proc = this.live.get(id)?.proc;
+    if (session.state !== "running" || !proc) throw new SessionError(409, "the session is not running");
+    const change = this.deps
+      .getSnapshot()
+      .repos.find((r) => r.id === session.repoId)
+      ?.changes.find((c) => c.name === session.change && !c.archived);
+    if (!change) throw new SessionError(404, "unknown change");
+    if (!availableActions(change).includes(action)) throw new SessionError(400, `"${action}" is not available for this change in its current stage`);
+    const agent = config.agentSessions.agents.find((a) => a.id === session.agentId);
+    const text = agent && openingPrompt(agent, action, session.change);
+    if (!text) throw new SessionError(400, `${session.agentName} has no "${action}" prompt configured`);
+    proc.write(text);
+    session.action = action;
+    void this.touch(session);
     return session;
   }
 
@@ -362,11 +393,13 @@ export class SessionManager {
     return (await readWorkStatus(repoPath, session.worktreePath)).work.state === "merged";
   }
 
-  async worktreeStatus(id: string): Promise<Removable> {
+  /** Read now, not from the list's cache: the end-session dialog warns on the strength of it. */
+  async worktreeStatus(id: string): Promise<Removable & { work: WorkStatus }> {
     const session = this.get(id);
-    if (session.adopted) return NOT_OURS;
     const repo = this.deps.getConfig().repos.find((r) => r.id === session.repoId);
-    return checkWorktreeRemovable(session.worktreePath, repo ? await this.isMerged(repo.path, session) : false);
+    const work: WorkStatus = repo ? (await readWorkStatus(repo.path, session.worktreePath)).work : { state: "missing" };
+    if (session.adopted) return { ...NOT_OURS, work };
+    return { ...(await checkWorktreeRemovable(session.worktreePath, work.state === "merged")), work };
   }
 
   async remove(id: string): Promise<void> {
