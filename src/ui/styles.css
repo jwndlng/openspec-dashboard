@@ -435,6 +435,8 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: 
 /* The terminal fills what the default responses leave; its ResizeObserver refits it when the row comes and goes. */
 .session-terminal-area { position: relative; flex: 1; min-height: 0; }
 .session-terminal-host { position: absolute; inset: 6px 0 6px 8px; }
+.session-unsent { flex: none; display: flex; align-items: flex-start; gap: 6px; margin: 6px 8px 0; }
+.session-unsent span { flex: 1; }
 .session-replies {
   flex: none; display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
   padding: 6px 8px; background: var(--bg-section); border-top: 1px solid var(--border-light);
