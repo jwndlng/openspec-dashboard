@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { applyCommand, checkoutHint, splitBranchLabel } from "../src/ui/format.ts";
+import { applyCommand, checkoutHint, pendingArchiveHint, splitBranchLabel } from "../src/ui/format.ts";
 
 test("short branch names are not split", () => {
   expect(splitBranchLabel("feat/add-login")).toEqual({ head: "feat/add-login", tail: "" });
@@ -58,4 +58,15 @@ test("checkoutHint says where a change lives and which other checkouts are at a 
 test("the apply command is built for the checkout a change lives in", () => {
   expect(applyCommand("/w/acme/alpha-infra/.claude/worktrees/audit-trail", "audit-trail")).toBe('cd /w/acme/alpha-infra/.claude/worktrees/audit-trail && claude "/opsx:apply audit-trail"');
   expect(applyCommand("/w/acme/My Repos/alpha", "audit-trail")).toBe(`cd '/w/acme/My Repos/alpha' && claude "/opsx:apply audit-trail"`);
+});
+
+test("pendingArchiveHint: only for an archive that lives in a linked worktree", () => {
+  const worktree = { path: "/w/acme/alpha-infra/.claude/worktrees/archive-audit-trail", branch: "chore/archive-audit-trail", isMain: false };
+  const hint = pendingArchiveHint({ archived: "2026-09-20", checkout: worktree, otherCheckouts: [{ branch: "main", isMain: true, column: "Implementing" }] });
+  expect(hint?.label).toBe("on chore/archive-audit-trail · not in main checkout");
+  expect(hint?.title).toContain("still active in: main checkout — Implementing");
+  expect(pendingArchiveHint({ archived: "2026-09-20" })).toBeUndefined();
+  expect(pendingArchiveHint({ archived: "2026-09-20", checkout: { path: "/w/acme/alpha-infra", isMain: true } })).toBeUndefined();
+  expect(pendingArchiveHint({ archived: null, checkout: worktree })).toBeUndefined();
+  expect(pendingArchiveHint({ archived: "2026-09-20", checkout: { ...worktree, branch: undefined } })?.label).toContain("a detached worktree");
 });

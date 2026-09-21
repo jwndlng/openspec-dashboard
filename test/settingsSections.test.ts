@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { currentSection, parseSection, SECTION_IDS, serializeSection } from "../src/ui/settingsSections.ts";
+import { currentSection, navOffset, parseSection, rowScrollLeft, SECTION_IDS, serializeSection } from "../src/ui/settingsSections.ts";
 import { hrefWithQuery } from "../src/ui/url.ts";
 
 test("parseSection accepts known ids only", () => {
@@ -58,4 +58,42 @@ test("Settings defines what its effects call before it can return early", async 
   expect(source.indexOf("const runDiscovery")).toBeGreaterThan(0);
   expect(source.indexOf("const runDiscovery")).toBeLessThan(earlyReturn);
   expect(source.indexOf("useSectionNav(")).toBeLessThan(earlyReturn);
+});
+
+test("rowScrollLeft leaves the row alone when the entry is fully visible", () => {
+  expect(rowScrollLeft({ scrollLeft: 0, clientWidth: 400 }, { offsetLeft: 120, offsetWidth: 150 })).toBe(0);
+  expect(rowScrollLeft({ scrollLeft: 100, clientWidth: 400 }, { offsetLeft: 100, offsetWidth: 400 })).toBe(100);
+});
+
+test("rowScrollLeft makes the smallest shift that reveals a cut-off entry", () => {
+  // Cut off on the right: its right edge meets the row's right edge.
+  expect(rowScrollLeft({ scrollLeft: 0, clientWidth: 400 }, { offsetLeft: 350, offsetWidth: 150 })).toBe(100);
+  // Cut off on the left: its left edge meets the row's left edge.
+  expect(rowScrollLeft({ scrollLeft: 300, clientWidth: 400 }, { offsetLeft: 120, offsetWidth: 150 })).toBe(120);
+  expect(rowScrollLeft({ scrollLeft: 300, clientWidth: 400 }, { offsetLeft: 0, offsetWidth: 90 })).toBe(0);
+});
+
+test("rowScrollLeft aligns an entry wider than the row to its start", () => {
+  expect(rowScrollLeft({ scrollLeft: 0, clientWidth: 200 }, { offsetLeft: 260, offsetWidth: 320 })).toBe(260);
+});
+
+test("the navigation never scrolls the page to reveal itself", async () => {
+  // The navigation moves with the content. scrollIntoView on a navigation element would drag the page back up to it
+  // whenever the current section changes; the only legitimate use is scrolling a section to the top on a jump.
+  const source = await Bun.file(new URL("../src/ui/settingsNav.tsx", import.meta.url)).text();
+  const calls = source.match(/^.*\.scrollIntoView\(.*$/gm) ?? [];
+  expect(calls).toHaveLength(1);
+  // The jump's own scroll: to the section, or on narrow screens to the row that was just placed above it.
+  expect(calls[0]).toContain("scrollTarget.scrollIntoView");
+  expect(source.indexOf("scrollTarget.scrollIntoView")).toBeLessThan(source.indexOf("// Follow manual scrolling."));
+});
+
+test("navOffset puts the navigation beside the section without leaving the page", () => {
+  expect(navOffset(0, 215, 2300)).toBe(0);
+  expect(navOffset(640, 215, 2300)).toBe(640);
+  // A short last section: the navigation's bottom stops at the end of the page.
+  expect(navOffset(2200, 215, 2300)).toBe(2085);
+  // Never negative, even if the navigation were taller than the page.
+  expect(navOffset(100, 500, 300)).toBe(0);
+  expect(navOffset(-5, 215, 2300)).toBe(0);
 });

@@ -54,6 +54,19 @@ export function normalizeRemote(url: string): string | undefined {
 }
 
 /**
+ * The repository's default branch as it is known locally — never asks the remote: what `origin/HEAD` points to, else a
+ * local `main`, else a local `master`.
+ */
+export async function defaultBranch(cwd: string): Promise<string | undefined> {
+  const head = (await git(cwd, ["symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"]))?.trim();
+  if (head) return head.replace(/^origin\//, "");
+  for (const candidate of ["main", "master"]) {
+    if ((await git(cwd, ["show-ref", "--verify", "--quiet", `refs/heads/${candidate}`])) !== undefined) return candidate;
+  }
+  return undefined;
+}
+
+/**
  * Parses `git worktree list --porcelain`: one entry per record, in git's order — the main working tree first, then the
  * linked worktrees. Detached worktrees have no branch.
  */
@@ -85,6 +98,11 @@ export function parseWorktrees(porcelain: string): Worktree[] {
 export async function worktrees(cwd: string): Promise<Worktree[]> {
   const out = await git(cwd, ["worktree", "list", "--porcelain"]);
   return out ? parseWorktrees(out) : [];
+}
+
+/** Where `cwd` sits below its repository's top level (`""` at the top level), so the same project can be found in a linked worktree. */
+export async function subdirectory(cwd: string): Promise<string> {
+  return ((await git(cwd, ["rev-parse", "--show-prefix"]))?.trim() ?? "").replace(/\/+$/, "");
 }
 
 /** Committer date (ISO 8601) of the last commit touching `relPath`, or undefined if none. */

@@ -20,6 +20,28 @@ export function serializeSection(query: string, id: string | undefined, first?: 
   return out ? `?${out}` : "";
 }
 
+/**
+ * Where the narrow-screen navigation row has to scroll (horizontally) so that an entry is fully visible: unchanged when
+ * it already is, otherwise the smallest shift that reveals it. An entry wider than the row is aligned to its start.
+ * Deliberately not `scrollIntoView`: that also scrolls the page, which would drag it back to a navigation that has
+ * scrolled out of view.
+ */
+export function rowScrollLeft(row: { scrollLeft: number; clientWidth: number }, entry: { offsetLeft: number; offsetWidth: number }): number {
+  const start = entry.offsetLeft;
+  const end = entry.offsetLeft + entry.offsetWidth;
+  if (start < row.scrollLeft || entry.offsetWidth > row.clientWidth) return Math.max(0, start);
+  if (end > row.scrollLeft + row.clientWidth) return Math.max(0, end - row.clientWidth);
+  return row.scrollLeft;
+}
+
+/**
+ * How far down the wide navigation is moved so that it sits beside the section jumped to: the section's distance from
+ * the first section, but never so far that the navigation would stick out below the end of the page.
+ */
+export function navOffset(sectionOffset: number, navHeight: number, layoutHeight: number): number {
+  return Math.max(0, Math.min(sectionOffset, layoutHeight - navHeight));
+}
+
 export interface SectionRect {
   id: string;
   /** Distance from the top of the scroll view to the top of the section; negative once scrolled past. */

@@ -3,7 +3,7 @@ import { defaultAgentSessions, defaultConfig, newRepoConfig, validateConfig } fr
 import { agentEnv, agentFor, launchCommand, openingPrompt } from "../src/server/sessions/agents.ts";
 import { Scrollback, sessionBranch, worktreeName } from "../src/server/sessions/manager.ts";
 import { availableActions, type Session } from "../src/shared/types.ts";
-import { agentForRepo, parseArgLines, searchWithSession, sessionBadge, sessionForChange, sessionIdFromSearch, sessionsEnabledFor, slugId, startersFor } from "../src/ui/sessionState.ts";
+import { agentForRepo, parseArgLines, searchWithShown, sessionBadge, sessionForChange, shownFromSearch, sessionsEnabledFor, slugId, startersFor } from "../src/ui/sessionState.ts";
 import { fakeProfile } from "./sessionHelpers.ts";
 
 const base = defaultConfig();
@@ -121,8 +121,8 @@ test("small helpers", () => {
   expect(sessionBranch("draft", "c")).toBe("feat/c");
   expect(parseArgLines(" claude \n\n {prompt} \n")).toEqual(["claude", "{prompt}"]);
   expect(slugId("My Agent!", ["my-agent"])).toBe("my-agent-2");
-  expect(sessionIdFromSearch("?q=x&session=abc")).toBe("abc");
-  expect(searchWithSession("?q=x&session=abc", undefined)).toBe("?q=x");
+  expect(shownFromSearch("?q=x&session=abc")).toEqual(["abc"]); // links from before the dock had one id
+  expect(searchWithShown("?q=x&session=abc", [])).toBe("?q=x");
   const sb = new Scrollback(10);
   for (const part of ["aaaa", "bbbb", "cccc", "dd"]) sb.push(new TextEncoder().encode(part));
   expect(new TextDecoder().decode(sb.bytes())).toBe("bbbbccccdd"); // oldest chunk dropped once over the limit

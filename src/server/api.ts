@@ -1,6 +1,7 @@
 import type { Config, DiscoverResult, RepoConfig, ScanTriggerResult, SharedConfigApplyResult, SharedConfigAssignment, SharedConfigPreview } from "../shared/types.ts";
 import { ConfigValidationError, saveConfig, validateConfig, validateIgnorePaths, validateScanRoots } from "./config.ts";
 import { discoverRepos } from "./discover.ts";
+import { PullBusyError, pullAll, pullRepository } from "./pull.ts";
 import type { Scanner } from "./scanner.ts";
 import { applyTo, EMPTY_SHARED_CONFIG, loadSharedConfig, previewFor, SharedConfigValidationError, saveSharedConfig } from "./sharedConfig.ts";
 import { SessionError, type SessionManager } from "./sessions/manager.ts";
@@ -126,8 +127,9 @@ interface TerminalSocket {
 
 /**
  * Wire format: server → client binary frames are raw terminal output (first the scrollback), and one text frame
- * `{"type":"exit"}` when the process ends; client → server text frames are `{"type":"input","data":…}` and
- * `{"type":"resize","cols":…,"rows":…}`.
+ * `{"type":"exit"}` when the process ends; client → server text frames are `{"type":"input","data":…}` (keystrokes,
+ * passed on unobserved), `{"type":"resize","cols":…,"rows":…}` and `{"type":"submit","data":…}` — text sent on the
+ * user's behalf, answered to that socket with `{"type":"submitted","ok":…}` (`false`: typed, but Enter was withheld).
  */
 export function createWebSocketHandlers(state: AppState) {
   return {
@@ -155,6 +157,17 @@ export function createWebSocketHandlers(state: AppState) {
         return;
       }
       if (parsed.type === "input" && typeof parsed.data === "string") state.sessions.write(ws.data.sessionId, parsed.data);
+      else if (parsed.type === "submit") {
+        const answer = (ok: boolean) => ws.send(JSON.stringify({ type: "submitted", ok }));
+        try {
+          state.sessions.submit(ws.data.sessionId, parsed.data).then(
+            (result) => answer(result.submitted),
+            () => answer(false),
+          );
+        } catch {
+          answer(false); // not running, or not plain text
+        }
+      }
       else if (parsed.type === "resize" && typeof parsed.cols === "number" && typeof parsed.rows === "number") state.sessions.resize(ws.data.sessionId, parsed.cols, parsed.rows);
     },
     close(ws: TerminalSocket) {
@@ -189,6 +202,7 @@ async function sessionRoutes(state: AppState, req: Request, url: URL, server?: S
     } else if (req.method === "POST") {
       if (sub === "resume") return json(await sessions.resume(id));
       if (sub === "ship") return json(await sessions.ship(id));
+      if (sub === "prompt") return json(sessions.prompt(id, await readJson(req)));
       if (sub === "close") return json(await sessions.close(id, { removeWorktree: (await readJson(req)).removeWorktree === true }));
     }
   } catch (err) {
@@ -273,6 +287,35 @@ async function postSharedConfigApply(state: AppState, req: Request): Promise<Res
   return json({ results });
 }
 
+/**
+ * Repositories the pull action may run in: tracked, scanned without error, and git. The path comes from the config —
+ * a request only ever names an id.
+ */
+function pullable(state: AppState): RepoConfig[] {
+  const scanned = new Map(state.scanner.snapshot.repos.map((r) => [r.id, r]));
+  return state.config.repos.filter((r) => r.enabled && scanned.get(r.id)?.ok === true && scanned.get(r.id)?.isGit === true);
+}
+
+/** The one route that contacts a remote and updates a main checkout — and only because the user asked for it. */
+async function postPull(state: AppState, repoId: string): Promise<Response> {
+  const repo = pullable(state).find((r) => r.id === repoId);
+  if (!repo) return json({ error: "not a tracked, successfully scanned git repository" }, 404);
+  try {
+    const result = await pullRepository(repo);
+    state.scanner.trigger();
+    return json(result);
+  } catch (err) {
+    if (err instanceof PullBusyError) return json({ error: err.message }, 409);
+    throw err;
+  }
+}
+
+async function postPullAll(state: AppState): Promise<Response> {
+  const results = await pullAll(pullable(state));
+  state.scanner.trigger();
+  return json({ results });
+}
+
 const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "[::1]"]);
 
 /**
@@ -332,6 +375,9 @@ export function createFetchHandler({ state, indexHtml }: AppOptions): (req: Requ
       if (req.method === "PUT" && pathname === "/api/shared-config") return putSharedConfig(state, req);
       if (req.method === "POST" && pathname === "/api/shared-config/preview") return postSharedConfigPreview(state, req);
       if (req.method === "POST" && pathname === "/api/shared-config/apply") return postSharedConfigApply(state, req);
+      if (req.method === "POST" && pathname === "/api/pull") return postPullAll(state);
+      const pullOne = /^\/api\/repos\/([^/]+)\/pull$/.exec(pathname);
+      if (req.method === "POST" && pullOne) return postPull(state, decodeURIComponent(pullOne[1]));
       if (req.method === "POST" && pathname === "/api/scan") {
         const result: ScanTriggerResult = { started: state.scanner.trigger().started };
         return json(result);

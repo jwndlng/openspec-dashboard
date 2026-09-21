@@ -83,6 +83,16 @@ export interface RepoSnapshot {
   scannedAt: string;
   isGit: boolean;
   currentBranch?: string;
+  /**
+   * The repository's default branch: what `origin/HEAD` points to, else `main`, else `master`. Omitted when it cannot be
+   * determined (and in snapshots cached by older versions).
+   */
+  defaultBranch?: string;
+  /**
+   * Whether the main checkout is on `defaultBranch` (false when HEAD is detached). Archives, specs and progress are read
+   * from the main checkout, so off the default branch they may be outdated. Omitted with `defaultBranch`.
+   */
+  onDefaultBranch?: boolean;
   worktrees: Worktree[];
   /**
    * Latest change to anything under `openspec/`: the last commit touching it, or the mtime of a file
@@ -156,6 +166,10 @@ export const SESSION_ACTIONS: readonly SessionAction[] = ["draft", "implement", 
 /** `ship` is a prompt, not a starter: it asks the agent of an existing session to commit, push and open a pull request. */
 export type PromptKey = SessionAction | "ship";
 /** Agent-neutral on purpose, so every profile can ship without being configured for it. */
+/** What Ship answers: the session, and whether the prompt was submitted. `false` means the agent of a running session
+ *  did not show the typed prompt (it may be showing a menu), so Enter was not pressed and nothing was confirmed. */
+export type ShipResult = Session & { submitted: boolean };
+
 export const DEFAULT_SHIP_PROMPT =
   "Ship the work in this worktree: commit everything that belongs to it with a Conventional Commit message, push the branch, and open a pull request against the default branch if there is none yet. Do not merge it. Tell me the pull request URL.";
 
@@ -323,4 +337,24 @@ export interface SharedConfigApplyResult {
   repoId: string;
   result: "written" | "unchanged" | "refused";
   reason?: string;
+}
+
+/**
+ * What the pull action did for one repository. The fetch and the update of the main checkout are reported separately:
+ * the fetch is always safe, the update only happens when it is an unambiguous fast-forward on the default branch.
+ */
+export interface PullResult {
+  repoId: string;
+  /** The remote was fetched (remote-tracking refs are current). */
+  fetched: boolean;
+  update: "fast-forwarded" | "up-to-date" | "skipped" | "refused" | "failed";
+  /** Commits the main checkout moved forward. */
+  commits?: number;
+  /** Why the update was skipped, refused or failed — git's words where git decided. */
+  reason?: string;
+  branch?: string;
+  upstream?: string;
+  defaultBranch?: string;
+  /** The repository has a post-merge hook; the dashboard does not run hooks. */
+  hooksSkipped?: boolean;
 }

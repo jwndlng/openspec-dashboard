@@ -1,3 +1,4 @@
+import type { PullResult, ShipResult, WorkStatus } from "../shared/types.ts";
 import type { AgentAvailability, Config, DiscoverResult, ScanTriggerResult, Session, SessionAction, SessionWorktree, SharedConfig, SharedConfigApplyResult, SharedConfigAssignment, SharedConfigPreview, Snapshot } from "../shared/types.ts";
 import { socketOrigin } from "./url.ts";
 
@@ -32,6 +33,12 @@ export interface Api {
   /** Read-only; pass the draft roots and ignore paths to discover against unsaved edits. */
   discover(scanRoots?: string[], ignorePaths?: string[]): Promise<DiscoverResult>;
   scan(): Promise<ScanTriggerResult>;
+  /**
+   * Fetches the repository's remote and fast-forwards its main checkout when that is safe. The only operation that
+   * makes the dashboard contact a remote; it never runs unless the user asks.
+   */
+  pullRepo(repoId: string): Promise<PullResult>;
+  pullAll(): Promise<{ results: PullResult[] }>;
   sharedConfig(): Promise<SharedConfig>;
   /** Stores the profiles in the dashboard home; never writes to a repository. */
   saveSharedConfig(config: SharedConfig): Promise<SharedConfig>;
@@ -45,13 +52,44 @@ export interface Api {
   /** Continues the agent's latest conversation in the session's worktree. */
   resumeSession(id: string): Promise<Session>;
   /** Asks the session's agent to commit, push and open a pull request. */
-  shipSession(id: string): Promise<Session>;
+  shipSession(id: string): Promise<ShipResult>;
   /** For a worktree whose session record is gone; refused unless that is safe. */
   removeWorktree(repoId: string, name: string): Promise<{ removable: boolean; reason?: string }>;
   /** Ends the agent if it is running; removes the worktree only when asked and safe. */
   closeSession(id: string, removeWorktree: boolean): Promise<{ session: Session; worktree?: { removable: boolean; reason?: string } }>;
   deleteSession(id: string): Promise<{ deleted: boolean }>;
-  worktreeStatus(id: string): Promise<{ removable: boolean; reason?: string }>;
+  /** Whether the worktree could be removed, and its work status read at this moment (not from the list's cache). */
+  worktreeStatus(id: string): Promise<{ removable: boolean; reason?: string; work?: WorkStatus }>;
+  /** Types a starter's prompt into the running session's terminal; Enter stays with the user. */
+  promptSession(id: string, action: SessionAction): Promise<Session>;
+  /**
+   * The byte stream of a session's terminal. Part of this interface — not a WebSocket opened by the view — so that a
+   * backend without a server (the demo) can stand in for it.
+   */
+  openTerminal(id: string, handlers: TerminalHandlers): TerminalConnection;
+}
+
+export interface TerminalHandlers {
+  onOpen(): void;
+  /** Raw terminal output, to be written to the terminal view as it is. */
+  onData(bytes: Uint8Array): void;
+  /** The agent's process ended. */
+  onExit(): void;
+  /** The answer to a `submit` message: whether Enter was pressed. Answers arrive in the order of the submissions. */
+  onSubmitted(ok: boolean): void;
+  onClose(): void;
+}
+
+export type TerminalMessage =
+  | { type: "input"; data: string }
+  /** Typed, and sent with Enter only once the agent's terminal has shown the text; answered with `onSubmitted`. */
+  | { type: "submit"; data: string }
+  | { type: "resize"; cols: number; rows: number };
+
+export interface TerminalConnection {
+  /** Dropped while the connection is not open. */
+  send(message: TerminalMessage): void;
+  close(): void;
 }
 
 export const httpApi: Api = {
@@ -61,6 +99,8 @@ export const httpApi: Api = {
   discover: (scanRoots, ignorePaths) =>
     call<DiscoverResult>("/api/discover", { method: "POST", body: scanRoots || ignorePaths ? JSON.stringify({ scanRoots, ignorePaths }) : undefined }),
   scan: () => call<ScanTriggerResult>("/api/scan", { method: "POST" }),
+  pullRepo: (repoId) => call<PullResult>(`/api/repos/${encodeURIComponent(repoId)}/pull`, { method: "POST" }),
+  pullAll: () => call<{ results: PullResult[] }>("/api/pull", { method: "POST" }),
   sharedConfig: () => call<SharedConfig>("/api/shared-config"),
   saveSharedConfig: (config) => call<SharedConfig>("/api/shared-config", { method: "PUT", body: JSON.stringify(config) }),
   previewSharedConfig: (assignments) => call<{ previews: SharedConfigPreview[] }>("/api/shared-config/preview", { method: "POST", body: JSON.stringify({ assignments }) }),
@@ -68,11 +108,33 @@ export const httpApi: Api = {
   sessions: () => call<{ sessions: Session[]; agents: AgentAvailability[]; worktrees: SessionWorktree[] }>("/api/sessions"),
   openSession: (repoId, change, action) => call<Session>("/api/sessions", { method: "POST", body: JSON.stringify({ repoId, change, action }) }),
   resumeSession: (id) => call<Session>(`/api/sessions/${id}/resume`, { method: "POST" }),
-  shipSession: (id) => call<Session>(`/api/sessions/${id}/ship`, { method: "POST" }),
+  shipSession: (id) => call<ShipResult>(`/api/sessions/${id}/ship`, { method: "POST" }),
   removeWorktree: (repoId, name) => call("/api/worktrees/remove", { method: "POST", body: JSON.stringify({ repoId, name }) }),
   closeSession: (id, removeWorktree) => call(`/api/sessions/${id}/close`, { method: "POST", body: JSON.stringify({ removeWorktree }) }),
   deleteSession: (id) => call<{ deleted: boolean }>(`/api/sessions/${id}`, { method: "DELETE" }),
-  worktreeStatus: (id) => call<{ removable: boolean; reason?: string }>(`/api/sessions/${id}/worktree`),
+  worktreeStatus: (id) => call<{ removable: boolean; reason?: string; work?: WorkStatus }>(`/api/sessions/${id}/worktree`),
+  promptSession: (id, action) => call<Session>(`/api/sessions/${id}/prompt`, { method: "POST", body: JSON.stringify({ action }) }),
+  openTerminal: (id, handlers) => {
+    const socket = new WebSocket(terminalSocketUrl(id));
+    socket.binaryType = "arraybuffer";
+    socket.onopen = () => handlers.onOpen();
+    socket.onmessage = (event) => {
+      if (typeof event.data === "string") {
+        const frame = JSON.parse(event.data) as { type?: string; ok?: boolean };
+        if (frame.type === "exit") handlers.onExit();
+        else if (frame.type === "submitted") handlers.onSubmitted(frame.ok === true);
+      } else {
+        handlers.onData(new Uint8Array(event.data as ArrayBuffer));
+      }
+    };
+    socket.onclose = () => handlers.onClose();
+    return {
+      send: (message) => {
+        if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(message));
+      },
+      close: () => socket.close(),
+    };
+  },
 };
 
 let current: Api = httpApi;
@@ -89,6 +151,8 @@ export const api: Api = {
   saveConfig: (config) => current.saveConfig(config),
   discover: (scanRoots, ignorePaths) => current.discover(scanRoots, ignorePaths),
   scan: () => current.scan(),
+  pullRepo: (repoId) => current.pullRepo(repoId),
+  pullAll: () => current.pullAll(),
   sharedConfig: () => current.sharedConfig(),
   saveSharedConfig: (config) => current.saveSharedConfig(config),
   previewSharedConfig: (assignments) => current.previewSharedConfig(assignments),
@@ -101,6 +165,8 @@ export const api: Api = {
   closeSession: (...args) => current.closeSession(...args),
   deleteSession: (...args) => current.deleteSession(...args),
   worktreeStatus: (...args) => current.worktreeStatus(...args),
+  promptSession: (...args) => current.promptSession(...args),
+  openTerminal: (...args) => current.openTerminal(...args),
 };
 
 /** Where the terminal of a session is served: a WebSocket on the dashboard's own host. */

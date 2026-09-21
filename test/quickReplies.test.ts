@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { DEFAULT_QUICK_REPLIES, replyHint, replyInput, type QuickReply } from "../src/ui/quickReplies.ts";
+import { DEFAULT_QUICK_REPLIES, NOT_SUBMITTED_NOTICE, replyHint, replyMessage, type QuickReply } from "../src/ui/quickReplies.ts";
 
 const isControl = (char: string) => {
   const code = char.charCodeAt(0);
@@ -11,26 +11,26 @@ test("the default responses and their order", () => {
   expect(new Set(DEFAULT_QUICK_REPLIES.map((r) => r.id)).size).toBe(DEFAULT_QUICK_REPLIES.length);
 });
 
-test("a default response types exactly its label and never presses Enter", () => {
-  // In a selection menu the agent ignores typed text and Enter confirms the highlighted option, so defaults only type.
+test("a default response is sent with one click: a submit message carrying exactly its label", () => {
   for (const reply of DEFAULT_QUICK_REPLIES) {
     expect(reply.text).toBe(reply.label);
-    expect(reply.submit).toBe(false);
-    const input = replyInput(reply);
-    expect(input).toBe(reply.text);
-    expect([...input].some(isControl)).toBe(false);
+    expect(reply.submit).toBe(true);
+    expect(replyMessage(reply)).toEqual({ type: "submit", data: reply.text });
+    expect(replyHint(reply)).toBe(`sends "${reply.text}"`);
   }
 });
 
-test("default responses contain no control characters themselves", () => {
-  for (const reply of DEFAULT_QUICK_REPLIES) expect([...reply.text].some(isControl)).toBe(false);
+test("the browser never adds Enter or any other control character: pressing Enter is the server's decision", () => {
+  for (const reply of DEFAULT_QUICK_REPLIES) expect([...replyMessage(reply).data].some(isControl)).toBe(false);
 });
 
-test("a response may opt into submitting: text and one Enter in a single input", () => {
-  const reply: QuickReply = { id: "x", label: "Continue", text: "continue", submit: true };
-  const input = replyInput(reply);
-  expect(input).toBe("continue\r");
-  expect([...input].filter(isControl)).toEqual(["\r"]);
-  expect(replyHint(reply)).toBe('types "continue" and presses Enter');
-  expect(replyHint(DEFAULT_QUICK_REPLIES[0])).toBe('types "Yes, go ahead" — press Enter to send');
+test("a response that does not submit is plain typed input", () => {
+  const reply: QuickReply = { id: "x", label: "Draft", text: "draft text", submit: false };
+  expect(replyMessage(reply)).toEqual({ type: "input", data: "draft text" });
+  expect(replyHint(reply)).toBe('types "draft text" — press Enter to send');
+});
+
+test("the notice says that nothing was confirmed", () => {
+  expect(NOT_SUBMITTED_NOTICE).toContain("typed but not sent");
+  expect(NOT_SUBMITTED_NOTICE).toContain("nothing was confirmed");
 });
