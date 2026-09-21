@@ -34,6 +34,14 @@ export function rowScrollLeft(row: { scrollLeft: number; clientWidth: number }, 
   return row.scrollLeft;
 }
 
+/**
+ * How far down the wide navigation is moved so that it sits beside the section jumped to: the section's distance from
+ * the first section, but never so far that the navigation would stick out below the end of the page.
+ */
+export function navOffset(sectionOffset: number, navHeight: number, layoutHeight: number): number {
+  return Math.max(0, Math.min(sectionOffset, layoutHeight - navHeight));
+}
+
 export interface SectionRect {
   id: string;
   /** Distance from the top of the scroll view to the top of the section; negative once scrolled past. */
