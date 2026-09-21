@@ -45,6 +45,8 @@ export interface ChangeArtifactInfo {
   schema: string;
   /** In build order. */
   artifacts: ArtifactStatus[];
+  /** Artifact id → absolute paths of the files it resolves to right now; empty when nothing is written yet. */
+  outputs: Record<string, string[]>;
   /** Absolute path of the file that tracks task progress, if the schema has one. */
   tasksPath?: string;
 }
@@ -76,6 +78,9 @@ export function readChangeArtifacts(projectRoot: string, changeName: string, opt
     status: completed.has(id) ? "done" : ready.has(id) ? "ready" : "blocked",
   }));
 
+  const outputs: Record<string, string[]> = {};
+  for (const artifact of graph.getAllArtifacts()) outputs[artifact.id] = resolveArtifactOutputs(changeDir, artifact.generates);
+
   let tasksPath: string | undefined;
   if (schema.apply?.tracks) {
     tasksPath = join(changeDir, schema.apply.tracks);
@@ -83,9 +88,9 @@ export function readChangeArtifacts(projectRoot: string, changeName: string, opt
     for (const id of schema.apply?.requires ?? artifacts.map((a) => a.id)) {
       const artifact = graph.getArtifact(id);
       if (!artifact) continue;
-      tasksPath = resolveArtifactOutputs(changeDir, artifact.generates)[0] ?? join(changeDir, artifact.generates);
+      tasksPath = outputs[id]?.[0] ?? join(changeDir, artifact.generates);
       break;
     }
   }
-  return { schema: schemaName, artifacts, tasksPath: tasksPath ?? join(changeDir, "tasks.md") };
+  return { schema: schemaName, artifacts, outputs, tasksPath: tasksPath ?? join(changeDir, "tasks.md") };
 }

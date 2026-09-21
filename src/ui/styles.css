@@ -421,3 +421,81 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: 
 .agent-tools textarea { resize: vertical; }
 .session-transcript pre { margin: 6px 0 0; max-height: 240px; overflow: auto; font-family: var(--font-mono); font-size: 11px; white-space: pre-wrap; }
 .session-transcript code { word-break: break-all; }
+
+/* Card → change detail: the change name is the link, stretched over the card; controls sit above it. */
+.card { position: relative; }
+.card-link { color: inherit; }
+.card-link::after { content: ""; position: absolute; inset: 0; border-radius: inherit; }
+.card-link:hover { color: var(--brand-fg); }
+.card-link:focus-visible { outline: none; }
+.card-link:focus-visible::after { outline: 2px solid var(--brand); outline-offset: 1px; }
+.card button, .card summary, .card .badge[title], .card .meter { position: relative; z-index: 1; }
+
+/* Change detail */
+.detail { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.detail-head .back { font-size: 12px; }
+.detail-head .change-name { font-size: 14px; color: var(--fg-heading); word-break: break-word; }
+.detail-head .row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.detail-meter { width: 220px; max-width: 100%; }
+.detail-meter.wide { width: 320px; margin-bottom: var(--gap-1); }
+.detail-actions .copy { border-color: var(--border-light); }
+.detail-tabs { display: flex; flex-wrap: wrap; gap: 2px; padding: 0 var(--gap-2); background: var(--bg-section); border-bottom: 1px solid var(--border-light); }
+.detail-tab {
+  display: inline-flex; align-items: center; gap: 6px; padding: 8px 12px; font: inherit; font-size: 13px; cursor: pointer;
+  color: var(--fg-body); background: transparent; border: 0; border-bottom: 2px solid transparent; margin-bottom: -1px;
+}
+.detail-tab:hover:not(:disabled) { color: var(--fg-heading); }
+.detail-tab.on { color: var(--fg-heading); border-bottom-color: var(--brand); }
+.detail-tab:disabled { color: var(--fg-disabled); cursor: default; }
+.detail-tab .state { font-family: var(--font-mono); font-size: 10px; padding: 0 5px; border-radius: 8px; border: 1px solid var(--border-light); color: var(--fg-subtle); }
+.detail-tab .state.done { color: var(--success); border-color: var(--success-border); }
+.detail-tab .state.ready { color: var(--warning); border-color: var(--warning-border); }
+.detail-tab:disabled .state.blocked { color: var(--fg-disabled); }
+.detail-body { flex: 1; min-height: 0; display: flex; }
+.detail-files { flex: none; width: 280px; max-width: 35%; overflow-y: auto; padding: var(--gap-1); display: flex; flex-direction: column; gap: 2px; border-right: 1px solid var(--border-light); background: var(--bg-section); }
+.detail-file { text-align: left; padding: 5px 8px; border: 1px solid transparent; border-radius: var(--radius); background: transparent; color: var(--fg-body); cursor: pointer; font-size: 11px; word-break: break-all; }
+.detail-file:hover { background: var(--bg-surface); color: var(--fg-heading); }
+.detail-file.on { background: var(--brand-softer); border-color: var(--brand-soft); color: var(--brand-fg); }
+.detail-content { flex: 1; min-width: 0; overflow-y: auto; padding: var(--gap-2); }
+.detail-content > * { max-width: 860px; }
+.detail-toolbar { display: flex; align-items: center; justify-content: space-between; gap: var(--gap-1); margin-bottom: var(--gap-1); color: var(--fg-subtle); font-size: 12px; }
+.detail-toolbar .path { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.detail-hint { color: var(--fg-subtle); }
+.detail-problem { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gap-1); }
+.detail-problem p { margin: 0; }
+.detail-raw { margin: 0; padding: var(--gap-1); font-family: var(--font-mono); font-size: 12px; line-height: 1.55; white-space: pre-wrap; word-break: break-word; color: var(--fg-heading); background: var(--bg-raised); border: 1px solid var(--border-light); border-radius: var(--radius); }
+
+/* Rendered artifact Markdown */
+.markdown { color: var(--fg-body); font-size: 14px; line-height: 1.6; overflow-wrap: anywhere; }
+.markdown > :first-child { margin-top: 0; }
+.markdown h1, .markdown h2, .markdown h3, .markdown h4, .markdown h5, .markdown h6 { margin: 1.4em 0 0.5em; color: var(--fg-heading); line-height: 1.3; text-transform: none; letter-spacing: -0.01em; }
+.markdown h1 { font-size: 20px; }
+.markdown h2 { font-size: 17px; padding-bottom: 4px; border-bottom: 1px solid var(--border-light); }
+.markdown h3 { font-size: 15px; }
+.markdown h4, .markdown h5, .markdown h6 { font-size: 13px; color: var(--fg-body); }
+.markdown p, .markdown ul, .markdown ol, .markdown blockquote, .markdown pre, .markdown .md-table { margin: 0 0 0.9em; }
+.markdown ul, .markdown ol { padding-left: 1.5em; }
+.markdown li > ul, .markdown li > ol { margin: 0.2em 0; }
+.markdown li + li { margin-top: 0.2em; }
+.markdown strong { color: var(--fg-heading); font-weight: 600; }
+.markdown a { text-decoration: underline; text-decoration-color: var(--brand-soft); text-underline-offset: 2px; }
+.markdown code { padding: 1px 4px; border-radius: 3px; background: var(--bg-surface); color: var(--fg-heading); }
+.markdown pre { padding: 10px 12px; overflow-x: auto; background: var(--bg-raised); border: 1px solid var(--border-light); border-radius: var(--radius); line-height: 1.5; }
+.markdown pre code { padding: 0; background: transparent; white-space: pre; }
+.markdown blockquote { padding: 2px 12px; border-left: 3px solid var(--border-strong); color: var(--fg-subtle); }
+.markdown blockquote > :last-child { margin-bottom: 0; }
+.markdown hr { border: 0; border-top: 1px solid var(--border); margin: 1.4em 0; }
+.markdown .md-table { overflow-x: auto; }
+.markdown table { border-collapse: collapse; font-size: 13px; }
+.markdown th, .markdown td { padding: 5px 10px; border: 1px solid var(--border); text-align: left; vertical-align: top; }
+.markdown th { background: var(--bg-section); color: var(--fg-heading); font-weight: 600; }
+.markdown .md-literal { font-family: var(--font-mono); font-size: 12px; color: var(--fg-subtle); white-space: pre-wrap; }
+.markdown ul.tasks, .markdown ol.tasks { list-style: none; padding-left: 0.2em; }
+.markdown li.task { display: flow-root; }
+.markdown li.task > input { margin: 0 8px 0 0; vertical-align: -1px; accent-color: var(--brand); }
+.markdown li.task > ul, .markdown li.task > ol { padding-left: 1.6em; }
+
+@media (max-width: 720px) {
+  .detail-body { flex-direction: column; }
+  .detail-files { width: auto; max-width: none; max-height: 30vh; border-right: 0; border-bottom: 1px solid var(--border-light); }
+}

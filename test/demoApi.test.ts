@@ -93,3 +93,34 @@ test("shared config in the demo: per-repository profiles, outdated after an edit
 
   expect(await demo().api.sharedConfig()).toEqual({ profiles: [] }); // a reload starts over
 });
+
+test("change artifacts in the demo: files follow the sample's state, tasks.md agrees with the card, errors match the server's", async () => {
+  const { api } = demo();
+  const [repo] = (await api.state()).repos;
+  const inProgress = repo.changes.find((c) => c.name === "add-rate-limiting")!;
+  const listing = await api.changeArtifacts(repo.id, inProgress.name);
+  expect(listing.change).toEqual({ repoId: repo.id, name: "add-rate-limiting", schema: "spec-driven", dir: `${repo.path}/openspec/changes/add-rate-limiting`, archived: false });
+  expect(listing.artifacts.map((a) => a.id)).toEqual(inProgress.artifacts.map((a) => a.id));
+  expect(listing.artifacts.every((a) => a.files.length > 0 && a.files.every((f) => f.bytes > 0))).toBe(true);
+
+  const tasks = await api.artifactFile(repo.id, inProgress.name, "tasks.md");
+  expect(tasks.text.match(/^- \[x\]/gm)?.length).toBe(inProgress.tasks!.done);
+  expect(tasks.text.match(/^- \[[ x]\]/gm)?.length).toBe(inProgress.tasks!.total);
+  expect(tasks.bytes).toBe(new TextEncoder().encode(tasks.text).length);
+
+  const early = await api.changeArtifacts(repo.id, "idempotency-keys");
+  expect(early.artifacts.map((a) => [a.id, a.status, a.files.length])).toEqual([["proposal", "done", 1], ["specs", "ready", 0], ["design", "ready", 0], ["tasks", "blocked", 0]]);
+
+  const archived = repo.changes.find((c) => c.archived)!;
+  const old = await api.changeArtifacts(repo.id, archived.name);
+  expect(old.change.archived).toBe(true);
+  expect(old.change.dir).toBe(`${repo.path}/openspec/changes/archive/${archived.archived}-${archived.name}`);
+
+  const status = (p: Promise<unknown>) => p.then(() => 200, (err) => (err as { status?: number }).status);
+  expect(await status(api.changeArtifacts(repo.id, "never-existed"))).toBe(404);
+  expect(await status(api.changeArtifacts("nope", inProgress.name))).toBe(404);
+  expect(await status(api.artifactFile(repo.id, "never-existed", "proposal.md"))).toBe(404);
+  expect(await status(api.artifactFile(repo.id, inProgress.name, "missing.md"))).toBe(404);
+  expect(await status(api.artifactFile(repo.id, inProgress.name, "../secrets.md"))).toBe(400);
+  expect(await status(api.artifactFile(repo.id, "a/b", "proposal.md"))).toBe(400);
+});

@@ -242,3 +242,35 @@ export interface SharedConfigApplyResult {
   result: "written" | "unchanged" | "refused";
   reason?: string;
 }
+
+/** One existing file of an artifact, relative to the change directory. */
+export interface ChangeArtifactFile {
+  path: string;
+  bytes: number;
+}
+
+export interface ChangeArtifactEntry extends ArtifactStatus {
+  /** Sorted; empty when the artifact has no file yet. */
+  files: ChangeArtifactFile[];
+}
+
+/** Answer of `GET /api/repos/<repoId>/changes/<changeName>/artifacts`. */
+export interface ChangeArtifacts {
+  change: {
+    repoId: string;
+    name: string;
+    schema: string;
+    /** Absolute change directory; for archived changes the dated directory under `archive/`. */
+    dir: string;
+    archived: boolean;
+  };
+  /** In schema order. */
+  artifacts: ChangeArtifactEntry[];
+}
+
+/** Answer of `GET /api/repos/<repoId>/changes/<changeName>/file?path=…`. */
+export interface ArtifactFileContent {
+  path: string;
+  bytes: number;
+  text: string;
+}

@@ -36,7 +36,7 @@ The request never names a directory. `repoId` is looked up in `state.config.repo
 
 *Alternatives considered:* one endpoint returning every file's content — simple, but re-reads the whole change on each poll and makes the size cap awkward. Adding file paths into the snapshot — rejected: the snapshot is polled by every open tab and would grow without bound, and invariant 5 keeps derived facts out of it.
 
-### D2 — Path validation: normalise, then require containment, then `lstat`
+### D2 — Path validation: normalise, then require containment, then `realpath` + `stat`
 
 `path` is rejected when absent, absolute, or when `normalize()` leaves a leading `..`. The candidate is then resolved against the change directory and must still start with the change directory plus a separator. Finally `realpath` must land inside the change directory too, and the target must be a regular file — this is what catches a symlink inside the change directory that points out of it. Files over 1 MiB answer `413` without reading the content (the size comes from `stat`).
 
@@ -62,7 +62,7 @@ This is what makes "raw HTML is not interpreted" structural rather than a filter
 
 ### D5 — Route in the path, selection in the query
 
-The route is `/repo/<repoId>/change/<changeName>`, parsed in `src/ui/routes.ts` alongside the existing repo route, with `routeFromPath` returning `{ view: "change", repoId, changeName }`. The selected artifact, the selected file and the raw toggle live in the query string (`?artifact=`, `?file=`, `?raw=1`) and are written with `replaceQuery`, which already keeps hash-mode routing intact and does not add history entries per tab click.
+The route is `/repo/<repoId>/change/<changeName>`, parsed in `src/ui/routes.ts` alongside the existing repo route, with `routeFromPath` returning `{ view: "change", repoId, changeName }` and `changePath(repoId, changeName)` building it. The selected artifact, the selected file and the raw toggle live in the query string (`?artifact=`, `?file=`, `?raw=1`) and are written with `replaceQuery`, which already keeps hash-mode routing intact and does not add history entries per tab click.
 
 The board a card was clicked on travels in a `from` query parameter holding the board's encoded path and query; the back link uses it when it is a board path of this app, and falls back to `repoPath(repoId)` otherwise. Nothing is read from `document.referrer` and nothing is remembered across reloads.
 
@@ -83,4 +83,4 @@ The new endpoints are `GET`-only and add no write path, so the existing "The das
 - **`realpath` per file read costs a syscall and can fail on a broken link.** → A failure is a `404`, which is the right answer for a link that does not resolve.
 - **The poll re-reads the artifact list per open detail view.** → It is one `readdir` plus `stat` per artifact against a directory the scanner already walks; at the default interval this is negligible next to a full scan.
 - **Archived changes have the archive date in their directory name, not the change name.** → The change directory always comes from `listChanges()`, which already strips the prefix; the request only ever carries the bare change name, as the boards show it.
-- **Card as an anchor can swallow clicks on the controls inside it.** → The copy button and session starters stop propagation and prevent the default; the "copy action does not navigate" scenario is the regression test.
+- **Card as an anchor can swallow clicks on the controls inside it.** → The anchor is the change name, stretched over the card in CSS; the copy button and session starters are its siblings raised above it, not descendants, so activating them cannot navigate. The "copy action does not navigate" scenario is the regression test.

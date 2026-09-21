@@ -1,7 +1,7 @@
 // Where a repository's OpenSpec data comes from (design.md D3). v0 ships a
 // local filesystem source; a remote source would implement the same interface.
 import type { Dirent } from "node:fs";
-import { readdir, readFile, stat } from "node:fs/promises";
+import { readdir, readFile, realpath, stat } from "node:fs/promises";
 import { dirname, join, relative } from "node:path";
 import type { Worktree } from "../shared/types.ts";
 import { currentBranch, isGitRepo, lastCommitDate, statusPaths, worktrees } from "./git.ts";
@@ -26,6 +26,15 @@ export interface DirtyFile {
   mtimeMs: number;
 }
 
+/** What is at a path, without reading it. */
+export interface FileInfo {
+  size: number;
+  /** False for directories, sockets and the like. Symbolic links are followed. */
+  isFile: boolean;
+  /** The path with every symbolic link resolved. */
+  realPath: string;
+}
+
 export interface ChangeListing {
   active: ChangeDirEntry[];
   archived: ChangeDirEntry[];
@@ -37,6 +46,8 @@ export interface RepoSource {
   exists(): Promise<boolean>;
   listChanges(): Promise<ChangeListing>;
   readText(absPath: string): Promise<string | undefined>;
+  /** Undefined when the path does not exist or a link on the way does not resolve. */
+  readFileInfo(absPath: string): Promise<FileInfo | undefined>;
   /** Names of the directories directly inside `absDir`; empty when it does not exist. */
   listDirs(absDir: string): Promise<string[]>;
   newestMtime(dir: string): Promise<string | undefined>;
@@ -107,6 +118,16 @@ export class LocalRepoSource implements RepoSource {
   async readText(absPath: string): Promise<string | undefined> {
     try {
       return await readFile(absPath, "utf8");
+    } catch {
+      return undefined;
+    }
+  }
+
+  async readFileInfo(absPath: string): Promise<FileInfo | undefined> {
+    try {
+      const realPath = await realpath(absPath);
+      const info = await stat(realPath);
+      return { size: info.size, isFile: info.isFile(), realPath };
     } catch {
       return undefined;
     }
