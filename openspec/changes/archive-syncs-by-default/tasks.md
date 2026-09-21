@@ -12,7 +12,7 @@
 
 ## 3. UI and docs
 
-- [ ] 3.1 In `src/ui/sessions.tsx`, change the Archive starter tooltip to say that the agent syncs the specs and archives the completed change; verify in `bun run dev` that the starter shows on a card in `Synced` and on one in `Done`, with the new tooltip
+- [x] 3.1 In `src/ui/sessions.tsx`, change the Archive starter tooltip to say that the agent syncs the specs and archives the completed change; verify in `bun run dev` that the starter shows on a card in `Synced` and on one in `Done`, with the new tooltip
 - [x] 3.2 Update the agent sessions section of `README.md`: Archive is offered in Done and Synced, the preconfigured prompt syncs specs first without asking, a former default prompt in an existing config is upgraded, and how to get the question back (edit the prompt in Settings); verify the text matches the delta spec
 
 ## 4. Verification

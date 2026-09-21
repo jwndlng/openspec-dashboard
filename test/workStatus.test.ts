@@ -10,7 +10,7 @@ import { changeOfWorktree, readWorkStatus } from "../src/server/sessions/workSta
 import { ensureWorktree } from "../src/server/sessions/worktree.ts";
 import { DEFAULT_SHIP_PROMPT, type Session, type SessionWorktree } from "../src/shared/types.ts";
 import { tempDir, useTempHome } from "./helpers.ts";
-import { fakeProfile, git, harness, tempGitRepo, waitFor, watch, type Harness } from "./sessionHelpers.ts";
+import { FAKE_AGENT, fakeProfile, git, harness, tempGitRepo, waitFor, watch, type Harness } from "./sessionHelpers.ts";
 
 setDefaultTimeout(30_000);
 
@@ -152,8 +152,8 @@ test("ship types the prompt into a running agent, and starts an ended one again 
   await waitFor(() => seen.text().includes("fake-agent ready"), "the agent");
   await writeFile(join(s.worktreePath, "work.txt"), "x");
 
-  await h.manager.ship(s.id);
-  await waitFor(() => seen.text().includes("you said: ship upgrade-runtime now"), "the typed ship prompt");
+  expect((await h.manager.ship(s.id)).submitted).toBe(true);
+  await waitFor(() => seen.text().includes("you said: ship upgrade-runtime now"), "the submitted ship prompt");
   expect(h.manager.list().filter((x) => x.state === "running")).toHaveLength(1);
 
   h.manager.write(s.id, "exit\r");
@@ -162,6 +162,21 @@ test("ship types the prompt into a running agent, and starts an ended one again 
   expect(again.id).toBe(s.id);
   expect(again.state).toBe("running");
   await waitFor(() => seen.text().includes('args=["--resumed"]') && seen.text().split("you said: ship upgrade-runtime now").length === 3, "resume command plus typed prompt");
+});
+
+test("ship into a running agent that shows a menu is typed, not confirmed, and says so", async () => {
+  const h = await harness({ agent: { command: [FAKE_AGENT, "--menu", "{prompt}"] } });
+  const manager = h.newManager({ submitTimings: { echoTimeoutMs: 600, settleMs: 20 } });
+  managers.push(manager);
+  const s = await manager.open({ repoId: h.repoId, change: "upgrade-runtime", action: "implement" });
+  const seen = await watch(manager, s.id);
+  await waitFor(() => seen.text().includes("Enter to confirm"), "the menu");
+  await writeFile(join(s.worktreePath, "work.txt"), "x");
+  const result = await manager.ship(s.id);
+  expect(result.submitted).toBe(false);
+  expect(result.id).toBe(s.id);
+  await new Promise((r) => setTimeout(r, 200));
+  expect(seen.text()).not.toContain("menu confirmed by Enter");
 });
 
 test("ship without a resume command starts the agent with the default prompt; nothing to ship is refused", async () => {
@@ -206,7 +221,7 @@ test("API: worktrees ride along with the sessions; removal validates its input, 
   git(h.repoPath, "push", "-q", "origin", "main");
   git(h.repoPath, "push", "-q", "origin", "--delete", "feat/upgrade-runtime");
   await call(`/api/sessions/${s.id}/close`, {});
-  expect(await (await call(`/api/sessions/${s.id}/worktree`)).json()).toEqual({ removable: true });
+  expect(await (await call(`/api/sessions/${s.id}/worktree`)).json()).toEqual({ removable: true, work: { state: "merged", base: "origin/main" } });
   await h.manager.remove(s.id);
 
   await mkdir(join(s.worktreePath, "scratch"));

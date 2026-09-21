@@ -1,8 +1,8 @@
 import { afterAll, afterEach, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
 import { existsSync } from "node:fs";
-import { mkdir, readFile, realpath, writeFile } from "node:fs/promises";
+import { mkdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { worktreesDir } from "../src/server/paths.ts";
+import { sessionsDir, worktreesDir } from "../src/server/paths.ts";
 import { scanRepo } from "../src/server/scanner.ts";
 import { SessionManager } from "../src/server/sessions/manager.ts";
 import { SessionStore } from "../src/server/sessions/store.ts";
@@ -244,4 +244,94 @@ test("archive never adopts, and the main checkout is never adopted", async () =>
   git(h.repoPath, "checkout", "-q", "-b", "feat/upgrade-runtime"); // the main checkout itself sits on the session's branch
   await expect(h.manager.open({ repoId: h.repoId, change: "upgrade-runtime", action: "implement" })).rejects.toThrow();
   expect(h.manager.list().some((s) => s.worktreePath === h.repoPath)).toBe(false);
+});
+
+const FAST_SUBMIT = { submitTimings: { echoTimeoutMs: 600, settleMs: 20 } };
+
+test("submitted text reaches an agent that shows it, with Enter as a separate write", async () => {
+  const h = await harness();
+  const manager = h.newManager(FAST_SUBMIT);
+  managers.push(manager);
+  const s = await manager.open({ repoId: h.repoId, change: "upgrade-runtime", action: "implement" });
+  const view = await watch(manager, s.id);
+  await waitFor(() => view.text().includes("fake-agent ready"), "agent banner");
+  expect(await manager.submit(s.id, "Yes, go ahead")).toEqual({ submitted: true });
+  await waitFor(() => view.text().includes("you said: Yes, go ahead"), "the agent received the submitted line");
+});
+
+test("an agent showing a menu gets the text but never an Enter, and keeps running", async () => {
+  const h = await harness({ agent: { command: [FAKE_AGENT, "--menu", "{prompt}"] } });
+  const manager = h.newManager(FAST_SUBMIT);
+  managers.push(manager);
+  const s = await manager.open({ repoId: h.repoId, change: "upgrade-runtime", action: "implement" });
+  const view = await watch(manager, s.id);
+  await waitFor(() => view.text().includes("Enter to confirm"), "the menu");
+  expect(await manager.submit(s.id, "Yes, go ahead")).toEqual({ submitted: false });
+  await new Promise((r) => setTimeout(r, 200));
+  expect(view.text()).not.toContain("menu confirmed by Enter");
+  expect(manager.get(s.id).state).toBe("running");
+  // a real Enter from the keyboard still confirms: only the blind one is withheld
+  manager.write(s.id, "\r");
+  await waitFor(() => view.text().includes("menu confirmed by Enter"), "a typed Enter reaches the menu");
+});
+
+test("an opening prompt typed after start-up is not sent into a dialog", async () => {
+  const h = await harness({ agent: { command: [FAKE_AGENT, "--menu"] } });
+  const manager = h.newManager(FAST_SUBMIT);
+  managers.push(manager);
+  const s = await manager.open({ repoId: h.repoId, change: "upgrade-runtime", action: "implement" });
+  const view = await watch(manager, s.id);
+  await waitFor(() => view.text().includes("Enter to confirm"), "the menu");
+  await new Promise((r) => setTimeout(r, 150 + 600 + 300)); // start-up delay + echo timeout + margin
+  expect(view.text()).not.toContain("menu confirmed by Enter");
+  expect(manager.get(s.id).state).toBe("running");
+});
+
+test("submissions to one session run one after another", async () => {
+  const h = await harness();
+  const manager = h.newManager(FAST_SUBMIT);
+  managers.push(manager);
+  const s = await manager.open({ repoId: h.repoId, change: "upgrade-runtime", action: "implement" });
+  const view = await watch(manager, s.id);
+  await waitFor(() => view.text().includes("fake-agent ready"), "agent banner");
+  const results = await Promise.all([manager.submit(s.id, "first message"), manager.submit(s.id, "second message")]);
+  expect(results).toEqual([{ submitted: true }, { submitted: true }]);
+  await waitFor(() => view.text().includes("you said: second message"), "both lines");
+  expect(view.text()).toContain("you said: first message (");
+  expect(view.text()).toContain("you said: second message (");
+});
+
+test("submit refuses what is not plain text, and sessions that are not running", async () => {
+  const h = track(await harness());
+  const s = await h.manager.open({ repoId: h.repoId, change: "upgrade-runtime", action: "implement" });
+  for (const bad of ["", "two\rlines", `esc${String.fromCharCode(27)}[A`, 7, undefined]) expect(() => h.manager.submit(s.id, bad)).toThrow(expect.objectContaining({ status: 400 }));
+  h.manager.write(s.id, "exit\r");
+  await waitFor(() => h.manager.get(s.id).state === "exited", "exit");
+  expect(() => h.manager.submit(s.id, "Yes, go ahead")).toThrow(expect.objectContaining({ status: 409 }));
+});
+
+test("bookkeeping nobody waits for cannot take the dashboard down, and shutdown leaves no write behind", async () => {
+  const h = track(await harness());
+  const s = await h.manager.open({ repoId: h.repoId, change: "upgrade-runtime", action: "implement" });
+  const unhandled: unknown[] = [];
+  const onUnhandled = (reason: unknown) => unhandled.push(reason);
+  process.on("unhandledRejection", onUnhandled);
+  const dir = join(sessionsDir(), s.id);
+  try {
+    // Make the session's record unwritable: a file where its directory should be.
+    await rm(dir, { recursive: true, force: true });
+    await writeFile(dir, "in the way");
+    // `prompt` records the action in the background (nobody awaits that write). It fails now.
+    expect(h.manager.prompt(s.id, { action: "implement" }).action).toBe("implement");
+    await new Promise((r) => setTimeout(r, 150));
+    expect(unhandled).toEqual([]);
+  } finally {
+    await rm(dir, { force: true });
+    process.off("unhandledRejection", onUnhandled);
+  }
+
+  // After shutdown nothing is still being written: the record is complete on disk the moment it returns.
+  await h.manager.shutdown();
+  const meta = JSON.parse(await readFile(join(dir, "meta.json"), "utf8"));
+  expect(meta.state).not.toBe("running");
 });

@@ -1,5 +1,5 @@
 // Pure helpers for the agent-session UI; free of DOM access at import time so they can be unit-tested.
-import { availableActions, repoAgentEnabled, SHIPPABLE_WORK, type AgentProfile, type ChangeSnapshot, type Config, type Session, type SessionAction, type SessionWorktree } from "../shared/types.ts";
+import { availableActions, repoAgentEnabled, SHIPPABLE_WORK, type AgentProfile, type ChangeSnapshot, type Config, type Session, type SessionAction, type SessionWorktree, type WorkStatus } from "../shared/types.ts";
 
 /** Session starters are shown when the feature is on, for every tracked repository that has not been switched off. */
 export function sessionsEnabledFor(config: Config | null, repoId: string): boolean {
@@ -21,11 +21,52 @@ export function startersFor(config: Config | null, card: Pick<ChangeSnapshot, "r
   return availableActions(card).filter((action) => Boolean(agent.prompts[action]));
 }
 
-/** The session a card represents: the running one, otherwise the most recent one if it did not end cleanly. */
-export function sessionForChange(sessions: Session[], repoId: string, change: string): Session | undefined {
+/**
+ * The sessions a card shows: every running one (archiving may run next to the change's other session), otherwise the
+ * most recent one if it did not end cleanly.
+ */
+export function sessionsForChange(sessions: Session[], repoId: string, change: string): Session[] {
   const mine = sessions.filter((s) => s.repoId === repoId && s.change === change).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  const running = mine.filter((s) => s.state === "running");
+  if (running.length > 0) return running;
   const latest = mine[0];
-  return mine.find((s) => s.state === "running") ?? (latest && (latest.state === "failed" || (latest.exitCode ?? 0) !== 0) ? latest : undefined);
+  return latest && (latest.state === "failed" || (latest.exitCode ?? 0) !== 0) ? [latest] : [];
+}
+
+/**
+ * Where a starter goes: into the change's running session (the prompt is typed there), or into a new session.
+ * Archive always gets its own, and nothing is typed into an archive session.
+ */
+export function nextStepFor(sessions: Session[], repoId: string, change: string, action: SessionAction): { promptSessionId?: string; blocked?: boolean } {
+  const running = sessions.filter((s) => s.repoId === repoId && s.change === change && s.state === "running");
+  if (action === "archive") return { blocked: running.some((s) => s.action === "archive") };
+  return { promptSessionId: running.find((s) => s.action !== "archive")?.id };
+}
+
+/** Dock tabs: every running session, oldest first so tabs do not jump, plus shown ones that have ended. */
+export function sessionTabs(sessions: Session[], shown: readonly string[]): Session[] {
+  return sessions.filter((s) => s.state === "running" || shown.includes(s.id)).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+}
+
+export type EndSeverity = "plain" | "notice" | "danger";
+
+/** How loudly ending a session has to be questioned: work that exists only in the worktree is the loud case. */
+export function endSeverity(work: Pick<WorkStatus, "state"> | undefined): EndSeverity {
+  if (work?.state === "uncommitted" || work?.state === "unpushed") return "danger";
+  return work?.state === "pushed" ? "notice" : "plain";
+}
+
+export function endWarning(work: WorkStatus | undefined): string | undefined {
+  const n = work?.count ?? 0;
+  if (work?.state === "uncommitted") return `${n} uncommitted file${n === 1 ? "" : "s"} exist${n === 1 ? "s" : ""} only in this worktree. Nothing has been shipped.`;
+  if (work?.state === "unpushed") return `${n} commit${n === 1 ? "" : "s"} exist${n === 1 ? "s" : ""} only on this machine. Nothing has been pushed.`;
+  if (work?.state === "pushed") return `The work is pushed but not merged into ${work.base ?? "the default branch"} as of your last fetch.`;
+  return undefined;
+}
+
+/** The one session a card stands for, where only one fits (see `sessionsForChange`). */
+export function sessionForChange(sessions: Session[], repoId: string, change: string): Session | undefined {
+  return sessionsForChange(sessions, repoId, change)[0];
 }
 
 export interface SessionBadge {
@@ -102,17 +143,57 @@ export function openWork(worktrees: SessionWorktree[], sessions: Session[], now 
 
 const PARAM = "session";
 
-export function sessionIdFromSearch(search: string): string | undefined {
-  return new URLSearchParams(search).get(PARAM) || undefined;
+/** The dock shows at most this many sessions side by side; the tab strip can hold more. */
+export const MAX_SHOWN = 3;
+
+/** `?session=a,b,c` in pane order: the first three distinct ids. A single id — the format of older links — is one pane. */
+export function shownFromSearch(search: string): string[] {
+  const ids = (new URLSearchParams(search).get(PARAM) ?? "").split(",").map((id) => id.trim()).filter(Boolean);
+  return [...new Set(ids)].slice(0, MAX_SHOWN);
 }
 
 /** Sets or clears `?session=` and keeps every other query parameter (board filters live there too). */
-export function searchWithSession(search: string, id: string | undefined): string {
+export function searchWithShown(search: string, shown: readonly string[]): string {
   const params = new URLSearchParams(search);
-  if (id) params.set(PARAM, id);
+  if (shown.length > 0) params.set(PARAM, shown.join(","));
   else params.delete(PARAM);
-  const out = params.toString();
+  // Ids are UUIDs; a readable comma keeps deep links legible.
+  const out = params.toString().replaceAll("%2C", ",");
   return out ? `?${out}` : "";
+}
+
+/** Dock geometry, in one place: the dock never gets too small for a terminal, the board above it never too small to use. */
+export const DOCK_MIN_HEIGHT = 160;
+export const DOCK_MIN_BOARD = 120;
+export const DOCK_TABS_HEIGHT = 36;
+export const DOCK_DEFAULT_RATIO = 0.42;
+
+export function clampDockHeight(height: number, windowHeight: number): number {
+  return Math.round(Math.min(Math.max(height, DOCK_MIN_HEIGHT), Math.max(DOCK_MIN_HEIGHT, windowHeight - DOCK_MIN_BOARD)));
+}
+
+export interface Shown {
+  shown: string[];
+  focusedId?: string;
+}
+
+/**
+ * "Show this session": focus it if it has a pane already, give it a new pane while there is room, otherwise replace the
+ * pane the user is in (the one they are looking at when asking for another session) — the last one if none has focus.
+ */
+export function showSession({ shown, focusedId }: Shown, id: string): Shown {
+  if (shown.includes(id)) return { shown, focusedId: id };
+  if (shown.length < MAX_SHOWN) return { shown: [...shown, id], focusedId: id };
+  const at = focusedId !== undefined && shown.includes(focusedId) ? shown.indexOf(focusedId) : shown.length - 1;
+  return { shown: shown.map((other, i) => (i === at ? id : other)), focusedId: id };
+}
+
+/** Removes a pane (never a session); the keyboard moves to the pane that takes its place, else the one before. */
+export function hideSession({ shown, focusedId }: Shown, id: string): Shown {
+  const at = shown.indexOf(id);
+  if (at < 0) return { shown, focusedId };
+  const rest = shown.filter((other) => other !== id);
+  return { shown: rest, focusedId: focusedId === id ? (rest[at] ?? rest[at - 1]) : focusedId };
 }
 
 /** One argument per line; blank lines are dropped. A command is an argument list, never a shell string. */

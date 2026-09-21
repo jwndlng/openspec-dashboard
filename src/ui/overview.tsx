@@ -5,6 +5,8 @@ import { NoRepos } from "./empty.tsx";
 import { relTime } from "./format.ts";
 import { filterRows, type OverviewRow, type OverviewState, overviewRows, parseOverviewState, type SortKey, serializeOverviewState, sortRows, toggleSort } from "./overviewState.ts";
 import { repoPath } from "./routes.ts";
+import { PullAllButton, PullButton } from "./pull.tsx";
+import { branchNotice } from "./pullState.ts";
 import { summarize } from "./sharedConfigState.ts";
 import { currentQuery, href, navigate, replaceQuery } from "./url.ts";
 
@@ -18,6 +20,7 @@ function Row({ row, stages, now }: { row: OverviewRow; stages: string[]; now: nu
   const idle = row.open === 0;
   // Profile ids rather than names: they are readable slugs and need no extra request here.
   const shared = summarize(row.sharedConfig, []);
+  const notice = branchNotice(row);
   return (
     <tr
       class={idle ? "idle" : ""}
@@ -51,6 +54,11 @@ function Row({ row, stages, now }: { row: OverviewRow; stages: string[]; now: nu
             ⚠ scan failed
           </span>
         )}
+        {notice && (
+          <span class="badge warn" title={notice.long}>
+            ⎇ {notice.short}
+          </span>
+        )}
       </th>
       {idle ? (
         <td class="none" colSpan={stages.length + 2}>
@@ -70,6 +78,7 @@ function Row({ row, stages, now }: { row: OverviewRow; stages: string[]; now: nu
       <td class="when" title={row.lastUpdatedAt ?? "no activity date"}>
         {row.lastUpdatedAt ? `${relTime(row.lastUpdatedAt, now)} ago`.replace("just now ago", "just now") : "—"}
       </td>
+      <td class="row-actions">{row.isGit && row.ok && <PullButton repoId={row.id} compact />}</td>
     </tr>
   );
 }
@@ -109,6 +118,7 @@ export function Overview({ snapshot, config }: { snapshot: Snapshot | null; conf
           <input class="input" type="search" placeholder="Search repository…" value={state.q} onInput={(e) => setState({ ...state, q: e.currentTarget.value })} />
         </div>
         <span class="spacer" style={{ flex: 1 }} />
+        <PullAllButton repoIds={rows.filter((r) => r.isGit && r.ok).map((r) => r.id)} />
         <span class="badge mono">
           {rows.length} tracked · {rows.reduce((n, r) => n + r.open, 0)} open · {rows.reduce((n, r) => n + r.toArchive, 0)} to archive
         </span>
@@ -126,6 +136,9 @@ export function Overview({ snapshot, config }: { snapshot: Snapshot | null; conf
               {header("open", "Open", "num")}
               {header("archive", "To archive", "num")}
               {header("updated", "Last updated", "when")}
+              <th scope="col" class="row-actions">
+                <span class="visually-hidden">Actions</span>
+              </th>
             </tr>
           </thead>
           <tbody>

@@ -117,7 +117,7 @@ h1 { font-size: 15px; }
 h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--fg-subtle); font-weight: 500; }
 
 /* ---- App shell ---- */
-.app { display: flex; flex-direction: column; height: 100%; }
+.app { display: flex; flex-direction: column; height: 100%; box-sizing: border-box; padding-bottom: var(--dock-h, 0px); }
 .topbar {
   display: flex; flex-wrap: wrap; align-items: center; gap: 6px var(--gap-2);
   padding: 10px var(--gap-2);
@@ -130,6 +130,10 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: 
 .topbar nav a {
   padding: 4px 10px; border-radius: var(--radius); color: var(--fg-body);
   border: 1px solid transparent;
+}
+.topbar nav a .nav-count {
+  margin-left: 6px; padding: 0 5px; border-radius: 8px; font-family: var(--font-mono); font-size: 10px; line-height: 15px;
+  color: var(--brand-fg); background: var(--brand-softer); border: 1px solid var(--brand-soft);
 }
 .topbar nav a.active { color: var(--fg-heading); background: var(--bg-raised); border-color: var(--border-light); }
 .topbar .spacer { flex: 1; }
@@ -316,6 +320,11 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: 
 .diff .del { color: var(--danger); }
 .diff .skip { color: var(--fg-disabled); }
 
+/* ---- Pull ---- */
+.pull { display: inline-flex; align-items: center; gap: 6px; }
+.row-actions { text-align: right; white-space: nowrap; }
+.visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+
 /* ---- Projects overview ---- */
 .overview { flex: 1; min-height: 0; overflow: auto; padding: var(--gap-2); }
 .projects { width: 100%; border-collapse: collapse; background: var(--bg-section); border: 1px solid var(--border-light); border-radius: var(--radius); }
@@ -367,13 +376,16 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: 
 .notice.ok { color: var(--success); border-color: var(--success-border); }
 
 /* ---- Settings ---- */
-/* The navigation sits beside the scroll container, not in it, so it stays put without sticky positioning. */
+/* One scroll area for the whole page, full width so the scrollbar is at the window edge and the margins scroll too.
+   The navigation is in the flow and moves with the sections. */
+.settings-scroll { flex: 1; min-height: 0; overflow: auto; }
 .settings-layout {
-  flex: 1; min-height: 0; width: 100%; max-width: 1320px; margin: 0 auto;
-  display: grid; grid-template-columns: minmax(168px, 200px) minmax(0, 1fr);
+  width: 100%; max-width: 1320px; margin: 0 auto;
+  display: grid; grid-template-columns: minmax(168px, 200px) minmax(0, 1fr); align-items: start;
 }
-.settings-nav { padding: var(--gap-2) 0 var(--gap-2) var(--gap-2); overflow-y: auto; }
-.settings-nav ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+/* --nav-offset: set on a jump, so the navigation lands beside the section jumped to (see useSectionNav). */
+.settings-nav { padding: var(--gap-2) 0 var(--gap-2) var(--gap-2); position: relative; top: var(--nav-offset, 0px); }
+.settings-nav ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; position: relative; }
 .settings-link {
   display: flex; align-items: center; justify-content: space-between; gap: var(--gap-1);
   padding: 5px 8px; border-radius: var(--radius); color: var(--fg-body);
@@ -384,8 +396,8 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: 
 .settings-nav .label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .settings-nav .count { flex: none; font-family: var(--font-mono); font-size: 11px; font-weight: 400; color: var(--fg-subtle); }
 .settings-link.attention .count { color: var(--brand-fg); background: var(--brand-softer); border: 1px solid var(--brand-soft); border-radius: var(--radius); padding: 0 5px; }
-.settings { padding: var(--gap-2); max-width: 1100px; width: 100%; margin: 0 auto; display: grid; gap: var(--gap-2); overflow: auto; align-content: start; }
-.settings-section { display: grid; min-width: 0; border-radius: var(--radius); scroll-margin-top: var(--gap-1); }
+.settings { padding: var(--gap-2); max-width: 1100px; width: 100%; margin: 0 auto; display: grid; gap: var(--gap-2); align-content: start; }
+.settings-section { display: grid; min-width: 0; border-radius: var(--radius); scroll-margin-top: var(--gap-2); }
 .settings-section:focus { outline: none; }
 .settings-section:focus-visible { outline: 1px solid var(--border-strong); outline-offset: 2px; }
 .panel { background: var(--bg-section); border: 1px solid var(--border-light); border-radius: var(--radius); padding: var(--gap-2); display: flex; flex-direction: column; gap: var(--gap-1); }
@@ -403,8 +415,12 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: 
 .savebar { position: sticky; bottom: 0; display: flex; gap: var(--gap-1); align-items: center; padding: var(--gap-1) var(--gap-2); background: var(--bg-section); border-top: 1px solid var(--border-light); }
 
 @media (max-width: 720px) {
-  .settings-layout { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
-  .settings-nav { padding: var(--gap-1) var(--gap-2); overflow: visible; border-bottom: 1px solid var(--border-light); }
+  /* One flat column: the row and the sections are items of the same grid, so `order` can put the row directly above
+     the section jumped to without covering anything. */
+  .settings-layout { grid-template-columns: minmax(0, 1fr); gap: var(--gap-2); padding: var(--gap-2); }
+  .settings { display: contents; }
+  .settings-section { order: var(--section-order); }
+  .settings-nav { order: var(--nav-order, 0); top: 0; padding: 0 0 var(--gap-1); border-bottom: 1px solid var(--border-light); }
   .settings-nav ul { flex-direction: row; overflow-x: auto; gap: 4px; }
   .settings-nav li { flex: none; }
   .settings-link { border-left: 0; border-bottom: 2px solid transparent; }
@@ -419,13 +435,24 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: 
 .session-badge { cursor: pointer; font: inherit; font-size: 11px; line-height: 16px; }
 .session-badge:hover { border-color: var(--border); }
 .session-start { border-color: var(--brand-soft); color: var(--brand-fg); background: var(--brand-softer); }
-.session-panel {
-  position: fixed; top: 0; right: 0; bottom: 0; width: min(920px, 100vw); z-index: 20;
-  display: flex; flex-direction: column;
-  background: var(--bg-section); border-left: 1px solid var(--border);
-  box-shadow: -12px 0 32px #0006;
+/* The dock spans the bottom of the window; `.app` gives up exactly its height (--dock-h, set by the dock), so the
+   board scrolls fully into view above it. */
+.session-dock {
+  position: fixed; left: 0; right: 0; bottom: 0; height: var(--dock-h, 0px); z-index: 20;
+  display: flex; flex-direction: column; min-height: 0;
+  background: var(--bg-section); border-top: 1px solid var(--border);
+  box-shadow: 0 -12px 32px #0004;
 }
-.session-head { display: flex; flex-direction: column; gap: 6px; padding: var(--gap-1) var(--gap-2); border-bottom: 1px solid var(--border-light); }
+.dock-handle { position: absolute; top: -4px; left: 0; right: 0; height: 8px; cursor: ns-resize; touch-action: none; z-index: 1; }
+.dock-handle:hover, .dock-handle:focus-visible { background: var(--brand-soft); outline: none; }
+.dock-bar { flex: none; display: flex; align-items: flex-end; gap: 6px; height: 36px; padding: 0 var(--gap-1) 0 0; border-bottom: 1px solid var(--border-light); background: var(--bg-base); }
+.session-dock.collapsed .dock-bar { border-bottom: 0; }
+.dock-bar .btn { align-self: center; flex: none; }
+.dock-panes { flex: 1; min-height: 0; display: grid; grid-template-columns: repeat(var(--panes, 1), minmax(0, 1fr)); }
+.session-pane { display: flex; flex-direction: column; min-width: 0; min-height: 0; border-top: 2px solid transparent; }
+.session-pane + .session-pane { border-left: 1px solid var(--border); }
+.session-pane.focused { border-top-color: var(--brand); }
+.session-head { display: flex; flex-direction: column; gap: 4px; padding: 4px var(--gap-1); border-bottom: 1px solid var(--border-light); }
 .session-head .hint { font-size: 12px; color: var(--fg-subtle); word-break: break-all; }
 .session-confirm { display: flex; flex-direction: column; gap: 6px; padding: var(--gap-1); border: 1px solid var(--warning-border); border-radius: var(--radius); background: var(--bg-raised); }
 /* The agent's terminal fills the rest of the panel; the widget sizes itself to this box. */
@@ -433,6 +460,8 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: 
 /* The terminal fills what the default responses leave; its ResizeObserver refits it when the row comes and goes. */
 .session-terminal-area { position: relative; flex: 1; min-height: 0; }
 .session-terminal-host { position: absolute; inset: 6px 0 6px 8px; }
+.session-unsent { flex: none; display: flex; align-items: flex-start; gap: 6px; margin: 6px 8px 0; }
+.session-unsent span { flex: 1; }
 .session-replies {
   flex: none; display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
   padding: 6px 8px; background: var(--bg-section); border-top: 1px solid var(--border-light);
@@ -481,4 +510,64 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: 
 @keyframes session-sweep {
   from { background-position: 100% 0; }
   to { background-position: -50% 0; }
+}
+
+/* ---- Several sessions: tabs in the panel, a close control on the running badge, the end-session dialog ---- */
+.session-tabs { flex: 1; min-width: 0; display: flex; gap: 2px; padding: 6px var(--gap-2) 0; overflow-x: auto; }
+.session-tab .tab-mark { font-size: 10px; color: var(--fg-subtle); }
+.session-tab.shown .tab-mark { color: var(--brand); }
+.session-tab {
+  display: inline-flex; align-items: center; gap: 6px; flex: none; max-width: 320px; padding: 5px 10px; cursor: pointer;
+  font: inherit; font-size: 12px; color: var(--fg-body); background: transparent;
+  border: 1px solid transparent; border-bottom: 0; border-radius: var(--radius) var(--radius) 0 0;
+}
+.session-tab .mono { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.session-tab .hint { font-size: 11px; color: var(--fg-subtle); }
+.session-tab:hover { color: var(--fg-heading); }
+.session-tab.shown { color: var(--fg-heading); background: var(--bg-section); border-color: var(--border-light); }
+.session-tab.active { border-top-color: var(--brand); }
+/* Three terminals a few hundred pixels wide help nobody: on narrow windows only the focused pane is shown. */
+@media (max-width: 900px) {
+  .dock-panes { grid-template-columns: minmax(0, 1fr); }
+  .session-pane:not(.focused) { display: none; }
+}
+.session-chip { display: inline-flex; align-items: stretch; gap: 2px; }
+.badge-x {
+  padding: 0 5px; cursor: pointer; font: inherit; font-size: 10px; line-height: 16px; color: var(--fg-subtle);
+  background: var(--bg-section); border: 1px solid var(--border-light); border-radius: var(--radius);
+}
+.badge-x:hover, .badge-x:focus-visible { color: var(--danger); border-color: var(--danger-border); }
+.end-overlay { z-index: 30; }
+.end-dialog { width: min(520px, 100%); }
+.btn.danger { color: var(--danger); border-color: var(--danger-border); background: var(--danger-bg); }
+.btn.danger:hover { background: var(--danger); color: var(--bg-base); }
+.pane-branch { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 28ch; }
+.pane-title { display: flex; align-items: flex-start; gap: var(--gap-1); }
+.pane-title > .row { flex: 1; min-width: 0; }
+.pane-title > .btn { flex: none; }
+
+/* ---- Activity feed ---- */
+.activity { flex: 1; min-height: 0; overflow: auto; padding: var(--gap-2); display: flex; flex-direction: column; gap: var(--gap-2); align-items: flex-start; }
+.activity-day { width: 100%; max-width: 980px; }
+.activity-day h2 { position: sticky; top: calc(-1 * var(--gap-2)); z-index: 1; padding: 6px 0; background: var(--bg-base); }
+.activity-day ol { list-style: none; margin: 0; padding: 0; background: var(--bg-section); border: 1px solid var(--border-light); border-radius: var(--radius); }
+.activity-entry { display: grid; grid-template-columns: 44px minmax(120px, 190px) 1fr; gap: var(--gap-1); align-items: baseline; padding: 6px 10px; border-left: 3px solid var(--repo-color); }
+.activity-entry.untracked { border-left-color: var(--border); }
+.activity-entry.untracked .repo { color: var(--fg-subtle); }
+.activity-entry.untracked .swatch { background: var(--fg-disabled); }
+.activity-entry + .activity-entry { border-top: 1px solid var(--border-light); }
+.activity-entry time { font-family: var(--font-mono); font-size: 11px; color: var(--fg-subtle); }
+.activity-entry .repo { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--repo-color); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.activity-entry .what { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: baseline; min-width: 0; }
+.activity-entry .change { font-family: var(--font-mono); font-size: 12px; color: var(--fg-heading); word-break: break-word; }
+.activity-entry a.change:hover { color: var(--brand-fg); }
+.activity-entry .words { color: var(--fg-body); }
+.activity-entry.tone-quiet .words, .activity-entry.tone-quiet .change { color: var(--fg-subtle); }
+.activity-entry.tone-danger .words { color: var(--danger); }
+.activity-entry.tone-ok .words { color: var(--success); }
+.activity-empty { max-width: 560px; padding: var(--gap-3) 0; }
+
+@media (max-width: 720px) {
+  .activity-entry { grid-template-columns: 44px 1fr; }
+  .activity-entry .what { grid-column: 1 / -1; }
 }

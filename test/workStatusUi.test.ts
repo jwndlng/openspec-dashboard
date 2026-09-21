@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import type { Session, SessionWorktree, WorkStatus } from "../src/shared/types.ts";
-import { openWork, staleAge, workBadge, worktreeForChange } from "../src/ui/sessionState.ts";
+import { endSeverity, hideSession, searchWithShown, showSession, shownFromSearch, endWarning, nextStepFor, openWork, sessionsForChange, sessionTabs, staleAge, workBadge, worktreeForChange } from "../src/ui/sessionState.ts";
 
 const NOW = Date.parse("2026-09-21T12:00:00Z");
 const ago = (hours: number) => new Date(NOW - hours * 3_600_000).toISOString();
@@ -50,4 +50,70 @@ test("the open work list counts what is unshipped and puts stale work first, mer
   const { items, unshipped } = openWork(list, [], NOW);
   expect(items.map((w) => w.name)).toEqual(["old", "fresh", "merged"]);
   expect(unshipped).toBe(2);
+});
+
+const sess = (id: string, patch: Partial<Session> = {}): Session => ({ id, repoId: "r", change: "add-x", action: "implement", agentId: "a", agentName: "A", state: "running", worktreePath: `/w/${id}`, branch: "feat/add-x", createdAt: `2026-09-21T10:0${id.length}:00Z`, updatedAt: "", resumable: true, ...patch });
+
+test("a starter goes into the change's running session; archive always gets its own", () => {
+  const draft = sess("d", { action: "draft" });
+  expect(nextStepFor([draft], "r", "add-x", "implement")).toEqual({ promptSessionId: "d" });
+  expect(nextStepFor([draft], "r", "add-x", "archive")).toEqual({ blocked: false });
+  expect(nextStepFor([sess("d", { state: "exited" })], "r", "add-x", "implement")).toEqual({ promptSessionId: undefined });
+  const arch = sess("ar", { action: "archive" });
+  expect(nextStepFor([arch], "r", "add-x", "implement")).toEqual({ promptSessionId: undefined }); // never typed into an archive session
+  expect(nextStepFor([arch], "r", "add-x", "archive")).toEqual({ blocked: true });
+  expect(nextStepFor([draft], "r", "other", "implement")).toEqual({ promptSessionId: undefined });
+});
+
+test("a card shows every running session, else the latest one that went wrong", () => {
+  const a = sess("a");
+  const arch = sess("arc", { action: "archive" });
+  expect(sessionsForChange([a, arch, sess("x", { change: "other" })], "r", "add-x").map((s) => s.id).sort()).toEqual(["a", "arc"]);
+  expect(sessionsForChange([sess("a", { state: "exited", exitCode: 0 })], "r", "add-x")).toEqual([]);
+  expect(sessionsForChange([sess("a", { state: "exited", exitCode: 2 })], "r", "add-x").map((s) => s.id)).toEqual(["a"]);
+});
+
+test("tabs: running sessions oldest first, plus the one shown if it has ended", () => {
+  const list = [sess("bbb"), sess("a"), sess("cc", { state: "exited" }), sess("dddd", { state: "exited" })];
+  expect(sessionTabs(list, []).map((s) => s.id)).toEqual(["a", "bbb"]);
+  expect(sessionTabs(list, ["cc"]).map((s) => s.id)).toEqual(["a", "cc", "bbb"]);
+});
+
+test("ending is questioned as loudly as the work is unshipped", () => {
+  expect(endSeverity({ state: "uncommitted" })).toBe("danger");
+  expect(endSeverity({ state: "unpushed" })).toBe("danger");
+  expect(endSeverity({ state: "pushed" })).toBe("notice");
+  for (const state of ["clean", "merged", "missing"] as const) expect(endSeverity({ state })).toBe("plain");
+  expect(endSeverity(undefined)).toBe("plain");
+  expect(endWarning({ state: "uncommitted", count: 3 })).toContain("3 uncommitted files exist only in this worktree");
+  expect(endWarning({ state: "unpushed", count: 1 })).toContain("1 commit exists only on this machine");
+  expect(endWarning({ state: "clean" })).toBeUndefined();
+});
+
+test("the dock shows at most three sessions: a fourth replaces the focused pane, shown ones are only focused", () => {
+  let state = showSession({ shown: [] }, "a");
+  state = showSession(state, "b");
+  state = showSession(state, "c");
+  expect(state).toEqual({ shown: ["a", "b", "c"], focusedId: "c" });
+  expect(showSession(state, "a")).toEqual({ shown: ["a", "b", "c"], focusedId: "a" }); // already shown: focus only
+  expect(showSession({ ...state, focusedId: "b" }, "d")).toEqual({ shown: ["a", "d", "c"], focusedId: "d" }); // the others stay put
+  expect(showSession({ shown: ["a", "b", "c"] }, "d").shown).toEqual(["a", "b", "d"]); // nobody focused: the last pane
+  expect(showSession({ shown: ["a", "b", "c"], focusedId: "gone" }, "d").shown).toEqual(["a", "b", "d"]);
+});
+
+test("closing a pane moves the keyboard to its neighbour and never touches the others", () => {
+  expect(hideSession({ shown: ["a", "b", "c"], focusedId: "b" }, "b")).toEqual({ shown: ["a", "c"], focusedId: "c" });
+  expect(hideSession({ shown: ["a", "b"], focusedId: "b" }, "b")).toEqual({ shown: ["a"], focusedId: "a" });
+  expect(hideSession({ shown: ["a"], focusedId: "a" }, "a")).toEqual({ shown: [], focusedId: undefined });
+  expect(hideSession({ shown: ["a", "b"], focusedId: "a" }, "b")).toEqual({ shown: ["a"], focusedId: "a" });
+  expect(hideSession({ shown: ["a"], focusedId: "a" }, "zz")).toEqual({ shown: ["a"], focusedId: "a" });
+});
+
+test("the URL carries the shown sessions in pane order, at most three, and keeps other parameters", () => {
+  expect(shownFromSearch("?session=a,b,c,d&q=x")).toEqual(["a", "b", "c"]);
+  expect(shownFromSearch("?session=a,,a, b")).toEqual(["a", "b"]);
+  expect(shownFromSearch("?q=x")).toEqual([]);
+  expect(searchWithShown("?q=x", ["a", "b"])).toBe("?q=x&session=a,b");
+  expect(searchWithShown("?session=a,b&q=x", ["b"])).toBe("?session=b&q=x");
+  expect(shownFromSearch(searchWithShown("", ["a", "b", "c"]))).toEqual(["a", "b", "c"]);
 });

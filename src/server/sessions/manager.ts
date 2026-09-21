@@ -3,11 +3,13 @@
 // fans output out to attached terminals and takes their input. It does not interpret what the agent prints.
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
-import { availableActions, OPEN_SESSION_STATES, repoAgentEnabled, SESSION_ACTIONS, SHIPPABLE_WORK, type AgentAvailability, type Config, type Session, type SessionAction, type SessionWorktree, type Snapshot } from "../../shared/types.ts";
+import { availableActions, OPEN_SESSION_STATES, repoAgentEnabled, SESSION_ACTIONS, SHIPPABLE_WORK, type AgentAvailability, type Config, type Session, type SessionAction, type SessionWorktree, type Snapshot, type WorkStatus, type ShipResult } from "../../shared/types.ts";
 import { worktreesDir } from "../paths.ts";
 import { CHANGE_NAME } from "../source.ts";
 import { agentEnv, agentFor, availability, launchCommand, openingPrompt, shipPrompt } from "./agents.ts";
+import type { SessionActivity } from "../activity/events.ts";
 import { SessionStore } from "./store.ts";
+import { submitText, validSubmission, type SubmitOptions } from "./submit.ts";
 import { spawnTerminal, type TerminalProcess } from "./terminal.ts";
 import { listWorktrees, readWorkStatus, WORKTREE_NAME } from "./workStatus.ts";
 import { checkWorktreeRemovable, copyChangeIfMissing, ensureWorktree, linkedWorktreeOf, removeWorktree, type Removable } from "./worktree.ts";
@@ -68,6 +70,8 @@ interface Live {
   scrollback: Scrollback;
   viewers: Set<Viewer>;
   lastStamp: number;
+  /** Tail of the submissions to this terminal: they run one after another so text and Enter never interleave. */
+  submitting?: Promise<unknown>;
 }
 
 export interface ManagerDeps {
@@ -76,6 +80,10 @@ export interface ManagerDeps {
   store?: SessionStore;
   /** Test seam; the real delay gives an agent time to draw its prompt before text is typed into it. */
   typePromptDelayMs?: number;
+  /** Test seam for how long a submission waits for its echo and before Enter. */
+  submitTimings?: SubmitOptions;
+  /** Told when a session starts, ends or ships, for the activity feed. Never consulted for any decision. */
+  onActivity?: (session: Session, activity: SessionActivity) => void;
 }
 
 export class SessionManager {
@@ -128,7 +136,9 @@ export class SessionManager {
     if (!snapshot) throw new SessionError(404, "unknown change");
     if (!availableActions(snapshot).includes(action)) throw new SessionError(400, `"${action}" is not available for this change in its current stage`);
 
-    const existing = this.list().find((s) => s.repoId === repo.id && s.change === change && OPEN_SESSION_STATES.includes(s.state));
+    // One running session per worktree. Archiving has a worktree of its own, so it may run next to the change's other session.
+    const archiving = action === "archive";
+    const existing = this.list().find((s) => s.repoId === repo.id && s.change === change && (s.action === "archive") === archiving && OPEN_SESSION_STATES.includes(s.state));
     if (existing) return existing;
 
     const agent = agentFor(config, repo);
@@ -171,6 +181,7 @@ export class SessionManager {
     await this.store.saveMeta(session);
     const launch = launchCommand(agent, prompt);
     this.start(session, launch.argv, agentEnv(agent, process.env), launch.typed);
+    if (session.state === "running") this.report(session, { kind: "session-started", action, agentName: session.agentName });
     for (const removed of await this.store.prune(this.list())) this.sessions.delete(removed);
     return session;
   }
@@ -202,8 +213,8 @@ export class SessionManager {
     if (!config.agentSessions.enabled) throw new SessionError(403, "agent sessions are disabled");
     const agent = config.agentSessions.agents.find((a) => a.id === session.agentId);
     if (!agent) throw new SessionError(409, "this session's agent is no longer configured");
-    const running = this.list().find((s) => s.id !== session.id && s.repoId === session.repoId && s.change === session.change && s.state === "running");
-    if (running) throw new SessionError(409, "another session for this change is running");
+    const running = this.list().find((s) => s.id !== session.id && s.worktreePath === session.worktreePath && s.state === "running");
+    if (running) throw new SessionError(409, "another session is running in this worktree");
     const repo = config.repos.find((r) => r.id === session.repoId);
     if (!repo) throw new SessionError(409, "the repository is no longer configured");
     return { agent, repo };
@@ -222,6 +233,7 @@ export class SessionManager {
     session.error = undefined;
     await this.touch(session);
     this.start(session, argv, env, typed);
+    if (session.state === "running") this.report(session, { kind: "session-started", action: session.action, agentName: session.agentName, resumed: true });
   }
 
   /**
@@ -229,7 +241,7 @@ export class SessionManager {
    * gets the prompt typed into its terminal; an ended one is started again in the worktree, continuing its
    * conversation when it can, so it still knows what it did.
    */
-  async ship(id: string): Promise<Session> {
+  async ship(id: string): Promise<ShipResult> {
     const session = this.get(id);
     const { agent, repo } = await this.prepareRestart(session);
     const { work } = await readWorkStatus(repo.path, session.worktreePath);
@@ -238,12 +250,44 @@ export class SessionManager {
     this.forgetWorktrees();
     const proc = this.live.get(id)?.proc;
     if (session.state === "running" && proc) {
-      proc.write(`${prompt}\r`);
-      return session;
+      const { submitted } = await this.submit(id, prompt);
+      this.report(session, { kind: "session-shipped", submitted });
+      return { ...session, submitted };
     }
     const launch = agent.resumeCommand ? { argv: [...agent.resumeCommand], typed: prompt } : launchCommand(agent, prompt);
     if (!Bun.which(launch.argv[0])) throw new SessionError(503, `${agent.name} was not found (${launch.argv[0]})`);
     await this.restart(session, repo.path, launch.argv, agentEnv(agent, process.env), launch.typed);
+    this.report(session, { kind: "session-shipped", submitted: true });
+    // Handed to a starting agent (as its argument, or submitted once it has started); the terminal shows how that went.
+    return { ...session, submitted: true };
+  }
+
+  /**
+   * The next step of a change, in the session that is already running for it: the starter's prompt is typed into the
+   * terminal. Never Enter — a terminal cannot tell us whether the agent shows a prompt or a menu, and in a menu Enter
+   * would confirm whatever is highlighted. Archive is not typed here: it belongs in its own worktree.
+   */
+  prompt(id: string, input: { action?: unknown }): Session {
+    const session = this.get(id);
+    const config = this.deps.getConfig();
+    if (!config.agentSessions.enabled) throw new SessionError(403, "agent sessions are disabled");
+    if (!SESSION_ACTIONS.includes(input.action as SessionAction)) throw new SessionError(400, "unknown action");
+    const action = input.action as SessionAction;
+    if (action === "archive" || session.action === "archive") throw new SessionError(400, "archiving runs in its own session");
+    const proc = this.live.get(id)?.proc;
+    if (session.state !== "running" || !proc) throw new SessionError(409, "the session is not running");
+    const change = this.deps
+      .getSnapshot()
+      .repos.find((r) => r.id === session.repoId)
+      ?.changes.find((c) => c.name === session.change && !c.archived);
+    if (!change) throw new SessionError(404, "unknown change");
+    if (!availableActions(change).includes(action)) throw new SessionError(400, `"${action}" is not available for this change in its current stage`);
+    const agent = config.agentSessions.agents.find((a) => a.id === session.agentId);
+    const text = agent && openingPrompt(agent, action, session.change);
+    if (!text) throw new SessionError(400, `${session.agentName} has no "${action}" prompt configured`);
+    proc.write(text);
+    session.action = action;
+    this.touchLater(session);
     return session;
   }
 
@@ -280,12 +324,14 @@ export class SessionManager {
     } catch (err) {
       session.state = "failed";
       session.error = `could not start the agent: ${err instanceof Error ? err.message : String(err)}`;
-      void this.touch(session);
+      this.touchLater(session);
+      this.report(session, { kind: "session-ended", error: session.error });
       return;
     }
     live.proc = proc;
     if (typed) {
-      const timer = setTimeout(() => live.proc === proc && proc.write(`${typed}\r`), this.deps.typePromptDelayMs ?? TYPE_PROMPT_DELAY_MS);
+      // Submitted, not written blind: an agent that opens with a dialog instead of a prompt must not get an Enter.
+      const timer = setTimeout(() => live.proc === proc && void this.submit(session.id, typed).catch(() => {}), this.deps.typePromptDelayMs ?? TYPE_PROMPT_DELAY_MS);
       (timer as { unref?: () => void }).unref?.();
     }
     void proc.exited.then((code) => {
@@ -302,7 +348,7 @@ export class SessionManager {
     session.lastOutputAt = new Date(now).toISOString();
     if (now - live.lastStamp > OUTPUT_STAMP_MS) {
       live.lastStamp = now;
-      void this.touch(session);
+      this.touchLater(session);
     }
   }
 
@@ -314,7 +360,16 @@ export class SessionManager {
     const live = this.live.get(session.id);
     if (live) await this.store.saveOutput(session.id, live.scrollback.bytes()).catch(() => undefined);
     await this.touch(session);
+    this.report(session, { kind: "session-ended", ...(exitCode === null ? {} : { exitCode }), ...(error ? { error } : {}) });
     for (const viewer of live?.viewers ?? []) viewer(new Uint8Array()); // an empty chunk tells viewers the process ended
+  }
+
+  private report(session: Session, activity: SessionActivity): void {
+    try {
+      this.deps.onActivity?.(session, activity);
+    } catch {
+      // the feed is history only; it must never get in a session's way
+    }
   }
 
   /**
@@ -331,6 +386,35 @@ export class SessionManager {
 
   write(id: string, data: string): void {
     this.live.get(id)?.proc?.write(data);
+  }
+
+  /**
+   * Sends text on the user's behalf: typed, and submitted with a separate Enter only once the agent's terminal has
+   * shown it (see submit.ts). Keystrokes never come through here — they go through `write`, unobserved.
+   */
+  submit(id: string, text: unknown): Promise<{ submitted: boolean }> {
+    const session = this.get(id);
+    if (!validSubmission(text)) throw new SessionError(400, "only plain text of at most 4096 characters can be submitted");
+    const live = this.live.get(id);
+    const proc = live?.proc;
+    if (session.state !== "running" || !live || !proc) throw new SessionError(409, "the session is not running");
+    const run = async () => {
+      if (live.proc !== proc) return { submitted: false };
+      return submitText(
+        {
+          write: (data) => live.proc === proc && proc.write(data),
+          onOutput: (listener) => {
+            live.viewers.add(listener);
+            return () => live.viewers.delete(listener);
+          },
+        },
+        text,
+        this.deps.submitTimings,
+      );
+    };
+    const result = (live.submitting ?? Promise.resolve()).then(run, run);
+    live.submitting = result.catch(() => {});
+    return result;
   }
 
   resize(id: string, cols: number, rows: number): void {
@@ -362,11 +446,13 @@ export class SessionManager {
     return (await readWorkStatus(repoPath, session.worktreePath)).work.state === "merged";
   }
 
-  async worktreeStatus(id: string): Promise<Removable> {
+  /** Read now, not from the list's cache: the end-session dialog warns on the strength of it. */
+  async worktreeStatus(id: string): Promise<Removable & { work: WorkStatus }> {
     const session = this.get(id);
-    if (session.adopted) return NOT_OURS;
     const repo = this.deps.getConfig().repos.find((r) => r.id === session.repoId);
-    return checkWorktreeRemovable(session.worktreePath, repo ? await this.isMerged(repo.path, session) : false);
+    const work: WorkStatus = repo ? (await readWorkStatus(repo.path, session.worktreePath)).work : { state: "missing" };
+    if (session.adopted) return { ...NOT_OURS, work };
+    return { ...(await checkWorktreeRemovable(session.worktreePath, work.state === "merged")), work };
   }
 
   async remove(id: string): Promise<void> {
@@ -390,6 +476,17 @@ export class SessionManager {
           await this.end(session, null, "the dashboard was stopped while this session was running");
         }),
     );
+    // Nothing of ours may still be writing once shutdown has returned (the caller may remove the directory next).
+    await this.store.idle();
+  }
+
+  /**
+   * Bookkeeping nobody waits for (the timestamp of the latest output, a recorded action). It is best effort: a failed
+   * write must not surface as an unhandled rejection, which would take the whole dashboard down over a timestamp.
+   * Anything that matters is saved by a caller that awaits `touch` and sees the error.
+   */
+  private touchLater(session: Session): void {
+    void this.touch(session).catch(() => undefined);
   }
 
   private async touch(session: Session): Promise<void> {

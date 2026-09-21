@@ -1,12 +1,17 @@
 import { useCallback, useEffect, useLayoutEffect, useState } from "preact/hooks";
+import type { ComponentChildren } from "preact";
 import type { Config, Snapshot } from "../shared/types.ts";
+import { Activity } from "./activity.tsx";
+import { loadSeen, saveSeen, unseenLabel } from "./activityState.ts";
 import { api } from "./api.ts";
 import { relTime } from "./format.ts";
 import { Kanban } from "./kanban.tsx";
 import { Overview } from "./overview.tsx";
+import { PullProvider } from "./pull.tsx";
 import { enabledOnly } from "./overviewState.ts";
 import { type Route, routeFromPath } from "./routes.ts";
-import { SessionPanel } from "./sessionPanel.tsx";
+import { EndSessionDialog } from "./endSessionDialog.tsx";
+import { SessionDock } from "./sessionPanel.tsx";
 import { OpenWork, SessionProvider } from "./sessions.tsx";
 import { Settings } from "./settings.tsx";
 import { currentPath, href, navigate, onRouteChange } from "./url.ts";
@@ -22,6 +27,7 @@ export function App() {
   const [refreshing, setRefreshing] = useState(false);
   const [, tick] = useState(0);
   const [themePref, setThemePref] = useState<ThemePreference>(loadPreference);
+  const [unseen, setUnseen] = useState(0);
 
   useEffect(() => onRouteChange(() => setRoute(routeFromPath(currentPath()))), []);
 
@@ -42,6 +48,26 @@ export function App() {
     setThemePref(next);
   };
 
+  // How many events are newer than the newest one the user saw in the feed. The very first time nothing counts as
+  // unseen: whatever exists becomes the baseline. History only — a failure here is not worth a word.
+  const loadUnseen = useCallback(async () => {
+    try {
+      const seen = loadSeen();
+      const page = await api.activity({ limit: 1, since: seen ?? "" });
+      if (seen === undefined) {
+        if (page.newestId) saveSeen(page.newestId);
+        setUnseen(0);
+      } else setUnseen(page.newerThanSince ?? 0);
+    } catch {
+      setUnseen(0);
+    }
+  }, []);
+
+  const markSeen = useCallback((newestId: string | undefined) => {
+    if (newestId) saveSeen(newestId);
+    setUnseen(0);
+  }, []);
+
   const loadState = useCallback(async () => {
     try {
       setSnapshot(await api.state());
@@ -49,7 +75,8 @@ export function App() {
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
-  }, []);
+    void loadUnseen();
+  }, [loadUnseen]);
 
   useEffect(() => {
     void loadState();
@@ -97,7 +124,7 @@ export function App() {
     for (const ms of [1500, 5000]) setTimeout(() => void loadState(), ms);
   };
 
-  const link = (path: string, label: string, active: boolean) => (
+  const link = (path: string, label: ComponentChildren, active: boolean) => (
     <a
       href={href(path)}
       class={active ? "active" : ""}
@@ -111,8 +138,9 @@ export function App() {
   );
 
   return (
+    <PullProvider onPulled={reloadSoon}>
     <div class="app">
-      <SessionProvider config={config}>
+      <SessionProvider config={config} snapshot={shown}>
       <header class="topbar">
         <div class="brand">
           <span class="dot" />
@@ -121,6 +149,18 @@ export function App() {
         <nav>
           {link("/", "Projects", route.view === "overview" || route.view === "repo")}
           {link("/board", "All changes", route.view === "board")}
+          {link(
+            "/activity",
+            <>
+              Activity
+              {route.view !== "activity" && unseenLabel(unseen) && (
+                <span class="nav-count" title={`${unseen} new since you last looked`}>
+                  {unseenLabel(unseen)}
+                </span>
+              )}
+            </>,
+            route.view === "activity",
+          )}
           {link("/settings", "Settings", route.view === "settings")}
         </nav>
         <div class="spacer" />
@@ -144,6 +184,8 @@ export function App() {
       <main class="main">
         {route.view === "settings" ? (
           <Settings config={config} snapshot={shown} onSaved={(c) => { setConfig(c); void loadState(); }} onRescan={reloadSoon} />
+        ) : route.view === "activity" ? (
+          <Activity snapshot={shown} onSeen={markSeen} />
         ) : route.view === "overview" ? (
           <Overview snapshot={shown} config={config} />
         ) : (
@@ -151,8 +193,10 @@ export function App() {
           <Kanban key={route.view === "repo" ? route.repoId : "all"} snapshot={shown} config={config} repoId={route.view === "repo" ? route.repoId : undefined} />
         )}
       </main>
-      <SessionPanel />
+      <SessionDock />
+      <EndSessionDialog />
       </SessionProvider>
     </div>
+    </PullProvider>
   );
 }
