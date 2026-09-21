@@ -364,6 +364,17 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: 
 .repo-head .path { color: var(--fg-subtle); gap: 4px; }
 .repo-head .path code { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 
+/* Inline "new change" form on the repository board header. */
+.new-change { display: flex; flex-direction: column; gap: 8px; padding: 10px; border: 1px solid var(--border-light); border-radius: var(--radius); background: var(--bg); }
+.new-change .row { display: flex; gap: 8px; align-items: flex-start; }
+.new-change label { display: flex; flex-direction: column; gap: 4px; flex: 1; font-size: 12px; color: var(--fg-subtle); }
+.new-change label span { font-size: 12px; }
+.new-change input.input, .new-change textarea.input { width: 100%; min-width: 0; }
+.new-change textarea.input { resize: vertical; font-family: inherit; }
+.new-change .row.actions { justify-content: flex-end; }
+.new-change .hint { font-size: 11px; }
+.new-change .hint.danger { color: var(--danger); }
+
 /* ---- Empty / notices ---- */
 .empty {
   margin: var(--gap-4) auto; max-width: 480px; text-align: center; padding: var(--gap-3);

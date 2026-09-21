@@ -211,7 +211,20 @@ test("controls on a card are outside its link, and the card's content is unchang
   const view = ChangeCard({ card, now: NOW, showRepo: true, from: "/board" });
   const anchor = byTag(view, "a")[0];
   expect(elements(anchor.props.children)).toEqual([]); // just the name: no button, no session starter inside the anchor
-  expect(copyTexts(view)).toEqual({ undefined: 'cd /w/acme/forum-admin && claude "/opsx:apply multi-tenant-sync"' });
+  expect(copyTexts(view)).toEqual({ "Copy apply": 'cd /w/acme/forum-admin && claude "/opsx:apply multi-tenant-sync"' });
   const text = textOf(view);
   for (const part of ["forum-admin", "multi-tenant-sync", "4/12", "3d ago"]) expect(text).toContain(part);
+});
+
+test("cards in earlier columns copy a start command and show a prompt badge when set", () => {
+  const drafting: Card = { ...card, column: "Proposal", stage: "artifact", prompt: "Log every mutation" };
+  const view = ChangeCard({ card: drafting, now: NOW, showRepo: true, from: "/board" });
+  expect(copyTexts(view)).toEqual({ "Copy start": 'cd /w/acme/forum-admin && claude "/opsx:continue multi-tenant-sync — see openspec/changes/multi-tenant-sync/prompt.md"' });
+  expect(textOf(view)).toContain("prompt");
+
+  const noPrompt = ChangeCard({ card: { ...drafting, prompt: undefined }, now: NOW, showRepo: true, from: "/board" });
+  const noPromptButtons = Object.entries(copyTexts(noPrompt));
+  expect(noPromptButtons[0]?.[0]).toBe("Copy start");
+  expect(noPromptButtons[0]?.[1]).not.toContain("prompt.md");
+  expect(textOf(noPrompt)).not.toContain("prompt");
 });

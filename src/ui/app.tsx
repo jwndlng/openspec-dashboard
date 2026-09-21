@@ -194,7 +194,7 @@ export function App() {
           <ChangeDetail key={`${route.repoId}/${route.changeName}`} snapshot={shown} repoId={route.repoId} changeName={route.changeName} />
         ) : (
           // Keyed so filters re-read the URL when moving between boards.
-          <Kanban key={route.view === "repo" ? route.repoId : "all"} snapshot={shown} config={config} repoId={route.view === "repo" ? route.repoId : undefined} />
+          <Kanban key={route.view === "repo" ? route.repoId : "all"} snapshot={shown} config={config} repoId={route.view === "repo" ? route.repoId : undefined} onReload={reloadSoon} />
         )}
       </main>
       <SessionDock />

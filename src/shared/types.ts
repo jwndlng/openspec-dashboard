@@ -1,5 +1,8 @@
 // Shared data model between server and UI (design.md D3).
 
+/** Character set of a change directory name: letters, digits, dots, dashes, underscores — same rule the scanner enforces. */
+export const CHANGE_NAME_PATTERN = /^[A-Za-z0-9._-]+$/;
+
 export type ArtifactState = "done" | "ready" | "blocked";
 
 export type Stage = "new" | "artifact" | "ready" | "implementing" | "done" | "synced" | "archived";
@@ -48,6 +51,11 @@ export interface ChangeSnapshot {
   stage: Stage;
   /** Display column, e.g. "Proposal", "Implementing". */
   column: string;
+  /**
+   * Contents of the change's `prompt.md`, when present. A free-text hint the user jotted down when starting the change;
+   * not a schema artifact and does not affect artifact status. Bounded, so pathological files do not bloat the snapshot.
+   */
+  prompt?: string;
   /** Non-fatal problems while reading this change. */
   warnings?: string[];
 }

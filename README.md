@@ -2,8 +2,10 @@
 
 Local-first Kanban across every [OpenSpec](https://github.com/Fission-AI/OpenSpec) repository on this machine.
 Ships as a single Bun binary. Repositories stay the source of truth; the dashboard indexes them and is read-only
-towards them, with two explicit exceptions: applying [shared config profiles](#shared-openspec-config) (previewed), and the
-optional, off-by-default [agent sessions](#agent-sessions-optional-off-by-default).
+towards them, with three explicit exceptions: applying [shared config profiles](#shared-openspec-config) (previewed), the
+optional, off-by-default [agent sessions](#agent-sessions-optional-off-by-default), and — on your click on the repository
+board — creating a new `openspec/changes/<name>/` directory with its schema marker and, when you jotted one down, a
+free-text `prompt.md`.
 
 **[Live demo →](https://blog.wndlng.ch/openspec-dashboard/)** — the real UI on made-up sample data, nothing to install.
 
@@ -106,8 +108,12 @@ State lives in `~/.openspec-dashboard/` (`config.json`, `shared-config.json`, `c
 rebuilt from your repositories — deleting it loses that history and nothing else. The dashboard
 only runs read-only `git` commands (`rev-parse`, `log`, `worktree list`, `status`, `config --get` — with optional locks disabled, so
 not even `.git/index` is refreshed), and scanning, polling, discovery and saving settings never write to a tracked
-repository, and none of them contacts a remote. The things that do are described next: the Pull button, shared config,
-and the opt-in agent sessions further down.
+repository, and none of them contacts a remote. Writes to a tracked repository only happen on your click, and only
+through the enumerated exceptions: **Pull** (below), **applying shared config profiles**, opening or removing an
+**agent session**'s worktree, and **New change** — creating a new `openspec/changes/<name>/` directory on the repository
+board, with its schema marker `.openspec.yaml` and, when you typed one, a `prompt.md`. A change created that way sits in
+the **New** column; on cards before **Ready** the copy action produces a `/opsx:continue` command that points an agent
+at `prompt.md`.
 
 ## Pull, and the branch notice
 

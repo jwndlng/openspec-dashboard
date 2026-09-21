@@ -2,7 +2,7 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { defaultConfig, newRepoConfig } from "../src/server/config.ts";
-import { Scanner, scanRepo } from "../src/server/scanner.ts";
+import { PROMPT_LIMIT_BYTES, Scanner, scanRepo } from "../src/server/scanner.ts";
 import { LocalRepoSource } from "../src/server/source.ts";
 import { FIXTURES, tempDir, useTempHome } from "./helpers.ts";
 
@@ -136,4 +136,40 @@ test("scanner isolates a failing repo and keeps its last good changes", async ()
   expect(b.ok).toBe(false);
   expect(b.error).toBe("disk on fire");
   expect(b.changes.length).toBe(socChanges);
+});
+
+test("scanner reports prompt.md: absent, small, oversized, and does not affect artifact status", async () => {
+  const root = await tempDir();
+  const changeRoot = join(root, "openspec", "changes");
+  await mkdir(changeRoot, { recursive: true });
+  await writeFile(join(root, "openspec", "config.yaml"), "schema: spec-driven\n");
+
+  await mkdir(join(changeRoot, "no-prompt"), { recursive: true });
+  await writeFile(join(changeRoot, "no-prompt", ".openspec.yaml"), "schema: spec-driven\ncreated: 2026-09-01\n");
+
+  await mkdir(join(changeRoot, "with-prompt"), { recursive: true });
+  await writeFile(join(changeRoot, "with-prompt", ".openspec.yaml"), "schema: spec-driven\ncreated: 2026-09-02\n");
+  await writeFile(join(changeRoot, "with-prompt", "prompt.md"), "# Prompt\n\nLog every mutation\n");
+
+  await mkdir(join(changeRoot, "oversized"), { recursive: true });
+  await writeFile(join(changeRoot, "oversized", ".openspec.yaml"), "schema: spec-driven\ncreated: 2026-09-03\n");
+  await writeFile(join(changeRoot, "oversized", "prompt.md"), "a".repeat(PROMPT_LIMIT_BYTES + 100));
+
+  const snap = await scanRepo(newRepoConfig(root, true));
+  const byName = new Map(snap.changes.map((c) => [c.name, c]));
+
+  const noPrompt = byName.get("no-prompt")!;
+  expect(noPrompt.prompt).toBeUndefined();
+  // Artifact status unchanged by the prompt logic — proposal not done ⇒ "New".
+  expect(noPrompt.column).toBe("New");
+
+  const withPrompt = byName.get("with-prompt")!;
+  expect(withPrompt.prompt).toBe("# Prompt\n\nLog every mutation\n");
+  expect(withPrompt.column).toBe("New");
+
+  const oversized = byName.get("oversized")!;
+  expect(oversized.prompt?.length).toBe(PROMPT_LIMIT_BYTES);
+  expect(oversized.warnings?.some((w) => w.includes("larger than"))).toBe(true);
+
+  await rm(root, { recursive: true, force: true });
 });

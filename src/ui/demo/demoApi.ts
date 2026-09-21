@@ -194,6 +194,8 @@ export function createDemoApi({ now = Date.now, latencyMs = 150, clock }: DemoAp
       generatedAt = new Date(now()).toISOString();
       return reply({ started: true });
     },
+    // The demo does not write to disk: creating a change would need a place for it to persist, which the demo has not.
+    createChange: () => new Promise((_, reject) => setTimeout(() => reject(new ApiError(503, "the demo does not persist changes")), latencyMs)),
     sharedConfig: () => reply({ profiles }),
     saveSharedConfig: (next) => {
       profiles = structuredClone(next.profiles);

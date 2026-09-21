@@ -13,6 +13,8 @@ export const DEFAULT_CONCURRENCY = 4;
 export const DEFAULT_REPO_TIMEOUT_MS = 30_000;
 /** Only the most recent archives get a git lookup; older ones are rarely looked at. */
 export const ARCHIVED_ACTIVITY_LIMIT = 25;
+/** Cap the size of a change's `prompt.md` in the snapshot; a tooltip does not need more. */
+export const PROMPT_LIMIT_BYTES = 8 * 1024;
 
 // `.openspec.yaml` and `openspec/config.yaml` are flat enough to read without a YAML parser.
 const SCHEMA_LINE = /^schema:\s*["']?([A-Za-z0-9._-]+)/m;
@@ -95,6 +97,22 @@ async function scanChange(ctx: RepoContext, entry: ChangeDirEntry, withGit: bool
 
   const tasksMd = tasksPath ? await ctx.source.readText(tasksPath) : undefined;
   const tasks = tasksMd === undefined ? null : parseTaskProgress(tasksMd);
+
+  // `prompt.md` is a free-text hint, not an artifact: read it when it exists, do not fail the change on a bad read.
+  const promptPath = join(entry.dir, "prompt.md");
+  let prompt: string | undefined;
+  const promptInfo = await ctx.source.readFileInfo(promptPath);
+  if (promptInfo?.isFile) {
+    const text = await ctx.source.readText(promptPath);
+    if (text === undefined) {
+      warnings.push("could not read prompt.md");
+    } else if (text.length > PROMPT_LIMIT_BYTES) {
+      prompt = text.slice(0, PROMPT_LIMIT_BYTES);
+      warnings.push(`prompt.md is larger than ${PROMPT_LIMIT_BYTES} bytes and was truncated`);
+    } else {
+      prompt = text;
+    }
+  }
   if (tasks && tasks.total === 0 && artifacts.length > 0 && artifacts.every((a) => a.status === "done")) {
     warnings.push("tasks file has no tasks");
   }
@@ -129,6 +147,7 @@ async function scanChange(ctx: RepoContext, entry: ChangeDirEntry, withGit: bool
     branchMatch: entry.archived ? undefined : ctx.isMain ? findBranchMatch(entry.name, ctx.branch, ctx.worktrees) : ctx.branch,
     stage,
     column,
+    prompt,
     warnings: warnings.length ? warnings : undefined,
   };
 }

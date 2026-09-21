@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { applyCommand, checkoutHint, pendingArchiveHint, splitBranchLabel } from "../src/ui/format.ts";
+import { applyCommand, checkoutHint, copyCommandFor, isStartColumn, pendingArchiveHint, splitBranchLabel, startCommand } from "../src/ui/format.ts";
 
 test("short branch names are not split", () => {
   expect(splitBranchLabel("feat/add-login")).toEqual({ head: "feat/add-login", tail: "" });
@@ -58,6 +58,37 @@ test("checkoutHint says where a change lives and which other checkouts are at a 
 test("the apply command is built for the checkout a change lives in", () => {
   expect(applyCommand("/w/acme/alpha-infra/.claude/worktrees/audit-trail", "audit-trail")).toBe('cd /w/acme/alpha-infra/.claude/worktrees/audit-trail && claude "/opsx:apply audit-trail"');
   expect(applyCommand("/w/acme/My Repos/alpha", "audit-trail")).toBe(`cd '/w/acme/My Repos/alpha' && claude "/opsx:apply audit-trail"`);
+});
+
+test("isStartColumn: true for pre-Ready columns, false for Ready onwards", () => {
+  for (const column of ["New", "Proposal", "Design", "Specs", "Brief", "Plan", "Unknown"]) {
+    expect([column, isStartColumn(column)]).toEqual([column, true]);
+  }
+  for (const column of ["Ready", "Implementing", "Done", "Synced", "Archived"]) {
+    expect([column, isStartColumn(column)]).toEqual([column, false]);
+  }
+});
+
+test("startCommand: continue drafting; extended with a pointer to prompt.md when present", () => {
+  expect(startCommand("/w/acme/forum-admin", "add-audit-trail", false)).toBe('cd /w/acme/forum-admin && claude "/opsx:continue add-audit-trail"');
+  expect(startCommand("/w/acme/forum-admin", "add-audit-trail", true)).toBe('cd /w/acme/forum-admin && claude "/opsx:continue add-audit-trail — see openspec/changes/add-audit-trail/prompt.md"');
+  expect(startCommand("/w/acme/My Repos/alpha", "add-audit-trail", false)).toBe(`cd '/w/acme/My Repos/alpha' && claude "/opsx:continue add-audit-trail"`);
+});
+
+test("copyCommandFor: apply for Ready onwards, start (+prompt) for earlier columns", () => {
+  const apply = copyCommandFor({ column: "Ready", name: "add-audit-trail" }, "/w/acme/forum-admin");
+  expect(apply).toEqual({ label: "Copy apply", text: 'cd /w/acme/forum-admin && claude "/opsx:apply add-audit-trail"' });
+
+  const start = copyCommandFor({ column: "New", name: "add-audit-trail" }, "/w/acme/forum-admin");
+  expect(start).toEqual({ label: "Copy start", text: 'cd /w/acme/forum-admin && claude "/opsx:continue add-audit-trail"' });
+
+  const withPrompt = copyCommandFor({ column: "Proposal", name: "add-audit-trail", prompt: "Log every mutation" }, "/w/acme/forum-admin");
+  expect(withPrompt.label).toBe("Copy start");
+  expect(withPrompt.text).toContain("/opsx:continue add-audit-trail — see openspec/changes/add-audit-trail/prompt.md");
+
+  // an empty-string prompt is the same as no prompt (a whitespace-only prompt never becomes a file)
+  const withEmptyPrompt = copyCommandFor({ column: "New", name: "add-audit-trail", prompt: "" }, "/w/acme/forum-admin");
+  expect(withEmptyPrompt.text).not.toContain("prompt.md");
 });
 
 test("pendingArchiveHint: only for an archive that lives in a linked worktree", () => {

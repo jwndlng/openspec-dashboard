@@ -41,6 +41,11 @@ export interface Api {
   discover(scanRoots?: string[], ignorePaths?: string[]): Promise<DiscoverResult>;
   scan(): Promise<ScanTriggerResult>;
   /**
+   * Creates a new change directory in the repository: `openspec/changes/<name>/` with the schema marker and, when a
+   * non-empty prompt is given, `prompt.md`. Atomic; a duplicate name is refused with `409`.
+   */
+  createChange(repoId: string, name: string, prompt?: string): Promise<{ name: string }>;
+  /**
    * Fetches the repository's remote and fast-forwards its main checkout when that is safe. The only operation that
    * makes the dashboard contact a remote; it never runs unless the user asks.
    */
@@ -120,6 +125,8 @@ export const httpApi: Api = {
   discover: (scanRoots, ignorePaths) =>
     call<DiscoverResult>("/api/discover", { method: "POST", body: scanRoots || ignorePaths ? JSON.stringify({ scanRoots, ignorePaths }) : undefined }),
   scan: () => call<ScanTriggerResult>("/api/scan", { method: "POST" }),
+  createChange: (repoId, name, prompt) =>
+    call<{ name: string }>(`/api/repos/${encodeURIComponent(repoId)}/changes`, { method: "POST", body: JSON.stringify(prompt !== undefined && prompt !== "" ? { name, prompt } : { name }) }),
   pullRepo: (repoId) => call<PullResult>(`/api/repos/${encodeURIComponent(repoId)}/pull`, { method: "POST" }),
   pullAll: () => call<{ results: PullResult[] }>("/api/pull", { method: "POST" }),
   sharedConfig: () => call<SharedConfig>("/api/shared-config"),
@@ -175,6 +182,7 @@ export const api: Api = {
   saveConfig: (config) => current.saveConfig(config),
   discover: (scanRoots, ignorePaths) => current.discover(scanRoots, ignorePaths),
   scan: () => current.scan(),
+  createChange: (...args) => current.createChange(...args),
   pullRepo: (repoId) => current.pullRepo(repoId),
   pullAll: () => current.pullAll(),
   sharedConfig: () => current.sharedConfig(),
