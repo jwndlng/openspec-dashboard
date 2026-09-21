@@ -48,7 +48,8 @@ function TerminalView({ sessionId, running, onExit }: { sessionId: string; runni
   const guard = useRef(new Set<string>());
   const [guarded, setGuarded] = useState<readonly string[]>([]);
 
-  // A default response is plain terminal input: the same message a keystroke produces, text and Enter in one.
+  // A default response is plain terminal input: the same message a keystroke produces. The defaults only type; the
+  // user presses Enter in the focused terminal (see quickReplies.ts for why).
   const reply = (r: QuickReply) => {
     if (guard.current.has(r.id)) return;
     guard.current.add(r.id);
