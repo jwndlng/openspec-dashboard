@@ -4,6 +4,7 @@ import type { Config, Snapshot } from "../shared/types.ts";
 import { Activity } from "./activity.tsx";
 import { loadSeen, saveSeen, unseenLabel } from "./activityState.ts";
 import { api } from "./api.ts";
+import { ChangeDetail } from "./changeDetail.tsx";
 import { relTime } from "./format.ts";
 import { Kanban } from "./kanban.tsx";
 import { Overview } from "./overview.tsx";
@@ -147,7 +148,7 @@ export function App() {
           <h1>OpenSpec Dashboard</h1>
         </div>
         <nav>
-          {link("/", "Projects", route.view === "overview" || route.view === "repo")}
+          {link("/", "Projects", route.view === "overview" || route.view === "repo" || route.view === "change")}
           {link("/board", "All changes", route.view === "board")}
           {link(
             "/activity",
@@ -188,6 +189,9 @@ export function App() {
           <Activity snapshot={shown} onSeen={markSeen} />
         ) : route.view === "overview" ? (
           <Overview snapshot={shown} config={config} />
+        ) : route.view === "change" ? (
+          // Keyed so selection and content start over when moving between changes.
+          <ChangeDetail key={`${route.repoId}/${route.changeName}`} snapshot={shown} repoId={route.repoId} changeName={route.changeName} />
         ) : (
           // Keyed so filters re-read the URL when moving between boards.
           <Kanban key={route.view === "repo" ? route.repoId : "all"} snapshot={shown} config={config} repoId={route.view === "repo" ? route.repoId : undefined} />

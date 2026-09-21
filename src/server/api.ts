@@ -1,12 +1,14 @@
 import { ACTIVITY_KINDS, type ActivityKind } from "../shared/types.ts";
 import { MAX_PAGE, type ActivityLog, type PageQuery } from "./activity/log.ts";
 import type { Config, DiscoverResult, RepoConfig, ScanTriggerResult, SharedConfigApplyResult, SharedConfigAssignment, SharedConfigPreview } from "../shared/types.ts";
+import { changeDirFor, listArtifactFiles, readArtifactFile } from "./artifacts.ts";
 import { ConfigValidationError, saveConfig, validateConfig, validateIgnorePaths, validateScanRoots } from "./config.ts";
 import { discoverRepos } from "./discover.ts";
 import { PullBusyError, pullAll, pullRepository } from "./pull.ts";
 import type { Scanner } from "./scanner.ts";
 import { applyTo, EMPTY_SHARED_CONFIG, loadSharedConfig, previewFor, SharedConfigValidationError, saveSharedConfig } from "./sharedConfig.ts";
 import { SessionError, type SessionManager } from "./sessions/manager.ts";
+import { LocalRepoSource } from "./source.ts";
 
 export interface AppState {
   config: Config;
@@ -291,6 +293,35 @@ async function postSharedConfigApply(state: AppState, req: Request): Promise<Res
   return json({ results });
 }
 
+const ARTIFACT_ROUTE = /^\/api\/repos\/([^/]+)\/changes\/([^/]+)\/(artifacts|file)$/;
+const FILE_ERROR_STATUS = { "bad-path": 400, "not-found": 404, "too-large": 413 } as const;
+
+/**
+ * Read-only artifact list and single-file read for the change detail view. The request names a repository id, a
+ * change name and a relative path; the directory always comes from the config and `listChanges()`.
+ */
+async function artifactRoutes(state: AppState, url: URL, match: RegExpExecArray): Promise<Response> {
+  let repoId: string;
+  let changeName: string;
+  try {
+    repoId = decodeURIComponent(match[1]);
+    changeName = decodeURIComponent(match[2]);
+  } catch {
+    return json({ error: "malformed URL encoding" }, 400);
+  }
+  const repo = state.config.repos.find((r) => r.enabled && r.id === repoId);
+  if (!repo) return json({ error: NOT_TRACKED }, 404);
+  // The board shows a change's leading copy, which may live in a linked worktree: read where the scanner read. The
+  // checkout path is the scanner's (from `git worktree list`), never the request's.
+  const checkout = state.scanner.snapshot.repos.find((r) => r.id === repo.id)?.changes.find((c) => c.name === changeName)?.checkout;
+  const source = new LocalRepoSource(checkout && !checkout.isMain ? checkout.path : repo.path);
+  const found = await changeDirFor(source, changeName);
+  if (!found.ok) return found.reason === "invalid-name" ? json({ error: "invalid change name" }, 400) : json({ error: "unknown change" }, 404);
+  if (match[3] === "artifacts") return json(await listArtifactFiles(source, repo.id, found.entry));
+  const result = await readArtifactFile(source, found.entry.dir, url.searchParams.get("path"));
+  return result.ok ? json(result.file) : json({ error: result.message }, FILE_ERROR_STATUS[result.reason]);
+}
+
 /**
  * Repositories the pull action may run in: tracked, scanned without error, and git. The path comes from the config —
  * a request only ever names an id.
@@ -390,6 +421,8 @@ export function createFetchHandler({ state, indexHtml }: AppOptions): (req: Requ
         if (refusal) return json({ error: refusal }, 403);
       }
       if (pathname === "/api/sessions" || pathname.startsWith("/api/sessions/")) return sessionRoutes(state, req, url, server);
+      const artifactMatch = req.method === "GET" ? ARTIFACT_ROUTE.exec(pathname) : null;
+      if (artifactMatch) return artifactRoutes(state, url, artifactMatch);
       if (req.method === "POST" && pathname === "/api/worktrees/remove") return postWorktreeRemove(state, req);
       if (req.method === "GET" && pathname === "/api/state") return json(state.scanner.snapshot);
       if (req.method === "GET" && pathname === "/api/activity") return getActivity(state, url);

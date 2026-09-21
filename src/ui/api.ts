@@ -1,6 +1,6 @@
 import type { ActivityQuery } from "../shared/activity.ts";
 import type { ActivityPage, PullResult, ShipResult, WorkStatus } from "../shared/types.ts";
-import type { AgentAvailability, Config, DiscoverResult, ScanTriggerResult, Session, SessionAction, SessionWorktree, SharedConfig, SharedConfigApplyResult, SharedConfigAssignment, SharedConfigPreview, Snapshot } from "../shared/types.ts";
+import type { AgentAvailability, ArtifactFileContent, ChangeArtifacts, Config, DiscoverResult, ScanTriggerResult, Session, SessionAction, SessionWorktree, SharedConfig, SharedConfigApplyResult, SharedConfigAssignment, SharedConfigPreview, Snapshot } from "../shared/types.ts";
 import { socketOrigin } from "./url.ts";
 
 export class ApiError extends Error {
@@ -29,6 +29,10 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
 /** Everything the UI asks of a backend. The demo build implements it in memory, so a new operation needs both. */
 export interface Api {
   state(): Promise<Snapshot>;
+  /** Read-only: a change's artifacts and their existing files. Rejects with `ApiError` 404 for an unknown repository or change. */
+  changeArtifacts(repoId: string, change: string): Promise<ChangeArtifacts>;
+  /** Read-only: one file of a change. `ApiError` 400 for a bad path, 404 when it is not a file of the change, 413 when too large. */
+  artifactFile(repoId: string, change: string, path: string): Promise<ArtifactFileContent>;
   /** What the dashboard observed, newest first. Read-only history; nothing else depends on it. */
   activity(query?: ActivityQuery): Promise<ActivityPage>;
   config(): Promise<Config>;
@@ -108,6 +112,8 @@ export function activityQueryString(query: ActivityQuery): string {
 
 export const httpApi: Api = {
   state: () => call<Snapshot>("/api/state"),
+  changeArtifacts: (repoId, change) => call<ChangeArtifacts>(`/api/repos/${encodeURIComponent(repoId)}/changes/${encodeURIComponent(change)}/artifacts`),
+  artifactFile: (repoId, change, path) => call<ArtifactFileContent>(`/api/repos/${encodeURIComponent(repoId)}/changes/${encodeURIComponent(change)}/file?path=${encodeURIComponent(path)}`),
   activity: (query = {}) => call<ActivityPage>(`/api/activity${activityQueryString(query)}`),
   config: () => call<Config>("/api/config"),
   saveConfig: (config) => call<Config>("/api/config", { method: "PUT", body: JSON.stringify(config) }),
@@ -162,6 +168,8 @@ export function setApi(impl: Api): void {
 /** What components import; forwards to the implementation the entry point chose (HTTP unless told otherwise). */
 export const api: Api = {
   state: () => current.state(),
+  changeArtifacts: (...args) => current.changeArtifacts(...args),
+  artifactFile: (...args) => current.artifactFile(...args),
   activity: (query) => current.activity(query),
   config: () => current.config(),
   saveConfig: (config) => current.saveConfig(config),

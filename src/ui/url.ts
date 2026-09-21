@@ -24,18 +24,22 @@ export function pathFromLocation(loc: Pick<LocationParts, "pathname" | "hash">, 
 }
 
 /** What a link to an app route puts in `href`, so opening it in a new tab lands on the same view. */
-export function href(path: string, routing: RoutingMode = mode): string {
-  return routing === "hash" ? `#${path}` : path;
+export function href(path: string, routing: RoutingMode = mode, query = ""): string {
+  return routing === "hash" ? `${query}#${path}` : `${path}${query}`;
+}
+
+/**
+ * The URL to push when navigating to an app route. Like a plain link, it starts the new view without a query unless
+ * one is given (`query` is "" or starts with "?"); in hash mode the query stays in front of the fragment, where
+ * `currentQuery` reads it.
+ */
+export function navigateUrl(loc: Pick<LocationParts, "pathname">, path: string, routing: RoutingMode = mode, query = ""): string {
+  return routing === "hash" ? `${loc.pathname}${query}#${path}` : `${path}${query}`;
 }
 
 /** Like `href`, with a query ("" or "?…"). In hash mode the query belongs to the document, so it comes before the fragment. */
 export function hrefWithQuery(path: string, query: string, routing: RoutingMode = mode): string {
   return routing === "hash" ? `${query || "?"}#${path}` : `${path}${query}`;
-}
-
-/** The URL to push when navigating to an app route. Like a plain link, it starts the new view without a query. */
-export function navigateUrl(loc: Pick<LocationParts, "pathname">, path: string, routing: RoutingMode = mode): string {
-  return routing === "hash" ? `${loc.pathname}#${path}` : path;
 }
 
 /** The URL to replace when only the query changes; keeps the fragment, which is the route in hash mode. */
@@ -51,9 +55,19 @@ export function currentQuery(): string {
   return location.search;
 }
 
-export function navigate(path: string): void {
-  history.pushState(null, "", navigateUrl(location, path));
+export function navigate(path: string, query = ""): void {
+  history.pushState(null, "", navigateUrl(location, path, mode, query));
   dispatchEvent(new PopStateEvent("popstate"));
+}
+
+/**
+ * For the `onClick` of an anchor to an app route: a plain click navigates in place, anything else (⌘/ctrl/shift-click,
+ * middle click) is left to the browser so the `href` opens in a new tab or window.
+ */
+export function followInApp(event: MouseEvent, path: string, query = ""): void {
+  if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+  event.preventDefault();
+  navigate(path, query);
 }
 
 /** `query` is "" or starts with "?". */

@@ -1,8 +1,9 @@
 // In-memory stand-in for the dashboard server. Nothing is read from or written to anywhere: a reload starts over.
 import { pageEvents } from "../../shared/activity.ts";
-import type { Config, PullResult, RepoSharedConfig, RepoSnapshot, SharedConfigApplyResult, SharedConfigPreview, SharedProfile, Snapshot } from "../../shared/types.ts";
-import type { Api } from "../api.ts";
+import type { ChangeSnapshot, Config, PullResult, RepoSharedConfig, RepoSnapshot, SharedConfigApplyResult, SharedConfigPreview, SharedProfile, Snapshot } from "../../shared/types.ts";
+import { ApiError, type Api } from "../api.ts";
 import { createDemoSessions } from "./demoSessions.ts";
+import { sampleArtifactFiles } from "./sampleArtifacts.ts";
 import { buildActivity, buildSample, DEMO_CARRIED, DEMO_PROFILES, DEMO_ROOT } from "./sampleData.ts";
 import type { Clock } from "./transcripts.ts";
 
@@ -122,8 +123,44 @@ export function createDemoApi({ now = Date.now, latencyMs = 150, clock }: DemoAp
 
   const demoSessions: ReturnType<typeof createDemoSessions> = createDemoSessions({ now, clock, getConfig: () => config, getSnapshot: () => baseSnapshot() });
 
+  // Same answers as the server: 404 for a repository that is not enabled or a change it does not have.
+  const findChange = (repoId: string, change: string): { change: ChangeSnapshot; dir: string } => {
+    const repo = snapshot().repos.find((r) => r.id === repoId);
+    if (!repo) throw new ApiError(404, "not an enabled repository in the dashboard config");
+    if (!/^[A-Za-z0-9._-]+$/.test(change)) throw new ApiError(400, "invalid change name");
+    const found = repo.changes.find((c) => c.name === change);
+    if (!found) throw new ApiError(404, "unknown change");
+    const dir = found.archived ? `${repo.path}/openspec/changes/archive/${found.archived}-${change}` : `${repo.path}/openspec/changes/${change}`;
+    return { change: found, dir };
+  };
+  const failing = <T>(work: () => T): Promise<T> => {
+    try {
+      return reply(work());
+    } catch (err) {
+      return Promise.reject(err);
+    }
+  };
+  const bytes = (text: string) => new TextEncoder().encode(text).length;
+
   return {
     state: () => reply(snapshot()),
+    changeArtifacts: (repoId, changeName) =>
+      failing(() => {
+        const { change, dir } = findChange(repoId, changeName);
+        const files = sampleArtifactFiles(change);
+        return {
+          change: { repoId, name: change.name, schema: change.schema, dir, archived: Boolean(change.archived) },
+          artifacts: change.artifacts.map((a) => ({ ...a, files: Object.entries(files[a.id] ?? {}).map(([path, text]) => ({ path, bytes: bytes(text) })).sort((x, y) => (x.path < y.path ? -1 : 1)) })),
+        };
+      }),
+    artifactFile: (repoId, changeName, path) =>
+      failing(() => {
+        const { change } = findChange(repoId, changeName);
+        if (!path || path.startsWith("/") || path.split("/").includes("..")) throw new ApiError(400, "path must be relative to the change directory");
+        const text = Object.values(sampleArtifactFiles(change)).find((byPath) => path in byPath)?.[path];
+        if (text === undefined) throw new ApiError(404, "no such file in this change");
+        return { path, bytes: bytes(text), text };
+      }),
     // Built once from the sample, like a log that was written while the sample came about; filtered and paged like the real one.
     activity: (query) => reply(pageEvents(activityLog, query)),
     config: () => reply(config),
