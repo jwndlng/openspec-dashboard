@@ -5,7 +5,7 @@ import { useCallback, useContext, useEffect, useMemo, useState } from "preact/ho
 import type { AgentAvailability, ChangeSnapshot, Config, Session, SessionAction, SessionWorktree } from "../shared/types.ts";
 import { api } from "./api.ts";
 import { cdCommand, relTime } from "./format.ts";
-import { agentForRepo, openWork, searchWithSession, sessionBadge, sessionForChange, sessionIdFromSearch, sessionsEnabledFor, startersFor, workBadge, worktreeForChange } from "./sessionState.ts";
+import { agentForRepo, openWork, type SessionBadge, searchWithSession, sessionBadge, sessionForChange, sessionIdFromSearch, sessionsEnabledFor, startersFor, workBadge, worktreeForChange } from "./sessionState.ts";
 import { currentQuery, replaceQuery } from "./url.ts";
 
 const POLL_MS = 3000;
@@ -75,6 +75,33 @@ export function SessionProvider({ config, children }: { config: Config | null; c
 
   const value = useMemo(() => ({ config, sessions, agents, worktrees, panelId, error, openPanel, start, refresh }), [config, sessions, agents, worktrees, panelId, error, openPanel, start, refresh]);
   return <Context.Provider value={value}>{children}</Context.Provider>;
+}
+
+/**
+ * The one place a session badge is drawn, so cards and the panel cannot drift apart. `live` adds the motion that means
+ * "an agent is working now"; the glyph is decoration, the words carry the status.
+ */
+export function SessionBadgeView({ badge, onClick }: { badge: SessionBadge; onClick?: () => void }) {
+  const cls = `badge ${onClick ? "session-badge " : ""}${badge.tone}${badge.live ? " live" : ""}`;
+  const content = (
+    <>
+      {badge.icon && (
+        <span class="dot" aria-hidden="true">
+          {badge.icon}
+        </span>
+      )}
+      <span class="text">{badge.label}</span>
+    </>
+  );
+  return onClick ? (
+    <button type="button" class={cls} title={badge.title} onClick={onClick}>
+      {content}
+    </button>
+  ) : (
+    <span class={cls} title={badge.title}>
+      {content}
+    </span>
+  );
 }
 
 /** What became of the work in a worktree. Opens the worktree's latest session when its record still exists. */
@@ -195,9 +222,7 @@ export function SessionControls({ card }: { card: Pick<ChangeSnapshot, "repoId" 
     const badge = sessionBadge(session);
     return (
       <>
-        <button type="button" class={`badge session-badge ${badge.tone}`} title={badge.title} onClick={() => ui.openPanel(session.id)}>
-          {badge.label}
-        </button>
+        <SessionBadgeView badge={badge} onClick={() => ui.openPanel(session.id)} />
         {work}
       </>
     );
