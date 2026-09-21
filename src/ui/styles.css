@@ -4,22 +4,22 @@
 :root {
   color-scheme: dark;
 
-  --bg-base: #0b0d10;
-  --bg-section: #141618;
-  --bg-raised: #1a1c1f;
-  --bg-surface: #25272a;
-  --bg-elevated: #313437;
+  --bg-base: #141619;
+  --bg-section: #1d1f21;
+  --bg-raised: #232529;
+  --bg-surface: #2f3134;
+  --bg-elevated: #3b3e41;
 
   --fg-heading: #f3f5f7;
-  --fg-body: #a0a3a8;
-  --fg-subtle: #82858a;
-  --fg-disabled: #474a4e;
+  --fg-body: #a7aaaf;
+  --fg-subtle: #888c91;
+  --fg-disabled: #525559;
 
   --brand: #71c7c5;
   --brand-strong: #4a9b99;
   --brand-fg: #9ddcdb;
-  --brand-soft: #164040;
-  --brand-softer: #0c2424;
+  --brand-soft: #224b4b;
+  --brand-softer: #162e2e;
 
   /* Status roles: one hue per meaning. Kept clear of the brand accent and of every repository hue
      (REPO_HUES in repoGroups.ts); test/repoContrast.test.ts proves both. */
@@ -28,17 +28,17 @@
   --branch: #ff9d4d;
   --branch-border: #7a3d0e;
   --success: #10b981;
-  --success-border: #004f3b;
+  --success-border: #135a46;
   --warning: #fbbf24;
-  --warning-border: #7c2d12;
-  --danger: #ff2d6b;
-  --danger-border: #6b0028;
-  --danger-bg: #3d001522;
+  --warning-border: #89391f;
+  --danger: #ff3d75;
+  --danger-border: #781332;
+  --danger-bg: #490b1e22;
   --scrim: #000000a6;
 
   --border: #b2b6bb2e;
   --border-light: #b2b6bb14;
-  --border-subtle: #25272a;
+  --border-subtle: #2f3134;
   --border-strong: #b2b6bb6b;
 
   /* Repository colours: the repo supplies --repo-hue, the theme supplies lightness and chroma. */
