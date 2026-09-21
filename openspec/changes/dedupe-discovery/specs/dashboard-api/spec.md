@@ -55,11 +55,39 @@
 - **THEN** the response is `200`, `errors` names the non-existent root, and `candidates` contains the repositories under the existing root
 
 ### Requirement: The dashboard never writes to tracked repositories
-All filesystem writes MUST be confined to `~/.openspec-dashboard/`. Git MUST only be invoked with read-only subcommands (`rev-parse`, `log`, `worktree list`, `config --get`).
+The dashboard MUST NOT write to a tracked repository except in response to an explicit user action, and then only as enumerated here: (1) `openspec/config.yaml`, where only the managed sections of the `context` and `rules` keys are modified (applying shared OpenSpec config profiles); (2) for agent sessions, creating a git worktree and its branch for a session (`git worktree add`, preceded by `git worktree prune`), with the worktree's directory placed under `~/.openspec-dashboard/worktrees/` and never inside the repository's working tree, and removing such a worktree with a non-forcing `git worktree remove` after the user confirmed and read-only checks proved that it holds no uncommitted change and no work that exists nowhere else. Apart from those worktree commands the dashboard MUST NOT delete or move anything in a tracked repository, MUST NOT change the main checkout's branch, index or working tree, and MUST NOT contact a remote. All other filesystem writes MUST be confined to `~/.openspec-dashboard/`. Scanning, polling, discovery, previews, reading work statuses and saving any dashboard setting MUST NOT write to a tracked repository. Apart from the worktree commands above, git MUST only be invoked with read-only subcommands (`rev-parse`, `log`, `worktree list`, `status`, `show-ref`, `symbolic-ref`, `for-each-ref`, `rev-list`, `diff`, `config --get`). Because `git status` refreshes the index by default, every git invocation MUST run with optional locks disabled (`GIT_OPTIONAL_LOCKS=0`) so that not even `.git/index` is rewritten. When agent sessions are enabled, the dashboard MAY start the user's configured agent in a session's worktree on the user's explicit request; what that agent changes, commits or pushes is the agent's doing under its own permission prompts and is never done by the dashboard's own code. With agent sessions disabled the dashboard MUST NOT start any process that can modify a repository.
 
 #### Scenario: No side effects
 - **WHEN** a full scan runs across all tracked repos
 - **THEN** no file under any tracked repository is created, modified or deleted
+
+#### Scenario: Status does not refresh the index
+- **WHEN** a scan runs `git status` in a repository whose index has stale stat information
+- **THEN** the repository's `.git/index` file is byte-for-byte unchanged afterwards
+
+#### Scenario: Preview and save have no side effects
+- **WHEN** shared config profiles are saved and a preview is requested for every tracked repository
+- **THEN** no file under any tracked repository is created, modified or deleted
+
+#### Scenario: Apply touches exactly one file
+- **WHEN** shared config profiles are applied to a repository
+- **THEN** `openspec/config.yaml` is the only path under that repository that is created, modified or deleted
+
+#### Scenario: Opening a session leaves the main checkout alone
+- **WHEN** a session is opened for a change
+- **THEN** the repository's checked-out branch and `git status` are unchanged, and no new file or directory appears in its working tree
+
+#### Scenario: Reading work statuses has no side effects
+- **WHEN** work statuses are read for a worktree whose index has stale stat information
+- **THEN** no file in the worktree or in the repository's git directory is modified
+
+#### Scenario: A refused session creates nothing
+- **WHEN** opening a session is refused
+- **THEN** no worktree and no branch is created
+
+#### Scenario: Feature disabled means no processes
+- **WHEN** agent sessions are disabled and any API request is made
+- **THEN** no agent process is started and no repository is touched
 
 #### Scenario: Discovery has no side effects
 - **WHEN** discovery looks up the `origin` remote of candidates and configured repositories

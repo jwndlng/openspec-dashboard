@@ -1,7 +1,8 @@
-import type { Config, DiscoverResult, RepoConfig, ScanTriggerResult, SessionEvent, SharedConfigApplyResult, SharedConfigAssignment, SharedConfigPreview } from "../shared/types.ts";
+import type { Config, DiscoverResult, RepoConfig, ScanTriggerResult, SharedConfigApplyResult, SharedConfigAssignment, SharedConfigPreview } from "../shared/types.ts";
 import { changeDirFor, listArtifactFiles, readArtifactFile } from "./artifacts.ts";
-import { ConfigValidationError, saveConfig, validateConfig, validateScanRoots } from "./config.ts";
+import { ConfigValidationError, saveConfig, validateConfig, validateIgnorePaths, validateScanRoots } from "./config.ts";
 import { discoverRepos } from "./discover.ts";
+import { PullBusyError, pullAll, pullRepository } from "./pull.ts";
 import type { Scanner } from "./scanner.ts";
 import { applyTo, EMPTY_SHARED_CONFIG, loadSharedConfig, previewFor, SharedConfigValidationError, saveSharedConfig } from "./sharedConfig.ts";
 import { SessionError, type SessionManager } from "./sessions/manager.ts";
@@ -14,9 +15,9 @@ export interface AppState {
   sessions?: SessionManager;
 }
 
-/** The part of Bun's server object the handler needs: lifting the idle timeout for long-lived event streams. */
+/** The part of Bun's server object the handler needs: upgrading the terminal request to a WebSocket. */
 export interface ServerLike {
-  timeout(req: Request, seconds: number): void;
+  upgrade(req: Request, options: { data: unknown }): boolean;
 }
 
 export interface AppOptions {
@@ -60,11 +61,12 @@ async function putConfig(state: AppState, req: Request): Promise<Response> {
 }
 
 /**
- * Read-only: walks the roots from the body (the UI's unsaved draft) or, without
- * a body, the saved ones. Never touches `state.config`.
+ * Read-only: walks the roots and honours the ignore paths from the body (the UI's unsaved draft) or, where the body
+ * has none, the saved ones. Never touches `state.config`.
  */
 async function postDiscover(state: AppState, req: Request): Promise<Response> {
   let roots = state.config.scanRoots;
+  let ignorePaths = state.config.ignorePaths;
   const text = await req.text();
   if (text.trim()) {
     let body: unknown;
@@ -73,17 +75,16 @@ async function postDiscover(state: AppState, req: Request): Promise<Response> {
     } catch {
       return json({ error: "body must be JSON" }, 400);
     }
-    const scanRoots = (body as { scanRoots?: unknown } | null)?.scanRoots;
-    if (scanRoots !== undefined) {
-      try {
-        roots = validateScanRoots(scanRoots);
-      } catch (err) {
-        if (err instanceof ConfigValidationError) return json({ error: err.message, issues: err.issues }, 400);
-        throw err;
-      }
+    const draft = body as { scanRoots?: unknown; ignorePaths?: unknown } | null;
+    try {
+      if (draft?.scanRoots !== undefined) roots = validateScanRoots(draft.scanRoots);
+      if (draft?.ignorePaths !== undefined) ignorePaths = validateIgnorePaths(draft.ignorePaths);
+    } catch (err) {
+      if (err instanceof ConfigValidationError) return json({ error: err.message, issues: err.issues }, 400);
+      throw err;
     }
   }
-  const result: DiscoverResult = await discoverRepos(state.config.repos, roots);
+  const result: DiscoverResult = await discoverRepos(state.config.repos, roots, ignorePaths);
   return json(result);
 }
 
@@ -98,34 +99,83 @@ async function readJson(req: Request): Promise<Record<string, unknown>> {
   }
 }
 
-/** Transcript as Server-Sent Events: backlog after `after`/`Last-Event-ID`, then live events, with keep-alives. */
-function eventStream(sessions: SessionManager, id: string, afterSeq: number): Response {
-  sessions.get(id); // 404 before the stream starts
-  const encoder = new TextEncoder();
-  let unsubscribe = () => {};
-  let keepAlive: ReturnType<typeof setInterval> | undefined;
-  const stream = new ReadableStream<Uint8Array>({
-    async start(controller) {
-      let last = afterSeq;
-      const buffered: SessionEvent[] = [];
-      let replaying = true;
-      const write = (event: SessionEvent) => {
-        if (event.seq <= last) return;
-        last = event.seq;
-        controller.enqueue(encoder.encode(`id: ${event.seq}\ndata: ${JSON.stringify(event)}\n\n`));
-      };
-      unsubscribe = sessions.subscribe(id, (event) => (replaying ? buffered.push(event) : write(event)));
-      for (const event of await sessions.events(id, afterSeq)) write(event);
-      replaying = false;
-      for (const event of buffered) write(event);
-      keepAlive = setInterval(() => controller.enqueue(encoder.encode(": keep-alive\n\n")), 15_000);
+/**
+ * The terminal WebSocket is the most sensitive endpoint: whoever holds it types into an agent on this machine.
+ * A WebSocket handshake is a GET that browsers allow cross-origin and that carries no preflight, so the JSON guard
+ * does not apply; instead the handshake must carry the dashboard's own Origin (browsers always send one and pages
+ * cannot forge it) and address a loopback host name (DNS rebinding).
+ */
+export function webSocketRefusal(req: Request): string | undefined {
+  const url = new URL(req.url);
+  if (!LOOPBACK_HOSTS.has(url.hostname)) return "request must be addressed to a loopback host name";
+  if (req.headers.get("sec-fetch-site")?.toLowerCase() === "cross-site") return "cross-site requests are not allowed";
+  const origin = req.headers.get("origin");
+  const from = origin && URL.canParse(origin) ? new URL(origin) : undefined;
+  if (!(from?.protocol === "http:" && LOOPBACK_HOSTS.has(from.hostname) && from.port === url.port)) return "origin is not the dashboard";
+  return undefined;
+}
+
+export interface TerminalSocketData {
+  sessionId: string;
+  detach?: () => void;
+}
+
+/** Minimal shape of Bun's ServerWebSocket that the handlers use. */
+interface TerminalSocket {
+  data: TerminalSocketData;
+  send(data: string | Uint8Array): unknown;
+  close(code?: number, reason?: string): void;
+}
+
+/**
+ * Wire format: server → client binary frames are raw terminal output (first the scrollback), and one text frame
+ * `{"type":"exit"}` when the process ends; client → server text frames are `{"type":"input","data":…}` (keystrokes,
+ * passed on unobserved), `{"type":"resize","cols":…,"rows":…}` and `{"type":"submit","data":…}` — text sent on the
+ * user's behalf, answered to that socket with `{"type":"submitted","ok":…}` (`false`: typed, but Enter was withheld).
+ */
+export function createWebSocketHandlers(state: AppState) {
+  return {
+    async open(ws: TerminalSocket) {
+      const sessions = state.sessions;
+      if (!sessions) return ws.close(1011, "agent sessions are not available");
+      try {
+        const { scrollback, detach } = await sessions.attach(ws.data.sessionId, (chunk) => {
+          if (chunk.length === 0) ws.send(JSON.stringify({ type: "exit" }));
+          else ws.send(chunk);
+        });
+        ws.data.detach = detach;
+        if (scrollback.length > 0) ws.send(scrollback);
+        if (sessions.get(ws.data.sessionId).state !== "running") ws.send(JSON.stringify({ type: "exit" }));
+      } catch {
+        ws.close(1008, "unknown session");
+      }
     },
-    cancel() {
-      unsubscribe();
-      clearInterval(keepAlive);
+    message(ws: TerminalSocket, message: string | Uint8Array) {
+      if (typeof message !== "string" || !state.sessions) return;
+      let parsed: { type?: unknown; data?: unknown; cols?: unknown; rows?: unknown };
+      try {
+        parsed = JSON.parse(message);
+      } catch {
+        return;
+      }
+      if (parsed.type === "input" && typeof parsed.data === "string") state.sessions.write(ws.data.sessionId, parsed.data);
+      else if (parsed.type === "submit") {
+        const answer = (ok: boolean) => ws.send(JSON.stringify({ type: "submitted", ok }));
+        try {
+          state.sessions.submit(ws.data.sessionId, parsed.data).then(
+            (result) => answer(result.submitted),
+            () => answer(false),
+          );
+        } catch {
+          answer(false); // not running, or not plain text
+        }
+      }
+      else if (parsed.type === "resize" && typeof parsed.cols === "number" && typeof parsed.rows === "number") state.sessions.resize(ws.data.sessionId, parsed.cols, parsed.rows);
     },
-  });
-  return new Response(stream, { headers: { "content-type": "text/event-stream; charset=utf-8", "cache-control": "no-cache, no-transform", "x-accel-buffering": "no" } });
+    close(ws: TerminalSocket) {
+      ws.data.detach?.();
+    },
+  };
 }
 
 async function sessionRoutes(state: AppState, req: Request, url: URL, server?: ServerLike): Promise<Response> {
@@ -134,7 +184,7 @@ async function sessionRoutes(state: AppState, req: Request, url: URL, server?: S
   const [, , , id, sub] = url.pathname.split("/"); // /api/sessions/<id>/<sub>
   try {
     if (!id) {
-      if (req.method === "GET") return json({ sessions: sessions.list(), agent: await sessions.agentAvailability() });
+      if (req.method === "GET") return json({ sessions: sessions.list(), agents: sessions.agents(), worktrees: await sessions.worktrees() });
       if (req.method === "POST") return json(await sessions.open(await readJson(req)), 201);
     } else if (!sub) {
       if (req.method === "GET") return json(sessions.get(id));
@@ -142,16 +192,19 @@ async function sessionRoutes(state: AppState, req: Request, url: URL, server?: S
         await sessions.remove(id);
         return json({ deleted: true });
       }
-    } else if (req.method === "GET" && sub === "events") {
-      const after = Number(req.headers.get("last-event-id") ?? url.searchParams.get("after") ?? 0);
-      server?.timeout(req, 0); // the default idle timeout would cut a quiet stream
-      return eventStream(sessions, id, Number.isFinite(after) ? after : 0);
+    } else if (req.method === "GET" && sub === "terminal") {
+      sessions.get(id); // 404 before upgrading
+      const refusal = webSocketRefusal(req);
+      if (refusal) return json({ error: refusal }, 403);
+      // After a successful upgrade Bun expects no response at all; the signature stays `Response` for every other caller.
+      if (server?.upgrade(req, { data: { sessionId: id } satisfies TerminalSocketData })) return undefined as unknown as Response;
+      return json({ error: "expected a WebSocket upgrade" }, 426);
     } else if (req.method === "GET" && sub === "worktree") {
       return json(await sessions.worktreeStatus(id));
     } else if (req.method === "POST") {
-      if (sub === "messages") return json(await sessions.send(id, (await readJson(req)).text));
-      if (sub === "stop") return json(await sessions.stop(id));
-      if (sub === "cancel") return json(await sessions.cancel(id));
+      if (sub === "resume") return json(await sessions.resume(id));
+      if (sub === "ship") return json(await sessions.ship(id));
+      if (sub === "prompt") return json(sessions.prompt(id, await readJson(req)));
       if (sub === "close") return json(await sessions.close(id, { removeWorktree: (await readJson(req)).removeWorktree === true }));
     }
   } catch (err) {
@@ -254,12 +307,44 @@ async function artifactRoutes(state: AppState, url: URL, match: RegExpExecArray)
   }
   const repo = state.config.repos.find((r) => r.enabled && r.id === repoId);
   if (!repo) return json({ error: NOT_TRACKED }, 404);
-  const source = new LocalRepoSource(repo.path);
+  // The board shows a change's leading copy, which may live in a linked worktree: read where the scanner read. The
+  // checkout path is the scanner's (from `git worktree list`), never the request's.
+  const checkout = state.scanner.snapshot.repos.find((r) => r.id === repo.id)?.changes.find((c) => c.name === changeName)?.checkout;
+  const source = new LocalRepoSource(checkout && !checkout.isMain ? checkout.path : repo.path);
   const found = await changeDirFor(source, changeName);
   if (!found.ok) return found.reason === "invalid-name" ? json({ error: "invalid change name" }, 400) : json({ error: "unknown change" }, 404);
   if (match[3] === "artifacts") return json(await listArtifactFiles(source, repo.id, found.entry));
   const result = await readArtifactFile(source, found.entry.dir, url.searchParams.get("path"));
   return result.ok ? json(result.file) : json({ error: result.message }, FILE_ERROR_STATUS[result.reason]);
+}
+
+/**
+ * Repositories the pull action may run in: tracked, scanned without error, and git. The path comes from the config —
+ * a request only ever names an id.
+ */
+function pullable(state: AppState): RepoConfig[] {
+  const scanned = new Map(state.scanner.snapshot.repos.map((r) => [r.id, r]));
+  return state.config.repos.filter((r) => r.enabled && scanned.get(r.id)?.ok === true && scanned.get(r.id)?.isGit === true);
+}
+
+/** The one route that contacts a remote and updates a main checkout — and only because the user asked for it. */
+async function postPull(state: AppState, repoId: string): Promise<Response> {
+  const repo = pullable(state).find((r) => r.id === repoId);
+  if (!repo) return json({ error: "not a tracked, successfully scanned git repository" }, 404);
+  try {
+    const result = await pullRepository(repo);
+    state.scanner.trigger();
+    return json(result);
+  } catch (err) {
+    if (err instanceof PullBusyError) return json({ error: err.message }, 409);
+    throw err;
+  }
+}
+
+async function postPullAll(state: AppState): Promise<Response> {
+  const results = await pullAll(pullable(state));
+  state.scanner.trigger();
+  return json({ results });
 }
 
 const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "[::1]"]);
@@ -291,6 +376,16 @@ export function crossSiteRefusal(req: Request): string | undefined {
 }
 
 /** Builds the `fetch` handler for Bun.serve (design.md D8). */
+async function postWorktreeRemove(state: AppState, req: Request): Promise<Response> {
+  if (!state.sessions) return json({ error: "agent sessions are not available" }, 403);
+  try {
+    return json(await state.sessions.removeWorktreeByName(await readJson(req)));
+  } catch (err) {
+    if (err instanceof SessionError) return json({ error: err.message }, err.status);
+    throw err;
+  }
+}
+
 export function createFetchHandler({ state, indexHtml }: AppOptions): (req: Request, server?: ServerLike) => Promise<Response> {
   return async (req, server) => {
     const url = new URL(req.url);
@@ -304,6 +399,7 @@ export function createFetchHandler({ state, indexHtml }: AppOptions): (req: Requ
       if (pathname === "/api/sessions" || pathname.startsWith("/api/sessions/")) return sessionRoutes(state, req, url, server);
       const artifactMatch = req.method === "GET" ? ARTIFACT_ROUTE.exec(pathname) : null;
       if (artifactMatch) return artifactRoutes(state, url, artifactMatch);
+      if (req.method === "POST" && pathname === "/api/worktrees/remove") return postWorktreeRemove(state, req);
       if (req.method === "GET" && pathname === "/api/state") return json(state.scanner.snapshot);
       if (req.method === "GET" && pathname === "/api/config") return json(state.config);
       if (req.method === "PUT" && pathname === "/api/config") return putConfig(state, req);
@@ -312,6 +408,9 @@ export function createFetchHandler({ state, indexHtml }: AppOptions): (req: Requ
       if (req.method === "PUT" && pathname === "/api/shared-config") return putSharedConfig(state, req);
       if (req.method === "POST" && pathname === "/api/shared-config/preview") return postSharedConfigPreview(state, req);
       if (req.method === "POST" && pathname === "/api/shared-config/apply") return postSharedConfigApply(state, req);
+      if (req.method === "POST" && pathname === "/api/pull") return postPullAll(state);
+      const pullOne = /^\/api\/repos\/([^/]+)\/pull$/.exec(pathname);
+      if (req.method === "POST" && pullOne) return postPull(state, decodeURIComponent(pullOne[1]));
       if (req.method === "POST" && pathname === "/api/scan") {
         const result: ScanTriggerResult = { started: state.scanner.trigger().started };
         return json(result);

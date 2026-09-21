@@ -1,5 +1,6 @@
+import { realpathSync } from "node:fs";
 import { homedir } from "node:os";
-import { join, normalize } from "node:path";
+import { isAbsolute, join, normalize, parse } from "node:path";
 
 /** Base directory for config and cache; overridable for tests. */
 export function dashboardHome(): string {
@@ -10,9 +11,14 @@ export function configPath(): string {
   return join(dashboardHome(), "config.json");
 }
 
-/** Agent session records (metadata + transcript); never inside a repository. */
+/** Agent session records (metadata and the stored tail of terminal output); never inside a repository. */
 export function sessionsDir(): string {
   return join(dashboardHome(), "sessions");
+}
+
+/** Session worktrees live in the dashboard home, so tracked repositories never see an untracked directory. */
+export function worktreesDir(): string {
+  return join(dashboardHome(), "worktrees");
 }
 
 export function sharedConfigPath(): string {
@@ -28,4 +34,22 @@ export function expandPath(p: string): string {
   if (p === "~") return homedir();
   if (p.startsWith("~/")) return join(homedir(), p.slice(2));
   return normalize(p);
+}
+
+/**
+ * The one spelling of a directory: `~` expanded, symlinks resolved and on-disk casing (the native realpath reports the
+ * stored casing on case-insensitive volumes; the JS implementation only resolves symlinks). A path that does not exist
+ * is returned normalised, so a deleted repository keeps the identity it was stored under. Relative paths stay relative
+ * (never resolved against the working directory) so validation can reject them.
+ */
+export function canonicalPath(p: string): string {
+  const expanded = expandPath(p);
+  if (!isAbsolute(expanded)) return expanded;
+  let resolved: string;
+  try {
+    resolved = realpathSync.native(expanded);
+  } catch {
+    resolved = expanded;
+  }
+  return resolved.length > parse(resolved).root.length ? resolved.replace(/[\\/]+$/, "") : resolved;
 }

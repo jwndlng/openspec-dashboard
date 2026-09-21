@@ -34,6 +34,8 @@ Splitting them keeps the first response small and cheap enough to re-fetch on ev
 
 The request never names a directory. `repoId` is looked up in `state.config.repos` among the enabled ones; `changeName` is matched against `source.listChanges()` (active and archived), which yields the absolute `dir`. `CHANGE_NAME` rejects anything with a separator before that lookup. This is the same containment argument the rest of the server uses: the request contributes an identifier, never a path.
 
+Since the scanner also reads changes from linked worktrees, the source is the checkout the snapshot names for that change (`ChangeSnapshot.checkout`, which comes from `git worktree list`) when it is not the main one. That is still server-side state; the request cannot steer it.
+
 *Alternatives considered:* one endpoint returning every file's content — simple, but re-reads the whole change on each poll and makes the size cap awkward. Adding file paths into the snapshot — rejected: the snapshot is polled by every open tab and would grow without bound, and invariant 5 keeps derived facts out of it.
 
 ### D2 — Path validation: normalise, then require containment, then `realpath` + `stat`

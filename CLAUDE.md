@@ -27,26 +27,36 @@ bun test test/scanner.test.ts   # a single test file
 1. **Read-only towards tracked repositories, with enumerated exceptions.** The dashboard writes to a tracked
    repository only in response to an explicit user action, only to the paths enumerated in the "never writes"
    requirement of `openspec/specs/dashboard-api/spec.md`, never deletes or moves anything there, and never runs a git
-   command that writes (one enumerated exception below). Today that list has two entries: the managed sections of `openspec/config.yaml` (applying
-   shared config profiles, `src/server/sharedConfig.ts`), and — for agent sessions, which are off by default and need a
-   per-repository opt-in — removing a session's own worktree after the user confirmed and read-only checks proved
-   nothing would be lost (`git worktree unlock` + a non-forcing `git worktree remove`, the only git writes, in
-   `src/server/sessions/worktree.ts`). Starting the user's agent CLI in a dedicated worktree on the user's click is
-   not a write by the dashboard: what that agent changes is bounded by its allow-list and is the agent's doing. With
-   agent sessions disabled no process that can modify a repository is ever started. Scanning, polling, discovery, previews and saving settings
+   command that writes (the enumerated exceptions below). Today that list has three entries: the managed sections of `openspec/config.yaml` (applying shared config profiles,
+   `src/server/sharedConfig.ts`), and — for agent sessions, off by default — a session's git worktree: created with
+   `git worktree add` (directory under `~/.openspec-dashboard/worktrees/`, never inside the repository's working tree)
+   and removed with a non-forcing `git worktree remove` after the user confirmed and read-only checks proved nothing
+   would be lost (`src/server/sessions/worktree.ts`); and the **pull action** — `git fetch` of the repository's own
+   remote, then a fast-forward-only `git merge` of the main checkout's upstream, with hooks disabled, never a merge
+   commit, rebase, stash, reset, force or branch switch, and only fetching when the checkout is off its default branch,
+   has no upstream, has diverged or has overlapping local edits (`src/server/pull.ts`, the only place that contacts a
+   remote or changes a main checkout). Those two modules are the only places that run a git command that writes. Apart
+   from the pull action the main checkout's index and files are never touched and no remote is ever contacted; the main
+   checkout's branch is never changed by anything; and the pull action runs only on the user's explicit request — never
+   on a timer, during a scan, on page load or as a side effect (`test/pull.test.ts` proves scans leave a recording
+   remote untouched). Starting the user's
+   agent in that worktree on the user's click is not a write by the dashboard: what the agent changes is decided by its
+   own permission prompts. With agent sessions disabled no process that can modify a repository is ever started. Scanning, polling, discovery, previews and saving settings
    write nothing to a repository. All other writes stay under `~/.openspec-dashboard/` (or `OPENSPEC_DASHBOARD_HOME`
    in tests). Git is invoked only with the read-only subcommands listed in that spec. Adding a path or a subcommand
    means changing that spec first.
 2. **Loopback only.** The server binds `127.0.0.1`; there is no auth because nothing else can reach it.
 2a. **Mutating API routes are same-origin only.** Every non-GET `/api/` request passes `crossSiteRefusal` in
-   `src/server/api.ts` (JSON content type, loopback host, own origin). Loopback binding alone does not stop a web page
+   `src/server/api.ts` (JSON content type, loopback host, own origin); the terminal WebSocket has `webSocketRefusal`. Loopback binding alone does not stop a web page
    in the same browser; do not add a mutating route that bypasses the guard.
 3. **`@fission-ai/openspec` internals only through `src/server/openspecAdapter.ts`.** Do not call the library's
    `resolveSchema`/`loadChangeContext`: they locate files via `import.meta.url`, which does not exist inside the
    compiled binary. The adapter embeds the schema at build time. Anything that works under `bun run` but reads files
    relative to a module path must also be verified in `dist/openspec-dashboard`.
-4. **No network at runtime.** The UI is one HTML file with inlined JS, CSS and fonts; do not add CDN links, remote
-   fonts or fetches to other hosts.
+4. **No network at runtime, except the pull action.** The UI is one HTML file with inlined JS, CSS and fonts; do not
+   add CDN links, remote fonts or fetches to other hosts. The server reaches a network only when git does, inside the
+   pull action of invariant 1, on the user's click, using git's own credentials — the dashboard never sees, stores or
+   asks for them, never prompts, and masks credentials in any error text it passes on.
 5. **The repository is the source of truth.** The dashboard indexes; it never stores facts about changes that are not
    derivable from the repositories.
 6. **Change names reaching git or the file system are validated** (`CHANGE_NAME` in `src/server/source.ts`).
@@ -56,14 +66,23 @@ bun test test/scanner.test.ts   # a single test file
 
 ## Agent sessions (`src/server/sessions/`)
 
-- The agent is only ever reached through the `Runner` interface; `claudeRunner.ts` is the one implementation and the
-  one place that knows CLI flags. It never reads or forwards credentials, never uses a shell, fixes the permission
-  mode to `dontAsk`, and starts with `--setting-sources project` so the user's personal allow rules cannot widen a
-  session's allow-list. Do not add a way to pass free-form CLI arguments or a permission-bypass mode.
-- Tests never start the real CLI or touch the network: they use `test/fixtures/fake-claude.ts`, which replays the
-  shapes recorded in `test/fixtures/claude-stream/`. When the CLI's format changes, update both together.
-- Session records live under `~/.openspec-dashboard/sessions/`; all writes for one session go through the store's
-  per-session queue.
+- A session is an agent CLI in a **pseudo-terminal**, relayed byte for byte to an xterm.js view. Do not parse, filter or
+  summarise its output, and do not add anything vendor-specific: an agent is a profile (`agents.ts` — argument list,
+  prompts, resume command). Agents are started without a shell; the prompt is one whole argument or typed input.
+- `GET /api/sessions/<id>/terminal` is the most sensitive endpoint in the project: whoever holds that WebSocket types
+  into an agent on this machine. It has its own guard, `webSocketRefusal` (loopback Host, the dashboard's own `Origin`,
+  missing `Origin` refused) because the JSON guard cannot cover a WebSocket handshake. Never loosen it, and never bind
+  anything but loopback.
+- Text the dashboard types into a *running* agent for the user (next-step prompts, default responses) never includes
+  Enter: a terminal cannot tell us whether the agent shows a prompt or a selection menu, and in a menu Enter confirms
+  whatever is highlighted — possibly a permission. One running session per worktree; archiving has its own.
+- **Work status** (`workStatus.ts`) is read per worktree *directory* — directories outlive session records — with
+  read-only git and no network, so `merged` means "as of the user's last fetch"; squash merges are recognised by
+  comparing the content of the files the branch touched. The dashboard never commits, pushes or calls `gh`: **Ship** only
+  hands the agent a prompt (`prompts.ship`, else `DEFAULT_SHIP_PROMPT`).
+- Tests never start a real agent or use the network: `test/fixtures/fake-agent.ts` is a tiny interactive program run in
+  real pseudo-terminals and temp git repositories.
+- Anything here must also work in the compiled binary (`bun run build`), not just under `bun run`.
 
 ## One agent, one worktree
 

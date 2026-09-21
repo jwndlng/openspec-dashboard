@@ -48,6 +48,29 @@ export function applyCommand(repoPath: string, changeName: string): string {
   return `cd ${shellQuote(repoPath)} && claude "/opsx:apply ${changeName}"`;
 }
 
+/**
+ * Tooltip for a card's branch badge: where the change's data comes from, and which other checkouts hold a copy that
+ * is at a different point.
+ */
+export function checkoutHint(change: { checkout?: { path: string; isMain: boolean }; otherCheckouts?: { branch?: string; isMain: boolean; column: string }[] }): string {
+  const lines = [change.checkout && !change.checkout.isMain ? `lives in worktree ${change.checkout.path}` : "a branch or worktree matches this change"];
+  for (const other of change.otherCheckouts ?? []) lines.push(`also in: ${other.isMain ? "main checkout" : (other.branch ?? "detached worktree")} — ${other.column}`);
+  return lines.join("\n");
+}
+
+/**
+ * An archive found only in a linked worktree: agents archive on a branch, and the main checkout catches up when that
+ * branch is merged and pulled. Undefined for ordinary archives (and for anything that is not archived).
+ */
+export function pendingArchiveHint(change: { archived?: string | null; checkout?: { path: string; branch?: string; isMain: boolean }; otherCheckouts?: { branch?: string; isMain: boolean; column: string }[] }): { label: string; title: string } | undefined {
+  if (!change.archived || !change.checkout || change.checkout.isMain) return undefined;
+  const where = change.checkout.branch ?? "a detached worktree";
+  const lines = [`archived on ${where}, in worktree ${change.checkout.path} — the main checkout does not have this archive yet`];
+  for (const other of change.otherCheckouts ?? []) lines.push(`still active in: ${other.isMain ? "main checkout" : (other.branch ?? "detached worktree")} — ${other.column}`);
+  lines.push("merge that branch and update the main checkout to bring it here");
+  return { label: `on ${where} · not in main checkout`, title: lines.join("\n") };
+}
+
 export function cdCommand(repoPath: string): string {
   return `cd ${shellQuote(repoPath)}`;
 }

@@ -1,19 +1,38 @@
-import { cp, readFile, realpath } from "node:fs/promises";
+import { cp, realpath } from "node:fs/promises";
 import { join } from "node:path";
-import { defaultAgentSessions, defaultConfig, newRepoConfig } from "../src/server/config.ts";
+import { defaultConfig, newRepoConfig } from "../src/server/config.ts";
 import { scanRepo } from "../src/server/scanner.ts";
-import { ClaudeRunner } from "../src/server/sessions/claudeRunner.ts";
 import { SessionManager, type ManagerDeps } from "../src/server/sessions/manager.ts";
-import type { Config, Snapshot } from "../src/shared/types.ts";
+import type { AgentProfile, Config, Snapshot } from "../src/shared/types.ts";
 import { FIXTURES, tempDir } from "./helpers.ts";
 
-export const FAKE_CLAUDE = join(FIXTURES, "fake-claude.ts");
+export const FAKE_AGENT = join(FIXTURES, "fake-agent.ts");
 
-/** Synthetic fixture repo copied to a temp dir, because the fake CLI creates its worktree directory inside it. */
-export async function tempFixtureRepo(): Promise<string> {
-  // Resolved, because a child process reports its real cwd and macOS temp dirs sit behind the /var symlink.
+export const fakeProfile = (patch: Partial<AgentProfile> = {}): AgentProfile => ({
+  id: "fake",
+  name: "Fake Agent",
+  command: [FAKE_AGENT, "{prompt}"],
+  prompts: { draft: "draft {change}", implement: "implement {change}", archive: "archive {change}" },
+  resumeCommand: [FAKE_AGENT, "--resumed"],
+  unsetEnv: ["ANTHROPIC_API_KEY"],
+  ...patch,
+});
+
+export function git(cwd: string, ...args: string[]): string {
+  const result = Bun.spawnSync(["git", ...args], { cwd, stdout: "pipe", stderr: "pipe" });
+  if (result.exitCode !== 0) throw new Error(`git ${args.join(" ")}: ${result.stderr.toString()}`);
+  return result.stdout.toString().trim();
+}
+
+/** The synthetic fixture repo as a real git repository (sessions create worktrees of it). Resolved path: macOS temp dirs sit behind a symlink. */
+export async function tempGitRepo(): Promise<string> {
   const dir = join(await realpath(await tempDir("osd-repo-")), "demo-ops");
   await cp(join(FIXTURES, "demo-ops"), dir, { recursive: true });
+  git(dir, "init", "-q", "-b", "main");
+  git(dir, "config", "user.email", "t@example.invalid");
+  git(dir, "config", "user.name", "t");
+  git(dir, "add", "-A");
+  git(dir, "commit", "-q", "-m", "init");
   return dir;
 }
 
@@ -26,17 +45,12 @@ export interface Harness {
   newManager(extra?: Partial<ManagerDeps>): SessionManager;
 }
 
-export async function harness(overrides: { enabled?: boolean; optIn?: boolean; maxRunning?: number; allowedTools?: string[]; timing?: ManagerDeps["timing"] } = {}): Promise<Harness> {
-  const repoPath = await tempFixtureRepo();
-  const repo = { ...newRepoConfig(repoPath, true), agent: overrides.optIn === false ? undefined : { enabled: true, allowedTools: overrides.allowedTools ?? [] } };
-  const config: Config = {
-    ...defaultConfig(),
-    repos: [repo],
-    agentSessions: { ...defaultAgentSessions(), enabled: overrides.enabled ?? true, maxRunning: overrides.maxRunning ?? 2, claudePath: FAKE_CLAUDE },
-  };
+export async function harness(overrides: { enabled?: boolean; repoOff?: boolean; agent?: Partial<AgentProfile> } = {}): Promise<Harness> {
+  const repoPath = await tempGitRepo();
+  const repo = { ...newRepoConfig(repoPath, true), agent: overrides.repoOff ? { enabled: false } : undefined };
+  const config: Config = { ...defaultConfig(), repos: [repo], agentSessions: { enabled: overrides.enabled ?? true, agents: [fakeProfile(overrides.agent)], defaultAgent: "fake" } };
   const snapshot: Snapshot = { generatedAt: new Date().toISOString(), repos: [await scanRepo(repo)] };
-  const newManager = (extra: Partial<ManagerDeps> = {}) =>
-    new SessionManager({ getConfig: () => config, getSnapshot: () => snapshot, runner: new ClaudeRunner(() => config.agentSessions.claudePath), timing: overrides.timing, ...extra });
+  const newManager = (extra: Partial<ManagerDeps> = {}) => new SessionManager({ getConfig: () => config, getSnapshot: () => snapshot, typePromptDelayMs: 150, ...extra });
   return { config, snapshot, repoId: repo.id, repoPath, manager: newManager(), newManager };
 }
 
@@ -49,10 +63,15 @@ export async function waitFor(check: () => boolean | Promise<boolean>, what: str
   throw new Error(`timed out waiting for ${what}`);
 }
 
-export async function recorded(path: string): Promise<{ argv: string[]; cwd: string; hasApiKey: boolean; hasAuthToken: boolean }[]> {
-  try {
-    return (await readFile(path, "utf8")).split("\n").filter(Boolean).map((l) => JSON.parse(l));
-  } catch {
-    return [];
-  }
+/** Collects what a session's terminal shows, as text. */
+export async function watch(manager: SessionManager, id: string): Promise<{ text: () => string; ended: () => boolean; detach: () => void }> {
+  const decoder = new TextDecoder();
+  let seen = "";
+  let ended = false;
+  const { scrollback, detach } = await manager.attach(id, (chunk) => {
+    if (chunk.length === 0) ended = true;
+    else seen += decoder.decode(chunk, { stream: true });
+  });
+  seen = decoder.decode(scrollback, { stream: true }) + seen;
+  return { text: () => seen, ended: () => ended, detach };
 }

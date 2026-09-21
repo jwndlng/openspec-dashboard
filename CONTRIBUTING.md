@@ -47,10 +47,11 @@ the proposal first. Agent sessions follow the same rule — see `CLAUDE.md`.
 
 ## Testing agent sessions
 
-Tests must never start the real agent CLI or use the network. Everything under `src/server/sessions/` is exercised
-through `test/fixtures/fake-claude.ts`, a small executable that speaks the CLI's stream-JSON protocol and is scripted
-with `FAKE_CLAUDE_MODE` (`echo`, `deny`, `auth`, `limit`, `hang`, `crash`). Its event shapes come from
-`test/fixtures/claude-stream/`, recorded once from the real CLI and sanitised — update both together.
+Tests must never start a real agent CLI or use the network. `test/fixtures/fake-agent.ts` is a small interactive program
+(prints how it was started, echoes what is typed, `exit`/`crash` end it); session tests run it in real pseudo-terminals
+against temp git repositories made from the synthetic fixtures, including the WebSocket that carries the terminal. If you
+change how agents are started or relayed, also run the compiled binary once (`bun run build`): pseudo-terminals and
+WebSockets must work inside the single executable.
 
 ## Demo site and screenshots
 
@@ -67,6 +68,8 @@ published from `main` by `.github/workflows/pages.yml`; nothing generated is com
   every view keeps working in both routing modes.
 - **Screenshots come from the demo build only:** `bun run build:demo && bun run screenshots`. The script takes no URL
   on purpose. The README embeds the published ones, so they follow `main` on their own.
+- **A new Settings panel is one entry in the `sections` array** in `src/ui/settings.tsx`; the navigation and the page are
+  both rendered from it. Its `id` becomes part of the `?section=` deep-link contract (`src/ui/settingsSections.ts`).
 - A new board feature is worth a sample change that shows it — the demo is the first thing a newcomer sees.
 
 ## Toolchain

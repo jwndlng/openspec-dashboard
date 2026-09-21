@@ -37,6 +37,11 @@ export function navigateUrl(loc: Pick<LocationParts, "pathname">, path: string, 
   return routing === "hash" ? `${loc.pathname}${query}#${path}` : `${path}${query}`;
 }
 
+/** Like `href`, with a query ("" or "?…"). In hash mode the query belongs to the document, so it comes before the fragment. */
+export function hrefWithQuery(path: string, query: string, routing: RoutingMode = mode): string {
+  return routing === "hash" ? `${query || "?"}#${path}` : `${path}${query}`;
+}
+
 /** The URL to replace when only the query changes; keeps the fragment, which is the route in hash mode. */
 export function replaceQueryUrl(loc: Pick<LocationParts, "pathname" | "hash">, query: string): string {
   return `${loc.pathname}${query}${loc.hash}`;
@@ -78,4 +83,9 @@ export function onRouteChange(listener: () => void): () => void {
     removeEventListener("popstate", listener);
     removeEventListener("hashchange", listener);
   };
+}
+
+/** `ws://host` (or `wss://`) of the page, for the dashboard's own WebSocket endpoints. */
+export function socketOrigin(loc: Pick<Location, "protocol" | "host"> = location): string {
+  return `${loc.protocol === "https:" ? "wss" : "ws"}://${loc.host}`;
 }

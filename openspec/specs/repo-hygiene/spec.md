@@ -63,10 +63,14 @@ The repository SHALL pin the Bun version in `.bun-version` and in `package.json`
 - **THEN** no file under `test/fixtures/` or `openspec/` is modified
 
 ### Requirement: Continuous integration gates every pull request
-A CI workflow SHALL run on pull requests and on pushes to `main`, on Linux and macOS, executing `bun run check`, the single-binary build and a smoke invocation of the built binary. A separate workflow SHALL verify that pull request titles follow Conventional Commits. Workflows MUST request only read permissions, MUST pin third-party actions to a full commit SHA, and automated updates SHALL be configured for the actions. Automated package updates SHALL be added once the update service can read the lockfile format written by the pinned Bun version; until then package updates are manual.
+A CI workflow SHALL run on pull requests and on pushes to `main`, on Linux and macOS, executing `bun run check`, the single-binary build, the demo build and a smoke invocation of the built binary. A separate workflow SHALL verify that pull request titles follow Conventional Commits. Workflows MUST request only read permissions, with one exception: the job that deploys the demo site to GitHub Pages MAY request `pages: write` and `id-token: write`, and those scopes MUST be granted to that job only, in a workflow that runs only for pushes to `main` or manual dispatch and never for pull requests. Workflows MUST pin third-party actions to a full commit SHA, and automated updates SHALL be configured for the actions. Automated package updates SHALL be added once the update service can read the lockfile format written by the pinned Bun version; until then package updates are manual.
 
 #### Scenario: Broken build blocks the pull request
 - **WHEN** a pull request makes `bun run build` fail
+- **THEN** the CI workflow reports failure on that pull request
+
+#### Scenario: Broken demo blocks the pull request
+- **WHEN** a pull request makes `bun run build:demo` fail
 - **THEN** the CI workflow reports failure on that pull request
 
 #### Scenario: Binary smoke test
@@ -80,6 +84,10 @@ A CI workflow SHALL run on pull requests and on pushes to `main`, on Linux and m
 #### Scenario: Superseded runs are cancelled
 - **WHEN** a second commit is pushed to a pull request while CI is still running for the first
 - **THEN** the earlier run is cancelled
+
+#### Scenario: Write scopes are confined to the deploy job
+- **WHEN** the workflows are inspected
+- **THEN** only the Pages deploy job declares write permissions, its workflow has no `pull_request` trigger, and every other job and workflow is read-only
 
 ### Requirement: Contribution and agent conventions are documented
 The repository SHALL contain `CONTRIBUTING.md` describing branch naming (`feat/<openspec-change-name>`, `fix/…`, `chore/…`), Conventional Commits including the `openspec` scope for proposals and archives, one OpenSpec change per pull request, and running `bun run check` before pushing. It SHALL contain `CLAUDE.md` stating the project commands and the invariants agents must preserve — read-only behaviour towards tracked repositories with the read-only git allow-list, loopback-only binding, access to `@fission-ai/openspec` internals only through `src/server/openspecAdapter.ts`, a self-contained UI without runtime network access, state confined to `~/.openspec-dashboard/`, and staying within a change's declared Impact when sessions run in parallel — and an `AGENTS.md` that points to `CLAUDE.md`.

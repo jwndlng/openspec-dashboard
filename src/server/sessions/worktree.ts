@@ -1,16 +1,18 @@
-// The only git *write* the dashboard ever performs (design.md D5): removing a session's worktree, after read-only
-// checks proved it holds nothing that exists nowhere else, and only when the user confirmed it.
-import { stat } from "node:fs/promises";
+// The git *writes* the dashboard performs for agent sessions (design.md D17), both on an explicit user action:
+// creating a session's worktree, and removing it after read-only checks proved it holds nothing that exists nowhere else.
+import { cp, mkdir, stat } from "node:fs/promises";
+import { parseWorktrees } from "../git.ts";
+import { dirname, join } from "node:path";
 
 const ENV = { GIT_TERMINAL_PROMPT: "0", GIT_OPTIONAL_LOCKS: "0" };
 
-async function git(cwd: string, args: string[]): Promise<{ ok: boolean; out: string }> {
+async function git(cwd: string, args: string[]): Promise<{ ok: boolean; out: string; err: string }> {
   try {
     const proc = Bun.spawn(["git", ...args], { cwd, stdout: "pipe", stderr: "pipe", stdin: "ignore", env: { ...process.env, ...ENV } });
-    const out = await new Response(proc.stdout).text();
-    return { ok: (await proc.exited) === 0, out: out.trim() };
-  } catch {
-    return { ok: false, out: "" };
+    const [out, err] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text()]);
+    return { ok: (await proc.exited) === 0, out: out.trim(), err: err.trim() };
+  } catch (e) {
+    return { ok: false, out: "", err: String(e) };
   }
 }
 
@@ -19,8 +21,12 @@ export interface Removable {
   reason?: string;
 }
 
-/** Read-only: is the worktree clean and is every commit on it also reachable from somewhere else? */
-export async function checkWorktreeRemovable(worktreePath: string): Promise<Removable> {
+/**
+ * Read-only: is the worktree clean, and is every commit on it also reachable from somewhere else — or is its work
+ * merged (`merged`, from the work status)? Removing a worktree never deletes its branch, so merged work whose upstream
+ * was deleted after a squash merge can go as well.
+ */
+export async function checkWorktreeRemovable(worktreePath: string, merged = false): Promise<Removable> {
   try {
     if (!(await stat(worktreePath)).isDirectory()) return { removable: false, reason: "worktree path is not a directory" };
   } catch {
@@ -29,6 +35,7 @@ export async function checkWorktreeRemovable(worktreePath: string): Promise<Remo
   const status = await git(worktreePath, ["status", "--porcelain", "--untracked-files=all"]);
   if (!status.ok) return { removable: false, reason: "could not read the worktree's status" };
   if (status.out) return { removable: false, reason: "the worktree has uncommitted changes" };
+  if (merged) return { removable: true };
 
   const upstream = await git(worktreePath, ["rev-list", "--count", "@{u}..HEAD"]);
   if (upstream.ok) {
@@ -45,10 +52,65 @@ export async function checkWorktreeRemovable(worktreePath: string): Promise<Remo
 }
 
 /** `git worktree unlock` (the CLI leaves its worktrees locked) followed by a non-forcing `git worktree remove`. */
-export async function removeWorktree(repoPath: string, worktreePath: string): Promise<Removable> {
-  const check = await checkWorktreeRemovable(worktreePath);
+export async function removeWorktree(repoPath: string, worktreePath: string, merged = false): Promise<Removable> {
+  const check = await checkWorktreeRemovable(worktreePath, merged);
   if (!check.removable) return check;
   await git(repoPath, ["worktree", "unlock", worktreePath]); // fails harmlessly when it was not locked
   const removed = await git(repoPath, ["worktree", "remove", worktreePath]);
   return removed.ok ? { removable: true } : { removable: false, reason: "git refused to remove the worktree" };
+}
+
+async function isDirectory(path: string): Promise<boolean> {
+  try {
+    return (await stat(path)).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Makes sure `worktreePath` is a worktree of `repoPath` on `branch`. An existing one is reused (an earlier session for
+ * the same change); an existing branch is checked out; otherwise the branch is created from the repository's default
+ * branch as the repository currently knows it (`origin/HEAD`, else `HEAD`). Deliberately no `git fetch`: the dashboard
+ * does not talk to the network, and remotes behind a hardware key would block.
+ */
+/**
+ * The linked worktree that has `branch` checked out, if any. git allows a branch in one worktree only, so a session
+ * for that branch cannot get a worktree of its own and works there instead. Never the main checkout.
+ */
+export async function linkedWorktreeOf(repoPath: string, branch: string): Promise<string | undefined> {
+  const listed = await git(repoPath, ["worktree", "list", "--porcelain"]);
+  if (!listed.ok) return undefined;
+  return parseWorktrees(`${listed.out}\n`).find((w) => !w.isMain && !w.prunable && !w.bare && w.branch === branch)?.path;
+}
+
+export async function ensureWorktree(repoPath: string, worktreePath: string, branch: string): Promise<{ created: boolean; base?: string }> {
+  if (await isDirectory(worktreePath)) {
+    const inside = await git(worktreePath, ["rev-parse", "--is-inside-work-tree"]);
+    if (inside.ok && inside.out === "true") return { created: false };
+    throw new Error(`${worktreePath} exists but is not a git worktree`);
+  }
+  await mkdir(dirname(worktreePath), { recursive: true });
+  await git(repoPath, ["worktree", "prune"]); // forget worktrees whose directory was deleted by hand
+  const hasBranch = (await git(repoPath, ["show-ref", "--verify", "--quiet", `refs/heads/${branch}`])).ok;
+  if (hasBranch) {
+    const added = await git(repoPath, ["worktree", "add", worktreePath, branch]);
+    if (!added.ok) throw new Error(`could not create the worktree: ${added.err.split("\n").pop()}`);
+    return { created: true };
+  }
+  const remoteHead = await git(repoPath, ["symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"]);
+  const base = remoteHead.ok && remoteHead.out ? remoteHead.out : "HEAD";
+  const added = await git(repoPath, ["worktree", "add", "-b", branch, worktreePath, base]);
+  if (!added.ok) throw new Error(`could not create the worktree: ${added.err.split("\n").pop()}`);
+  return { created: true, base };
+}
+
+/** A change that exists only uncommitted in the main checkout is copied into the worktree, so the agent can see it. */
+/** `fromCheckout` is the checkout the change lives in: the main one, or a linked worktree. */
+export async function copyChangeIfMissing(fromCheckout: string, worktreePath: string, change: string): Promise<boolean> {
+  const source = join(fromCheckout, "openspec", "changes", change);
+  const target = join(worktreePath, "openspec", "changes", change);
+  if ((await isDirectory(target)) || !(await isDirectory(source))) return false;
+  await cp(source, target, { recursive: true });
+  return true;
 }

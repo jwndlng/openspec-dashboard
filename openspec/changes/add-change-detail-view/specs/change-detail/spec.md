@@ -163,7 +163,7 @@ Each board card SHALL open the detail view for its change. The detail view SHALL
 
 ### Requirement: Copy actions in the detail view
 
-The detail view SHALL offer the "Copy apply command" action that cards offer, a "Copy cd command" action that copies `cd <repoPath>`, and a "Copy file path" action that copies the absolute path of the selected file. The dashboard MUST NOT execute any of them.
+The detail view SHALL offer the "Copy apply command" action that cards offer (with the same command, so for a change that lives in a linked worktree it targets that worktree), a "Copy cd command" action that copies `cd <repoPath>`, and a "Copy file path" action that copies the absolute path of the selected file. The dashboard MUST NOT execute any of them.
 
 #### Scenario: Copy the file path
 

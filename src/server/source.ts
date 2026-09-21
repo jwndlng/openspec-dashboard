@@ -4,7 +4,7 @@ import type { Dirent } from "node:fs";
 import { readdir, readFile, realpath, stat } from "node:fs/promises";
 import { dirname, join, relative } from "node:path";
 import type { Worktree } from "../shared/types.ts";
-import { currentBranch, isGitRepo, lastCommitDate, statusPaths, worktrees } from "./git.ts";
+import { currentBranch, defaultBranch, isGitRepo, lastCommitDate, statusPaths, subdirectory, worktrees } from "./git.ts";
 
 export const CHANGE_NAME = /^[A-Za-z0-9._-]+$/;
 const ARCHIVE_PREFIX = /^(\d{4}-\d{2}-\d{2})-(.+)$/;
@@ -44,7 +44,12 @@ export interface ChangeListing {
 export interface RepoSource {
   readonly path: string;
   exists(): Promise<boolean>;
-  listChanges(): Promise<ChangeListing>;
+  /** `archived: false` skips the archive, which is only ever read from a repository's main checkout. */
+  listChanges(options?: { archived?: boolean }): Promise<ChangeListing>;
+  /** The same kind of source for another checkout of this repository (a linked worktree). */
+  forCheckout(path: string): RepoSource;
+  /** Modification time of one directory entry itself (not its contents), in ms; undefined when it does not exist. */
+  mtimeMs(absPath: string): Promise<number | undefined>;
   readText(absPath: string): Promise<string | undefined>;
   /** Undefined when the path does not exist or a link on the way does not resolve. */
   readFileInfo(absPath: string): Promise<FileInfo | undefined>;
@@ -53,7 +58,11 @@ export interface RepoSource {
   newestMtime(dir: string): Promise<string | undefined>;
   isGit(): Promise<boolean>;
   branch(): Promise<string | undefined>;
+  /** The default branch as known locally (no remote is asked); undefined when it cannot be told. */
+  defaultBranch(): Promise<string | undefined>;
   worktrees(): Promise<Worktree[]>;
+  /** The project's directory below the git top level; empty when the project is the repository. */
+  subdirectory(): Promise<string>;
   /** Committer date of the last commit touching `absPath` inside the repo. */
   lastActivity(absPath: string): Promise<string | undefined>;
   /** Modified and untracked files under `openspec/`, per git. Empty for non-git repositories or on failure. */
@@ -80,7 +89,19 @@ export class LocalRepoSource implements RepoSource {
     }
   }
 
-  async listChanges(): Promise<ChangeListing> {
+  forCheckout(path: string): RepoSource {
+    return new LocalRepoSource(path);
+  }
+
+  async mtimeMs(absPath: string): Promise<number | undefined> {
+    try {
+      return (await stat(absPath)).mtimeMs;
+    } catch {
+      return undefined;
+    }
+  }
+
+  async listChanges({ archived: withArchive = true }: { archived?: boolean } = {}): Promise<ChangeListing> {
     const active: ChangeDirEntry[] = [];
     const archived: ChangeDirEntry[] = [];
     const warnings: string[] = [];
@@ -96,7 +117,7 @@ export class LocalRepoSource implements RepoSource {
       active.push({ name, dir: join(changesRoot, name) });
     }
 
-    for (const dirName of await listDirs(archiveRoot)) {
+    for (const dirName of withArchive ? await listDirs(archiveRoot) : []) {
       const dir = join(archiveRoot, dirName);
       const match = ARCHIVE_PREFIX.exec(dirName);
       const name = match ? match[2] : dirName;
@@ -167,8 +188,16 @@ export class LocalRepoSource implements RepoSource {
     return currentBranch(this.path);
   }
 
+  defaultBranch(): Promise<string | undefined> {
+    return defaultBranch(this.path);
+  }
+
   worktrees(): Promise<Worktree[]> {
     return worktrees(this.path);
+  }
+
+  subdirectory(): Promise<string> {
+    return subdirectory(this.path);
   }
 
   lastActivity(absPath: string): Promise<string | undefined> {

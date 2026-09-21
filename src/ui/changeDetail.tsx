@@ -125,7 +125,8 @@ export function DetailHeader({ repo, change, from, selectedFilePath, now }: { re
         <span class="badge mono">{change.schema}</span>
       </div>
       <div class="row detail-actions">
-        {!change.archived && <CopyButton text={applyCommand(repo.path, change.name)} label="Copy apply command" />}
+        {/* Like the card: apply where the change lives, which for a change in a worktree is the worktree. */}
+        {!change.archived && <CopyButton text={applyCommand(change.checkout?.path ?? repo.path, change.name)} label="Copy apply command" />}
         <CopyButton text={cdCommand(repo.path)} label="Copy cd command" />
         {selectedFilePath && <CopyButton text={selectedFilePath} label="Copy file path" />}
       </div>

@@ -28,8 +28,18 @@ export interface ChangeSnapshot {
   archived?: string;
   /** Committer date of the last commit touching the change dir, or newest mtime. */
   lastActivityAt?: string;
-  /** Branch or worktree branch whose name contains the change name. */
+  /**
+   * The branch of the linked worktree the change's data comes from; for a change that lives in the main checkout, the
+   * first branch or worktree branch whose name contains the change name.
+   */
   branchMatch?: string;
+  /**
+   * The checkout this change's data comes from: the leading copy among all checkouts holding the change. Absent in
+   * snapshots cached by older versions and for non-git repositories.
+   */
+  checkout?: ChangeCheckout;
+  /** Other checkouts that hold a copy of this change, with the column that copy alone would be in. */
+  otherCheckouts?: (ChangeCheckout & { column: string })[];
   /**
    * Whether the delta specs are already reflected in `openspec/specs/`. Only set for non-archived changes whose tasks
    * are all complete — the one place where it decides the column (`Done` vs `Synced`).
@@ -42,9 +52,25 @@ export interface ChangeSnapshot {
   warnings?: string[];
 }
 
+/** A checkout of a repository as `git worktree list` reports it: the main working tree or a linked worktree. */
 export interface Worktree {
   path: string;
-  branch: string;
+  /** Absent when HEAD is detached. */
+  branch?: string;
+  detached?: boolean;
+  /** The repository's main working tree (git lists it first); everything else is a linked worktree. */
+  isMain?: boolean;
+  /** git considers it removable, typically because its directory is gone. */
+  prunable?: boolean;
+  /** A bare repository entry: there is no working tree to read. */
+  bare?: boolean;
+}
+
+/** Where a change's data was read from. */
+export interface ChangeCheckout {
+  path: string;
+  branch?: string;
+  isMain: boolean;
 }
 
 export interface RepoSnapshot {
@@ -57,6 +83,16 @@ export interface RepoSnapshot {
   scannedAt: string;
   isGit: boolean;
   currentBranch?: string;
+  /**
+   * The repository's default branch: what `origin/HEAD` points to, else `main`, else `master`. Omitted when it cannot be
+   * determined (and in snapshots cached by older versions).
+   */
+  defaultBranch?: string;
+  /**
+   * Whether the main checkout is on `defaultBranch` (false when HEAD is detached). Archives, specs and progress are read
+   * from the main checkout, so off the default branch they may be outdated. Omitted with `defaultBranch`.
+   */
+  onDefaultBranch?: boolean;
   worktrees: Worktree[];
   /**
    * Latest change to anything under `openspec/`: the last commit touching it, or the mtime of a file
@@ -79,88 +115,136 @@ export interface RepoConfig {
   path: string;
   name: string;
   enabled: boolean;
-  /** Agent-session opt-in for this repository; absent means not opted in. */
+  /** Per-repository agent-session settings. Absent means "included": once sessions are enabled globally they apply to
+   *  every tracked repository unless it is switched off here. */
   agent?: RepoAgentConfig;
 }
 
 export interface RepoAgentConfig {
   enabled: boolean;
-  /** Added to the built-in default allow-list for sessions in this repository. */
-  allowedTools: string[];
+  /** Agent profile used for this repository; absent means the default agent. */
+  agentId?: string;
+}
+
+/**
+ * One agent CLI the dashboard can start in a terminal. Nothing here is specific to a vendor: a profile is a command
+ * line plus the opening prompts, so any CLI that runs interactively in a terminal can be described.
+ */
+export interface AgentProfile {
+  id: string;
+  name: string;
+  /** Argument list, never a shell string. `{prompt}` is replaced by the opening prompt as one argument; without it
+   *  the prompt is typed into the terminal once the agent has started. */
+  command: string[];
+  /** Opening prompt per session starter; `{change}` is the only placeholder. A starter without a prompt is not offered. */
+  prompts: Partial<Record<PromptKey, string>>;
+  /** Continues this agent's latest conversation in the same directory, e.g. ["claude", "--continue"]. */
+  resumeCommand?: string[];
+  /** Environment variables removed for the agent, e.g. API keys so a CLI's own login is used. */
+  unsetEnv?: string[];
 }
 
 export interface AgentSessionsConfig {
   enabled: boolean;
-  /** Sessions whose agent is working at the same time; further turns queue. */
-  maxRunning: number;
-  /** A waiting session's process is stopped after this long and resumed on the next message. */
-  idleMinutes: number;
-  claudePath: string;
-  /** Keep ANTHROPIC_API_KEY / ANTHROPIC_AUTH_TOKEN in the agent's environment (bills the API instead of the CLI login). */
-  passApiKeyEnv: boolean;
-  /** Opening instructions; `{change}` is the only placeholder. */
-  commands: Record<SessionAction, string>;
+  agents: AgentProfile[];
+  defaultAgent: string;
 }
 
 export interface Config {
   version: 1;
   scanRoots: string[];
+  /** Absolute path prefixes discovery never descends into or reports. Tracked repositories below them stay tracked. */
+  ignorePaths: string[];
   repos: RepoConfig[];
   pollIntervalSeconds: number;
   port: number;
   agentSessions: AgentSessionsConfig;
 }
 
-export type SessionAction = "draft" | "implement";
-export type SessionState = "queued" | "running" | "waiting" | "closed" | "failed" | "cancelled" | "interrupted";
-export type SessionFailure = "auth" | "usage-limit" | "cli-missing" | "crashed";
+export type SessionAction = "draft" | "implement" | "archive";
+export const SESSION_ACTIONS: readonly SessionAction[] = ["draft", "implement", "archive"];
+/** `ship` is a prompt, not a starter: it asks the agent of an existing session to commit, push and open a pull request. */
+export type PromptKey = SessionAction | "ship";
+/** Agent-neutral on purpose, so every profile can ship without being configured for it. */
+/** What Ship answers: the session, and whether the prompt was submitted. `false` means the agent of a running session
+ *  did not show the typed prompt (it may be showing a menu), so Enter was not pressed and nothing was confirmed. */
+export type ShipResult = Session & { submitted: boolean };
 
-export const OPEN_SESSION_STATES: readonly SessionState[] = ["queued", "running", "waiting", "interrupted"];
+export const DEFAULT_SHIP_PROMPT =
+  "Ship the work in this worktree: commit everything that belongs to it with a Conventional Commit message, push the branch, and open a pull request against the default branch if there is none yet. Do not merge it. Tell me the pull request URL.";
 
-export interface RateLimitWindow {
-  utilization: number;
-  resetsAt: number;
+/**
+ * What became of the work in a session's worktree, from local git only (nothing is fetched, so `merged` is as of the
+ * user's last fetch). `clean`: no commit the base lacks; `missing`: the directory is not a worktree (any more).
+ */
+export type WorkState = "missing" | "clean" | "uncommitted" | "unpushed" | "pushed" | "merged";
+export const SHIPPABLE_WORK: readonly WorkState[] = ["uncommitted", "unpushed", "pushed"];
+
+export interface WorkStatus {
+  state: WorkState;
+  /** Files for `uncommitted`, commits for `unpushed`. */
+  count?: number;
+  /** What the branch was compared with, e.g. `origin/main`. */
+  base?: string;
 }
+
+/** A directory under the dashboard's worktrees folder; it outlives session records, so it is listed on its own. */
+export interface SessionWorktree {
+  repoId: string;
+  name: string;
+  path: string;
+  change: string;
+  action: SessionAction;
+  branch?: string;
+  work: WorkStatus;
+  /** Latest of the branch's last commit and its session's last update. */
+  lastActivityAt?: string;
+  /** Most recent session in this worktree, if its record still exists. */
+  sessionId?: string;
+}
+
+/** A session is a process in a terminal: it runs, or it has ended. `failed` means it could not be started. */
+export type SessionState = "running" | "exited" | "failed";
+
+export const OPEN_SESSION_STATES: readonly SessionState[] = ["running"];
 
 export interface Session {
   id: string;
   repoId: string;
   change: string;
   action: SessionAction;
-  /** Conversation id chosen by the dashboard and passed to the CLI; used for resume. */
-  cliSessionId: string;
+  agentId: string;
+  agentName: string;
   state: SessionState;
-  failure?: SessionFailure;
+  exitCode?: number | null;
   error?: string;
-  worktreePath?: string;
+  /** The worktree the agent runs in: the session's own, under the dashboard home — or an adopted one. */
+  worktreePath: string;
+  /**
+   * The worktree already existed with the session's branch checked out (git allows a branch in one worktree only), so
+   * the session runs there. The dashboard did not create it and never removes it.
+   */
+  adopted?: boolean;
+  branch: string;
   createdAt: string;
   updatedAt: string;
-  turns: number;
-  costUsd: number;
-  /** Highest event sequence number written so far. */
-  lastSeq: number;
-  /** "none" means the CLI's own login is used. */
-  apiKeySource?: string;
-  rateLimit?: { status: string; windows: Record<string, RateLimitWindow> };
-}
-
-export type SessionEventKind = "user" | "assistant" | "tool_use" | "tool_result" | "denied" | "result" | "state" | "error";
-
-export interface SessionEvent {
-  seq: number;
-  at: string;
-  kind: SessionEventKind;
-  text?: string;
-  tool?: { name: string; input?: unknown };
-  isError?: boolean;
-  state?: SessionState;
-  costUsd?: number;
+  /** When the terminal last printed something; a long quiet spell usually means the agent waits for the user. */
+  lastOutputAt?: string;
+  /** True once the agent has a conversation that `resumeCommand` can continue. */
+  resumable: boolean;
 }
 
 export interface AgentAvailability {
+  id: string;
+  name: string;
   available: boolean;
-  version?: string;
-  reason?: string;
+  /** Resolved executable, when found. */
+  path?: string;
+}
+
+/** Included unless explicitly switched off for this repository (the global switch is checked separately). */
+export function repoAgentEnabled(repo: Pick<RepoConfig, "enabled" | "agent">): boolean {
+  return repo.enabled && repo.agent?.enabled !== false;
 }
 
 /** The session starters a change currently qualifies for (before feature/opt-in checks). */
@@ -169,12 +253,24 @@ export function availableActions(change: Pick<ChangeSnapshot, "archived" | "arti
   const actions: SessionAction[] = [];
   if (change.artifacts.length === 0 || change.artifacts.some((a) => a.status !== "done")) actions.push("draft");
   if (change.stage === "ready" || change.stage === "implementing") actions.push("implement");
+  if (change.stage === "done") actions.push("archive"); // every task ticked, not archived yet
   return actions;
 }
 
+/** Another known repository with the same `origin` remote: probably a second clone, but never merged or hidden. */
+export interface SameRemoteRepo {
+  name: string;
+  path: string;
+  /** In the saved config (enabled or not), as opposed to another candidate. */
+  tracked: boolean;
+}
+
+/** A discovery candidate. `sameRemoteAs` is information for the user and is dropped when the candidate is enabled. */
+export type DiscoveredRepo = RepoConfig & { sameRemoteAs?: SameRemoteRepo[] };
+
 export interface DiscoverResult {
   /** Repositories found under the roots that are not in the config yet. Never persisted by discovery. */
-  candidates: RepoConfig[];
+  candidates: DiscoveredRepo[];
   errors: { root: string; message: string }[];
 }
 
@@ -273,4 +369,24 @@ export interface ArtifactFileContent {
   path: string;
   bytes: number;
   text: string;
+}
+
+/**
+ * What the pull action did for one repository. The fetch and the update of the main checkout are reported separately:
+ * the fetch is always safe, the update only happens when it is an unambiguous fast-forward on the default branch.
+ */
+export interface PullResult {
+  repoId: string;
+  /** The remote was fetched (remote-tracking refs are current). */
+  fetched: boolean;
+  update: "fast-forwarded" | "up-to-date" | "skipped" | "refused" | "failed";
+  /** Commits the main checkout moved forward. */
+  commits?: number;
+  /** Why the update was skipped, refused or failed — git's words where git decided. */
+  reason?: string;
+  branch?: string;
+  upstream?: string;
+  defaultBranch?: string;
+  /** The repository has a post-merge hook; the dashboard does not run hooks. */
+  hooksSkipped?: boolean;
 }

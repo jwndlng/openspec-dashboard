@@ -1,0 +1,322 @@
+import { afterAll, afterEach, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
+import { existsSync } from "node:fs";
+import { mkdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import { sessionsDir, worktreesDir } from "../src/server/paths.ts";
+import { scanRepo } from "../src/server/scanner.ts";
+import { SessionManager } from "../src/server/sessions/manager.ts";
+import { SessionStore } from "../src/server/sessions/store.ts";
+import { checkWorktreeRemovable, copyChangeIfMissing, ensureWorktree, removeWorktree } from "../src/server/sessions/worktree.ts";
+import { tempDir, useTempHome } from "./helpers.ts";
+import { FAKE_AGENT, git, harness, tempGitRepo, waitFor, watch } from "./sessionHelpers.ts";
+
+// These tests start real processes in pseudo-terminals and open sockets; slow CI runners need more than the 5 s default.
+setDefaultTimeout(30_000);
+
+let cleanup: () => Promise<void>;
+const managers: SessionManager[] = [];
+const track = <T extends { manager: SessionManager }>(h: T): T => {
+  managers.push(h.manager);
+  return h;
+};
+
+beforeAll(async () => {
+  ({ cleanup } = await useTempHome());
+});
+afterEach(async () => {
+  delete process.env.ANTHROPIC_API_KEY;
+  for (const m of managers.splice(0)) await m.shutdown();
+});
+afterAll(() => cleanup());
+
+test("worktrees: created from the default branch, existing branch reused, existing worktree reused, change copied in", async () => {
+  const repo = await tempGitRepo();
+  const home = await realpath(await tempDir("osd-wt-"));
+  const wt = join(home, "cache-api-calls");
+  expect(await ensureWorktree(repo, wt, "feat/cache-api-calls")).toMatchObject({ created: true, base: "HEAD" });
+  expect(git(wt, "branch", "--show-current")).toBe("feat/cache-api-calls");
+  expect(existsSync(join(wt, "openspec", "changes", "cache-api-calls", "tasks.md"))).toBe(true);
+  expect(await ensureWorktree(repo, wt, "feat/cache-api-calls")).toEqual({ created: false });
+  expect(git(repo, "branch", "--show-current")).toBe("main"); // the main checkout is not switched
+  expect(git(repo, "status", "--porcelain")).toBe(""); // and sees no new files: the worktree lives outside it
+
+  git(repo, "branch", "feat/already-there");
+  expect(await ensureWorktree(repo, join(home, "already"), "feat/already-there")).toEqual({ created: true });
+
+  await mkdir(join(home, "plain-dir"));
+  await expect(ensureWorktree(repo, join(home, "plain-dir"), "feat/x")).rejects.toThrow(/not a git worktree/);
+
+  // a change that exists only uncommitted in the main checkout
+  await mkdir(join(repo, "openspec", "changes", "brand-new"), { recursive: true });
+  await writeFile(join(repo, "openspec", "changes", "brand-new", "prompt.md"), "do the thing\n");
+  expect(await copyChangeIfMissing(repo, wt, "brand-new")).toBe(true);
+  expect(await readFile(join(wt, "openspec", "changes", "brand-new", "prompt.md"), "utf8")).toBe("do the thing\n");
+  expect(await copyChangeIfMissing(repo, wt, "brand-new")).toBe(false);
+});
+
+test("worktree removal: refused when dirty or holding commits that exist nowhere else, done when clean", async () => {
+  const repo = await tempGitRepo();
+  const wt = join(await realpath(await tempDir("osd-wt-")), "x");
+  await ensureWorktree(repo, wt, "feat/x");
+  await writeFile(join(wt, "scratch.txt"), "wip\n");
+  expect(await checkWorktreeRemovable(wt)).toMatchObject({ removable: false, reason: expect.stringContaining("uncommitted") });
+  git(wt, "add", "-A");
+  git(wt, "commit", "-q", "-m", "work");
+  expect(await checkWorktreeRemovable(wt)).toMatchObject({ removable: false, reason: expect.stringContaining("only on this worktree") });
+  expect((await removeWorktree(repo, wt)).removable).toBe(false);
+  git(repo, "merge", "-q", "feat/x");
+  expect(await removeWorktree(repo, wt)).toEqual({ removable: true });
+  expect(existsSync(wt)).toBe(false);
+});
+
+test("a session is the agent in a terminal, in its own worktree: start, type, exit", async () => {
+  const h = track(await harness());
+  process.env.ANTHROPIC_API_KEY = "must-not-reach-the-agent";
+  const s = await h.manager.open({ repoId: h.repoId, change: "upgrade-runtime", action: "implement" });
+  expect(s).toMatchObject({ state: "running", agentName: "Fake Agent", branch: "feat/upgrade-runtime", resumable: true });
+  expect(s.worktreePath).toBe(join(worktreesDir(), h.repoId, "upgrade-runtime"));
+  const view = await watch(h.manager, s.id);
+  await waitFor(() => view.text().includes("fake-agent ready"), "agent banner");
+  expect(view.text()).toContain('args=["implement upgrade-runtime"]');
+  expect(view.text()).toContain(`cwd=${await realpath(s.worktreePath)}`); // the process reports its resolved directory
+  expect(view.text()).toContain("tty=true");
+  expect(view.text()).toContain("key=false");
+
+  // A resize reaches the agent as an asynchronous signal, so ask until it reports the new width rather than racing it.
+  h.manager.resize(s.id, 90, 20);
+  await waitFor(async () => {
+    h.manager.write(s.id, "width?\r");
+    await new Promise((r) => setTimeout(r, 100));
+    return view.text().includes("(cols=90)");
+  }, "the agent sees the resized terminal");
+  h.manager.write(s.id, "hello there\r");
+  await waitFor(() => view.text().includes("you said: hello there"), "echo of typed input");
+  expect(h.manager.get(s.id).lastOutputAt).toBeTruthy();
+
+  h.manager.write(s.id, "exit\r");
+  await waitFor(() => h.manager.get(s.id).state === "exited", "exit");
+  expect(h.manager.get(s.id).exitCode).toBe(0);
+  await waitFor(() => view.ended(), "viewers are told");
+  expect(git(h.repoPath, "branch", "--show-current")).toBe("main");
+  expect(git(h.repoPath, "status", "--porcelain")).toBe("");
+
+  // a viewer arriving after the end still sees what happened
+  const late = await watch(h.manager, s.id);
+  expect(late.text()).toContain("you said: hello there");
+});
+
+test("a command without a prompt placeholder gets the prompt typed into it", async () => {
+  const h = track(await harness({ agent: { command: [FAKE_AGENT] } }));
+  const s = await h.manager.open({ repoId: h.repoId, change: "upgrade-runtime", action: "implement" });
+  const view = await watch(h.manager, s.id);
+  await waitFor(() => view.text().includes("you said: implement upgrade-runtime"), "typed prompt");
+  expect(view.text()).toContain("args=[]");
+});
+
+test("one running session per change; archive gets its own worktree and branch; resume continues in place", async () => {
+  const h = track(await harness());
+  const a = await h.manager.open({ repoId: h.repoId, change: "upgrade-runtime", action: "implement" });
+  expect((await h.manager.open({ repoId: h.repoId, change: "upgrade-runtime", action: "implement" })).id).toBe(a.id);
+
+  const arch = await h.manager.open({ repoId: h.repoId, change: "configurable-builder", action: "archive" });
+  expect(arch).toMatchObject({ branch: "chore/archive-configurable-builder" });
+  expect(arch.worktreePath.endsWith("archive-configurable-builder")).toBe(true);
+
+  await h.manager.close(a.id);
+  expect(h.manager.get(a.id).state).toBe("exited");
+  const resumed = await h.manager.resume(a.id);
+  expect(resumed.state).toBe("running");
+  const view = await watch(h.manager, a.id);
+  await waitFor(() => view.text().includes('args=["--resumed"]'), "resumed agent");
+  expect(view.text()).toContain(`cwd=${await realpath(a.worktreePath)}`);
+});
+
+test("refusals", async () => {
+  const open = (h: { manager: SessionManager; repoId: string }, change: unknown, action: unknown = "implement") => h.manager.open({ repoId: h.repoId, change, action });
+  await expect(open(track(await harness({ enabled: false })), "upgrade-runtime")).rejects.toMatchObject({ status: 403 });
+  await expect(open(track(await harness({ repoOff: true })), "upgrade-runtime")).rejects.toMatchObject({ status: 403 });
+  await expect(open(track(await harness({ agent: { command: ["/nonexistent/agent", "{prompt}"] } })), "upgrade-runtime")).rejects.toMatchObject({ status: 503 });
+  await expect(open(track(await harness({ agent: { prompts: { draft: "d {change}" } } })), "upgrade-runtime")).rejects.toMatchObject({ status: 400 }); // no implement prompt
+  const h = track(await harness());
+  await expect(open(h, "no-such-change")).rejects.toMatchObject({ status: 404 });
+  await expect(open(h, "x; rm -rf ~")).rejects.toMatchObject({ status: 400 });
+  await expect(open(h, "add-health-endpoint")).rejects.toMatchObject({ status: 400 }); // proposal only
+  await expect(open(h, "upgrade-runtime", "archive")).rejects.toMatchObject({ status: 400 }); // not Done
+  await expect(open(h, "runbook-repo-field")).rejects.toMatchObject({ status: 404 }); // archived
+  expect(h.manager.list()).toEqual([]);
+  expect(existsSync(join(worktreesDir(), h.repoId))).toBe(false); // a refused request creates no worktree
+});
+
+test("a crash is recorded; shutdown ends agents; a restarted dashboard knows nothing is running", async () => {
+  const h = track(await harness());
+  const s = await h.manager.open({ repoId: h.repoId, change: "upgrade-runtime", action: "implement" });
+  const view = await watch(h.manager, s.id);
+  await waitFor(() => view.text().includes("fake-agent ready"), "banner");
+  h.manager.write(s.id, "crash\r");
+  await waitFor(() => h.manager.get(s.id).state === "exited", "crash");
+  expect(h.manager.get(s.id).exitCode).toBe(3);
+
+  const t = await h.manager.open({ repoId: h.repoId, change: "cache-api-calls", action: "implement" });
+  await h.manager.shutdown();
+  expect(h.manager.get(t.id)).toMatchObject({ state: "exited", error: expect.stringContaining("stopped") });
+
+  const store = new SessionStore();
+  const stale = { ...h.manager.get(t.id), id: "00000000-0000-4000-8000-000000000009", state: "running" as const, error: undefined };
+  await store.saveMeta(stale);
+  const next = h.newManager();
+  managers.push(next);
+  await next.init();
+  expect(next.get(stale.id)).toMatchObject({ state: "exited", error: expect.stringContaining("restarted") });
+  await expect(next.remove(stale.id)).resolves.toBeUndefined();
+});
+
+test("a change that lives only in a worktree on another branch is copied into the session's worktree from there", async () => {
+  const h = track(await harness());
+  const theirs = join(h.repoPath, ".claude", "worktrees", "compliance");
+  git(h.repoPath, "worktree", "add", "-q", "-b", "wip/compliance", theirs);
+  await mkdir(join(theirs, "openspec", "changes", "ledger-export"), { recursive: true });
+  await writeFile(join(theirs, "openspec", "changes", "ledger-export", ".openspec.yaml"), "schema: spec-driven\ncreated: 2026-09-01\n");
+  await writeFile(join(theirs, "openspec", "changes", "ledger-export", "proposal.md"), "# only here\n");
+  h.snapshot.repos[0] = await scanRepo(h.config.repos[0]);
+  expect(h.snapshot.repos[0].changes.find((c) => c.name === "ledger-export")?.checkout?.path).toBe(await realpath(theirs));
+
+  const s = await h.manager.open({ repoId: h.repoId, change: "ledger-export", action: "draft" });
+  expect([s.adopted, s.branch, s.worktreePath]).toEqual([undefined, "feat/ledger-export", join(worktreesDir(), h.repoId, "ledger-export")]);
+  expect(await readFile(join(s.worktreePath, "openspec", "changes", "ledger-export", "proposal.md"), "utf8")).toBe("# only here\n");
+  expect(existsSync(join(h.repoPath, "openspec", "changes", "ledger-export"))).toBe(false); // the main checkout is left alone
+});
+
+test("when the session's branch is already checked out in someone's worktree, the session adopts it and never removes it", async () => {
+  const h = track(await harness());
+  const theirs = await realpath(await tempDir("osd-theirs-")).then((d) => join(d, "upgrade-runtime")); // outside the repository
+  git(h.repoPath, "worktree", "add", "-q", "-b", "feat/upgrade-runtime", theirs);
+  const listedBefore = git(h.repoPath, "worktree", "list", "--porcelain");
+
+  const s = await h.manager.open({ repoId: h.repoId, change: "upgrade-runtime", action: "implement" });
+  expect([s.adopted, s.worktreePath, s.branch]).toEqual([true, theirs, "feat/upgrade-runtime"]);
+  expect(existsSync(join(worktreesDir(), h.repoId, "upgrade-runtime"))).toBe(false); // none was created
+  expect(git(h.repoPath, "worktree", "list", "--porcelain")).toBe(listedBefore);
+  const view = await watch(h.manager, s.id);
+  await waitFor(() => view.text().includes(`cwd=${theirs}`), "agent running in the adopted worktree");
+
+  // clean and fully merged — and still not ours to remove
+  expect(await h.manager.worktreeStatus(s.id)).toMatchObject({ removable: false });
+  const closed = await h.manager.close(s.id, { removeWorktree: true });
+  expect(closed.worktree).toMatchObject({ removable: false });
+  expect(closed.worktree?.reason).toContain("not created by the dashboard");
+  expect(existsSync(theirs)).toBe(true);
+
+  // survives a restart of the dashboard, and resume continues there
+  const again = h.newManager();
+  managers.push(again);
+  await again.init();
+  expect(again.get(s.id).adopted).toBe(true);
+  expect((await again.resume(s.id)).worktreePath).toBe(theirs);
+
+  // once its owner removed it, there is nowhere to continue — and nothing is re-created at their path
+  await again.close(s.id);
+  git(h.repoPath, "worktree", "remove", "--force", theirs);
+  await expect(again.resume(s.id)).rejects.toThrow("no longer exists");
+  expect(existsSync(theirs)).toBe(false);
+});
+
+test("archive never adopts, and the main checkout is never adopted", async () => {
+  const h = track(await harness());
+  const theirs = join(h.repoPath, ".claude", "worktrees", "arch");
+  git(h.repoPath, "worktree", "add", "-q", "-b", "chore/archive-configurable-builder", theirs);
+  await expect(h.manager.open({ repoId: h.repoId, change: "configurable-builder", action: "archive" })).rejects.toThrow(); // git's refusal, as before
+
+  git(h.repoPath, "checkout", "-q", "-b", "feat/upgrade-runtime"); // the main checkout itself sits on the session's branch
+  await expect(h.manager.open({ repoId: h.repoId, change: "upgrade-runtime", action: "implement" })).rejects.toThrow();
+  expect(h.manager.list().some((s) => s.worktreePath === h.repoPath)).toBe(false);
+});
+
+const FAST_SUBMIT = { submitTimings: { echoTimeoutMs: 600, settleMs: 20 } };
+
+test("submitted text reaches an agent that shows it, with Enter as a separate write", async () => {
+  const h = await harness();
+  const manager = h.newManager(FAST_SUBMIT);
+  managers.push(manager);
+  const s = await manager.open({ repoId: h.repoId, change: "upgrade-runtime", action: "implement" });
+  const view = await watch(manager, s.id);
+  await waitFor(() => view.text().includes("fake-agent ready"), "agent banner");
+  expect(await manager.submit(s.id, "Yes, go ahead")).toEqual({ submitted: true });
+  await waitFor(() => view.text().includes("you said: Yes, go ahead"), "the agent received the submitted line");
+});
+
+test("an agent showing a menu gets the text but never an Enter, and keeps running", async () => {
+  const h = await harness({ agent: { command: [FAKE_AGENT, "--menu", "{prompt}"] } });
+  const manager = h.newManager(FAST_SUBMIT);
+  managers.push(manager);
+  const s = await manager.open({ repoId: h.repoId, change: "upgrade-runtime", action: "implement" });
+  const view = await watch(manager, s.id);
+  await waitFor(() => view.text().includes("Enter to confirm"), "the menu");
+  expect(await manager.submit(s.id, "Yes, go ahead")).toEqual({ submitted: false });
+  await new Promise((r) => setTimeout(r, 200));
+  expect(view.text()).not.toContain("menu confirmed by Enter");
+  expect(manager.get(s.id).state).toBe("running");
+  // a real Enter from the keyboard still confirms: only the blind one is withheld
+  manager.write(s.id, "\r");
+  await waitFor(() => view.text().includes("menu confirmed by Enter"), "a typed Enter reaches the menu");
+});
+
+test("an opening prompt typed after start-up is not sent into a dialog", async () => {
+  const h = await harness({ agent: { command: [FAKE_AGENT, "--menu"] } });
+  const manager = h.newManager(FAST_SUBMIT);
+  managers.push(manager);
+  const s = await manager.open({ repoId: h.repoId, change: "upgrade-runtime", action: "implement" });
+  const view = await watch(manager, s.id);
+  await waitFor(() => view.text().includes("Enter to confirm"), "the menu");
+  await new Promise((r) => setTimeout(r, 150 + 600 + 300)); // start-up delay + echo timeout + margin
+  expect(view.text()).not.toContain("menu confirmed by Enter");
+  expect(manager.get(s.id).state).toBe("running");
+});
+
+test("submissions to one session run one after another", async () => {
+  const h = await harness();
+  const manager = h.newManager(FAST_SUBMIT);
+  managers.push(manager);
+  const s = await manager.open({ repoId: h.repoId, change: "upgrade-runtime", action: "implement" });
+  const view = await watch(manager, s.id);
+  await waitFor(() => view.text().includes("fake-agent ready"), "agent banner");
+  const results = await Promise.all([manager.submit(s.id, "first message"), manager.submit(s.id, "second message")]);
+  expect(results).toEqual([{ submitted: true }, { submitted: true }]);
+  await waitFor(() => view.text().includes("you said: second message"), "both lines");
+  expect(view.text()).toContain("you said: first message (");
+  expect(view.text()).toContain("you said: second message (");
+});
+
+test("submit refuses what is not plain text, and sessions that are not running", async () => {
+  const h = track(await harness());
+  const s = await h.manager.open({ repoId: h.repoId, change: "upgrade-runtime", action: "implement" });
+  for (const bad of ["", "two\rlines", `esc${String.fromCharCode(27)}[A`, 7, undefined]) expect(() => h.manager.submit(s.id, bad)).toThrow(expect.objectContaining({ status: 400 }));
+  h.manager.write(s.id, "exit\r");
+  await waitFor(() => h.manager.get(s.id).state === "exited", "exit");
+  expect(() => h.manager.submit(s.id, "Yes, go ahead")).toThrow(expect.objectContaining({ status: 409 }));
+});
+
+test("bookkeeping nobody waits for cannot take the dashboard down, and shutdown leaves no write behind", async () => {
+  const h = track(await harness());
+  const s = await h.manager.open({ repoId: h.repoId, change: "upgrade-runtime", action: "implement" });
+  const unhandled: unknown[] = [];
+  const onUnhandled = (reason: unknown) => unhandled.push(reason);
+  process.on("unhandledRejection", onUnhandled);
+  const dir = join(sessionsDir(), s.id);
+  try {
+    // Make the session's record unwritable: a file where its directory should be.
+    await rm(dir, { recursive: true, force: true });
+    await writeFile(dir, "in the way");
+    // `prompt` records the action in the background (nobody awaits that write). It fails now.
+    expect(h.manager.prompt(s.id, { action: "implement" }).action).toBe("implement");
+    await new Promise((r) => setTimeout(r, 150));
+    expect(unhandled).toEqual([]);
+  } finally {
+    await rm(dir, { force: true });
+    process.off("unhandledRejection", onUnhandled);
+  }
+
+  // After shutdown nothing is still being written: the record is complete on disk the moment it returns.
+  await h.manager.shutdown();
+  const meta = JSON.parse(await readFile(join(dir, "meta.json"), "utf8"));
+  expect(meta.state).not.toBe("running");
+});

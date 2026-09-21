@@ -62,6 +62,10 @@ test("callers cannot mutate the demo's state through returned objects", async ()
 
 test("shared config in the demo: per-repository profiles, outdated after an edit, orphaned after a delete, nothing persisted", async () => {
   const { api } = demo();
+  // the demo starts with profiles already carried (see the seed test below); clear the slate for this walk-through
+  await api.saveSharedConfig({ profiles: [] });
+  const everyRepo = (await api.state()).repos.map((r) => ({ repoId: r.id, profileIds: [] }));
+  await api.applySharedConfig(everyRepo);
   expect(await api.sharedConfig()).toEqual({ profiles: [] });
   expect((await api.state()).repos.every((r) => r.sharedConfig === undefined)).toBe(true);
 
@@ -91,7 +95,32 @@ test("shared config in the demo: per-repository profiles, outdated after an edit
   repos = (await api.state()).repos;
   expect(repos[0].sharedConfig?.applied).toEqual([{ id: "base", state: "outdated" }, { id: "security", state: "orphaned" }]);
 
-  expect(await demo().api.sharedConfig()).toEqual({ profiles: [] }); // a reload starts over
+  expect((await demo().api.sharedConfig()).profiles.map((p) => p.id)).toEqual(["base", "security"]); // a reload starts over, from the seed
+});
+
+test("pull in the demo: canned outcomes, the notice's repositories are only fetched, nothing persists", async () => {
+  const { api } = demo();
+  const repos = (await api.state()).repos;
+  const offDefault = repos.filter((r) => r.onDefaultBranch === false).map((r) => r.name);
+  expect(offDefault.sort()).toEqual(["ember-mobile", "harbor-web"]); // the sample shows the notice at first sight
+  expect(repos.every((r) => r.defaultBranch === "main")).toBe(true);
+
+  const onMain = repos.find((r) => r.name === "atlas-api")!;
+  const first = await api.pullRepo(onMain.id);
+  expect(first).toMatchObject({ fetched: true, update: "fast-forwarded", branch: "main", upstream: "origin/main" });
+  expect(first.commits).toBeGreaterThan(0);
+  expect((await api.pullRepo(onMain.id)).update).toBe("up-to-date");
+
+  const harbor = repos.find((r) => r.name === "harbor-web")!;
+  expect(await api.pullRepo(harbor.id)).toMatchObject({ fetched: true, update: "skipped", reason: "on feat/redesign-settings-page, not main; only fetched" });
+
+  const failedScan = repos.find((r) => !r.ok)!;
+  await expect(api.pullRepo(failedScan.id)).rejects.toThrow("not a tracked");
+  await expect(api.pullRepo("nope")).rejects.toThrow("not a tracked");
+
+  const { results } = await api.pullAll();
+  expect(results.map((r) => r.repoId).sort()).toEqual(repos.filter((r) => r.ok).map((r) => r.id).sort());
+  expect((await demo().api.pullRepo(onMain.id)).update).toBe("fast-forwarded"); // a reload starts over
 });
 
 test("change artifacts in the demo: files follow the sample's state, tasks.md agrees with the card, errors match the server's", async () => {

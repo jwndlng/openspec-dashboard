@@ -5,10 +5,12 @@ import { ChangeDetail } from "./changeDetail.tsx";
 import { relTime } from "./format.ts";
 import { Kanban } from "./kanban.tsx";
 import { Overview } from "./overview.tsx";
+import { PullProvider } from "./pull.tsx";
 import { enabledOnly } from "./overviewState.ts";
 import { type Route, routeFromPath } from "./routes.ts";
-import { SessionPanel } from "./sessionPanel.tsx";
-import { SessionProvider } from "./sessions.tsx";
+import { EndSessionDialog } from "./endSessionDialog.tsx";
+import { SessionDock } from "./sessionPanel.tsx";
+import { OpenWork, SessionProvider } from "./sessions.tsx";
 import { Settings } from "./settings.tsx";
 import { currentPath, href, navigate, onRouteChange } from "./url.ts";
 import { applyTheme, loadPreference, nextPreference, resolveTheme, savePreference, type ThemePreference } from "./theme.ts";
@@ -112,7 +114,9 @@ export function App() {
   );
 
   return (
+    <PullProvider onPulled={reloadSoon}>
     <div class="app">
+      <SessionProvider config={config} snapshot={shown}>
       <header class="topbar">
         <div class="brand">
           <span class="dot" />
@@ -124,6 +128,7 @@ export function App() {
           {link("/settings", "Settings", route.view === "settings")}
         </nav>
         <div class="spacer" />
+        <OpenWork />
         {failing.map((r) => (
           <span class="badge danger" title={r.error}>
             ⚠ {r.name}
@@ -140,7 +145,6 @@ export function App() {
           </button>
         </span>
       </header>
-      <SessionProvider config={config}>
       <main class="main">
         {route.view === "settings" ? (
           <Settings config={config} snapshot={shown} onSaved={(c) => { setConfig(c); void loadState(); }} onRescan={reloadSoon} />
@@ -154,8 +158,10 @@ export function App() {
           <Kanban key={route.view === "repo" ? route.repoId : "all"} snapshot={shown} config={config} repoId={route.view === "repo" ? route.repoId : undefined} />
         )}
       </main>
-      <SessionPanel />
+      <SessionDock />
+      <EndSessionDialog />
       </SessionProvider>
     </div>
+    </PullProvider>
   );
 }

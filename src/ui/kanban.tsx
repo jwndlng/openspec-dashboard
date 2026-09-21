@@ -3,7 +3,9 @@ import { boardColumns, isComplete } from "../shared/columns.ts";
 import type { ChangeSnapshot, Config, RepoSnapshot, Snapshot } from "../shared/types.ts";
 import { NoRepos } from "./empty.tsx";
 import { EMPTY_FILTERS, parseFilters, serializeFilters, type Filters } from "./filters.ts";
-import { applyCommand, cdCommand, daysSince, relTime, splitBranchLabel } from "./format.ts";
+import { PullButton } from "./pull.tsx";
+import { branchNotice } from "./pullState.ts";
+import { applyCommand, cdCommand, checkoutHint, daysSince, pendingArchiveHint, relTime, splitBranchLabel } from "./format.ts";
 import { isMinimized, loadGroupState, saveGroupState, toggleGroup, type GroupOverrides } from "./groupState.ts";
 import { assignRepoHues, groupByRepo, recentArchived } from "./repoGroups.ts";
 import { SessionControls } from "./sessions.tsx";
@@ -92,12 +94,14 @@ export function ChangeCard({ card, now, showRepo, from }: { card: Card; now: num
       {card.name}
     </a>
   );
+  const pending = pendingArchiveHint(card);
   return (
     <article class="card repo-tint" style={repoHue(card.hue)}>
       {/* On a single-repository board the header already names the repo, so the change name takes the top row. */}
       <div class="repo">
         {showRepo ? <span>{card.repoName}</span> : <span class="name">{name}</span>}
-        {!card.archived && <CopyButton text={applyCommand(card.repoPath, card.name)} />}
+        {/* Apply where the change lives: for a change in a worktree that is the worktree, never the main checkout. */}
+        {!card.archived && <CopyButton text={applyCommand(card.checkout?.path ?? card.repoPath, card.name)} />}
       </div>
       {showRepo && <div class="name">{name}</div>}
       {card.tasks && card.tasks.total > 0 && <Meter done={card.tasks.done} total={card.tasks.total} />}
@@ -106,7 +110,12 @@ export function ChangeCard({ card, now, showRepo, from }: { card: Card; now: num
           {card.archived ? `archived ${card.archived}` : `${relTime(card.lastActivityAt, now)} ago`}
         </span>
         {isComplete(card.stage) && age !== undefined && <span class="badge ok">✓ complete · {age}d</span>}
-        {card.branchMatch && <BranchBadge branch={card.branchMatch} hint="a branch or worktree matches this change" />}
+        {pending && (
+          <span class="badge warn" title={pending.title}>
+            ⑂ {pending.label}
+          </span>
+        )}
+        {card.branchMatch && <BranchBadge branch={card.branchMatch} hint={checkoutHint(card)} />}
         {noTasks && <span class="badge warn">no tasks</span>}
         <SessionControls card={card} />
         {card.warnings?.filter((w) => w !== "tasks file has no tasks").map((w) => (
@@ -200,6 +209,7 @@ function Column({ label, cards, now, hot, showRepo, from, countLabel, groups }: 
 
 function RepoHeader({ repo, now }: { repo: RepoSnapshot; now: number }) {
   const updated = repo.lastUpdatedAt ? relTime(repo.lastUpdatedAt, now) : undefined;
+  const notice = branchNotice(repo);
   return (
     <div class="repo-head">
       <div class="row">
@@ -218,8 +228,9 @@ function RepoHeader({ repo, now }: { repo: RepoSnapshot; now: number }) {
           {repo.name}
         </h1>
         {repo.currentBranch && <BranchBadge branch={repo.currentBranch} hint="current branch" />}
+        {repo.isGit && repo.ok && <PullButton repoId={repo.id} />}
         {repo.worktrees.length > 0 && (
-          <span class="badge" title={repo.worktrees.map((w) => `${w.branch} — ${w.path}`).join("\n")}>
+          <span class="badge" title={repo.worktrees.map((w) => `${w.branch ?? "detached"} — ${w.path}`).join("\n")}>
             {repo.worktrees.length} {repo.worktrees.length === 1 ? "worktree" : "worktrees"}
           </span>
         )}
@@ -244,6 +255,11 @@ function RepoHeader({ repo, now }: { repo: RepoSnapshot; now: number }) {
         <code>{repo.path}</code>
         <CopyButton text={cdCommand(repo.path)} label="Copy cd" />
       </div>
+      {notice && (
+        <div class="notice warn" role="note">
+          ⎇ {notice.long}
+        </div>
+      )}
       {!repo.ok && <div class="notice danger">Scan failed: {repo.error} — showing the last good data.</div>}
       {repo.warnings?.map((w) => (
         <div key={w} class="notice warn">

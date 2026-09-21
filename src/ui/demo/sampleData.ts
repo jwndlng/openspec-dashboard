@@ -4,9 +4,8 @@
 //
 // Ages are relative to `now`, so the published demo never looks abandoned. Column and stage are derived with the
 // same rules the scanner uses, so the sample cannot disagree with the board.
-import { defaultAgentSessions } from "../../shared/agentDefaults.ts";
 import { deriveStage } from "../../shared/columns.ts";
-import type { ArtifactStatus, ChangeSnapshot, Config, RepoConfig, RepoSnapshot, Snapshot } from "../../shared/types.ts";
+import type { AgentProfile, ArtifactStatus, ChangeSnapshot, Config, RepoConfig, RepoSnapshot, SharedProfile, Snapshot } from "../../shared/types.ts";
 
 /** Appears in the demo bundle only; test/demoBundle.test.ts uses it to tell the two bundles apart. */
 export const DEMO_MARKER = "openspec-dashboard-demo-build";
@@ -36,7 +35,10 @@ interface SampleChange {
   /** Age of the last activity in days. */
   age: number;
   synced?: boolean;
+  /** When it is one of the repository's worktree branches, the change lives in that worktree. */
   branch?: string;
+  /** The column of the main checkout's (older) copy, for a change whose work continues in a worktree. */
+  onMain?: string;
   warnings?: string[];
 }
 
@@ -65,6 +67,40 @@ function artifacts(written: Written): ArtifactStatus[] {
   }));
 }
 
+const worktreePath = (r: SampleRepo, branch: string) => `${repoPath(r.name)}-worktrees/${branch.replace("/", "-")}`;
+
+/** Where a sample change "lives": in the worktree that has its branch checked out, else in the main checkout. */
+function checkouts(r: SampleRepo, c: SampleChange): Pick<ChangeSnapshot, "checkout" | "otherCheckouts"> {
+  const main = { path: repoPath(r.name), branch: r.branch, isMain: true };
+  const inWorktree = c.branch !== undefined && (r.worktrees ?? []).includes(c.branch);
+  return {
+    checkout: inWorktree ? { path: worktreePath(r, c.branch as string), branch: c.branch, isMain: false } : main,
+    otherCheckouts: inWorktree && c.onMain ? [{ ...main, column: c.onMain }] : undefined,
+  };
+}
+
+/** Shared OpenSpec config the demo starts with, so Projects shows carried profiles without any setup. */
+export const DEMO_PROFILES: SharedProfile[] = [
+  { id: "base", name: "Base", context: "We use conventional commits.\nSpecs use SHALL for requirements and one scenario per behaviour.", rules: { proposal: ["Always include a Non-goals section"], tasks: ["Keep tasks under two hours"] } },
+  { id: "security", name: "Security", context: "Threat-model every new endpoint and state the data classification.", rules: { design: ["List trust boundaries"] } },
+];
+/** Repository name → profiles it carries; `stale` marks a profile applied before its last edit (shown as outdated). */
+export const DEMO_CARRIED: Record<string, { id: string; stale?: boolean }[]> = {
+  "atlas-api": [{ id: "base" }, { id: "security" }],
+  "harbor-web": [{ id: "base", stale: true }],
+  "lantern-infra": [{ id: "base" }, { id: "security" }],
+  "quill-docs": [{ id: "base" }],
+};
+
+/** The demo's only agent: made up, vendor-neutral, and never executed. */
+export const DEMO_AGENT: AgentProfile = {
+  id: "demo-agent",
+  name: "Demo Agent",
+  command: ["demo-agent", "{prompt}"],
+  prompts: { draft: "/opsx:ff {change}", implement: "/opsx:apply {change}", archive: "/opsx:archive {change}" },
+  resumeCommand: ["demo-agent", "--continue"],
+};
+
 const REPOS: SampleRepo[] = [
   {
     id: "a71c02e9",
@@ -73,7 +109,8 @@ const REPOS: SampleRepo[] = [
     updated: 2,
     worktrees: ["feat/add-rate-limiting"],
     changes: [
-      { name: "add-rate-limiting", tasks: [9, 14], age: 0.1, branch: "feat/add-rate-limiting" },
+      // proposed on main, being implemented in a worktree: one card, led by the worktree's copy
+      { name: "add-rate-limiting", tasks: [9, 14], age: 0.1, branch: "feat/add-rate-limiting", onMain: "Proposal" },
       { name: "paginate-list-endpoints", tasks: [3, 22], age: 2 },
       { name: "migrate-to-postgres-16", tasks: [0, 31], age: 5 },
       { name: "structured-error-codes", written: "specs", age: 1 },
@@ -242,6 +279,7 @@ export function buildSample(now: number): Sample {
         created: day(c.age + 6),
         lastActivityAt: iso(c.age * DAY),
         branchMatch: c.branch,
+        ...checkouts(r, c),
         specsSynced: c.synced,
         warnings: c.warnings,
         ...deriveStage(input),
@@ -271,7 +309,10 @@ export function buildSample(now: number): Sample {
       scannedAt: iso(r.error ? 3 * HOUR : 0),
       isGit: true,
       currentBranch: r.branch,
-      worktrees: (r.worktrees ?? []).map((branch) => ({ branch, path: `${repoPath(r.name)}-worktrees/${branch.replace("/", "-")}` })),
+      // every sample repository's default branch is main; two of them sit on another branch and show the notice
+      defaultBranch: "main",
+      onDefaultBranch: r.branch === "main",
+      worktrees: [{ path: repoPath(r.name), branch: r.branch, isMain: true }, ...(r.worktrees ?? []).map((branch) => ({ branch, path: worktreePath(r, branch) }))],
       lastUpdatedAt: iso(r.updated * HOUR),
       changes: [...open, ...archived],
     } satisfies RepoSnapshot;
@@ -280,10 +321,12 @@ export function buildSample(now: number): Sample {
   const config = {
     version: 1,
     scanRoots: [DEMO_ROOT],
+    ignorePaths: [],
     repos: REPOS.map((r) => ({ id: r.id, path: repoPath(r.name), name: r.name, enabled: true })),
     pollIntervalSeconds: 60,
     port: 4711,
-    agentSessions: defaultAgentSessions(), // off: a static demo has no agent to start
+    // On by default, so the session features show without setup. The agent is fictional; nothing is ever started.
+    agentSessions: { enabled: true, agents: [structuredClone(DEMO_AGENT)], defaultAgent: DEMO_AGENT.id },
   } satisfies Config;
 
   const candidates = CANDIDATES.map(([id, name]) => ({ id, path: repoPath(name), name: name.split("/").pop() ?? name, enabled: false })) satisfies RepoConfig[];

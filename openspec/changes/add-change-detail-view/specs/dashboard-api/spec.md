@@ -8,7 +8,7 @@ The API SHALL provide two read-only endpoints for the artifacts of one change of
 
 `GET /api/repos/<repoId>/changes/<changeName>/file?path=<relative path>` SHALL return `{ path, bytes, text }` for one file of that change, read as UTF-8.
 
-Both endpoints SHALL resolve `<repoId>` against the repositories that are enabled in the dashboard config, and `<changeName>` against that repository's active and archived change directories; the change directory is always derived on the server and never taken from the request. Archived changes SHALL be readable through the same endpoints.
+Both endpoints SHALL resolve `<repoId>` against the repositories that are enabled in the dashboard config, and `<changeName>` against that repository's active and archived change directories; the change directory is always derived on the server and never taken from the request. When the snapshot says the change's data comes from a linked worktree of that repository, the endpoints SHALL read from that worktree — the same checkout the scanner read — and otherwise from the main checkout. Archived changes SHALL be readable through the same endpoints.
 
 The responses MUST be: `400` when the change name does not match the permitted character set, or when `path` is missing, absolute, or escapes the change directory after normalisation; `404` for an unknown or disabled repository, an unknown change, or a `path` that is not an existing regular file inside the change directory; `413` when the file is larger than 1 MiB, without returning its content. A path whose resolved target — following symbolic links — lies outside the change directory MUST be refused as if it did not exist.
 
@@ -28,6 +28,11 @@ Both endpoints are `GET` and MUST NOT create, modify or delete anything in a tra
 
 - **WHEN** either endpoint is called for a change that lives under `openspec/changes/archive/`
 - **THEN** it answers from that archived directory
+
+#### Scenario: Change in a linked worktree
+
+- **WHEN** a change exists only in a linked worktree of a tracked repository and the board shows it
+- **THEN** both endpoints answer from that worktree's change directory
 
 #### Scenario: Traversal is refused
 

@@ -1,0 +1,177 @@
+import { afterAll, afterEach, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
+import { createFetchHandler, createWebSocketHandlers, webSocketRefusal, type AppState, type TerminalSocketData } from "../src/server/api.ts";
+import { Scanner } from "../src/server/scanner.ts";
+import type { Session } from "../src/shared/types.ts";
+import { useTempHome } from "./helpers.ts";
+import { harness, waitFor, type Harness } from "./sessionHelpers.ts";
+
+const JSON_HEADERS = { "content-type": "application/json" };
+// These tests start real processes in pseudo-terminals and open sockets; slow CI runners need more than the 5 s default.
+setDefaultTimeout(30_000);
+
+let cleanup: () => Promise<void>;
+const servers: { stop: () => Promise<void> }[] = [];
+
+beforeAll(async () => {
+  ({ cleanup } = await useTempHome());
+});
+afterEach(async () => {
+  for (const s of servers.splice(0)) await s.stop();
+});
+afterAll(() => cleanup());
+
+async function serve(h: Harness): Promise<{ http: string; ws: string }> {
+  const state: AppState = { config: h.config, scanner: new Scanner(() => h.config, { persist: false }, h.snapshot), sessions: h.manager };
+  const server = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    fetch: createFetchHandler({ state, indexHtml: "<title>stub</title>" }),
+    websocket: createWebSocketHandlers(state) as unknown as Bun.WebSocketHandler<TerminalSocketData>,
+  });
+  servers.push({ stop: async () => { await h.manager.shutdown(); server.stop(true); } });
+  return { http: `http://127.0.0.1:${server.port}`, ws: `ws://127.0.0.1:${server.port}` };
+}
+
+const post = (url: string, body?: unknown, headers: Record<string, string> = JSON_HEADERS) => fetch(url, { method: "POST", headers, body: body === undefined ? undefined : JSON.stringify(body) });
+
+interface Client {
+  text: () => string;
+  frames: () => string[];
+  send: (message: object) => void;
+  close: () => void;
+  opened: Promise<boolean>;
+}
+
+/** A terminal client as the dashboard's page would be, with a chosen Origin. */
+function connect(url: string, origin: string | undefined): Client {
+  const socket = new WebSocket(url, { headers: origin ? { origin } : {} } as unknown as string[]);
+  socket.binaryType = "arraybuffer";
+  const decoder = new TextDecoder();
+  let text = "";
+  const frames: string[] = [];
+  socket.onmessage = (event) => {
+    if (typeof event.data === "string") frames.push(event.data);
+    else text += decoder.decode(new Uint8Array(event.data as ArrayBuffer), { stream: true });
+  };
+  const opened = new Promise<boolean>((resolve) => {
+    socket.onopen = () => resolve(true);
+    socket.onerror = () => resolve(false);
+    socket.onclose = () => resolve(false);
+  });
+  return { text: () => text, frames: () => frames, send: (m) => socket.send(JSON.stringify(m)), close: () => socket.close(), opened };
+}
+
+test("who may open the terminal socket", () => {
+  const req = (url: string, headers: Record<string, string>) => new Request(url, { headers });
+  const own = "http://127.0.0.1:4711";
+  expect(webSocketRefusal(req(`${own}/api/sessions/x/terminal`, { origin: own }))).toBeUndefined();
+  expect(webSocketRefusal(req(`${own}/api/sessions/x/terminal`, { origin: "http://localhost:4711" }))).toBeUndefined();
+  expect(webSocketRefusal(req(`${own}/api/sessions/x/terminal`, {}))).toMatch(/origin/); // a browser always sends one
+  expect(webSocketRefusal(req(`${own}/api/sessions/x/terminal`, { origin: "https://example.com" }))).toMatch(/origin/);
+  expect(webSocketRefusal(req(`${own}/api/sessions/x/terminal`, { origin: "http://127.0.0.1:9999" }))).toMatch(/origin/);
+  expect(webSocketRefusal(req(`${own}/api/sessions/x/terminal`, { origin: "null" }))).toMatch(/origin/);
+  expect(webSocketRefusal(req(`${own}/api/sessions/x/terminal`, { origin: own, "sec-fetch-site": "cross-site" }))).toMatch(/cross-site/);
+  expect(webSocketRefusal(req("http://evil.example:4711/api/sessions/x/terminal", { origin: "http://evil.example:4711" }))).toMatch(/loopback/); // DNS rebinding
+});
+
+test("session routes: open, duplicate, refusals, cross-site", async () => {
+  const h = await harness();
+  const { http } = await serve(h);
+  const body = { repoId: h.repoId, change: "upgrade-runtime", action: "implement" };
+  expect((await post(`${http}/api/sessions`, body, { ...JSON_HEADERS, origin: "https://example.com" })).status).toBe(403);
+  expect((await post(`${http}/api/sessions`, body, { "content-type": "text/plain" })).status).toBe(403);
+  expect(h.manager.list()).toEqual([]);
+
+  const opened = await post(`${http}/api/sessions`, body);
+  expect(opened.status).toBe(201);
+  const session = (await opened.json()) as Session;
+  expect(((await (await post(`${http}/api/sessions`, body)).json()) as Session).id).toBe(session.id);
+  const listing = await (await fetch(`${http}/api/sessions`)).json();
+  expect(listing.sessions.length).toBe(1);
+  expect(listing.agents).toEqual([expect.objectContaining({ id: "fake", available: true })]);
+
+  expect((await post(`${http}/api/sessions`, { ...body, change: "no-such-change" })).status).toBe(404);
+  expect((await post(`${http}/api/sessions`, { ...body, change: "../../etc" })).status).toBe(400);
+  expect((await post(`${http}/api/sessions`, { ...body, action: "deploy" })).status).toBe(400);
+  expect((await fetch(`${http}/api/sessions/${session.id}`, { method: "DELETE", headers: JSON_HEADERS })).status).toBe(409); // still running
+  expect((await fetch(`${http}/api/sessions/${session.id}/terminal`)).status).toBe(403); // a plain GET without the page's Origin
+  expect((await fetch(`${http}/api/sessions/${session.id}/terminal`, { headers: { origin: http } })).status).toBe(426); // right origin, but not a WebSocket
+
+  const closed = await (await post(`${http}/api/sessions/${session.id}/close`, {})).json();
+  expect(closed.session.state).toBe("exited");
+  expect((await fetch(`${http}/api/sessions/${session.id}`, { method: "DELETE", headers: JSON_HEADERS })).status).toBe(200);
+  expect(Object.keys(await (await fetch(`${http}/api/state`)).json()).sort()).toEqual(["generatedAt", "repos"]);
+});
+
+test("terminal socket: scrollback, typing, resize, exit — and no entry from another origin", async () => {
+  const h = await harness();
+  const { http, ws } = await serve(h);
+  const session = (await (await post(`${http}/api/sessions`, { repoId: h.repoId, change: "upgrade-runtime", action: "implement" })).json()) as Session;
+  const url = `${ws}/api/sessions/${session.id}/terminal`;
+
+  expect(await connect(url, "https://example.com").opened).toBe(false);
+  expect(await connect(url, undefined).opened).toBe(false);
+  expect(await connect(`${ws}/api/sessions/00000000-0000-4000-8000-000000000000/terminal`, http).opened).toBe(false);
+
+  const first = connect(url, http);
+  expect(await first.opened).toBe(true);
+  await waitFor(() => first.text().includes("fake-agent ready"), "banner over the socket");
+  // A resize reaches the agent as an asynchronous signal, so ask until it reports the new width rather than racing it.
+  first.send({ type: "resize", cols: 77, rows: 21 });
+  await waitFor(async () => {
+    first.send({ type: "input", data: "width?\r" });
+    await new Promise((r) => setTimeout(r, 100));
+    return first.text().includes("(cols=77)");
+  }, "the agent sees the resized terminal");
+  first.send({ type: "input", data: "from the browser\r" });
+  await waitFor(() => first.text().includes("you said: from the browser"), "typed input echoed");
+
+  // a second viewer (another tab) first gets what the terminal has shown so far, then follows along
+  const second = connect(url, http);
+  expect(await second.opened).toBe(true);
+  await waitFor(() => second.text().includes("you said: from the browser"), "scrollback replay");
+  second.send({ type: "input", data: "exit\r" });
+  await waitFor(() => first.frames().some((f) => JSON.parse(f).type === "exit") && second.frames().some((f) => JSON.parse(f).type === "exit"), "exit frame to every viewer");
+  await waitFor(() => h.manager.get(session.id).state === "exited", "exited");
+
+  // an ended session still shows its output, followed by the exit frame
+  const late = connect(url, http);
+  expect(await late.opened).toBe(true);
+  await waitFor(() => late.text().includes("you said: from the browser") && late.frames().length > 0, "stored output for a late viewer");
+  for (const c of [first, second, late]) c.close();
+});
+
+test("terminal socket: submit sends text on the user's behalf and answers only the socket that asked", async () => {
+  const h = await harness();
+  const { http, ws } = await serve(h);
+  const session = (await (await post(`${http}/api/sessions`, { repoId: h.repoId, change: "upgrade-runtime", action: "implement" })).json()) as Session;
+  const url = `${ws}/api/sessions/${session.id}/terminal`;
+  const asking = connect(url, http);
+  const watching = connect(url, http);
+  expect(await asking.opened).toBe(true);
+  expect(await watching.opened).toBe(true);
+  await waitFor(() => asking.text().includes("fake-agent ready"), "banner");
+
+  const submitted = (c: { frames: () => string[] }) => c.frames().map((f) => JSON.parse(f)).filter((f) => f.type === "submitted");
+  asking.send({ type: "submit", data: "Yes, go ahead" });
+  await waitFor(() => submitted(asking).length === 1, "the answer frame", 10_000);
+  expect(submitted(asking)).toEqual([{ type: "submitted", ok: true }]);
+  await waitFor(() => watching.text().includes("you said: Yes, go ahead"), "the agent received the line; every viewer sees it");
+  expect(submitted(watching)).toEqual([]);
+
+  // not plain text: refused without touching the terminal, and still answered
+  asking.send({ type: "submit", data: "two\rlines" });
+  asking.send({ type: "submit", data: 7 });
+  await waitFor(() => submitted(asking).length === 3, "refusals are answered too");
+  expect(submitted(asking).slice(1)).toEqual([{ type: "submitted", ok: false }, { type: "submitted", ok: false }]);
+  expect(asking.text()).not.toContain("you said: two");
+  for (const c of [asking, watching]) c.close();
+});
+
+test("feature off: nothing can be opened", async () => {
+  const h = await harness({ enabled: false });
+  const { http } = await serve(h);
+  const res = await post(`${http}/api/sessions`, { repoId: h.repoId, change: "upgrade-runtime", action: "implement" });
+  expect(res.status).toBe(403);
+  expect(h.manager.list()).toEqual([]);
+});

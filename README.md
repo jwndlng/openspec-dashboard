@@ -29,17 +29,39 @@ bun run build:demo              # dist/demo/index.html — the demo: same UI, in
 bun run screenshots             # dist/demo/screenshots/*.png from the demo build (needs Chrome; CHROME_BIN overrides)
 ```
 
+**What the demo simulates.** The demo is the real UI on an in-memory API. Besides the sample board it starts with
+agent sessions switched on and a made-up agent ("Demo Agent"): cards show running sessions and work status
+(`3 uncommitted`, `2 unpushed`, `pushed`, `merged`), the top bar lists open work, and you can start, answer, Ship, close
+and remove — all in memory, reset by a reload. A session's terminal plays a **hand-written recording** into the same
+terminal view the dashboard uses; nothing runs on the page and what you type goes nowhere. Recordings live in
+`src/ui/demo/transcripts.ts` and are *written*, never captured: `bun run check` fails if a recording or any demo
+session data contains a real-looking home directory, an e-mail address, a URL or a host name, and the product build is
+checked to contain none of the demo's data.
+
 First run: open **Settings** and add a workspace root such as `~/Workspace`. Discovery runs immediately and lists
 what it found under **Discovered**; click **Enable** on the repos to track, then save.
 
 ## What it does
 
-- **Settings** — workspace roots, discovery of repos containing `openspec/config.yaml` (4 levels deep; skips
+- **Settings** — one page with a section navigation at the top-left that scrolls with the content, like a table of
+  contents (jump to a section, see which one is in view,
+  link to one with `?section=discovered`; it shows how many discovered repositories are waiting). Workspace roots, discovery of repos containing `openspec/config.yaml` (4 levels deep; skips
   `node_modules`, nested copies and linked git worktrees), opt-in tracking per repo, display names, poll interval.
   Discovery is a read-only preview: it re-runs whenever the roots change (even unsaved), when Settings opens and on
   **Rediscover**, and never writes to the config. Only repos you enable are stored; forgetting (×) a tracked repo
   returns it to the discovered list. Configs from earlier versions may still hold disabled entries for every repo
   that was discovered back then — they stay under **Tracked** and can be forgotten individually.
+  - **One directory, one repository.** Roots, ignored paths and repository paths are stored canonically (`~` expanded,
+    symlinks resolved, on-disk casing), so `~/Workspace/alpha` and `~/workspace/alpha` — or a symlinked root — never
+    list a repository twice. A config from an earlier version is migrated on load: paths are canonicalised and entries
+    that turn out to be the same directory are merged (the enabled one and its name win).
+  - **Ignored paths** keep an area out of discovery, e.g. a directory of bulk checkouts: add it under *Workspace
+    roots*, or click **Ignore** on a candidate. They only affect discovery — a repository that is already tracked
+    stays tracked until you forget it.
+  - **Second clones.** Repositories sharing a display name show the distinguishing part of their parent path, and a
+    candidate whose name is taken is enabled as `<name> (<parent dir>)`. A candidate with the same `origin` remote as
+    another known repository gets a *same remote as …* badge. That is information only: repositories are never merged
+    or hidden by remote, because distinct projects can share one.
 - **Projects** (`/`, the landing page) — one row per tracked repository: open changes per stage, open total, how many
   are complete but not archived, scan errors, and when the repository was last updated. Sorted newest-updated first;
   click a column header to sort by name, open or to-archive (again to reverse), search by name — kept in the URL.
@@ -73,10 +95,34 @@ what it found under **Discovered**; click **Enable** on the repos to track, then
 - Theme: dark and light. Follows the OS appearance by default; the **Theme** button in the top bar cycles
   System → Light → Dark. The choice is stored in the browser (`localStorage`), not in the config file.
 
-State lives in `~/.openspec-dashboard/` (`config.json`, `shared-config.json`, `cache/snapshot.json`, `sessions/`). The dashboard
-only runs read-only `git` commands (`rev-parse`, `log`, `worktree list`, `status` — with optional locks disabled, so
+State lives in `~/.openspec-dashboard/` (`config.json`, `shared-config.json`, `cache/snapshot.json`, `sessions/`, `worktrees/`). The dashboard
+only runs read-only `git` commands (`rev-parse`, `log`, `worktree list`, `status`, `config --get` — with optional locks disabled, so
 not even `.git/index` is refreshed), and scanning, polling, discovery and saving settings never write to a tracked
-repository. The things that do are described next: shared config, and the opt-in agent sessions further down.
+repository, and none of them contacts a remote. The things that do are described next: the Pull button, shared config,
+and the opt-in agent sessions further down.
+
+## Pull, and the branch notice
+
+Work gets merged on the remote; a main checkout only learns about it through `git pull`. Until then the dashboard is
+right about an older state: archived changes and specs come from the main checkout, and `merged` / ahead-behind
+figures are "as of your last fetch". **⇣ Pull** (per repository, in its board header and its Projects row, plus
+**Pull all**) does that for you — and it is the only thing in the dashboard that ever contacts a remote, and only when
+you click it.
+
+- **What it runs.** `git fetch` of the repository's remote, then a **fast-forward-only** update of the main checkout.
+  Never a merge commit, a rebase, a stash, a reset, a force or a branch switch; linked worktrees and submodules are not
+  touched. Uncommitted edits to files the update does not touch stay as they are.
+- **When it only fetches.** If the checkout is not on the default branch (or detached), has no upstream, has diverged,
+  or has an uncommitted edit the update would overwrite, the checkout is left exactly as it is and the badge says why
+  (`fetched only` / `refused`, with git's own message). The fetch still makes work statuses current.
+- **Credentials, prompts, hooks.** It uses git's own credentials (SSH agent, credential helper); the dashboard never
+  sees, stores or asks for them. Nothing can prompt — a remote that needs a login fails with a message — and a fetch is
+  stopped after 60 s. Repository hooks are **not** run (a plain `git pull` would run `post-merge`); if the repository has
+  one, the outcome says so, so you can run it yourself.
+- **Branch notice.** If a main checkout is not on its default branch (what `origin/HEAD` points to, else `main`, else
+  `master`), its Projects row and board header say so: archived changes, specs and progress for that repository come
+  from whatever branch is checked out and may be outdated. Changes living in worktrees are read from their own
+  checkouts and are unaffected. Nothing is hidden; it is a notice.
 
 ## Shared OpenSpec config
 
@@ -117,27 +163,91 @@ repositories you choose. A repository can carry several profiles; different repo
 
 ## Agent sessions (optional, off by default)
 
-Open an interactive agent session for a change straight from its card: **Draft artifacts** while artifacts are missing,
-**Implement** once a change is ready. The dashboard starts your locally installed [`claude`](https://claude.com/claude-code)
-CLI on **its own existing login** — so a Claude subscription keeps being used; the dashboard never sees credentials and
-removes `ANTHROPIC_API_KEY`/`ANTHROPIC_AUTH_TOKEN` from the agent's environment unless you opt in to passing them.
+Start an agent for a change straight from its card — **Draft artifacts** while artifacts are missing, **Implement** once
+a change is ready, **Archive** once every task is done — and it opens **in a terminal inside the dashboard**. It is the
+same program you would run in your own terminal, with its own login, settings, slash commands and permission prompts;
+the dashboard shows it, passes your keystrokes on, and interprets nothing.
 
-- **Enable it twice**: Settings → *Agent sessions* → turn it on, then opt in each repository. Until then no card shows a
-  starter and the API refuses to open sessions.
-- **It is a conversation**: the panel shows the live transcript; type follow-ups, press **Stop** to interrupt a turn
-  without losing the conversation, **Close** when done. "Copy resume command" continues the same conversation in your
-  terminal (`cd <worktree> && claude --resume <id>`). Sessions survive a dashboard restart.
-- **One agent, one worktree**: every session works in `.claude/worktrees/<change>` of the repository, never in your main
-  checkout. Closing offers to remove the worktree only when it is clean and fully pushed.
-- **Bounded permissions**: sessions run with `--permission-mode dontAsk` and an allow-list — file read/search/edit, the
-  `openspec` command and local `git status/diff/log/add/commit/branch -m` — plus what you add per repository (for example
-  `Bash(bun run check*)`). Anything else is denied without a prompt and shown in the transcript. Your personal Claude
-  settings and allow rules are *not* inherited (`--setting-sources project`); a repository's own `.claude/settings.json`
-  is. The CLI still runs its small built-in set of read-only commands. There is no way to pass a permission-bypass flag.
-- Limits: one open session per change, two agents working at once by default (more queue up), idle agent processes are
-  stopped after 30 minutes and resumed on your next message. Records live in `~/.openspec-dashboard/sessions/`.
+- **One switch, off by default**: Settings → *Agent sessions*. Once on it applies to every tracked repository; switch
+  individual repositories off in the same section. While it is off, no card shows a starter and the API refuses.
+- **Bring your own agent**: an agent is a *profile* — a command as an argument list (`{prompt}` is where the opening
+  prompt goes), a prompt per starter (`{change}` is the change name), and optionally a resume command. **Claude Code**
+  is preconfigured (`claude {prompt}`, the `/opsx:*` commands, `claude --continue`; API-key variables are removed from
+  its environment so its own login — for example a subscription — is used). Add any other CLI that runs interactively
+  in a terminal, pick a default, and choose a different agent per repository if you like. The dashboard never handles
+  credentials.
+- **One agent, one worktree**: before starting the agent the dashboard creates a git worktree for the session on
+  `feat/<change>` (archiving: `chore/archive-<change>`) under `~/.openspec-dashboard/worktrees/` — outside the
+  repository, so your main checkout's branch, index and files are never touched and no untracked directory appears in
+  it. The branch starts from your local `origin/HEAD` (the dashboard does not fetch). A change that exists only
+  uncommitted in your main checkout is copied into the worktree. Ending a session offers to remove the worktree only
+  when it is clean and holds no commit that exists nowhere else.
+- **It keeps running**: hide the panel and the agent carries on; open it again (or a second tab, or reload) and the
+  terminal shows what happened meanwhile. Cards show `running`, `quiet 12m` (the terminal has been silent — the agent is
+  probably waiting for you) or how the session ended. **Resume** starts the agent's resume command in the same worktree.
+  Stopping the dashboard ends its agents; their output stays viewable.
+- **Default responses**: while a session is running, the panel offers `Yes, go ahead`, `Yes, create a PR` and
+<<<<<<< HEAD
+  `No, stop here` under the terminal. A click types that text into the terminal and focuses it; you press Enter to send.
+  It deliberately does not press Enter for you: the dashboard cannot know whether the agent shows a text prompt or a
+  selection menu, and in a menu Enter would confirm whatever option is highlighted.
+- **A dock, not a side panel**: terminals sit in a dock across the bottom of the window — wide and short, the shape
+  terminal output has — with the board fully usable above it. Drag its top edge (or use the arrow keys on it) to
+  resize; the height is remembered in the browser. **Maximise** gives it the window, **Collapse** leaves only the tabs.
+  Up to **three sessions side by side**; the tab strip lists every running session (▣ marks the ones shown). A tab
+  that is not shown opens in a free pane, or replaces the pane you are in once three are shown; a pane's ✕ closes the
+  pane, never the session. The link in the address bar carries the shown sessions. On narrow windows one pane shows.
+- **Several at once**: the dock has a tab per running session, so you switch between agents without hiding anything.
+=======
+  `No, stop here` under the terminal. One click sends it: the text is typed, and Enter follows as soon as the agent's
+  terminal shows the text back — which a text prompt does and a selection menu does not. At a menu (a permission or
+  trust question) nothing is confirmed: the text stays typed, and the panel tells you it was not sent. Ship and opening
+  prompts that are typed after start-up are sent the same way, so an agent that opens with a dialog is never answered
+  for you.
+- **Several at once**: the panel has a tab per running session, so you switch between agents without hiding anything.
+>>>>>>> origin/main
+  A card keeps offering the step that fits the change's stage while its session runs: after *Draft artifacts* has
+  finished, **↳ Implement** types the next prompt into the same terminal — you press Enter, because the dashboard cannot
+  know whether the agent is showing a prompt or a menu. Archiving always gets its own session and worktree. The ✕ on a
+  running badge ends a session from the card; the dialog warns — loudly when files or commits exist only in the
+  worktree — and offers **Ship instead**.
+- **Nothing is left behind**: every session worktree gets a work status, also after its session ended or its record
+  was deleted — `3 uncommitted`, `2 not pushed`, `pushed` or `merged` — shown on the card and in **Open work** in the
+  top bar, which lists all of them across repositories and highlights work nobody touched for a day (pushed: a week).
+  It is read from local git only, so "pushed" and "merged" are as of your last `git fetch`; squash merges are
+  recognised. **Ship** sends the agent a prompt to commit, push and open a pull request (editable per agent) with one click — the
+  dashboard itself never commits or pushes. Once the work is merged, clean-up offers to remove the worktree; the branch
+  is kept.
+- **What protects you**: the feature is off until you enable it; the server only listens on `127.0.0.1`; the terminal
+  WebSocket and every mutating route accept only the dashboard's own origin, so another web page cannot type into your
+  agent; agents are started without a shell from the argument list you configured; and what an agent may do is decided
+  by *its* permission prompts, which you answer in the terminal. The dashboard refuses profiles containing a
+  permission-bypass flag.
 
 ## How it reads OpenSpec
+
+**Changes are read from every checkout, not just the main one.** Work usually happens in git worktrees — one per change
+— and a board that only looked at the main checkout would show a change only after it was merged *and* pulled. For a git
+repository the scanner reads active changes from the main checkout and from every linked worktree `git worktree list`
+reports, wherever it lives on disk (up to 12 per repository, most recently changed first; a worktree that is gone or
+unreadable is skipped with a warning).
+
+- **One card per change.** Copies of the same change are merged; the card shows the copy that is furthest along
+  (then: more artifacts and tasks done, more recent, main checkout first). Its branch badge is the branch of the
+  checkout it lives in, the tooltip names the worktree and any other checkout whose copy is at a different stage, and
+  "Copy apply command" `cd`s into that checkout — not into the main one.
+- **Archived on main wins.** Branches cut before an archive still carry the change as active; such leftovers are
+  ignored (unless the copy was created after the archive, which makes it a new change reusing the name).
+- **Archived in a worktree counts too.** Agents archive on a branch in a worktree, and the main checkout only catches up
+  when that branch is merged *and* pulled. An archive that only a worktree has therefore leads like any other furthest
+  stage: the card is in Archived with a badge `on <branch> · not in main checkout`, and its tooltip names the checkouts
+  that still hold an active copy. Archives the main checkout has are read from there only; main specs always are.
+- A project in a subdirectory of its git repository is read from that same subdirectory of every worktree.
+- Progress, last activity (uncommitted edits in a worktree count) and Done-vs-Synced are evaluated in the checkout the
+  change lives in. A repository's "last updated" covers its worktrees too.
+- **Agent sessions** copy a change from wherever it lives. If the branch a session would use (`feat/<change>`) is
+  already checked out in one of your worktrees — git allows a branch in one worktree only — the session *adopts* that
+  worktree instead of failing; the panel says so, and the dashboard never removes a worktree it did not create.
 
 Artifact status is computed in-process with `@fission-ai/openspec`'s artifact-graph primitives (no CLI shell-outs),
 using the package's bundled `spec-driven` schema embedded at build time; a repo-local `openspec/schemas/<name>/`

@@ -143,3 +143,35 @@ test("reading every artifact of every fixture change leaves the repositories unt
   expect(reads).toBeGreaterThan(30);
   expect(await Promise.all([demoOps, betaSoc].map((r) => treeFingerprint(r.path)))).toEqual(before);
 });
+
+test("a change that lives only in a linked worktree is read from that worktree", async () => {
+  const git = async (cwd: string, ...args: string[]) => {
+    const proc = Bun.spawn(["git", "-c", "user.name=t", "-c", "user.email=t@example.invalid", "-c", "commit.gpgsign=false", "-c", "init.defaultBranch=main", ...args], { cwd, stdout: "ignore", stderr: "pipe" });
+    if ((await proc.exited) !== 0) throw new Error(`git ${args.join(" ")}: ${await new Response(proc.stderr).text()}`);
+  };
+  const root = join(scratch, "alpha-infra");
+  await mkdir(join(root, "openspec", "changes"), { recursive: true });
+  await writeFile(join(root, "openspec", "config.yaml"), "schema: spec-driven\n");
+  await git(root, "init");
+  await git(root, "add", "-A");
+  await git(root, "commit", "-m", "init");
+  const worktree = join(scratch, "alpha-infra-wt");
+  await git(root, "worktree", "add", worktree, "-b", "feat/add-login");
+  const change = join(worktree, "openspec", "changes", "add-login");
+  await mkdir(change, { recursive: true });
+  await writeFile(join(change, ".openspec.yaml"), "schema: spec-driven\n");
+  await writeFile(join(change, "proposal.md"), "## Why\n\nIn a worktree.\n");
+
+  const alpha = newRepoConfig(root, true);
+  state.config = { ...state.config, repos: [...state.config.repos, alpha] };
+  await state.scanner.trigger().done;
+
+  const list = await get(alpha.id, "add-login", "artifacts");
+  expect(list.status).toBe(200);
+  const body = (await list.json()) as ChangeArtifacts;
+  expect(body.change.dir.endsWith(join("alpha-infra-wt", "openspec", "changes", "add-login"))).toBe(true);
+  expect(body.artifacts[0].files.map((f) => f.path)).toEqual(["proposal.md"]);
+  const content = await file(alpha.id, "add-login", "proposal.md");
+  expect(content.status).toBe(200);
+  expect(((await content.json()) as { text: string }).text).toContain("In a worktree.");
+});

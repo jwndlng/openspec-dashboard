@@ -1,4 +1,4 @@
-import { lstat, mkdtemp, readdir, readFile, rm } from "node:fs/promises";
+import { lstat, mkdtemp, readdir, readFile, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -19,8 +19,9 @@ export async function useTempHome(): Promise<{ home: string; cleanup: () => Prom
   };
 }
 
+/** Canonical, because repository paths are: on macOS the temp dir is reached through the /var → /private/var symlink. */
 export async function tempDir(prefix = "osd-"): Promise<string> {
-  return mkdtemp(join(tmpdir(), prefix));
+  return realpath(await mkdtemp(join(tmpdir(), prefix)));
 }
 
 /** True for strings that contain something shaped like a real user's home directory (the demo's /home/demo is allowed). */
