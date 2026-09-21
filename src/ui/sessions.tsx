@@ -206,7 +206,7 @@ const STARTER_LABEL: Record<SessionAction, string> = { draft: "Draft artifacts",
 const STARTER_HINT: Record<SessionAction, string> = {
   draft: "Start an agent in a terminal to write this change's missing artifacts",
   implement: "Start an agent in a terminal to implement this change's tasks",
-  archive: "Start an agent in a terminal to archive this completed change",
+  archive: "Start an agent in a terminal to sync the specs and archive this completed change",
 };
 
 /** Rendered inside a card. Shows nothing at all unless the feature is on and the card's repository has not been switched off. */

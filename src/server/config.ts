@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { basename, dirname, isAbsolute } from "node:path";
 import { z } from "zod";
-import { defaultAgentSessions } from "../shared/agentDefaults.ts";
+import { CLAUDE_PROFILE, defaultAgentSessions, FORMER_ARCHIVE_PROMPTS } from "../shared/agentDefaults.ts";
 import type { Config, RepoConfig } from "../shared/types.ts";
 import { configPath, dashboardHome, expandPath } from "./paths.ts";
 
@@ -133,7 +133,21 @@ export function validateConfig(input: unknown): Config {
   if (!result.success) {
     throw new ConfigValidationError(result.error.issues.map((i) => `${i.path.join(".") || "config"}: ${i.message}`));
   }
-  return result.data;
+  return upgradeFormerDefaults(result.data);
+}
+
+/**
+ * Profiles are persisted from the first run on, so a reworded preconfigured prompt would never reach an existing
+ * installation. Only a verbatim former default on the preconfigured profile is replaced: an edited prompt, a removed
+ * one and other profiles are the user's. Nothing is written here; the value reaches the file with the next save.
+ */
+function upgradeFormerDefaults(config: Config): Config {
+  const agents = config.agentSessions.agents.map((agent) =>
+    agent.id === CLAUDE_PROFILE.id && agent.prompts.archive !== undefined && FORMER_ARCHIVE_PROMPTS.includes(agent.prompts.archive)
+      ? { ...agent, prompts: { ...agent.prompts, archive: CLAUDE_PROFILE.prompts.archive } }
+      : agent,
+  );
+  return { ...config, agentSessions: { ...config.agentSessions, agents } };
 }
 
 /** Same rule as `Config.scanRoots`: absolute after `~` expansion. Used for ad-hoc discovery roots. */
