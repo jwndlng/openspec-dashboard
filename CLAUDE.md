@@ -27,15 +27,19 @@ bun test test/scanner.test.ts   # a single test file
 1. **Read-only towards tracked repositories, with enumerated exceptions.** The dashboard writes to a tracked
    repository only in response to an explicit user action, only to the paths enumerated in the "never writes"
    requirement of `openspec/specs/dashboard-api/spec.md`, never deletes or moves anything there, and never runs a git
-   command that writes (the enumerated exceptions below). Today that list has three entries: the managed sections of `openspec/config.yaml` (applying shared config profiles,
-   `src/server/sharedConfig.ts`), and — for agent sessions, off by default — a session's git worktree: created with
+   command that writes (the enumerated exceptions below). Today that list has four entries: the managed sections of `openspec/config.yaml` (applying shared config profiles,
+   `src/server/sharedConfig.ts`); for agent sessions, off by default, a session's git worktree, created with
    `git worktree add` (directory under `~/.openspec-dashboard/worktrees/`, never inside the repository's working tree)
    and removed with a non-forcing `git worktree remove` after the user confirmed and read-only checks proved nothing
-   would be lost (`src/server/sessions/worktree.ts`); and the **pull action** — `git fetch` of the repository's own
+   would be lost (`src/server/sessions/worktree.ts`); the **pull action** — `git fetch` of the repository's own
    remote, then a fast-forward-only `git merge` of the main checkout's upstream, with hooks disabled, never a merge
    commit, rebase, stash, reset, force or branch switch, and only fetching when the checkout is off its default branch,
    has no upstream, has diverged or has overlapping local edits (`src/server/pull.ts`, the only place that contacts a
-   remote or changes a main checkout). Those two modules are the only places that run a git command that writes. Apart
+   remote or changes a main checkout); and the **create-change action** — a new `openspec/changes/<name>/` directory
+   with the schema marker `.openspec.yaml` and, when the user typed one, `prompt.md`, written directly with an
+   exclusive-create so two concurrent requests cannot both succeed, and never through git or the `openspec` CLI
+   (`src/server/createChange.ts`, `POST /api/repos/<id>/changes`). Those three modules are the only places that write
+   to a tracked repository. Apart
    from the pull action the main checkout's index and files are never touched and no remote is ever contacted; the main
    checkout's branch is never changed by anything; and the pull action runs only on the user's explicit request — never
    on a timer, during a scan, on page load or as a side effect (`test/pull.test.ts` proves scans leave a recording

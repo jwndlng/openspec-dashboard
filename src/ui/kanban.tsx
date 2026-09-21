@@ -3,9 +3,10 @@ import { boardColumns, isComplete } from "../shared/columns.ts";
 import type { ChangeSnapshot, Config, RepoSnapshot, Snapshot } from "../shared/types.ts";
 import { NoRepos } from "./empty.tsx";
 import { EMPTY_FILTERS, parseFilters, serializeFilters, type Filters } from "./filters.ts";
+import { NewChangeForm } from "./newChangeForm.tsx";
 import { PullButton } from "./pull.tsx";
 import { branchNotice } from "./pullState.ts";
-import { applyCommand, cdCommand, checkoutHint, daysSince, pendingArchiveHint, relTime, splitBranchLabel } from "./format.ts";
+import { cdCommand, checkoutHint, copyCommandFor, daysSince, pendingArchiveHint, relTime, splitBranchLabel } from "./format.ts";
 import { isMinimized, loadGroupState, saveGroupState, toggleGroup, type GroupOverrides } from "./groupState.ts";
 import { assignRepoHues, groupByRepo, recentArchived } from "./repoGroups.ts";
 import { SessionControls } from "./sessions.tsx";
@@ -101,7 +102,10 @@ export function ChangeCard({ card, now, showRepo, from }: { card: Card; now: num
       <div class="repo">
         {showRepo ? <span>{card.repoName}</span> : <span class="name">{name}</span>}
         {/* Apply where the change lives: for a change in a worktree that is the worktree, never the main checkout. */}
-        {!card.archived && <CopyButton text={applyCommand(card.checkout?.path ?? card.repoPath, card.name)} />}
+        {!card.archived && (() => {
+          const cmd = copyCommandFor(card, card.checkout?.path ?? card.repoPath);
+          return <CopyButton text={cmd.text} label={cmd.label} />;
+        })()}
       </div>
       {showRepo && <div class="name">{name}</div>}
       {card.tasks && card.tasks.total > 0 && <Meter done={card.tasks.done} total={card.tasks.total} />}
@@ -116,6 +120,11 @@ export function ChangeCard({ card, now, showRepo, from }: { card: Card; now: num
           </span>
         )}
         {card.branchMatch && <BranchBadge branch={card.branchMatch} hint={checkoutHint(card)} />}
+        {card.prompt && (
+          <span class="badge brand" title={card.prompt} role="img" aria-label={`prompt: ${card.prompt}`}>
+            ✎ prompt
+          </span>
+        )}
         {noTasks && <span class="badge warn">no tasks</span>}
         <SessionControls card={card} />
         {card.warnings?.filter((w) => w !== "tasks file has no tasks").map((w) => (
@@ -207,9 +216,10 @@ function Column({ label, cards, now, hot, showRepo, from, countLabel, groups }: 
   );
 }
 
-function RepoHeader({ repo, now }: { repo: RepoSnapshot; now: number }) {
+function RepoHeader({ repo, now, onCreated }: { repo: RepoSnapshot; now: number; onCreated: () => void }) {
   const updated = repo.lastUpdatedAt ? relTime(repo.lastUpdatedAt, now) : undefined;
   const notice = branchNotice(repo);
+  const [creating, setCreating] = useState(false);
   return (
     <div class="repo-head">
       <div class="row">
@@ -229,6 +239,11 @@ function RepoHeader({ repo, now }: { repo: RepoSnapshot; now: number }) {
         </h1>
         {repo.currentBranch && <BranchBadge branch={repo.currentBranch} hint="current branch" />}
         {repo.isGit && repo.ok && <PullButton repoId={repo.id} />}
+        {repo.ok && (
+          <button type="button" class="btn sm" onClick={() => setCreating(true)}>
+            New change
+          </button>
+        )}
         {repo.worktrees.length > 0 && (
           <span class="badge" title={repo.worktrees.map((w) => `${w.branch ?? "detached"} — ${w.path}`).join("\n")}>
             {repo.worktrees.length} {repo.worktrees.length === 1 ? "worktree" : "worktrees"}
@@ -266,6 +281,7 @@ function RepoHeader({ repo, now }: { repo: RepoSnapshot; now: number }) {
           {w}
         </div>
       ))}
+      {creating && <NewChangeForm repoId={repo.id} repoName={repo.name} onClose={() => setCreating(false)} onCreated={() => { setCreating(false); onCreated(); }} />}
     </div>
   );
 }
@@ -290,7 +306,7 @@ function RepoNotFound() {
 }
 
 /** The combined board, or one repository's board when `repoId` is set. */
-export function Kanban({ snapshot, config, repoId }: { snapshot: Snapshot | null; config: Config | null; repoId?: string }) {
+export function Kanban({ snapshot, config, repoId, onReload }: { snapshot: Snapshot | null; config: Config | null; repoId?: string; onReload?: () => void }) {
   // A repository board has no repo filter, so a stray `repos` key in the URL is dropped.
   const [filters, setFiltersState] = useState<Filters>(() => ({ ...parseFilters(currentQuery()), ...(repoId === undefined ? {} : { repos: [] }) }));
   const now = Date.now();
@@ -343,7 +359,7 @@ export function Kanban({ snapshot, config, repoId }: { snapshot: Snapshot | null
 
   return (
     <>
-      {single && repos[0] && <RepoHeader repo={repos[0]} now={now} />}
+      {single && repos[0] && <RepoHeader repo={repos[0]} now={now} onCreated={() => onReload?.()} />}
       <div class="filters">
         {/* biome-ignore lint/a11y/useSemanticElements: a fieldset would bring legend/border styling the filter row does not want */}
         <div class="group" role="group" aria-label="Filter by repository" hidden={single}>

@@ -3,6 +3,7 @@ import { MAX_PAGE, type ActivityLog, type PageQuery } from "./activity/log.ts";
 import type { Config, DiscoverResult, RepoConfig, ScanTriggerResult, SharedConfigApplyResult, SharedConfigAssignment, SharedConfigPreview } from "../shared/types.ts";
 import { changeDirFor, listArtifactFiles, readArtifactFile } from "./artifacts.ts";
 import { ConfigValidationError, saveConfig, validateConfig, validateIgnorePaths, validateScanRoots } from "./config.ts";
+import { createChange } from "./createChange.ts";
 import { discoverRepos } from "./discover.ts";
 import { PullBusyError, pullAll, pullRepository } from "./pull.ts";
 import type { Scanner } from "./scanner.ts";
@@ -323,6 +324,37 @@ async function artifactRoutes(state: AppState, url: URL, match: RegExpExecArray)
 }
 
 /**
+ * The one API route that writes into a tracked repository outside `openspec/config.yaml`: creates
+ * `openspec/changes/<name>/` with its schema marker and, if given, `prompt.md`. Refused for any reason means nothing
+ * was written; the create itself is atomic (exclusive-create), so two concurrent requests cannot both succeed.
+ */
+async function postCreateChange(state: AppState, req: Request, repoId: string): Promise<Response> {
+  const repo = state.config.repos.find((r) => r.id === repoId);
+  if (!repo) return json({ error: "unknown repository" }, 404);
+  if (!repo.enabled) return json({ error: "repository is disabled" }, 409);
+  const scanned = state.scanner.snapshot.repos.find((r) => r.id === repoId);
+  if (!scanned || !scanned.ok) return json({ error: "repository has not been successfully scanned" }, 409);
+  let body: Record<string, unknown>;
+  try {
+    body = await readJson(req);
+  } catch (err) {
+    if (err instanceof SessionError) return json({ error: err.message }, err.status);
+    throw err;
+  }
+  const name = body.name;
+  const prompt = body.prompt;
+  if (typeof name !== "string") return json({ error: "name must be a string" }, 400);
+  if (prompt !== undefined && prompt !== null && typeof prompt !== "string") return json({ error: "prompt must be a string" }, 400);
+  const result = await createChange(repo.path, name, typeof prompt === "string" ? prompt : undefined);
+  if (!result.ok) {
+    const status = result.reason === "invalid-name" || result.reason === "invalid-prompt" ? 400 : result.reason === "no-openspec-dir" || result.reason === "duplicate-active" || result.reason === "duplicate-archived" ? 409 : 500;
+    return json({ error: result.message }, status);
+  }
+  state.scanner.trigger();
+  return json({ name: result.name }, 201);
+}
+
+/**
  * Repositories the pull action may run in: tracked, scanned without error, and git. The path comes from the config —
  * a request only ever names an id.
  */
@@ -436,6 +468,8 @@ export function createFetchHandler({ state, indexHtml }: AppOptions): (req: Requ
       if (req.method === "POST" && pathname === "/api/pull") return postPullAll(state);
       const pullOne = /^\/api\/repos\/([^/]+)\/pull$/.exec(pathname);
       if (req.method === "POST" && pullOne) return postPull(state, decodeURIComponent(pullOne[1]));
+      const createChangeMatch = /^\/api\/repos\/([^/]+)\/changes$/.exec(pathname);
+      if (req.method === "POST" && createChangeMatch) return postCreateChange(state, req, decodeURIComponent(createChangeMatch[1]));
       if (req.method === "POST" && pathname === "/api/scan") {
         const result: ScanTriggerResult = { started: state.scanner.trigger().started };
         return json(result);

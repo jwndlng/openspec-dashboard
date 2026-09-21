@@ -3,10 +3,10 @@
 import type { Dirent } from "node:fs";
 import { readdir, readFile, realpath, stat } from "node:fs/promises";
 import { dirname, join, relative } from "node:path";
-import type { Worktree } from "../shared/types.ts";
+import { CHANGE_NAME_PATTERN, type Worktree } from "../shared/types.ts";
 import { currentBranch, defaultBranch, isGitRepo, lastCommitDate, statusPaths, subdirectory, worktrees } from "./git.ts";
 
-export const CHANGE_NAME = /^[A-Za-z0-9._-]+$/;
+export const CHANGE_NAME = CHANGE_NAME_PATTERN;
 const ARCHIVE_PREFIX = /^(\d{4}-\d{2}-\d{2})-(.+)$/;
 const CHANGES_DIR = "openspec/changes";
 const ARCHIVE_DIR = "openspec/changes/archive";
