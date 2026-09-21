@@ -18,8 +18,8 @@ function AgentEditor({ agent, found, isDefault, canRemove, onChange, onRemove, o
     <details class="agent-card" open={isDefault}>
       <summary>
         <strong>{agent.name}</strong> <code>{agent.command[0]}</code>
-        {isDefault && <span class="badge brand">default</span>}
-        {found && (found.available ? <span class="badge ok" title={found.path}>✓ found</span> : <span class="badge danger">⚠ not found on this machine</span>)}
+        {isDefault && <span class="badge">default</span>}
+        {found && (found.available ? <span class="badge success" title={found.path}>✓ found</span> : <span class="badge danger">⚠ not found on this machine</span>)}
       </summary>
       <div class="agent-fields">
         <label class="check grow">

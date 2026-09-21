@@ -21,10 +21,15 @@
   --brand-soft: #164040;
   --brand-softer: #0c2424;
 
+  /* Status roles: one hue per meaning. Kept clear of the brand accent and of every repository hue
+     (REPO_HUES in repoGroups.ts); test/repoContrast.test.ts proves both. */
+  --info: #6ba6ff;
+  --info-border: #1d3a6b;
+  --branch: #ff9d4d;
+  --branch-border: #7a3d0e;
   --success: #10b981;
   --success-border: #004f3b;
   --warning: #fbbf24;
-  --warning-strong: #ff8c42;
   --warning-border: #7c2d12;
   --danger: #ff2d6b;
   --danger-border: #6b0028;
@@ -74,11 +79,15 @@
   --brand-soft: #b5e0df;
   --brand-softer: #e2f4f3;
 
+  --info: #1d4ed8;
+  --info-border: #b9c9f2;
+  --branch: #9a4b00;
+  --branch-border: #f0cfa8;
   --success: #047857;
   --success-border: #a7e3cc;
-  --warning: #a84d08;
-  --warning-strong: #c2410c;
-  --warning-border: #f5cfa0;
+  /* Amber, not the burnt orange it was: at 49° it was four degrees from --branch. */
+  --warning: #7a6200;
+  --warning-border: #e3d5a0;
   --danger: #c81e4a;
   --danger-border: #f5b5c5;
   --danger-bg: #fdecef;
@@ -173,9 +182,12 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: 
   border: 1px solid var(--border-light); color: var(--fg-subtle); background: var(--bg-section);
   white-space: nowrap;
 }
-.badge.brand { color: var(--brand-fg); border-color: var(--brand-soft); background: var(--brand-softer); }
-.badge.ok { color: var(--success); border-color: var(--success-border); }
-.badge.warn { color: var(--warning); border-color: var(--warning-border); }
+/* One role per meaning (kanban-board: "Status labels use a semantic colour palette"). The brand accent is
+   deliberately absent: it belongs to focus, primary actions and progress, never to a status. */
+.badge.info { color: var(--info); border-color: var(--info-border); }
+.badge.branch { color: var(--branch); border-color: var(--branch-border); }
+.badge.success { color: var(--success); border-color: var(--success-border); }
+.badge.warning { color: var(--warning); border-color: var(--warning-border); }
 .badge.danger { color: var(--danger); border-color: var(--danger-border); }
 .badge.mono { font-family: var(--font-mono); font-weight: 400; }
 /* Text that may be longer than its container: the head clips with an ellipsis, the tail always shows. */
@@ -502,11 +514,11 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: 
 /* A running agent is the one live thing on the board: its dot pulses and a lighter colour sweeps over the label.
    Decoration only — the label still says "running" — and absent when the user prefers reduced motion. */
 @media (prefers-reduced-motion: no-preference) {
-  .badge.live { --session-pulse: 1.6s; --session-sweep: 2.4s; }
-  .badge.live .dot { animation: session-pulse var(--session-pulse) ease-in-out infinite; }
+  .badge.info.live { --session-pulse: 1.6s; --session-sweep: 2.4s; }
+  .badge.info.live .dot { animation: session-pulse var(--session-pulse) ease-in-out infinite; }
   @supports ((-webkit-background-clip: text) or (background-clip: text)) {
-    .badge.live .text {
-      background-image: linear-gradient(100deg, var(--brand-fg) 0%, var(--brand-fg) 35%, var(--fg-heading) 50%, var(--brand-fg) 65%, var(--brand-fg) 100%);
+    .badge.info.live .text {
+      background-image: linear-gradient(100deg, var(--info) 0%, var(--info) 35%, var(--fg-heading) 50%, var(--info) 65%, var(--info) 100%);
       background-size: 250% 100%;
       -webkit-background-clip: text; background-clip: text;
       -webkit-text-fill-color: transparent; color: transparent;

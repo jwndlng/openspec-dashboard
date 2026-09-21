@@ -92,7 +92,7 @@ export interface SessionBadge {
   /** True only while an agent is visibly working: the one state that is shown with motion. */
   live?: boolean;
   label: string;
-  tone: "brand" | "warn" | "danger" | "";
+  tone: "info" | "branch" | "success" | "warning" | "danger" | "";
   title: string;
 }
 
@@ -106,8 +106,9 @@ export function sessionBadge(session: Session, now = Date.now()): SessionBadge {
   if (session.state === "running") {
     const last = session.lastOutputAt ? Date.parse(session.lastOutputAt) : Number.NaN;
     const quiet = Number.isNaN(last) ? 0 : now - last;
-    if (quiet > QUIET_AFTER_MS) return { icon: "◆", label: `quiet ${Math.floor(quiet / 60_000)}m`, tone: "warn", title: "the terminal has printed nothing for a while — the agent is probably waiting for you" };
-    return { icon: "●", label: "running", live: true, tone: "brand", title: `${session.agentName} is running in its terminal` };
+    // Both are the same thing — an agent that is up — so both wear the live role; the words and the motion separate them.
+    if (quiet > QUIET_AFTER_MS) return { icon: "◆", label: `quiet ${Math.floor(quiet / 60_000)}m`, tone: "info", title: "the terminal has printed nothing for a while — the agent is probably waiting for you" };
+    return { icon: "●", label: "running", live: true, tone: "info", title: `${session.agentName} is running in its terminal` };
   }
   if (session.state === "failed") return { icon: "⚠", label: "failed", tone: "danger", title: session.error ?? "the agent could not be started" };
   const code = session.exitCode;
@@ -131,16 +132,19 @@ export function staleAge(worktree: SessionWorktree, sessions: Session[], now = D
 
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
-/** Text plus colour, never colour alone. Nothing for `clean` and `missing`: there is nothing to say about them. */
+/**
+ * Text plus colour, never colour alone. Nothing for `clean` and `missing`: there is nothing to say about them.
+ * Everything short of merged is work in a branch, so it wears the branch role; stale overrides that with danger.
+ */
 export function workBadge(worktree: SessionWorktree, sessions: Session[], now = Date.now()): SessionBadge | undefined {
   const { state, count = 0, base } = worktree.work;
   const stale = staleAge(worktree, sessions, now);
   const tail = stale ? ` · ${stale}` : "";
   const waiting = stale ? ` — untouched for ${stale}` : "";
-  if (state === "uncommitted") return { label: `✎ ${count} uncommitted${tail}`, tone: stale ? "danger" : "warn", title: `${plural(count, "file")} in the worktree ${count === 1 ? "is" : "are"} not committed${waiting}` };
-  if (state === "unpushed") return { label: `↑ ${count} not pushed${tail}`, tone: stale ? "danger" : "warn", title: `${plural(count, "commit")} exist only on this machine${waiting}` };
-  if (state === "pushed") return { label: `⇡ pushed${tail}`, tone: stale ? "warn" : "brand", title: `pushed, but not in ${base ?? "the default branch"} as of your last fetch${waiting}` };
-  if (state === "merged") return { label: "✓ merged", tone: "", title: `merged into ${base ?? "the default branch"} as of your last fetch — the worktree can be removed` };
+  if (state === "uncommitted") return { label: `✎ ${count} uncommitted${tail}`, tone: stale ? "danger" : "branch", title: `${plural(count, "file")} in the worktree ${count === 1 ? "is" : "are"} not committed${waiting}` };
+  if (state === "unpushed") return { label: `↑ ${count} not pushed${tail}`, tone: stale ? "danger" : "branch", title: `${plural(count, "commit")} exist only on this machine${waiting}` };
+  if (state === "pushed") return { label: `⇡ pushed${tail}`, tone: stale ? "warning" : "branch", title: `pushed, but not in ${base ?? "the default branch"} as of your last fetch${waiting}` };
+  if (state === "merged") return { label: "✓ merged", tone: "success", title: `merged into ${base ?? "the default branch"} as of your last fetch — the worktree can be removed` };
   return undefined;
 }
 
