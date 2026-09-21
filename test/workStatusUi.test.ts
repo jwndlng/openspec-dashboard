@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import type { Session, SessionWorktree, WorkStatus } from "../src/shared/types.ts";
-import { endSeverity, endWarning, nextStepFor, openWork, sessionsForChange, sessionTabs, staleAge, workBadge, worktreeForChange } from "../src/ui/sessionState.ts";
+import { endSeverity, hideSession, searchWithShown, showSession, shownFromSearch, endWarning, nextStepFor, openWork, sessionsForChange, sessionTabs, staleAge, workBadge, worktreeForChange } from "../src/ui/sessionState.ts";
 
 const NOW = Date.parse("2026-09-21T12:00:00Z");
 const ago = (hours: number) => new Date(NOW - hours * 3_600_000).toISOString();
@@ -75,8 +75,8 @@ test("a card shows every running session, else the latest one that went wrong", 
 
 test("tabs: running sessions oldest first, plus the one shown if it has ended", () => {
   const list = [sess("bbb"), sess("a"), sess("cc", { state: "exited" }), sess("dddd", { state: "exited" })];
-  expect(sessionTabs(list, undefined).map((s) => s.id)).toEqual(["a", "bbb"]);
-  expect(sessionTabs(list, "cc").map((s) => s.id)).toEqual(["a", "cc", "bbb"]);
+  expect(sessionTabs(list, []).map((s) => s.id)).toEqual(["a", "bbb"]);
+  expect(sessionTabs(list, ["cc"]).map((s) => s.id)).toEqual(["a", "cc", "bbb"]);
 });
 
 test("ending is questioned as loudly as the work is unshipped", () => {
@@ -88,4 +88,32 @@ test("ending is questioned as loudly as the work is unshipped", () => {
   expect(endWarning({ state: "uncommitted", count: 3 })).toContain("3 uncommitted files exist only in this worktree");
   expect(endWarning({ state: "unpushed", count: 1 })).toContain("1 commit exists only on this machine");
   expect(endWarning({ state: "clean" })).toBeUndefined();
+});
+
+test("the dock shows at most three sessions: a fourth replaces the focused pane, shown ones are only focused", () => {
+  let state = showSession({ shown: [] }, "a");
+  state = showSession(state, "b");
+  state = showSession(state, "c");
+  expect(state).toEqual({ shown: ["a", "b", "c"], focusedId: "c" });
+  expect(showSession(state, "a")).toEqual({ shown: ["a", "b", "c"], focusedId: "a" }); // already shown: focus only
+  expect(showSession({ ...state, focusedId: "b" }, "d")).toEqual({ shown: ["a", "d", "c"], focusedId: "d" }); // the others stay put
+  expect(showSession({ shown: ["a", "b", "c"] }, "d").shown).toEqual(["a", "b", "d"]); // nobody focused: the last pane
+  expect(showSession({ shown: ["a", "b", "c"], focusedId: "gone" }, "d").shown).toEqual(["a", "b", "d"]);
+});
+
+test("closing a pane moves the keyboard to its neighbour and never touches the others", () => {
+  expect(hideSession({ shown: ["a", "b", "c"], focusedId: "b" }, "b")).toEqual({ shown: ["a", "c"], focusedId: "c" });
+  expect(hideSession({ shown: ["a", "b"], focusedId: "b" }, "b")).toEqual({ shown: ["a"], focusedId: "a" });
+  expect(hideSession({ shown: ["a"], focusedId: "a" }, "a")).toEqual({ shown: [], focusedId: undefined });
+  expect(hideSession({ shown: ["a", "b"], focusedId: "a" }, "b")).toEqual({ shown: ["a"], focusedId: "a" });
+  expect(hideSession({ shown: ["a"], focusedId: "a" }, "zz")).toEqual({ shown: ["a"], focusedId: "a" });
+});
+
+test("the URL carries the shown sessions in pane order, at most three, and keeps other parameters", () => {
+  expect(shownFromSearch("?session=a,b,c,d&q=x")).toEqual(["a", "b", "c"]);
+  expect(shownFromSearch("?session=a,,a, b")).toEqual(["a", "b"]);
+  expect(shownFromSearch("?q=x")).toEqual([]);
+  expect(searchWithShown("?q=x", ["a", "b"])).toBe("?q=x&session=a,b");
+  expect(searchWithShown("?session=a,b&q=x", ["b"])).toBe("?session=b&q=x");
+  expect(shownFromSearch(searchWithShown("", ["a", "b", "c"]))).toEqual(["a", "b", "c"]);
 });

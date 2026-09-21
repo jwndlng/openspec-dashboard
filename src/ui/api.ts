@@ -1,5 +1,5 @@
-import type { ActivityPage, ShipResult, WorkStatus } from "../shared/types.ts";
 import type { ActivityQuery } from "../shared/activity.ts";
+import type { ActivityPage, PullResult, ShipResult, WorkStatus } from "../shared/types.ts";
 import type { AgentAvailability, Config, DiscoverResult, ScanTriggerResult, Session, SessionAction, SessionWorktree, SharedConfig, SharedConfigApplyResult, SharedConfigAssignment, SharedConfigPreview, Snapshot } from "../shared/types.ts";
 import { socketOrigin } from "./url.ts";
 
@@ -33,9 +33,15 @@ export interface Api {
   activity(query?: ActivityQuery): Promise<ActivityPage>;
   config(): Promise<Config>;
   saveConfig(config: Config): Promise<Config>;
-  /** Read-only; pass the draft roots to discover against unsaved edits. */
-  discover(scanRoots?: string[]): Promise<DiscoverResult>;
+  /** Read-only; pass the draft roots and ignore paths to discover against unsaved edits. */
+  discover(scanRoots?: string[], ignorePaths?: string[]): Promise<DiscoverResult>;
   scan(): Promise<ScanTriggerResult>;
+  /**
+   * Fetches the repository's remote and fast-forwards its main checkout when that is safe. The only operation that
+   * makes the dashboard contact a remote; it never runs unless the user asks.
+   */
+  pullRepo(repoId: string): Promise<PullResult>;
+  pullAll(): Promise<{ results: PullResult[] }>;
   sharedConfig(): Promise<SharedConfig>;
   /** Stores the profiles in the dashboard home; never writes to a repository. */
   saveSharedConfig(config: SharedConfig): Promise<SharedConfig>;
@@ -105,9 +111,11 @@ export const httpApi: Api = {
   activity: (query = {}) => call<ActivityPage>(`/api/activity${activityQueryString(query)}`),
   config: () => call<Config>("/api/config"),
   saveConfig: (config) => call<Config>("/api/config", { method: "PUT", body: JSON.stringify(config) }),
-  discover: (scanRoots) =>
-    call<DiscoverResult>("/api/discover", { method: "POST", body: scanRoots ? JSON.stringify({ scanRoots }) : undefined }),
+  discover: (scanRoots, ignorePaths) =>
+    call<DiscoverResult>("/api/discover", { method: "POST", body: scanRoots || ignorePaths ? JSON.stringify({ scanRoots, ignorePaths }) : undefined }),
   scan: () => call<ScanTriggerResult>("/api/scan", { method: "POST" }),
+  pullRepo: (repoId) => call<PullResult>(`/api/repos/${encodeURIComponent(repoId)}/pull`, { method: "POST" }),
+  pullAll: () => call<{ results: PullResult[] }>("/api/pull", { method: "POST" }),
   sharedConfig: () => call<SharedConfig>("/api/shared-config"),
   saveSharedConfig: (config) => call<SharedConfig>("/api/shared-config", { method: "PUT", body: JSON.stringify(config) }),
   previewSharedConfig: (assignments) => call<{ previews: SharedConfigPreview[] }>("/api/shared-config/preview", { method: "POST", body: JSON.stringify({ assignments }) }),
@@ -157,8 +165,10 @@ export const api: Api = {
   activity: (query) => current.activity(query),
   config: () => current.config(),
   saveConfig: (config) => current.saveConfig(config),
-  discover: (scanRoots) => current.discover(scanRoots),
+  discover: (scanRoots, ignorePaths) => current.discover(scanRoots, ignorePaths),
   scan: () => current.scan(),
+  pullRepo: (repoId) => current.pullRepo(repoId),
+  pullAll: () => current.pullAll(),
   sharedConfig: () => current.sharedConfig(),
   saveSharedConfig: (config) => current.saveSharedConfig(config),
   previewSharedConfig: (assignments) => current.previewSharedConfig(assignments),

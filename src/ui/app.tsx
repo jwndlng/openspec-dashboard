@@ -7,10 +7,11 @@ import { api } from "./api.ts";
 import { relTime } from "./format.ts";
 import { Kanban } from "./kanban.tsx";
 import { Overview } from "./overview.tsx";
+import { PullProvider } from "./pull.tsx";
 import { enabledOnly } from "./overviewState.ts";
 import { type Route, routeFromPath } from "./routes.ts";
 import { EndSessionDialog } from "./endSessionDialog.tsx";
-import { SessionPanel } from "./sessionPanel.tsx";
+import { SessionDock } from "./sessionPanel.tsx";
 import { OpenWork, SessionProvider } from "./sessions.tsx";
 import { Settings } from "./settings.tsx";
 import { currentPath, href, navigate, onRouteChange } from "./url.ts";
@@ -137,6 +138,7 @@ export function App() {
   );
 
   return (
+    <PullProvider onPulled={reloadSoon}>
     <div class="app">
       <SessionProvider config={config} snapshot={shown}>
       <header class="topbar">
@@ -191,9 +193,10 @@ export function App() {
           <Kanban key={route.view === "repo" ? route.repoId : "all"} snapshot={shown} config={config} repoId={route.view === "repo" ? route.repoId : undefined} />
         )}
       </main>
-      <SessionPanel />
+      <SessionDock />
       <EndSessionDialog />
       </SessionProvider>
     </div>
+    </PullProvider>
   );
 }

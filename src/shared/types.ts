@@ -83,6 +83,16 @@ export interface RepoSnapshot {
   scannedAt: string;
   isGit: boolean;
   currentBranch?: string;
+  /**
+   * The repository's default branch: what `origin/HEAD` points to, else `main`, else `master`. Omitted when it cannot be
+   * determined (and in snapshots cached by older versions).
+   */
+  defaultBranch?: string;
+  /**
+   * Whether the main checkout is on `defaultBranch` (false when HEAD is detached). Archives, specs and progress are read
+   * from the main checkout, so off the default branch they may be outdated. Omitted with `defaultBranch`.
+   */
+  onDefaultBranch?: boolean;
   worktrees: Worktree[];
   /**
    * Latest change to anything under `openspec/`: the last commit touching it, or the mtime of a file
@@ -143,6 +153,8 @@ export interface AgentSessionsConfig {
 export interface Config {
   version: 1;
   scanRoots: string[];
+  /** Absolute path prefixes discovery never descends into or reports. Tracked repositories below them stay tracked. */
+  ignorePaths: string[];
   repos: RepoConfig[];
   pollIntervalSeconds: number;
   port: number;
@@ -245,9 +257,20 @@ export function availableActions(change: Pick<ChangeSnapshot, "archived" | "arti
   return actions;
 }
 
+/** Another known repository with the same `origin` remote: probably a second clone, but never merged or hidden. */
+export interface SameRemoteRepo {
+  name: string;
+  path: string;
+  /** In the saved config (enabled or not), as opposed to another candidate. */
+  tracked: boolean;
+}
+
+/** A discovery candidate. `sameRemoteAs` is information for the user and is dropped when the candidate is enabled. */
+export type DiscoveredRepo = RepoConfig & { sameRemoteAs?: SameRemoteRepo[] };
+
 export interface DiscoverResult {
   /** Repositories found under the roots that are not in the config yet. Never persisted by discovery. */
-  candidates: RepoConfig[];
+  candidates: DiscoveredRepo[];
   errors: { root: string; message: string }[];
 }
 
@@ -384,4 +407,24 @@ export interface ActivityPage {
   newestId?: string;
   /** Only when the request named `since`: how many recorded events are newer than that one, whatever the filters. */
   newerThanSince?: number;
+}
+
+/**
+ * What the pull action did for one repository. The fetch and the update of the main checkout are reported separately:
+ * the fetch is always safe, the update only happens when it is an unambiguous fast-forward on the default branch.
+ */
+export interface PullResult {
+  repoId: string;
+  /** The remote was fetched (remote-tracking refs are current). */
+  fetched: boolean;
+  update: "fast-forwarded" | "up-to-date" | "skipped" | "refused" | "failed";
+  /** Commits the main checkout moved forward. */
+  commits?: number;
+  /** Why the update was skipped, refused or failed — git's words where git decided. */
+  reason?: string;
+  branch?: string;
+  upstream?: string;
+  defaultBranch?: string;
+  /** The repository has a post-merge hook; the dashboard does not run hooks. */
+  hooksSkipped?: boolean;
 }

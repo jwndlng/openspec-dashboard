@@ -5,7 +5,7 @@ import { useCallback, useContext, useEffect, useMemo, useState } from "preact/ho
 import type { AgentAvailability, ChangeSnapshot, Config, Session, SessionAction, SessionWorktree, Snapshot } from "../shared/types.ts";
 import { api } from "./api.ts";
 import { cdCommand, relTime } from "./format.ts";
-import { agentForRepo, openWork, type SessionBadge, searchWithSession, nextStepFor, sessionBadge, sessionsForChange, sessionIdFromSearch, sessionsEnabledFor, startersFor, workBadge, worktreeForChange } from "./sessionState.ts";
+import { agentForRepo, openWork, type SessionBadge, hideSession, nextStepFor, searchWithShown, sessionBadge, sessionsForChange, showSession, shownFromSearch, type Shown, sessionsEnabledFor, startersFor, workBadge, worktreeForChange } from "./sessionState.ts";
 import { currentQuery, replaceQuery } from "./url.ts";
 
 const POLL_MS = 3000;
@@ -17,11 +17,18 @@ interface SessionUi {
   agents: AgentAvailability[];
   /** Every session worktree with what became of its work; outlives session records. */
   worktrees: SessionWorktree[];
+  /** Sessions with a pane in the dock, in pane order (at most three). */
+  shown: string[];
+  /** The pane that has, or last had, the keyboard. */
   panelId?: string;
+  /** Removes a pane from the dock; the session itself is not touched. */
+  hidePane(id: string): void;
+  /** A pane took the keyboard. */
+  focusPane(id: string): void;
   /** The session the end-session dialog is open for. */
   endingId?: string;
   /** Bumped whenever the terminal should take the keyboard (after something was typed into it for the user). */
-  focusTick: number;
+  focusTick: { id?: string; tick: number };
   /** The session whose last text sent on the user's behalf was typed but not submitted; its panel says so. */
   unsentId?: string;
   reportUnsent(id: string | undefined): void;
@@ -34,7 +41,7 @@ interface SessionUi {
 }
 
 const noop = async () => {};
-const Context = createContext<SessionUi>({ config: null, snapshot: null, sessions: [], agents: [], worktrees: [], focusTick: 0, reportUnsent: () => {}, requestEnd: () => {}, openPanel: () => {}, start: noop, refresh: noop });
+const Context = createContext<SessionUi>({ config: null, snapshot: null, sessions: [], agents: [], worktrees: [], shown: [], hidePane: () => {}, focusPane: () => {}, focusTick: { tick: 0 }, reportUnsent: () => {}, requestEnd: () => {}, openPanel: () => {}, start: noop, refresh: noop });
 
 export const useSessionUi = () => useContext(Context);
 
@@ -44,7 +51,13 @@ export function SessionProvider({ config, snapshot = null, children }: { config:
   const [agents, setAgents] = useState<AgentAvailability[]>([]);
   const [worktrees, setWorktrees] = useState<SessionWorktree[]>([]);
   const [error, setError] = useState<string>();
-  const [panelId, setPanelId] = useState<string | undefined>(() => sessionIdFromSearch(currentQuery()));
+  const [panes, setPanes] = useState<Shown>(() => {
+    const shown = shownFromSearch(currentQuery());
+    return { shown, focusedId: shown[0] };
+  });
+  const [loaded, setLoaded] = useState(false);
+  const { shown, focusedId: panelId } = panes;
+  const anyShown = shown.length > 0;
 
   const refresh = useCallback(async () => {
     try {
@@ -52,6 +65,7 @@ export function SessionProvider({ config, snapshot = null, children }: { config:
       setSessions(result.sessions);
       setAgents(result.agents);
       setWorktrees(result.worktrees ?? []);
+      setLoaded(true);
       setError(undefined);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -59,19 +73,34 @@ export function SessionProvider({ config, snapshot = null, children }: { config:
   }, []);
 
   useEffect(() => {
-    if (!enabled && !panelId) return;
+    if (!enabled && !anyShown) return;
     void refresh();
     const timer = setInterval(() => void refresh(), POLL_MS);
     return () => clearInterval(timer);
-  }, [enabled, panelId, refresh]);
+  }, [enabled, anyShown, refresh]);
 
-  const openPanel = useCallback((id: string | undefined) => {
-    setPanelId(id);
-    replaceQuery(searchWithSession(currentQuery(), id)); // works in both routing modes (path and hash)
-  }, []);
+  // The URL follows the panes (works in both routing modes: path and hash).
+  useEffect(() => {
+    replaceQuery(searchWithShown(currentQuery(), shown));
+  }, [shown]);
+
+  // Ids from a link that match no session are dropped — once the list is known, or a reload would lose its panes.
+  useEffect(() => {
+    if (!loaded) return;
+    setPanes((current) => {
+      const known = current.shown.filter((id) => sessions.some((s) => s.id === id));
+      if (known.length === current.shown.length) return current;
+      return { shown: known, focusedId: known.includes(current.focusedId ?? "") ? current.focusedId : known[0] };
+    });
+  }, [loaded, sessions]);
+
+  /** "Show this session" — every caller's way into the dock. `undefined` collapses the dock to its tab strip. */
+  const openPanel = useCallback((id: string | undefined) => setPanes((current) => (id ? showSession(current, id) : { shown: [] })), []);
+  const hidePane = useCallback((id: string) => setPanes((current) => hideSession(current, id)), []);
+  const focusPane = useCallback((id: string) => setPanes((current) => (current.focusedId === id || !current.shown.includes(id) ? current : { ...current, focusedId: id })), []);
 
   const [endingId, requestEnd] = useState<string>();
-  const [focusTick, setFocusTick] = useState(0);
+  const [focusTick, setFocusTick] = useState<{ id?: string; tick: number }>({ tick: 0 });
   const [unsentId, reportUnsent] = useState<string>();
 
   const start = useCallback(
@@ -79,7 +108,7 @@ export function SessionProvider({ config, snapshot = null, children }: { config:
       try {
         const into = nextStepFor(sessions, repoId, change, action).promptSessionId;
         const session = into ? await api.promptSession(into, action) : await api.openSession(repoId, change, action);
-        if (into) setFocusTick((n) => n + 1);
+        if (into) setFocusTick((t) => ({ id: into, tick: t.tick + 1 }));
         await refresh();
         openPanel(session.id);
       } catch (err) {
@@ -89,7 +118,7 @@ export function SessionProvider({ config, snapshot = null, children }: { config:
     [refresh, openPanel, sessions],
   );
 
-  const value = useMemo(() => ({ config, snapshot, sessions, agents, worktrees, panelId, endingId, focusTick, unsentId, reportUnsent, requestEnd, error, openPanel, start, refresh }), [config, snapshot, sessions, agents, worktrees, panelId, endingId, focusTick, unsentId, error, openPanel, start, refresh]);
+  const value = useMemo(() => ({ config, snapshot, sessions, agents, worktrees, shown, hidePane, focusPane, panelId, endingId, focusTick, unsentId, reportUnsent, requestEnd, error, openPanel, start, refresh }), [config, snapshot, sessions, agents, worktrees, shown, hidePane, focusPane, panelId, endingId, focusTick, unsentId, error, openPanel, start, refresh]);
   return <Context.Provider value={value}>{children}</Context.Provider>;
 }
 

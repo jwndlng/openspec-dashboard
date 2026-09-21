@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "preact/hooks";
-import type { Config, DiscoverResult, RepoConfig, Snapshot } from "../shared/types.ts";
+import { availableName, nameHints } from "../shared/nameHints.ts";
+import type { Config, DiscoveredRepo, DiscoverResult, RepoConfig, Snapshot } from "../shared/types.ts";
 import { AgentSettings } from "./agentSettings.tsx";
 import { api, ApiError } from "./api.ts";
 import { SettingsNav, type SettingsSection, SettingsSections, useSectionNav } from "./settingsNav.tsx";
@@ -17,8 +18,9 @@ export function Settings({ config, snapshot, onSaved, onRescan }: Props) {
   const [draft, setDraft] = useState<Config | null>(config);
   const [dirty, setDirty] = useState(false);
   const [newRoot, setNewRoot] = useState("");
+  const [newIgnore, setNewIgnore] = useState("");
   const [discovering, setDiscovering] = useState(false);
-  const [candidates, setCandidates] = useState<RepoConfig[]>([]);
+  const [candidates, setCandidates] = useState<DiscoveredRepo[]>([]);
   const [discovered, setDiscovered] = useState(false);
   const discoverSeq = useRef(0);
   const [discoverErrors, setDiscoverErrors] = useState<DiscoverResult["errors"]>([]);
@@ -32,10 +34,10 @@ export function Settings({ config, snapshot, onSaved, onRescan }: Props) {
   // Defined before the early return below: the effect that calls it also runs for a render that returned early
   // (Settings opened directly, config still loading), where a later `const` would not be initialised yet.
   /**
-   * Read-only preview of what is under `roots` (usually the unsaved draft roots).
-   * Runs overlap when roots are edited quickly; only the latest response is applied.
+   * Read-only preview of what is under `roots` and outside `ignorePaths` (usually the unsaved draft values).
+   * Runs overlap when they are edited quickly; only the latest response is applied.
    */
-  const runDiscovery = async (roots: string[]) => {
+  const runDiscovery = async (roots: string[], ignorePaths: string[]) => {
     const seq = ++discoverSeq.current;
     if (roots.length === 0) {
       setCandidates([]);
@@ -46,7 +48,7 @@ export function Settings({ config, snapshot, onSaved, onRescan }: Props) {
     }
     setDiscovering(true);
     try {
-      const result = await api.discover(roots);
+      const result = await api.discover(roots, ignorePaths);
       if (seq !== discoverSeq.current) return;
       setCandidates(result.candidates);
       setDiscoverErrors(result.errors);
@@ -61,7 +63,7 @@ export function Settings({ config, snapshot, onSaved, onRescan }: Props) {
 
   const loaded = config !== null;
   useEffect(() => {
-    if (config && config.scanRoots.length > 0) void runDiscovery(config.scanRoots);
+    if (config && config.scanRoots.length > 0) void runDiscovery(config.scanRoots, config.ignorePaths);
   }, [loaded]);
 
   // Hooks first: the ids are all the hook needs, and they are known before the draft is.
@@ -86,14 +88,30 @@ export function Settings({ config, snapshot, onSaved, onRescan }: Props) {
     setNewRoot("");
   };
 
-
   const setRoots = (scanRoots: string[]) => {
     update({ scanRoots });
-    void runDiscovery(scanRoots);
+    void runDiscovery(scanRoots, draft.ignorePaths);
   };
 
-  const enableCandidate = (candidate: RepoConfig) =>
-    update({ repos: [...draft.repos, { ...candidate, enabled: true }].sort((x, y) => x.path.localeCompare(y.path)) });
+  const setIgnorePaths = (ignorePaths: string[]) => {
+    update({ ignorePaths });
+    void runDiscovery(draft.scanRoots, ignorePaths);
+  };
+  const ignore = (path: string) => {
+    if (!draft.ignorePaths.includes(path)) setIgnorePaths([...draft.ignorePaths, path]);
+  };
+  const addIgnore = () => {
+    const path = newIgnore.trim();
+    if (!path) return;
+    ignore(path);
+    setNewIgnore("");
+  };
+
+  // `sameRemoteAs` describes one discovery run; it is not part of the config.
+  const enableCandidate = ({ sameRemoteAs: _info, ...candidate }: DiscoveredRepo) => {
+    const name = availableName(candidate, draft.repos.map((r) => r.name));
+    update({ repos: [...draft.repos, { ...candidate, name, enabled: true }].sort((x, y) => x.path.localeCompare(y.path)) });
+  };
 
   const save = async () => {
     setSaving(true);
@@ -103,7 +121,7 @@ export function Settings({ config, snapshot, onSaved, onRescan }: Props) {
       setDirty(false);
       setMessage({ kind: "ok", text: "Saved." });
       onSaved(saved);
-      void runDiscovery(saved.scanRoots); // forgotten repos become candidates again
+      void runDiscovery(saved.scanRoots, saved.ignorePaths); // forgotten repos become candidates again
     } catch (err) {
       setMessage({ kind: "danger", text: err instanceof Error ? err.message : String(err), issues: err instanceof ApiError ? err.issues : [] });
     } finally {
@@ -115,6 +133,11 @@ export function Settings({ config, snapshot, onSaved, onRescan }: Props) {
   const draftIds = new Set(draft.repos.map((r) => r.id));
   const newCandidates = candidates.filter((c) => !draftIds.has(c.id));
   const enabledCount = draft.repos.filter((r) => r.enabled).length;
+  const hints = nameHints([...draft.repos, ...newCandidates]);
+  const hintBadge = (id: string) => {
+    const hint = hints.get(id);
+    return hint ? <span class="badge mono" title="another listed repository has the same name">{hint}</span> : null;
+  };
 
   // One list drives both the navigation and the page, so a panel cannot exist without its navigation entry.
   const sections: SettingsSection[] = [
@@ -141,7 +164,7 @@ export function Settings({ config, snapshot, onSaved, onRescan }: Props) {
             <button type="button" class="btn" onClick={addRoot} disabled={!newRoot.trim()}>
               Add root
             </button>
-            <button type="button" class="btn" onClick={() => runDiscovery(draft.scanRoots)} disabled={discovering || draft.scanRoots.length === 0}>
+            <button type="button" class="btn" onClick={() => runDiscovery(draft.scanRoots, draft.ignorePaths)} disabled={discovering || draft.scanRoots.length === 0}>
               {discovering ? "Discovering…" : "Rediscover"}
             </button>
           </div>
@@ -150,6 +173,25 @@ export function Settings({ config, snapshot, onSaved, onRescan }: Props) {
               {e.root}: {e.message}
             </div>
           ))}
+          <h2>Ignored paths</h2>
+          <p class="hint">Discovery skips these directories and everything below them. Ignored paths only affect discovery: a repository that is already tracked stays tracked until you forget it.</p>
+          <div class="list">
+            {draft.ignorePaths.map((path) => (
+              <div class="row">
+                <code class="grow">{path}</code>
+                <button type="button" class="btn sm ghost" onClick={() => setIgnorePaths(draft.ignorePaths.filter((p) => p !== path))}>
+                  remove
+                </button>
+              </div>
+            ))}
+            {draft.ignorePaths.length === 0 && <span class="hint">Nothing ignored.</span>}
+          </div>
+          <div class="row">
+            <input class="input mono grow" placeholder="/absolute/path or ~/Workspace/mirror" value={newIgnore} onInput={(e) => setNewIgnore(e.currentTarget.value)} onKeyDown={(e) => e.key === "Enter" && addIgnore()} />
+            <button type="button" class="btn" onClick={addIgnore} disabled={!newIgnore.trim()}>
+              Ignore path
+            </button>
+          </div>
         </section>
       ),
     },
@@ -169,7 +211,7 @@ export function Settings({ config, snapshot, onSaved, onRescan }: Props) {
                 </label>
                 <input class="input name" value={repo.name} onInput={(e) => updateRepo(repo.id, { name: e.currentTarget.value })} />
                 <span class="path" title={repo.path}>
-                  {repo.path}
+                  {hintBadge(repo.id)} {repo.path}
                 </span>
                 <button type="button" class="btn sm ghost" title="forget this repository" onClick={() => update({ repos: draft.repos.filter((r) => r.id !== repo.id) })}>
                   ×
@@ -189,17 +231,28 @@ export function Settings({ config, snapshot, onSaved, onRescan }: Props) {
       content: (
         <section class="panel">
           <h2>Discovered · {newCandidates.length} not tracked{discovering ? " · discovering…" : ""}</h2>
-          <p class="hint">Repositories found under the workspace roots. Enable the ones to track, then save.</p>
+          <p class="hint">Repositories found under the workspace roots. Enable the ones to track, then save. "Same remote" marks a probable second clone; it is information only.</p>
           <div class="list">
             {newCandidates.map((repo) => (
               <div class="item candidate" key={repo.id}>
                 <span class="name">{repo.name}</span>
                 <span class="path" title={repo.path}>
+                  {hintBadge(repo.id)}{" "}
+                  {repo.sameRemoteAs && (
+                    <span class="badge" title={`same origin remote as:\n${repo.sameRemoteAs.map((r) => `${r.path}${r.tracked ? " (tracked)" : ""}`).join("\n")}`}>
+                      same remote as {[...new Set(repo.sameRemoteAs.map((r) => r.name))].join(", ")}
+                    </span>
+                  )}{" "}
                   {repo.path}
                 </span>
-                <button type="button" class="btn sm" onClick={() => enableCandidate(repo)}>
-                  Enable
-                </button>
+                <span class="row">
+                  <button type="button" class="btn sm" onClick={() => enableCandidate(repo)}>
+                    Enable
+                  </button>
+                  <button type="button" class="btn sm ghost" title="add this path to the ignored paths" onClick={() => ignore(repo.path)}>
+                    Ignore
+                  </button>
+                </span>
               </div>
             ))}
             {newCandidates.length === 0 && (

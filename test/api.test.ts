@@ -89,6 +89,44 @@ test("discover rejects relative roots and malformed bodies", async () => {
   expect((await send("/api/discover", "POST", "{nope")).status).toBe(400);
 });
 
+test("discover honours ignore paths from the body without saving them", async () => {
+  const res = await discover({ scanRoots: [FIXTURES], ignorePaths: [`${join(FIXTURES, "beta-soc")}/`] });
+  expect(res.status).toBe(200);
+  expect((await res.json()).candidates).toEqual([]);
+  expect((await (await fetch(`${base}/api/config`)).json()).ignorePaths).toEqual([]);
+  // saved ignore paths apply when the body has none
+  state.config = { ...state.config, ignorePaths: [FIXTURES] };
+  expect((await (await discover({ scanRoots: [FIXTURES] })).json()).candidates).toEqual([]);
+  expect((await (await discover({ scanRoots: [FIXTURES], ignorePaths: [] })).json()).candidates.length).toBe(1);
+  state.config = { ...state.config, ignorePaths: [] };
+});
+
+test("discover rejects a relative ignore path", async () => {
+  const res = await discover({ scanRoots: [FIXTURES], ignorePaths: ["relative/dir"] });
+  expect(res.status).toBe(400);
+  expect((await res.json()).issues[0]).toContain("ignorePaths.0");
+});
+
+test("two roots resolving to one directory produce each candidate once", async () => {
+  const result = await (await discover({ scanRoots: [FIXTURES, `${FIXTURES}/`, join(FIXTURES, ".", "beta-soc", "..")] })).json();
+  expect(result.errors).toEqual([]);
+  expect(result.candidates.map((r: { name: string }) => r.name)).toEqual(["beta-soc"]);
+});
+
+test("config paths are stored canonically and ignorePaths is optional", async () => {
+  const { ignorePaths: _dropped, ...body } = { ...state.config, scanRoots: [`${FIXTURES}/`] };
+  const res = await send("/api/config", "PUT", JSON.stringify(body));
+  expect(res.status).toBe(200);
+  const saved = await res.json();
+  expect(saved.scanRoots).toEqual([FIXTURES]);
+  expect(saved.ignorePaths).toEqual([]);
+  const rejected = await send("/api/config", "PUT", JSON.stringify({ ...state.config, ignorePaths: ["relative/dir"] }));
+  expect(rejected.status).toBe(400);
+  expect((await rejected.json()).issues[0]).toContain("ignorePaths.0");
+  expect(state.config.ignorePaths).toEqual([]);
+  await send("/api/config", "PUT", JSON.stringify({ ...state.config, scanRoots: [] }));
+});
+
 test("discover reports a missing root and still scans the others", async () => {
   const missing = join(FIXTURES, "does-not-exist");
   const res = await discover({ scanRoots: [missing, FIXTURES] });

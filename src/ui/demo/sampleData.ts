@@ -309,6 +309,9 @@ export function buildSample(now: number): Sample {
       scannedAt: iso(r.error ? 3 * HOUR : 0),
       isGit: true,
       currentBranch: r.branch,
+      // every sample repository's default branch is main; two of them sit on another branch and show the notice
+      defaultBranch: "main",
+      onDefaultBranch: r.branch === "main",
       worktrees: [{ path: repoPath(r.name), branch: r.branch, isMain: true }, ...(r.worktrees ?? []).map((branch) => ({ branch, path: worktreePath(r, branch) }))],
       lastUpdatedAt: iso(r.updated * HOUR),
       changes: [...open, ...archived],
@@ -318,6 +321,7 @@ export function buildSample(now: number): Sample {
   const config = {
     version: 1,
     scanRoots: [DEMO_ROOT],
+    ignorePaths: [],
     repos: REPOS.map((r) => ({ id: r.id, path: repoPath(r.name), name: r.name, enabled: true })),
     pollIntervalSeconds: 60,
     port: 4711,

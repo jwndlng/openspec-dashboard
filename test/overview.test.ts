@@ -101,6 +101,7 @@ test("enabledOnly drops repositories the config no longer enables, before any re
   const config: Config = {
     version: 1,
     scanRoots: [],
+    ignorePaths: [],
     pollIntervalSeconds: 60,
     port: 4711,
     agentSessions: defaultAgentSessions(),

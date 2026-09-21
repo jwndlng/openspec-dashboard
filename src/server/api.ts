@@ -1,8 +1,9 @@
 import { ACTIVITY_KINDS, type ActivityKind } from "../shared/types.ts";
 import { MAX_PAGE, type ActivityLog, type PageQuery } from "./activity/log.ts";
 import type { Config, DiscoverResult, RepoConfig, ScanTriggerResult, SharedConfigApplyResult, SharedConfigAssignment, SharedConfigPreview } from "../shared/types.ts";
-import { ConfigValidationError, saveConfig, validateConfig, validateScanRoots } from "./config.ts";
+import { ConfigValidationError, saveConfig, validateConfig, validateIgnorePaths, validateScanRoots } from "./config.ts";
 import { discoverRepos } from "./discover.ts";
+import { PullBusyError, pullAll, pullRepository } from "./pull.ts";
 import type { Scanner } from "./scanner.ts";
 import { applyTo, EMPTY_SHARED_CONFIG, loadSharedConfig, previewFor, SharedConfigValidationError, saveSharedConfig } from "./sharedConfig.ts";
 import { SessionError, type SessionManager } from "./sessions/manager.ts";
@@ -62,11 +63,12 @@ async function putConfig(state: AppState, req: Request): Promise<Response> {
 }
 
 /**
- * Read-only: walks the roots from the body (the UI's unsaved draft) or, without
- * a body, the saved ones. Never touches `state.config`.
+ * Read-only: walks the roots and honours the ignore paths from the body (the UI's unsaved draft) or, where the body
+ * has none, the saved ones. Never touches `state.config`.
  */
 async function postDiscover(state: AppState, req: Request): Promise<Response> {
   let roots = state.config.scanRoots;
+  let ignorePaths = state.config.ignorePaths;
   const text = await req.text();
   if (text.trim()) {
     let body: unknown;
@@ -75,17 +77,16 @@ async function postDiscover(state: AppState, req: Request): Promise<Response> {
     } catch {
       return json({ error: "body must be JSON" }, 400);
     }
-    const scanRoots = (body as { scanRoots?: unknown } | null)?.scanRoots;
-    if (scanRoots !== undefined) {
-      try {
-        roots = validateScanRoots(scanRoots);
-      } catch (err) {
-        if (err instanceof ConfigValidationError) return json({ error: err.message, issues: err.issues }, 400);
-        throw err;
-      }
+    const draft = body as { scanRoots?: unknown; ignorePaths?: unknown } | null;
+    try {
+      if (draft?.scanRoots !== undefined) roots = validateScanRoots(draft.scanRoots);
+      if (draft?.ignorePaths !== undefined) ignorePaths = validateIgnorePaths(draft.ignorePaths);
+    } catch (err) {
+      if (err instanceof ConfigValidationError) return json({ error: err.message, issues: err.issues }, 400);
+      throw err;
     }
   }
-  const result: DiscoverResult = await discoverRepos(state.config.repos, roots);
+  const result: DiscoverResult = await discoverRepos(state.config.repos, roots, ignorePaths);
   return json(result);
 }
 
@@ -290,6 +291,35 @@ async function postSharedConfigApply(state: AppState, req: Request): Promise<Res
   return json({ results });
 }
 
+/**
+ * Repositories the pull action may run in: tracked, scanned without error, and git. The path comes from the config —
+ * a request only ever names an id.
+ */
+function pullable(state: AppState): RepoConfig[] {
+  const scanned = new Map(state.scanner.snapshot.repos.map((r) => [r.id, r]));
+  return state.config.repos.filter((r) => r.enabled && scanned.get(r.id)?.ok === true && scanned.get(r.id)?.isGit === true);
+}
+
+/** The one route that contacts a remote and updates a main checkout — and only because the user asked for it. */
+async function postPull(state: AppState, repoId: string): Promise<Response> {
+  const repo = pullable(state).find((r) => r.id === repoId);
+  if (!repo) return json({ error: "not a tracked, successfully scanned git repository" }, 404);
+  try {
+    const result = await pullRepository(repo);
+    state.scanner.trigger();
+    return json(result);
+  } catch (err) {
+    if (err instanceof PullBusyError) return json({ error: err.message }, 409);
+    throw err;
+  }
+}
+
+async function postPullAll(state: AppState): Promise<Response> {
+  const results = await pullAll(pullable(state));
+  state.scanner.trigger();
+  return json({ results });
+}
+
 const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "[::1]"]);
 
 /**
@@ -370,6 +400,9 @@ export function createFetchHandler({ state, indexHtml }: AppOptions): (req: Requ
       if (req.method === "PUT" && pathname === "/api/shared-config") return putSharedConfig(state, req);
       if (req.method === "POST" && pathname === "/api/shared-config/preview") return postSharedConfigPreview(state, req);
       if (req.method === "POST" && pathname === "/api/shared-config/apply") return postSharedConfigApply(state, req);
+      if (req.method === "POST" && pathname === "/api/pull") return postPullAll(state);
+      const pullOne = /^\/api\/repos\/([^/]+)\/pull$/.exec(pathname);
+      if (req.method === "POST" && pullOne) return postPull(state, decodeURIComponent(pullOne[1]));
       if (req.method === "POST" && pathname === "/api/scan") {
         const result: ScanTriggerResult = { started: state.scanner.trigger().started };
         return json(result);
