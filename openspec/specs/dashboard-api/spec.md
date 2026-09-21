@@ -6,6 +6,7 @@ Defines the single-binary loopback server and its JSON API (state, config, disco
 ## Requirements
 
 ### Requirement: Single binary serves UI and API on loopback
+
 The dashboard SHALL be built with `bun build --compile` into one executable that serves the embedded SPA and the JSON API bound to `127.0.0.1` on the configured port (default 4711). Starting the binary SHALL print the URL and open the default browser unless `--no-open` is passed.
 
 #### Scenario: Start
@@ -17,6 +18,7 @@ The dashboard SHALL be built with `bun build --compile` into one executable that
 - **THEN** the connection is refused
 
 ### Requirement: State endpoint
+
 `GET /api/state` SHALL return the current `Snapshot` as JSON (`generatedAt`, `repos[]` with `changes[]` as defined in design.md), returning the cached snapshot until the first scan completes and an empty snapshot if no cache exists.
 
 #### Scenario: Fresh install
@@ -24,14 +26,28 @@ The dashboard SHALL be built with `bun build --compile` into one executable that
 - **THEN** `GET /api/state` returns `{ generatedAt, repos: [] }`
 
 ### Requirement: Config endpoints
-`GET /api/config` SHALL return the config. `PUT /api/config` SHALL validate the body (absolute paths, `pollIntervalSeconds >= 10`, unique repo ids), persist it atomically, and return the saved config; invalid bodies MUST return `400` with a message and leave the config unchanged. If the set of enabled repos changed, a scan MUST be triggered.
+
+`GET /api/config` SHALL return the config. `PUT /api/config` SHALL validate the body (absolute paths for `scanRoots`, `ignorePaths` and `repos[].path`, `pollIntervalSeconds >= 10`, unique repo ids, each repo `id` matching its canonical path), canonicalise all paths, persist it atomically, and return the saved config; invalid bodies MUST return `400` with a message and leave the config unchanged. A body without `ignorePaths` SHALL be accepted and saved with `ignorePaths: []`. If the set of enabled repos changed, a scan MUST be triggered.
 
 #### Scenario: Invalid interval
 - **WHEN** `PUT /api/config` is called with `pollIntervalSeconds: 1`
 - **THEN** the response is `400` and the stored config is unchanged
 
+#### Scenario: Relative ignore path is rejected
+- **WHEN** `PUT /api/config` is called with `ignorePaths: ["relative/dir"]`
+- **THEN** the response is `400` naming `ignorePaths.0` and the stored config is unchanged
+
+#### Scenario: Paths are stored canonically
+- **WHEN** `PUT /api/config` is called with a scan root given as `~/Workspace/alpha/` or through a symlink
+- **THEN** the returned and stored config contain the canonical absolute path without a trailing separator
+
+#### Scenario: Duplicate directory is rejected
+- **WHEN** `PUT /api/config` is called with two repos whose paths resolve to the same directory
+- **THEN** the response is `400` reporting a duplicate repo id
+
 ### Requirement: Discover endpoint
-`POST /api/discover` SHALL run discovery and return `{ candidates: [...], errors: [...] }`. The request MAY carry a JSON body `{ "scanRoots": [...] }`; when present those roots are used instead of the configured scan roots, and each MUST be an absolute path after `~` expansion, otherwise the response MUST be `400` with a message. With no body the configured scan roots are used. `candidates` SHALL contain only repositories found under the roots whose path is not already in the saved config, each with `id`, `path`, default `name` and `enabled: false`, sorted by path. `errors` SHALL list per-root problems. The endpoint MUST NOT persist anything and MUST NOT modify the in-memory config.
+
+`POST /api/discover` SHALL run discovery and return `{ candidates: [...], errors: [...] }`. The request MAY carry a JSON body with `scanRoots` and/or `ignorePaths`; when present they are used instead of the configured values, and each entry MUST be an absolute path after `~` expansion, otherwise the response MUST be `400` with a message. With no body the configured values are used. `candidates` SHALL contain only repositories found under the roots, outside the ignore paths, whose canonical path is not already in the saved config, each with `id`, canonical `path`, default `name` and `enabled: false`, sorted by path, and never the same directory twice. A candidate that shares its normalised `origin` remote with other known repositories SHALL carry `sameRemoteAs`, a list of `{ name, path, tracked }` for those repositories; otherwise the field is absent. `errors` SHALL list per-root problems. The endpoint MUST NOT persist anything and MUST NOT modify the in-memory config.
 
 #### Scenario: Discover without saving
 - **WHEN** `POST /api/discover` finds two new repos and the client never calls `PUT /api/config`
@@ -41,9 +57,21 @@ The dashboard SHALL be built with `bun build --compile` into one executable that
 - **WHEN** the saved config has no scan roots and `POST /api/discover` is called with `{ "scanRoots": ["/abs/workspace"] }`
 - **THEN** the response lists the repositories under `/abs/workspace` as candidates and `GET /api/config` still returns empty `scanRoots`
 
+#### Scenario: Ignore paths from the request body
+- **WHEN** `POST /api/discover` is called with `{ "scanRoots": ["/abs/workspace"], "ignorePaths": ["/abs/workspace/mirror"] }`
+- **THEN** no candidate has a path at or below `/abs/workspace/mirror` and `GET /api/config` still returns the saved `ignorePaths`
+
 #### Scenario: Configured repos are not candidates
 - **WHEN** the config already contains a repository at `/abs/workspace/a` (enabled or disabled) and discovery finds `/abs/workspace/a` and `/abs/workspace/b`
 - **THEN** `candidates` contains only `/abs/workspace/b`
+
+#### Scenario: Same directory through two roots
+- **WHEN** `POST /api/discover` is called with two roots that resolve to the same directory
+- **THEN** each repository below it appears once in `candidates`
+
+#### Scenario: Shared remote is reported
+- **WHEN** the config contains `/abs/a` and discovery finds `/abs/mirror/a` with the same `origin` remote
+- **THEN** the candidate `/abs/mirror/a` has `sameRemoteAs` containing `{ "name": "a", "path": "/abs/a", "tracked": true }`
 
 #### Scenario: Relative root is rejected
 - **WHEN** `POST /api/discover` is called with `{ "scanRoots": ["relative/path"] }`
@@ -54,6 +82,7 @@ The dashboard SHALL be built with `bun build --compile` into one executable that
 - **THEN** the response is `200`, `errors` names the non-existent root, and `candidates` contains the repositories under the existing root
 
 ### Requirement: Scan endpoint
+
 `POST /api/scan` SHALL trigger an immediate scan and return `{ started: true }`, or `{ started: false }` if a scan is already in flight.
 
 #### Scenario: Trigger
@@ -84,7 +113,8 @@ The dashboard SHALL be built with `bun build --compile` into one executable that
 - **THEN** the response is `400` with a message
 
 ### Requirement: The dashboard never writes to tracked repositories
-The dashboard MUST NOT write to a tracked repository except in response to an explicit user action, and then only as enumerated here: (1) `openspec/config.yaml`, where only the managed sections of the `context` and `rules` keys are modified (applying shared OpenSpec config profiles); (2) for agent sessions, creating a git worktree and its branch for a session (`git worktree add`, preceded by `git worktree prune`), with the worktree's directory placed under `~/.openspec-dashboard/worktrees/` and never inside the repository's working tree, and removing such a worktree with a non-forcing `git worktree remove` after the user confirmed and read-only checks proved that it holds no uncommitted change and no work that exists nowhere else; (3) the pull action: `git fetch` from the repository's own remote followed by a fast-forward-only `git merge` of the main checkout's upstream, with repository hooks disabled, as specified in the `repository-pull` capability. Apart from those worktree commands the dashboard MUST NOT delete or move anything in a tracked repository. Apart from the pull action it MUST NOT change the main checkout's index or working tree and MUST NOT contact a remote, and it MUST NOT change the main checkout's branch at all. The pull action MUST NOT run except on the user's explicit request for that repository (or for all repositories): never on a timer, during a scan, on page load or as a side effect of another operation. All other filesystem writes MUST be confined to `~/.openspec-dashboard/`. Scanning, polling, discovery, previews, reading work statuses and saving any dashboard setting MUST NOT write to a tracked repository. Apart from the worktree commands and the pull action's `fetch` and `merge --ff-only` above, git MUST only be invoked with read-only subcommands (`rev-parse`, `log`, `worktree list`, `status`, `show-ref`, `symbolic-ref`, `for-each-ref`, `rev-list`, `diff`). Because `git status` refreshes the index by default, every git invocation MUST run with optional locks disabled (`GIT_OPTIONAL_LOCKS=0`) so that not even `.git/index` is rewritten. When agent sessions are enabled, the dashboard MAY start the user's configured agent in a session's worktree on the user's explicit request; what that agent changes, commits or pushes is the agent's doing under its own permission prompts and is never done by the dashboard's own code. With agent sessions disabled the dashboard MUST NOT start any process that can modify a repository.
+
+The dashboard MUST NOT write to a tracked repository except in response to an explicit user action, and then only as enumerated here: (1) `openspec/config.yaml`, where only the managed sections of the `context` and `rules` keys are modified (applying shared OpenSpec config profiles); (2) for agent sessions, creating a git worktree and its branch for a session (`git worktree add`, preceded by `git worktree prune`), with the worktree's directory placed under `~/.openspec-dashboard/worktrees/` and never inside the repository's working tree, and removing such a worktree with a non-forcing `git worktree remove` after the user confirmed and read-only checks proved that it holds no uncommitted change and no work that exists nowhere else; (3) the pull action: `git fetch` from the repository's own remote followed by a fast-forward-only `git merge` of the main checkout's upstream, with repository hooks disabled, as specified in the `repository-pull` capability. Apart from those worktree commands the dashboard MUST NOT delete or move anything in a tracked repository. Apart from the pull action it MUST NOT change the main checkout's index or working tree and MUST NOT contact a remote, and it MUST NOT change the main checkout's branch at all. The pull action MUST NOT run except on the user's explicit request for that repository (or for all repositories): never on a timer, during a scan, on page load or as a side effect of another operation. All other filesystem writes MUST be confined to `~/.openspec-dashboard/`. Scanning, polling, discovery, previews, reading work statuses and saving any dashboard setting MUST NOT write to a tracked repository. Apart from the worktree commands and the pull action's `fetch` and `merge --ff-only` above, git MUST only be invoked with read-only subcommands (`rev-parse`, `log`, `worktree list`, `status`, `show-ref`, `symbolic-ref`, `for-each-ref`, `rev-list`, `diff`, `config --get`). Because `git status` refreshes the index by default, every git invocation MUST run with optional locks disabled (`GIT_OPTIONAL_LOCKS=0`) so that not even `.git/index` is rewritten. When agent sessions are enabled, the dashboard MAY start the user's configured agent in a session's worktree on the user's explicit request; what that agent changes, commits or pushes is the agent's doing under its own permission prompts and is never done by the dashboard's own code. With agent sessions disabled the dashboard MUST NOT start any process that can modify a repository.
 
 #### Scenario: No side effects
 - **WHEN** a full scan runs across all tracked repos
@@ -126,7 +156,12 @@ The dashboard MUST NOT write to a tracked repository except in response to an ex
 - **WHEN** the pull action is used on a repository
 - **THEN** only its git directory and the files the fast-forward updates in its main checkout change, its checked-out branch is the same as before, and no linked worktree's files, index or branch change
 
+#### Scenario: Discovery has no side effects
+- **WHEN** discovery looks up the `origin` remote of candidates and configured repositories
+- **THEN** no file under any of those repositories, including their git config, is created, modified or deleted
+
 ### Requirement: Shared config endpoints
+
 `GET /api/shared-config` SHALL return the stored profiles as `{ profiles: [...] }`, with an empty list when none has been saved. `PUT /api/shared-config` SHALL validate and persist them and return what was saved; invalid bodies MUST return `400` with a message and leave the stored profiles unchanged. `POST /api/shared-config/preview` with `{ "assignments": [{ "repoId", "profileIds": [...] }] }` SHALL return, per repository id, the profiles it carries now, the current file text, the text that apply would write, and a refusal reason when apply would refuse it, without writing anything. `POST /api/shared-config/apply` with the same body SHALL apply to each repository independently, where `profileIds` is the complete set of profiles that repository is to carry, return per repository `written`, `unchanged` or `refused` with a reason, and trigger a scan.
 
 #### Scenario: Nothing saved yet
@@ -142,6 +177,7 @@ The dashboard MUST NOT write to a tracked repository except in response to an ex
 - **THEN** the response is `200` with `written` for the first and `refused` with a reason for the second
 
 ### Requirement: Mutating requests are protected against cross-site requests
+
 Every API request with a method other than `GET` SHALL be rejected with `403` unless its `Content-Type` is `application/json` and, when an `Origin` header is present, the origin is the dashboard's own (`http://127.0.0.1:<port>` or `http://localhost:<port>`). A request whose `Sec-Fetch-Site` header is `cross-site` SHALL be rejected. The server MUST NOT send CORS headers that would approve another origin. Rejected requests MUST have no side effects.
 
 #### Scenario: Request from another web page
@@ -161,6 +197,7 @@ Every API request with a method other than `GET` SHALL be rejected with `403` un
 - **THEN** the request is processed
 
 ### Requirement: Session endpoints
+
 The API SHALL provide: `POST /api/sessions` with `{ repoId, change, action }` to open a session (returning the running session for that repository and change if there is one); `GET /api/sessions` returning the sessions and, for each configured agent, whether its executable was found; `GET /api/sessions/<id>`; `GET /api/sessions/<id>/worktree` reporting whether the worktree could be removed safely; `POST /api/sessions/<id>/resume`; `POST /api/sessions/<id>/close` with optional `{ removeWorktree }`, which ends the agent if it is running; and `DELETE /api/sessions/<id>` for a session that is not running. Opening MUST be refused with `403` when agent sessions are disabled or the repository is excluded from them, with `404` for an unknown repository or change, with `409` when the repository is not tracked or its last scan failed, with `400` for an invalid change name, an unknown action, an action not available in the change's stage or an agent without a prompt for it, with `503` when the agent's executable is not found, and with `500` and git's reason when the worktree cannot be created. All session routes other than `GET` are mutating and subject to the same-origin protection that applies to every mutating API request. `GET /api/state` SHALL remain unchanged.
 
 #### Scenario: Duplicate open
@@ -180,6 +217,7 @@ The API SHALL provide: `POST /api/sessions` with `{ repoId, change, action }` to
 - **THEN** the response is `409` and the session keeps running
 
 ### Requirement: The terminal is served over a same-origin WebSocket
+
 `GET /api/sessions/<id>/terminal` SHALL upgrade to a WebSocket carrying the session's terminal: the server sends terminal output as binary frames — first what the terminal has shown so far, bounded — and one text frame `{"type":"exit"}` when the agent has ended; the client sends text frames `{"type":"input","data":…}` and `{"type":"resize","cols":…,"rows":…}`. Because a WebSocket handshake is a cross-origin-capable `GET` without a preflight, the upgrade MUST be refused with `403` unless the request is addressed to a loopback host name and carries an `Origin` header that is the dashboard's own origin; a missing `Origin` MUST be refused. A request for an unknown session MUST be refused, and a request that is not a WebSocket upgrade MUST NOT open anything. Input for a session that is not running MUST be ignored.
 
 #### Scenario: Another web page tries to attach
@@ -207,6 +245,7 @@ The API SHALL provide: `POST /api/sessions` with `{ repoId, change, action }` to
 - **THEN** it receives the stored output followed by the exit frame
 
 ### Requirement: Worktree and ship endpoints
+
 `GET /api/sessions` SHALL additionally return `worktrees`: one entry per session worktree directory of a configured repository with `repoId`, `name`, `path`, the `change` and `action` it belongs to, its `branch`, its work status, the time of its last activity, and the id of its most recent session if a record exists. When agent sessions are disabled the list SHALL be empty and no git command SHALL be run for it. `POST /api/sessions/<id>/ship` SHALL perform the Ship action and return the session; it MUST be refused with `403` when agent sessions are disabled, `409` when there is nothing to ship or another session for the change is running, and `503` when the agent's executable is not found. `POST /api/worktrees/remove` with `{ repoId, name }` SHALL remove that worktree under the clean-up rules and return whether it was removed and, if not, why; `repoId` MUST be a configured repository and `name` MUST be a single path segment of lower-case letters, digits, dots, dashes and underscores, otherwise the response is `404` or `400`; it MUST be refused with `409` while a session is running in the worktree. Both `POST` routes are subject to the same-origin protection.
 
 #### Scenario: Worktrees in the session list
@@ -222,6 +261,7 @@ The API SHALL provide: `POST /api/sessions` with `{ repoId, change, action }` to
 - **THEN** the response is `409` and the worktree is kept
 
 ### Requirement: Pull endpoints
+
 `POST /api/repos/<id>/pull` SHALL run the pull action for one repository and return its result; `POST /api/pull` SHALL run it for every eligible repository with bounded concurrency and return one result per repository, a failure in one not affecting the others. A repository is eligible only if it is enabled in the config, its last scan succeeded and it is a git repository; the repository's path MUST come from the config and never from the request. An unknown, disabled or non-git repository SHALL be refused without running git. A second request for a repository whose pull is still running SHALL be refused with `409`. Both endpoints are mutating requests under the same-origin protection. After a pull the repository SHALL be rescanned.
 
 #### Scenario: One repository
@@ -245,6 +285,7 @@ The API SHALL provide: `POST /api/sessions` with `{ repoId, change, action }` to
 - **THEN** the response is `403` and nothing is fetched
 
 ### Requirement: Prompt endpoint and fresh work status
+
 `POST /api/sessions/<id>/prompt` with `{ action }` SHALL send that starter's prompt to the running session as typed input without Enter and return the session. It MUST be refused with `403` when agent sessions are disabled, `404` for an unknown session or a change that is no longer scanned, `409` when the session is not running, and `400` for an unknown action, `archive`, an action not available in the change's current stage, or an agent without a prompt for it. It is a mutating route under the same-origin protection. `GET /api/sessions/<id>/worktree` SHALL additionally return `work`, the worktree's work status read at the time of the request rather than from a cache.
 
 #### Scenario: Not running
