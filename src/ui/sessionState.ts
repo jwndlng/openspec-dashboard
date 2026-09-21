@@ -29,6 +29,10 @@ export function sessionForChange(sessions: Session[], repoId: string, change: st
 }
 
 export interface SessionBadge {
+  /** Leading glyph, kept apart from the words so it can be styled (and hidden from assistive technology) on its own. */
+  icon?: string;
+  /** True only while an agent is visibly working: the one state that is shown with motion. */
+  live?: boolean;
   label: string;
   tone: "brand" | "warn" | "danger" | "";
   title: string;
@@ -44,12 +48,12 @@ export function sessionBadge(session: Session, now = Date.now()): SessionBadge {
   if (session.state === "running") {
     const last = session.lastOutputAt ? Date.parse(session.lastOutputAt) : Number.NaN;
     const quiet = Number.isNaN(last) ? 0 : now - last;
-    if (quiet > QUIET_AFTER_MS) return { label: `◆ quiet ${Math.floor(quiet / 60_000)}m`, tone: "warn", title: "the terminal has printed nothing for a while — the agent is probably waiting for you" };
-    return { label: "● running", tone: "brand", title: `${session.agentName} is running in its terminal` };
+    if (quiet > QUIET_AFTER_MS) return { icon: "◆", label: `quiet ${Math.floor(quiet / 60_000)}m`, tone: "warn", title: "the terminal has printed nothing for a while — the agent is probably waiting for you" };
+    return { icon: "●", label: "running", live: true, tone: "brand", title: `${session.agentName} is running in its terminal` };
   }
-  if (session.state === "failed") return { label: "⚠ failed", tone: "danger", title: session.error ?? "the agent could not be started" };
+  if (session.state === "failed") return { icon: "⚠", label: "failed", tone: "danger", title: session.error ?? "the agent could not be started" };
   const code = session.exitCode;
-  if (session.error || (code ?? 0) !== 0) return { label: `⚠ ended${code ? ` (${code})` : ""}`, tone: "danger", title: session.error ?? `the agent exited with code ${code}` };
+  if (session.error || (code ?? 0) !== 0) return { icon: "⚠", label: `ended${code ? ` (${code})` : ""}`, tone: "danger", title: session.error ?? `the agent exited with code ${code}` };
   return { label: "ended", tone: "", title: "the agent exited" };
 }
 

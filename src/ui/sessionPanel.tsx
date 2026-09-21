@@ -7,7 +7,7 @@ import { SHIPPABLE_WORK, type Session } from "../shared/types.ts";
 import { api, terminalSocketUrl } from "./api.ts";
 import { cdCommand } from "./format.ts";
 import { sessionBadge, workBadge } from "./sessionState.ts";
-import { useSessionUi } from "./sessions.tsx";
+import { SessionBadgeView, useSessionUi } from "./sessions.tsx";
 
 function Copy({ text, label }: { text: string; label: string }) {
   const [done, setDone] = useState(false);
@@ -166,11 +166,7 @@ export function SessionPanel() {
           <strong class="mono">{session?.change ?? "session"}</strong>
           {repo && <span class="hint">{repo.name}</span>}
           {session && <span class="hint">· {session.agentName}</span>}
-          {badge && (
-            <span class={`badge ${badge.tone}`} title={badge.title}>
-              {badge.label}
-            </span>
-          )}
+          {badge && <SessionBadgeView badge={badge} />}
           <span style={{ flex: 1 }} />
           <button type="button" class="btn sm ghost" title="Hide the panel; the session keeps running" onClick={() => ui.openPanel(undefined)}>
             ✕

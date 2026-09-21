@@ -87,11 +87,22 @@ const session = (patch: Partial<Session>): Session => ({ id: "s", repoId: "r", c
 
 test("badges are honest about what a terminal can tell", () => {
   const now = Date.parse("2026-01-01T01:00:00Z");
-  expect(sessionBadge(session({ lastOutputAt: "2026-01-01T00:59:50Z" }), now)).toMatchObject({ label: "● running", tone: "brand" });
-  expect(sessionBadge(session({ lastOutputAt: "2026-01-01T00:50:00Z" }), now)).toMatchObject({ label: "◆ quiet 10m", tone: "warn" });
+  expect(sessionBadge(session({ lastOutputAt: "2026-01-01T00:59:50Z" }), now)).toMatchObject({ icon: "●", label: "running", tone: "brand", live: true });
+  expect(sessionBadge(session({ lastOutputAt: "2026-01-01T00:50:00Z" }), now)).toMatchObject({ icon: "◆", label: "quiet 10m", tone: "warn" });
   expect(sessionBadge(session({ state: "exited", exitCode: 0 }), now)).toMatchObject({ label: "ended", tone: "" });
-  expect(sessionBadge(session({ state: "exited", exitCode: 3 }), now)).toMatchObject({ label: "⚠ ended (3)", tone: "danger" });
+  expect(sessionBadge(session({ state: "exited", exitCode: 3 }), now)).toMatchObject({ icon: "⚠", label: "ended (3)", tone: "danger" });
   expect(sessionBadge(session({ state: "failed", error: "no such file" }), now)).toMatchObject({ tone: "danger", title: "no such file" });
+});
+
+test("only an agent that is visibly working is shown with motion", () => {
+  const now = Date.parse("2026-01-01T01:00:00Z");
+  const live = (patch: Partial<Session>) => sessionBadge(session(patch), now).live === true;
+  expect(live({ lastOutputAt: "2026-01-01T00:59:50Z" })).toBe(true);
+  expect(live({})).toBe(true); // just started, nothing printed yet
+  expect(live({ lastOutputAt: "2026-01-01T00:50:00Z" })).toBe(false); // quiet: probably waiting for the user
+  expect(live({ state: "exited", exitCode: 0 })).toBe(false);
+  expect(live({ state: "exited", exitCode: 3 })).toBe(false);
+  expect(live({ state: "failed" })).toBe(false);
 });
 
 test("a card shows its running session, or the latest one if that ended badly", () => {

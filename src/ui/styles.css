@@ -452,3 +452,27 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: 
 .open-work-what { display: flex; flex-direction: column; flex: 1; min-width: 180px; }
 .open-work-what .hint { font-size: 11px; color: var(--fg-subtle); word-break: break-all; }
 .session-work { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gap-1); }
+
+/* A running agent is the one live thing on the board: its dot pulses and a lighter colour sweeps over the label.
+   Decoration only — the label still says "running" — and absent when the user prefers reduced motion. */
+@media (prefers-reduced-motion: no-preference) {
+  .badge.live { --session-pulse: 1.6s; --session-sweep: 2.4s; }
+  .badge.live .dot { animation: session-pulse var(--session-pulse) ease-in-out infinite; }
+  @supports ((-webkit-background-clip: text) or (background-clip: text)) {
+    .badge.live .text {
+      background-image: linear-gradient(100deg, var(--brand-fg) 0%, var(--brand-fg) 35%, var(--fg-heading) 50%, var(--brand-fg) 65%, var(--brand-fg) 100%);
+      background-size: 250% 100%;
+      -webkit-background-clip: text; background-clip: text;
+      -webkit-text-fill-color: transparent; color: transparent;
+      animation: session-sweep var(--session-sweep) linear infinite;
+    }
+  }
+}
+@keyframes session-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.35; transform: scale(0.7); }
+}
+@keyframes session-sweep {
+  from { background-position: 100% 0; }
+  to { background-position: -50% 0; }
+}
