@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from "preact/hooks";
 import { SHIPPABLE_WORK, type Session } from "../shared/types.ts";
 import { api, terminalSocketUrl } from "./api.ts";
 import { cdCommand } from "./format.ts";
+import { DEFAULT_QUICK_REPLIES, replyHint, replyInput, type QuickReply } from "./quickReplies.ts";
 import { sessionBadge, workBadge } from "./sessionState.ts";
 import { SessionBadgeView, useSessionUi } from "./sessions.tsx";
 
@@ -35,9 +36,31 @@ function terminalTheme(el: HTMLElement) {
   return { background: token("--bg-base", "#0b0d10"), foreground: token("--fg-heading", "#f3f5f7"), cursor: token("--brand", "#71c7c5"), selectionBackground: token("--bg-elevated", "#313437") };
 }
 
-function TerminalView({ sessionId, onExit }: { sessionId: string; onExit: () => void }) {
+/** How long a default response stays inert after a click, so a double click sends it once. */
+const REPLY_GUARD_MS = 600;
+
+function TerminalView({ sessionId, running, onExit }: { sessionId: string; running: boolean; onExit: () => void }) {
   const host = useRef<HTMLDivElement>(null);
   const [status, setStatus] = useState<"connecting" | "open" | "closed">("connecting");
+  // The effect below owns the terminal and its socket; the default responses reach them through this ref.
+  const live = useRef<{ send: (message: object) => void; focus: () => void }>();
+  // The ref is the guard (it holds within one tick, where state would still be stale); the state only greys the button.
+  const guard = useRef(new Set<string>());
+  const [guarded, setGuarded] = useState<readonly string[]>([]);
+
+  // A default response is plain terminal input: the same message a keystroke produces. The defaults only type; the
+  // user presses Enter in the focused terminal (see quickReplies.ts for why).
+  const reply = (r: QuickReply) => {
+    if (guard.current.has(r.id)) return;
+    guard.current.add(r.id);
+    setGuarded([...guard.current]);
+    live.current?.send({ type: "input", data: replyInput(r) });
+    live.current?.focus();
+    setTimeout(() => {
+      guard.current.delete(r.id);
+      setGuarded([...guard.current]);
+    }, REPLY_GUARD_MS);
+  };
 
   useEffect(() => {
     const el = host.current;
@@ -52,6 +75,7 @@ function TerminalView({ sessionId, onExit }: { sessionId: string; onExit: () => 
     socket.binaryType = "arraybuffer";
     const send = (message: object) => socket.readyState === WebSocket.OPEN && socket.send(JSON.stringify(message));
     const sendSize = () => send({ type: "resize", cols: term.cols, rows: term.rows });
+    live.current = { send, focus: () => term.focus() };
 
     socket.onopen = () => {
       setStatus("open");
@@ -73,6 +97,7 @@ function TerminalView({ sessionId, onExit }: { sessionId: string; onExit: () => 
     observer.observe(el);
 
     return () => {
+      live.current = undefined;
       observer.disconnect();
       input.dispose();
       resized.dispose();
@@ -83,8 +108,20 @@ function TerminalView({ sessionId, onExit }: { sessionId: string; onExit: () => 
 
   return (
     <div class="session-terminal">
-      <div ref={host} class="session-terminal-host" />
-      {status !== "open" && <div class="session-terminal-note">{status === "connecting" ? "connecting to the terminal…" : "terminal disconnected"}</div>}
+      <div class="session-terminal-area">
+        <div ref={host} class="session-terminal-host" />
+        {status !== "open" && <div class="session-terminal-note">{status === "connecting" ? "connecting to the terminal…" : "terminal disconnected"}</div>}
+      </div>
+      {running && status === "open" && (
+        // biome-ignore lint/a11y/useSemanticElements: a fieldset would bring legend/border styling the response row does not want
+        <div class="session-replies" role="group" aria-label="Default responses">
+          {DEFAULT_QUICK_REPLIES.map((r) => (
+            <button key={r.id} type="button" class="btn sm" title={replyHint(r)} disabled={guarded.includes(r.id)} onClick={() => reply(r)}>
+              {r.label}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -263,7 +300,7 @@ export function SessionPanel() {
         )}
         {(error ?? session?.error) && <div class="notice danger">{error ?? session?.error}</div>}
       </header>
-      {session ? <TerminalView key={`${session.id}:${generation}`} sessionId={session.id} onExit={ui.refresh} /> : <div class="hint session-terminal-note">Loading session…</div>}
+      {session ? <TerminalView key={`${session.id}:${generation}`} sessionId={session.id} running={session.state === "running"} onExit={ui.refresh} /> : <div class="hint session-terminal-note">Loading session…</div>}
     </aside>
   );
 }
