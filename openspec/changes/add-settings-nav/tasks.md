@@ -27,7 +27,7 @@
 
 - [x] 5.1 `bun run check` passes, including the existing "only url.ts touches location and history" test
 - [x] 5.2 Build the demo (`bun run build:demo`) and verify from `file://` with headless DOM dumps/screenshots: nav lists the sections in order with counts (`Discovered 3` emphasised), `?section=agents#/settings` opens at Agent sessions with that entry current, unknown section opens at the top, narrow viewport (400px) shows the row layout
-- [ ] 5.3 (Not done: needs a person in a real browser — headless checks cover the static states only.) Verify in the running dashboard: jump to each section, highlight follows manual scrolling, last section becomes current at the end, unsaved edit survives jumping, back button returns to the previous view after scrolling through sections, keyboard Enter + Tab lands in the section
+- [x] 5.3 (Checked by the maintainer in a real browser on 2026-09-21; the headless checks cover the static states only.) Verify in the running dashboard: jump to each section, highlight follows manual scrolling, last section becomes current at the end, unsaved edit survives jumping, back button returns to the previous view after scrolling through sections, keyboard Enter + Tab lands in the section
 - [x] 5.4 Update the Settings bullet in `README.md` and add a line to `CONTRIBUTING.md`: a new settings panel is added as an entry of the `sections` array in `settings.tsx`
 - [x] 5.5 `openspec validate add-settings-nav --strict` passes
 
