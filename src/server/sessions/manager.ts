@@ -10,7 +10,7 @@ import { agentEnv, agentFor, availability, launchCommand, openingPrompt, shipPro
 import { SessionStore } from "./store.ts";
 import { spawnTerminal, type TerminalProcess } from "./terminal.ts";
 import { listWorktrees, readWorkStatus, WORKTREE_NAME } from "./workStatus.ts";
-import { checkWorktreeRemovable, copyChangeIfMissing, ensureWorktree, removeWorktree, type Removable } from "./worktree.ts";
+import { checkWorktreeRemovable, copyChangeIfMissing, ensureWorktree, linkedWorktreeOf, removeWorktree, type Removable } from "./worktree.ts";
 
 export const SCROLLBACK_BYTES = 1024 * 1024;
 const TYPE_PROMPT_DELAY_MS = 1500;
@@ -34,6 +34,9 @@ export function worktreeName(action: SessionAction, change: string): string {
 export function sessionBranch(action: SessionAction, change: string): string {
   return action === "archive" ? `chore/archive-${change}` : `feat/${change}`;
 }
+
+/** An adopted worktree was created outside the dashboard; removing it is its owner's call, however clean it is. */
+const NOT_OURS: Removable = { removable: false, reason: "this worktree was not created by the dashboard (the session adopted it), so it is kept" };
 
 /** Keeps the last `limit` bytes of terminal output, for viewers that attach later. */
 export class Scrollback {
@@ -150,8 +153,17 @@ export class SessionManager {
       resumable: agent.resumeCommand !== undefined,
     };
     try {
-      await ensureWorktree(repo.path, session.worktreePath, session.branch);
-      await copyChangeIfMissing(repo.path, session.worktreePath, change);
+      // The change's branch is often already checked out in the worktree where the change was started; git would
+      // refuse a second one, so the session works there. Archiving always gets a worktree and branch of its own.
+      const elsewhere = action === "archive" ? undefined : await linkedWorktreeOf(repo.path, session.branch);
+      if (elsewhere && elsewhere !== session.worktreePath) {
+        session.worktreePath = elsewhere;
+        session.adopted = true;
+      } else {
+        await ensureWorktree(repo.path, session.worktreePath, session.branch);
+      }
+      // The change may live only in some other worktree (on another branch), not in the main checkout.
+      await copyChangeIfMissing(snapshot.checkout?.path ?? repo.path, session.worktreePath, change);
     } catch (err) {
       throw new SessionError(500, err instanceof Error ? err.message : String(err));
     }
@@ -199,7 +211,9 @@ export class SessionManager {
 
   private async restart(session: Session, repoPath: string, argv: string[], env: Record<string, string>, typed?: string): Promise<void> {
     try {
-      await ensureWorktree(repoPath, session.worktreePath, session.branch);
+      // An adopted worktree is not ours to re-create: if its owner removed it, the session has nowhere to continue.
+      if (!session.adopted) await ensureWorktree(repoPath, session.worktreePath, session.branch);
+      else if ((await linkedWorktreeOf(repoPath, session.branch)) !== session.worktreePath) throw new Error(`the adopted worktree ${session.worktreePath} no longer exists`);
     } catch (err) {
       throw new SessionError(500, err instanceof Error ? err.message : String(err));
     }
@@ -334,7 +348,9 @@ export class SessionManager {
       for (let i = 0; i < 50 && session.state === "running"; i++) await new Promise((r) => setTimeout(r, 20));
     }
     let worktree: Removable | undefined;
-    if (options.removeWorktree) {
+    if (options.removeWorktree && session.adopted) {
+      worktree = NOT_OURS;
+    } else if (options.removeWorktree) {
       const repo = this.deps.getConfig().repos.find((r) => r.id === session.repoId);
       worktree = repo ? await removeWorktree(repo.path, session.worktreePath, await this.isMerged(repo.path, session)) : { removable: false, reason: "the repository is no longer configured" };
       this.forgetWorktrees();
@@ -348,6 +364,7 @@ export class SessionManager {
 
   async worktreeStatus(id: string): Promise<Removable> {
     const session = this.get(id);
+    if (session.adopted) return NOT_OURS;
     const repo = this.deps.getConfig().repos.find((r) => r.id === session.repoId);
     return checkWorktreeRemovable(session.worktreePath, repo ? await this.isMerged(repo.path, session) : false);
   }

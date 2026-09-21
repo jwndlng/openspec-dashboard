@@ -202,8 +202,13 @@ export interface Session {
   state: SessionState;
   exitCode?: number | null;
   error?: string;
-  /** The session's own git worktree, under the dashboard home. */
+  /** The worktree the agent runs in: the session's own, under the dashboard home — or an adopted one. */
   worktreePath: string;
+  /**
+   * The worktree already existed with the session's branch checked out (git allows a branch in one worktree only), so
+   * the session runs there. The dashboard did not create it and never removes it.
+   */
+  adopted?: boolean;
   branch: string;
   createdAt: string;
   updatedAt: string;

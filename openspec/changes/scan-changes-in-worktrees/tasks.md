@@ -32,22 +32,22 @@
 
 ## 5. Agent sessions
 
-- [ ] 5.1 In `src/server/sessions/manager.ts`, take the copy source for `copyChangeIfMissing` from the scanned change's `checkout.path` (fall back to the repository path)
-- [ ] 5.2 In `src/server/sessions/worktree.ts`, add a lookup of linked worktrees that have a given branch checked out (from `git worktree list --porcelain`); for Draft and Implement, when `feat/<change>` is checked out in a linked worktree other than the session's own, adopt it: use its path as the session's worktree, skip creation, never adopt the main checkout
-- [ ] 5.3 Persist `adopted: true` on the session record (`store.ts`, tolerant of older records), expose it in the API type, and make `close`/clean-up never offer or perform removal of an adopted worktree
-- [ ] 5.4 Session panel: show "adopted worktree — created outside the dashboard, will not be removed" next to the path
-- [ ] 5.5 Tests: copy from a worktree-only change into a new session worktree; adoption when the branch is already checked out (no `git worktree add`, record marked, clean-up not offered even when clean); Archive sessions unchanged; main checkout never adopted
+- [x] 5.1 In `src/server/sessions/manager.ts`, take the copy source for `copyChangeIfMissing` from the scanned change's `checkout.path` (fall back to the repository path)
+- [x] 5.2 In `src/server/sessions/worktree.ts`, add a lookup of linked worktrees that have a given branch checked out (from `git worktree list --porcelain`); for Draft and Implement, when `feat/<change>` is checked out in a linked worktree other than the session's own, adopt it: use its path as the session's worktree, skip creation, never adopt the main checkout
+- [x] 5.3 Persist `adopted: true` on the session record (`store.ts`, tolerant of older records), expose it in the API type, and make `close`/clean-up never offer or perform removal of an adopted worktree
+- [x] 5.4 Session panel: show "adopted worktree — created outside the dashboard, will not be removed" next to the path
+- [x] 5.5 Tests: copy from a worktree-only change into a new session worktree; adoption when the branch is already checked out (no `git worktree add`, record marked, clean-up not offered even when clean); Archive sessions unchanged; main checkout never adopted
 
 ## 6. UI and demo
 
-- [ ] 6.1 `applyCommand` takes the checkout path: `card.checkout?.path ?? repoPath`; unit test for both cases including a path that needs shell quoting
-- [ ] 6.2 Branch badge tooltip: `lives in worktree <path>` when `checkout` is a linked worktree, plus one line per entry of `otherCheckouts` (`also in: <branch | main checkout | detached> — <column>`); pure formatter with a unit test
-- [ ] 6.3 Demo sample data: a change that exists only in a worktree and one at `Proposal` on main and `Implementing` in a worktree; extend the demo data test to assert the merged result and that the demo bundle still contains no server code
+- [x] 6.1 `applyCommand` takes the checkout path: `card.checkout?.path ?? repoPath`; unit test for both cases including a path that needs shell quoting
+- [x] 6.2 Branch badge tooltip: `lives in worktree <path>` when `checkout` is a linked worktree, plus one line per entry of `otherCheckouts` (`also in: <branch | main checkout | detached> — <column>`); pure formatter with a unit test
+- [x] 6.3 Demo sample data: a change that exists only in a worktree and one at `Proposal` on main and `Implementing` in a worktree; extend the demo data test to assert the merged result and that the demo bundle still contains no server code
 
 ## 7. Verification and docs
 
-- [ ] 7.1 `bun run check`
-- [ ] 7.2 Build the binary and run it against a throwaway dashboard home with a temporary repository that has worktrees in all the states of section 4; confirm the board, the badge tooltip and the copied apply command in a browser
-- [ ] 7.3 Measure scan duration before and after on a repository with at least nine worktrees (this one, read-only); record the numbers in the pull request; reconsider the cap or concurrency if a scan grows by more than a second
-- [ ] 7.4 Update `README.md` (changes are read from every checkout; one card per change and how the leading copy is chosen; archived on main wins; sessions adopt an existing worktree) and the `change-scanner` spec Purpose at archive time
-- [ ] 7.5 Before merging, check whether `overview-tiles-and-worktree-status` has landed and reconcile `parseWorktrees` / `Worktree` so there is one definition
+- [x] 7.1 `bun run check`
+- [x] 7.2 Build the binary and run it against a throwaway dashboard home with a temporary repository that has worktrees in all the states of section 4; confirm the board, the badge tooltip and the copied apply command in a browser
+- [x] 7.3 Measure scan duration before and after on a repository with at least nine worktrees (this one, read-only); record the numbers in the pull request; reconsider the cap or concurrency if a scan grows by more than a second — measured on a repository with 8 worktrees: 547 ms → 787 ms median (+240 ms), 4 → 8 active changes on the board, no warnings
+- [x] 7.4 Update `README.md` (changes are read from every checkout; one card per change and how the leading copy is chosen; archived on main wins; sessions adopt an existing worktree) and the `change-scanner` spec Purpose at archive time
+- [x] 7.5 Before merging, check whether `overview-tiles-and-worktree-status` has landed and reconcile `parseWorktrees` / `Worktree` so there is one definition — checked: it has not landed (proposal and design only, unmerged), so this change's definition stands and that change rebases on it. Also rebased this change's "Worktree clean-up is offered only when safe" delta on the wording of `session-work-status`, whose code is merged but whose archive is still pending.

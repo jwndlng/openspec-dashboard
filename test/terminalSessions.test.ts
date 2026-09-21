@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import { mkdir, readFile, realpath, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { worktreesDir } from "../src/server/paths.ts";
+import { scanRepo } from "../src/server/scanner.ts";
 import { SessionManager } from "../src/server/sessions/manager.ts";
 import { SessionStore } from "../src/server/sessions/store.ts";
 import { checkWorktreeRemovable, copyChangeIfMissing, ensureWorktree, removeWorktree } from "../src/server/sessions/worktree.ts";
@@ -167,4 +168,65 @@ test("a crash is recorded; shutdown ends agents; a restarted dashboard knows not
   await next.init();
   expect(next.get(stale.id)).toMatchObject({ state: "exited", error: expect.stringContaining("restarted") });
   await expect(next.remove(stale.id)).resolves.toBeUndefined();
+});
+
+test("a change that lives only in a worktree on another branch is copied into the session's worktree from there", async () => {
+  const h = track(await harness());
+  const theirs = join(h.repoPath, ".claude", "worktrees", "compliance");
+  git(h.repoPath, "worktree", "add", "-q", "-b", "wip/compliance", theirs);
+  await mkdir(join(theirs, "openspec", "changes", "ledger-export"), { recursive: true });
+  await writeFile(join(theirs, "openspec", "changes", "ledger-export", ".openspec.yaml"), "schema: spec-driven\ncreated: 2026-09-01\n");
+  await writeFile(join(theirs, "openspec", "changes", "ledger-export", "proposal.md"), "# only here\n");
+  h.snapshot.repos[0] = await scanRepo(h.config.repos[0]);
+  expect(h.snapshot.repos[0].changes.find((c) => c.name === "ledger-export")?.checkout?.path).toBe(await realpath(theirs));
+
+  const s = await h.manager.open({ repoId: h.repoId, change: "ledger-export", action: "draft" });
+  expect([s.adopted, s.branch, s.worktreePath]).toEqual([undefined, "feat/ledger-export", join(worktreesDir(), h.repoId, "ledger-export")]);
+  expect(await readFile(join(s.worktreePath, "openspec", "changes", "ledger-export", "proposal.md"), "utf8")).toBe("# only here\n");
+  expect(existsSync(join(h.repoPath, "openspec", "changes", "ledger-export"))).toBe(false); // the main checkout is left alone
+});
+
+test("when the session's branch is already checked out in someone's worktree, the session adopts it and never removes it", async () => {
+  const h = track(await harness());
+  const theirs = await realpath(await tempDir("osd-theirs-")).then((d) => join(d, "upgrade-runtime")); // outside the repository
+  git(h.repoPath, "worktree", "add", "-q", "-b", "feat/upgrade-runtime", theirs);
+  const listedBefore = git(h.repoPath, "worktree", "list", "--porcelain");
+
+  const s = await h.manager.open({ repoId: h.repoId, change: "upgrade-runtime", action: "implement" });
+  expect([s.adopted, s.worktreePath, s.branch]).toEqual([true, theirs, "feat/upgrade-runtime"]);
+  expect(existsSync(join(worktreesDir(), h.repoId, "upgrade-runtime"))).toBe(false); // none was created
+  expect(git(h.repoPath, "worktree", "list", "--porcelain")).toBe(listedBefore);
+  const view = await watch(h.manager, s.id);
+  await waitFor(() => view.text().includes(`cwd=${theirs}`), "agent running in the adopted worktree");
+
+  // clean and fully merged — and still not ours to remove
+  expect(await h.manager.worktreeStatus(s.id)).toMatchObject({ removable: false });
+  const closed = await h.manager.close(s.id, { removeWorktree: true });
+  expect(closed.worktree).toMatchObject({ removable: false });
+  expect(closed.worktree?.reason).toContain("not created by the dashboard");
+  expect(existsSync(theirs)).toBe(true);
+
+  // survives a restart of the dashboard, and resume continues there
+  const again = h.newManager();
+  managers.push(again);
+  await again.init();
+  expect(again.get(s.id).adopted).toBe(true);
+  expect((await again.resume(s.id)).worktreePath).toBe(theirs);
+
+  // once its owner removed it, there is nowhere to continue — and nothing is re-created at their path
+  await again.close(s.id);
+  git(h.repoPath, "worktree", "remove", "--force", theirs);
+  await expect(again.resume(s.id)).rejects.toThrow("no longer exists");
+  expect(existsSync(theirs)).toBe(false);
+});
+
+test("archive never adopts, and the main checkout is never adopted", async () => {
+  const h = track(await harness());
+  const theirs = join(h.repoPath, ".claude", "worktrees", "arch");
+  git(h.repoPath, "worktree", "add", "-q", "-b", "chore/archive-configurable-builder", theirs);
+  await expect(h.manager.open({ repoId: h.repoId, change: "configurable-builder", action: "archive" })).rejects.toThrow(); // git's refusal, as before
+
+  git(h.repoPath, "checkout", "-q", "-b", "feat/upgrade-runtime"); // the main checkout itself sits on the session's branch
+  await expect(h.manager.open({ repoId: h.repoId, change: "upgrade-runtime", action: "implement" })).rejects.toThrow();
+  expect(h.manager.list().some((s) => s.worktreePath === h.repoPath)).toBe(false);
 });

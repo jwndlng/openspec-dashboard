@@ -48,6 +48,16 @@ export function applyCommand(repoPath: string, changeName: string): string {
   return `cd ${shellQuote(repoPath)} && claude "/opsx:apply ${changeName}"`;
 }
 
+/**
+ * Tooltip for a card's branch badge: where the change's data comes from, and which other checkouts hold a copy that
+ * is at a different point.
+ */
+export function checkoutHint(change: { checkout?: { path: string; isMain: boolean }; otherCheckouts?: { branch?: string; isMain: boolean; column: string }[] }): string {
+  const lines = [change.checkout && !change.checkout.isMain ? `lives in worktree ${change.checkout.path}` : "a branch or worktree matches this change"];
+  for (const other of change.otherCheckouts ?? []) lines.push(`also in: ${other.isMain ? "main checkout" : (other.branch ?? "detached worktree")} — ${other.column}`);
+  return lines.join("\n");
+}
+
 export function cdCommand(repoPath: string): string {
   return `cd ${shellQuote(repoPath)}`;
 }

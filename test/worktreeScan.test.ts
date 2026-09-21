@@ -75,6 +75,16 @@ async function worktree(root: string, path: string, branch?: string): Promise<st
   return listed.find((p) => p.endsWith(path.split("/").slice(-2).join("/"))) ?? path;
 }
 
+/** Sets the mtime of a directory tree, files and directories alike. */
+async function backdate(dir: string, when: Date): Promise<void> {
+  for (const entry of await readdir(dir, { withFileTypes: true })) {
+    const p = join(dir, entry.name);
+    if (entry.isDirectory()) await backdate(p, when);
+    else await utimes(p, when, when);
+  }
+  await utimes(dir, when, when);
+}
+
 const ALL = ["proposal", "design", "specs", "tasks"] as const;
 const byName = (snap: RepoSnapshot, name: string) => snap.changes.filter((c) => c.name === name);
 const scan = (root: string, source?: RepoSource) => scanRepo(newRepoConfig(root, true), source);
@@ -83,7 +93,9 @@ test("a change that exists only, uncommitted, in a worktree is on the board with
   const root = await repo();
   const wt = await worktree(root, join(root, ".claude", "worktrees", "audit"), "wip/compliance");
   const dir = await writeChange(wt, "audit-trail", { artifacts: [...ALL], tasks: "- [x] 1.1 a\n- [ ] 1.2 b\n- [ ] 1.3 c\n" });
-  const mtime = new Date("2026-09-21T08:00:00Z");
+  // Backdate everything, then move one file: the expectation must not depend on when the test runs.
+  await backdate(dir, new Date("2026-09-01T00:00:00Z"));
+  const mtime = new Date("2026-09-10T08:00:00Z");
   await utimes(join(dir, "tasks.md"), mtime, mtime);
 
   const snap = await scan(root);

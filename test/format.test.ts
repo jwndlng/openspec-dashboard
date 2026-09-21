@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { splitBranchLabel } from "../src/ui/format.ts";
+import { applyCommand, checkoutHint, splitBranchLabel } from "../src/ui/format.ts";
 
 test("short branch names are not split", () => {
   expect(splitBranchLabel("feat/add-login")).toEqual({ head: "feat/add-login", tail: "" });
@@ -36,4 +36,26 @@ test("head and tail always reassemble to the full name", () => {
 
 test("tail length and nudge are configurable", () => {
   expect(splitBranchLabel("feat/abcdefghij", 4, 0)).toEqual({ head: "feat/abcdef", tail: "ghij" });
+});
+
+test("checkoutHint says where a change lives and which other checkouts are at a different point", () => {
+  const wt = { path: "/w/acme/alpha-infra/.claude/worktrees/audit-trail", branch: "feat/audit-trail", isMain: false };
+  expect(checkoutHint({})).toBe("a branch or worktree matches this change");
+  expect(checkoutHint({ checkout: { path: "/w/acme/alpha-infra", isMain: true } })).toBe("a branch or worktree matches this change");
+  expect(checkoutHint({ checkout: wt })).toBe("lives in worktree /w/acme/alpha-infra/.claude/worktrees/audit-trail");
+  expect(
+    checkoutHint({
+      checkout: wt,
+      otherCheckouts: [
+        { isMain: true, branch: "main", column: "Proposal" },
+        { isMain: false, branch: "wip/old", column: "Design" },
+        { isMain: false, column: "New" },
+      ],
+    }).split("\n"),
+  ).toEqual(["lives in worktree /w/acme/alpha-infra/.claude/worktrees/audit-trail", "also in: main checkout — Proposal", "also in: wip/old — Design", "also in: detached worktree — New"]);
+});
+
+test("the apply command is built for the checkout a change lives in", () => {
+  expect(applyCommand("/w/acme/alpha-infra/.claude/worktrees/audit-trail", "audit-trail")).toBe('cd /w/acme/alpha-infra/.claude/worktrees/audit-trail && claude "/opsx:apply audit-trail"');
+  expect(applyCommand("/w/acme/My Repos/alpha", "audit-trail")).toBe(`cd '/w/acme/My Repos/alpha' && claude "/opsx:apply audit-trail"`);
 });
