@@ -4,7 +4,7 @@ import type { Dirent } from "node:fs";
 import { readdir, readFile, stat } from "node:fs/promises";
 import { dirname, join, relative } from "node:path";
 import type { Worktree } from "../shared/types.ts";
-import { currentBranch, isGitRepo, lastCommitDate, statusPaths, worktrees } from "./git.ts";
+import { currentBranch, defaultBranch, isGitRepo, lastCommitDate, statusPaths, worktrees } from "./git.ts";
 
 export const CHANGE_NAME = /^[A-Za-z0-9._-]+$/;
 const ARCHIVE_PREFIX = /^(\d{4}-\d{2}-\d{2})-(.+)$/;
@@ -47,6 +47,8 @@ export interface RepoSource {
   newestMtime(dir: string): Promise<string | undefined>;
   isGit(): Promise<boolean>;
   branch(): Promise<string | undefined>;
+  /** The default branch as known locally (no remote is asked); undefined when it cannot be told. */
+  defaultBranch(): Promise<string | undefined>;
   worktrees(): Promise<Worktree[]>;
   /** Committer date of the last commit touching `absPath` inside the repo. */
   lastActivity(absPath: string): Promise<string | undefined>;
@@ -161,6 +163,10 @@ export class LocalRepoSource implements RepoSource {
 
   branch(): Promise<string | undefined> {
     return currentBranch(this.path);
+  }
+
+  defaultBranch(): Promise<string | undefined> {
+    return defaultBranch(this.path);
   }
 
   worktrees(): Promise<Worktree[]> {

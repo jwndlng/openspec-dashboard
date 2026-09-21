@@ -141,6 +141,9 @@ export async function scanRepo(repo: RepoConfig, source: RepoSource = new LocalR
   }
   const isGit = await source.isGit();
   const [branch, worktrees] = isGit ? await Promise.all([source.branch(), source.worktrees()]) : [undefined, []];
+  // Archives, specs and progress come from the main checkout; off its default branch they may be outdated.
+  const mainBranch = isGit ? await source.defaultBranch().catch(() => undefined) : undefined;
+  const onDefaultBranch = mainBranch === undefined ? undefined : branch === mainBranch;
   const configYaml = await source.readText(join(repo.path, "openspec", "config.yaml"));
   const projectSchema = parseMarker(configYaml).schema;
   const sharedConfig = shared && shared.profiles.length > 0 ? repoSharedConfig(configYaml, shared) : undefined;
@@ -176,6 +179,8 @@ export async function scanRepo(repo: RepoConfig, source: RepoSource = new LocalR
     warnings: warnings.length ? warnings : undefined,
     isGit,
     currentBranch: branch,
+    defaultBranch: mainBranch,
+    onDefaultBranch,
     worktrees,
     // A repository whose only activity is in a worktree is still an active repository.
     lastUpdatedAt: latestIso(lastUpdatedAt, ...active.map((c) => c.lastActivityAt)),
@@ -315,6 +320,8 @@ export class Scanner {
             scannedAt: new Date().toISOString(),
             isGit: prev?.isGit ?? false,
             currentBranch: prev?.currentBranch,
+            defaultBranch: prev?.defaultBranch,
+            onDefaultBranch: prev?.onDefaultBranch,
             worktrees: prev?.worktrees ?? [],
             lastUpdatedAt: prev?.lastUpdatedAt,
             sharedConfig: shared && shared.profiles.length > 0 ? prev?.sharedConfig : undefined,
