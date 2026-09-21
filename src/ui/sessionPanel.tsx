@@ -1,10 +1,12 @@
-// The session panel: a drawer over the board with the live transcript, an input box and the session's actions.
-// Everything from the agent is rendered as text through JSX, so it is escaped; nothing is interpreted as HTML.
+// The session panel: the agent's own terminal, streamed from the dashboard server. The dashboard adds nothing to what
+// the agent shows and interprets none of it; keystrokes go straight to the agent, exactly as in a terminal window.
+import { FitAddon } from "@xterm/addon-fit";
+import { Terminal } from "@xterm/xterm";
 import { useEffect, useRef, useState } from "preact/hooks";
-import { OPEN_SESSION_STATES, type Session, type SessionEvent } from "../shared/types.ts";
-import { api, openEventStream } from "./api.ts";
+import type { Session } from "../shared/types.ts";
+import { api, terminalSocketUrl } from "./api.ts";
 import { cdCommand } from "./format.ts";
-import { resumeCommand, sessionBadge } from "./sessionState.ts";
+import { sessionBadge } from "./sessionState.ts";
 import { useSessionUi } from "./sessions.tsx";
 
 function Copy({ text, label }: { text: string; label: string }) {
@@ -26,49 +28,65 @@ function Copy({ text, label }: { text: string; label: string }) {
   );
 }
 
-function EventRow({ event }: { event: SessionEvent }) {
-  switch (event.kind) {
-    case "user":
-      return <div class="t-row t-user">{event.text}</div>;
-    case "assistant":
-      return <div class="t-row t-assistant">{event.text}</div>;
-    case "tool_use":
-      return (
-        <details class="t-row t-tool">
-          <summary>
-            <span class="badge mono">tool</span> {event.tool?.name}
-          </summary>
-          <pre>{JSON.stringify(event.tool?.input ?? {}, null, 2)}</pre>
-        </details>
-      );
-    case "tool_result":
-      return (
-        <details class={`t-row t-tool ${event.isError ? "t-error" : ""}`}>
-          <summary>
-            <span class={`badge mono ${event.isError ? "danger" : ""}`}>{event.isError ? "tool error" : "tool result"}</span>
-          </summary>
-          <pre>{event.text}</pre>
-        </details>
-      );
-    case "denied":
-      return (
-        <div class="t-row t-denied">
-          <span class="badge warn">denied</span> {event.tool?.name} was not allowed: <code>{JSON.stringify(event.tool?.input ?? {})}</code>
-          <div class="hint">Not in this repository's allow-list. Rephrase, or widen the list in Settings (applies from the next process start).</div>
-        </div>
-      );
-    case "result":
-      return (
-        <div class={`t-row t-result ${event.isError ? "t-error" : ""}`}>
-          {event.isError ? `turn ended with an error: ${event.text ?? ""}` : "turn finished"}
-          {event.costUsd !== undefined && ` · $${event.costUsd.toFixed(2)} so far`}
-        </div>
-      );
-    case "error":
-      return <div class="t-row t-error">⚠ {event.text}</div>;
-    default:
-      return <div class="t-row t-state">— {event.text ?? event.state} —</div>;
-  }
+/** Terminal colours follow the dashboard theme by reading its tokens. */
+function terminalTheme(el: HTMLElement) {
+  const css = getComputedStyle(el);
+  const token = (name: string, fallback: string) => css.getPropertyValue(name).trim() || fallback;
+  return { background: token("--bg-base", "#0b0d10"), foreground: token("--fg-heading", "#f3f5f7"), cursor: token("--brand", "#71c7c5"), selectionBackground: token("--bg-elevated", "#313437") };
+}
+
+function TerminalView({ sessionId, onExit }: { sessionId: string; onExit: () => void }) {
+  const host = useRef<HTMLDivElement>(null);
+  const [status, setStatus] = useState<"connecting" | "open" | "closed">("connecting");
+
+  useEffect(() => {
+    const el = host.current;
+    if (!el) return;
+    const term = new Terminal({ fontFamily: '"JetBrains Mono", ui-monospace, Menlo, monospace', fontSize: 12, cursorBlink: true, scrollback: 10_000, theme: terminalTheme(el) });
+    const fit = new FitAddon();
+    term.loadAddon(fit);
+    term.open(el);
+    fit.fit();
+
+    const socket = new WebSocket(terminalSocketUrl(sessionId));
+    socket.binaryType = "arraybuffer";
+    const send = (message: object) => socket.readyState === WebSocket.OPEN && socket.send(JSON.stringify(message));
+    const sendSize = () => send({ type: "resize", cols: term.cols, rows: term.rows });
+
+    socket.onopen = () => {
+      setStatus("open");
+      sendSize();
+      term.focus();
+    };
+    socket.onmessage = (event) => {
+      if (typeof event.data === "string") {
+        if (JSON.parse(event.data).type === "exit") onExit();
+      } else {
+        term.write(new Uint8Array(event.data as ArrayBuffer));
+      }
+    };
+    socket.onclose = () => setStatus("closed");
+
+    const input = term.onData((data) => send({ type: "input", data }));
+    const resized = term.onResize(sendSize);
+    const observer = new ResizeObserver(() => fit.fit());
+    observer.observe(el);
+
+    return () => {
+      observer.disconnect();
+      input.dispose();
+      resized.dispose();
+      socket.close();
+      term.dispose();
+    };
+  }, [sessionId, onExit]);
+
+  return (
+    <div class="session-terminal">
+      <div ref={host} class="session-terminal-host" />
+      {status !== "open" && <div class="session-terminal-note">{status === "connecting" ? "connecting to the terminal…" : "terminal disconnected"}</div>}
+    </div>
+  );
 }
 
 function CloseDialog({ session, onDone, onCancel }: { session: Session; onDone: () => void; onCancel: () => void }) {
@@ -80,10 +98,11 @@ function CloseDialog({ session, onDone, onCancel }: { session: Session; onDone: 
   }, [session.id]);
   return (
     <div class="session-confirm">
-      <strong>Close this session?</strong> The conversation ends; the worktree and its branch stay unless removed.
+      <strong>{session.state === "running" ? "End this session?" : "Clean up this session?"}</strong>
+      {session.state === "running" && " The agent is stopped, as if you closed its terminal window."} The worktree and its branch stay unless removed.
       {status?.removable ? (
         <label class="check">
-          <input type="checkbox" checked={remove} onChange={(e) => setRemove(e.currentTarget.checked)} /> also remove the worktree (clean and fully pushed)
+          <input type="checkbox" checked={remove} onChange={(e) => setRemove(e.currentTarget.checked)} /> also remove the worktree (clean, and nothing in it exists only there)
         </label>
       ) : (
         <div class="hint">The worktree is kept{status?.reason ? `: ${status.reason}` : "…"}</div>
@@ -99,10 +118,10 @@ function CloseDialog({ session, onDone, onCancel }: { session: Session; onDone: 
             onDone();
           }}
         >
-          Close session
+          {session.state === "running" ? "End session" : "Done"}
         </button>
         <button type="button" class="btn sm ghost" onClick={onCancel}>
-          Keep open
+          Cancel
         </button>
       </div>
     </div>
@@ -113,34 +132,18 @@ export function SessionPanel() {
   const ui = useSessionUi();
   const id = ui.panelId;
   const session = ui.sessions.find((s) => s.id === id);
-  const [events, setEvents] = useState<SessionEvent[]>([]);
-  const [text, setText] = useState("");
-  const [sending, setSending] = useState(false);
   const [confirmClose, setConfirmClose] = useState(false);
   const [error, setError] = useState<string>();
-  const bottom = useRef<HTMLDivElement>(null);
+  const [generation, setGeneration] = useState(0); // a resumed session gets a fresh terminal view
 
   useEffect(() => {
-    setEvents([]);
     setConfirmClose(false);
     setError(undefined);
-    if (!id) return;
-    return openEventStream(id, 0, (event) => {
-      setEvents((prev) => (prev.some((e) => e.seq === event.seq) ? prev : [...prev, event]));
-      if (event.kind === "state" || event.kind === "result") void ui.refresh();
-    });
-  }, [id, ui.refresh]);
-
-  useEffect(() => {
-    bottom.current?.scrollIntoView({ block: "end" });
-  }, [events.length]);
+  }, [id]);
 
   if (!id) return null;
-  const open = session ? OPEN_SESSION_STATES.includes(session.state) : false;
   const badge = session ? sessionBadge(session) : undefined;
   const repo = ui.config?.repos.find((r) => r.id === session?.repoId);
-  const resume = session ? resumeCommand(session) : undefined;
-  const windows = Object.entries(session?.rateLimit?.windows ?? {});
 
   const act = async (fn: () => Promise<unknown>) => {
     try {
@@ -152,71 +155,55 @@ export function SessionPanel() {
     }
   };
 
-  const send = async () => {
-    const message = text.trim();
-    if (!message || !session) return;
-    setSending(true);
-    await act(() => api.sendMessage(session.id, message));
-    setText("");
-    setSending(false);
-  };
-
   return (
     <aside class="session-panel" aria-label="Agent session">
       <header class="session-head">
         <div class="row">
           <strong class="mono">{session?.change ?? "session"}</strong>
           {repo && <span class="hint">{repo.name}</span>}
+          {session && <span class="hint">· {session.agentName}</span>}
           {badge && (
             <span class={`badge ${badge.tone}`} title={badge.title}>
               {badge.label}
             </span>
           )}
           <span style={{ flex: 1 }} />
-          <button type="button" class="btn sm ghost" title="Hide the panel; the session keeps going" onClick={() => ui.openPanel(undefined)}>
+          <button type="button" class="btn sm ghost" title="Hide the panel; the session keeps running" onClick={() => ui.openPanel(undefined)}>
             ✕
           </button>
         </div>
         {session && (
           <div class="row hint">
-            <span title="the agent's own git worktree">{session.worktreePath ?? "worktree: not created yet"}</span>
-          </div>
-        )}
-        {session && (
-          <div class="row hint">
-            <span>
-              {session.turns} turn{session.turns === 1 ? "" : "s"} · ${session.costUsd.toFixed(2)}
+            <span title="the agent's own git worktree">
+              {session.worktreePath} · <span class="mono">{session.branch}</span>
             </span>
-            {windows.map(([name, w]) => (
-              <span key={name} title={`usage window resets ${new Date(w.resetsAt * 1000).toLocaleString()}`}>
-                · {name.replace("_", " ")} {Math.round(w.utilization * 100)}%
-              </span>
-            ))}
-            {session.apiKeySource && session.apiKeySource !== "none" && <span class="badge warn">using an API key, not the CLI login</span>}
           </div>
         )}
         {session && (
           <div class="row">
-            {session.state === "running" && (
-              <button type="button" class="btn sm" title="Interrupt the current turn; the conversation stays open" onClick={() => act(() => api.stopSession(session.id))}>
-                ■ Stop
+            {session.state !== "running" && session.resumable && (
+              <button
+                type="button"
+                class="btn sm"
+                title="Start the agent again in the same worktree, continuing its latest conversation"
+                onClick={() =>
+                  act(async () => {
+                    await api.resumeSession(session.id);
+                    setGeneration((n) => n + 1);
+                  })
+                }
+              >
+                ▶ Resume
               </button>
             )}
-            {open && (
-              <button type="button" class="btn sm" onClick={() => setConfirmClose(true)}>
-                Close
-              </button>
-            )}
-            {(session.state === "running" || session.state === "queued") && (
-              <button type="button" class="btn sm ghost" title="Kill the agent process immediately" onClick={() => act(() => api.cancelSession(session.id))}>
-                Cancel
-              </button>
-            )}
-            {!open && (
+            <button type="button" class="btn sm" onClick={() => setConfirmClose(true)}>
+              {session.state === "running" ? "End session" : "Clean up"}
+            </button>
+            {session.state !== "running" && (
               <button
                 type="button"
                 class="btn sm ghost"
-                title="Delete this session's record and transcript"
+                title="Delete this session's record and stored output"
                 onClick={() =>
                   act(async () => {
                     await api.deleteSession(session.id);
@@ -227,8 +214,7 @@ export function SessionPanel() {
                 Delete record
               </button>
             )}
-            {resume && <Copy text={resume} label="Copy resume command" />}
-            {session.worktreePath && <Copy text={cdCommand(session.worktreePath)} label="Copy cd" />}
+            <Copy text={cdCommand(session.worktreePath)} label="Copy cd" />
           </div>
         )}
         {confirmClose && session && (
@@ -243,34 +229,7 @@ export function SessionPanel() {
         )}
         {(error ?? session?.error) && <div class="notice danger">{error ?? session?.error}</div>}
       </header>
-
-      <div class="session-transcript" aria-live="polite">
-        {events.map((event) => (
-          <EventRow key={event.seq} event={event} />
-        ))}
-        {!session && <div class="hint">Loading session…</div>}
-        <div ref={bottom} />
-      </div>
-
-      <footer class="session-input">
-        <textarea
-          class="input"
-          rows={3}
-          placeholder={open ? "Tell the agent what to do next… (Enter sends, Shift+Enter for a new line)" : "This session has ended."}
-          value={text}
-          disabled={!open || sending}
-          onInput={(e) => setText(e.currentTarget.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey) {
-              e.preventDefault();
-              void send();
-            }
-          }}
-        />
-        <button type="button" class="btn primary" disabled={!open || sending || !text.trim()} onClick={() => void send()}>
-          {session?.state === "running" || session?.state === "queued" ? "Queue" : "Send"}
-        </button>
-      </footer>
+      {session ? <TerminalView key={`${session.id}:${generation}`} sessionId={session.id} onExit={ui.refresh} /> : <div class="hint session-terminal-note">Loading session…</div>}
     </aside>
   );
 }

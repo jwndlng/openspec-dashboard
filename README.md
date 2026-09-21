@@ -73,7 +73,7 @@ what it found under **Discovered**; click **Enable** on the repos to track, then
 - Theme: dark and light. Follows the OS appearance by default; the **Theme** button in the top bar cycles
   System → Light → Dark. The choice is stored in the browser (`localStorage`), not in the config file.
 
-State lives in `~/.openspec-dashboard/` (`config.json`, `shared-config.json`, `cache/snapshot.json`, `sessions/`). The dashboard
+State lives in `~/.openspec-dashboard/` (`config.json`, `shared-config.json`, `cache/snapshot.json`, `sessions/`, `worktrees/`). The dashboard
 only runs read-only `git` commands (`rev-parse`, `log`, `worktree list`, `status` — with optional locks disabled, so
 not even `.git/index` is refreshed), and scanning, polling, discovery and saving settings never write to a tracked
 repository. The things that do are described next: shared config, and the opt-in agent sessions further down.
@@ -117,27 +117,34 @@ repositories you choose. A repository can carry several profiles; different repo
 
 ## Agent sessions (optional, off by default)
 
-Open an interactive agent session for a change straight from its card: **Draft artifacts** while artifacts are missing,
-**Implement** once a change is ready, **Archive** once every task is done. The dashboard starts your locally installed [`claude`](https://claude.com/claude-code)
-CLI on **its own existing login** — so a Claude subscription keeps being used; the dashboard never sees credentials and
-removes `ANTHROPIC_API_KEY`/`ANTHROPIC_AUTH_TOKEN` from the agent's environment unless you opt in to passing them.
+Start an agent for a change straight from its card — **Draft artifacts** while artifacts are missing, **Implement** once
+a change is ready, **Archive** once every task is done — and it opens **in a terminal inside the dashboard**. It is the
+same program you would run in your own terminal, with its own login, settings, slash commands and permission prompts;
+the dashboard shows it, passes your keystrokes on, and interprets nothing.
 
-- **One switch, off by default**: Settings → *Agent sessions* → turn it on and it applies to every tracked repository.
-  Switch individual repositories off in the same section. While it is off, no card shows a starter and the API refuses
-  to open sessions.
-- **It is a conversation**: the panel shows the live transcript; type follow-ups, press **Stop** to interrupt a turn
-  without losing the conversation, **Close** when done. "Copy resume command" continues the same conversation in your
-  terminal (`cd <worktree> && claude --resume <id>`). Sessions survive a dashboard restart.
-- **One agent, one worktree**: every session works in `.claude/worktrees/<change>` of the repository, never in your main
-  checkout. Closing offers to remove the worktree only when it is clean and fully pushed.
-- **Bounded permissions**: sessions run with `--permission-mode dontAsk` and an allow-list — file read/search/edit, the
-  `openspec` command, local `git status/diff/log/add/commit/branch -m`, and moving files inside `openspec/` (for
-  archiving) — plus what you add per repository (for example
-  `Bash(bun run check*)`). Anything else is denied without a prompt and shown in the transcript. Your personal Claude
-  settings and allow rules are *not* inherited (`--setting-sources project`); a repository's own `.claude/settings.json`
-  is. The CLI still runs its small built-in set of read-only commands. There is no way to pass a permission-bypass flag.
-- Limits: one open session per change, two agents working at once by default (more queue up), idle agent processes are
-  stopped after 30 minutes and resumed on your next message. Records live in `~/.openspec-dashboard/sessions/`.
+- **One switch, off by default**: Settings → *Agent sessions*. Once on it applies to every tracked repository; switch
+  individual repositories off in the same section. While it is off, no card shows a starter and the API refuses.
+- **Bring your own agent**: an agent is a *profile* — a command as an argument list (`{prompt}` is where the opening
+  prompt goes), a prompt per starter (`{change}` is the change name), and optionally a resume command. **Claude Code**
+  is preconfigured (`claude {prompt}`, the `/opsx:*` commands, `claude --continue`; API-key variables are removed from
+  its environment so its own login — for example a subscription — is used). Add any other CLI that runs interactively
+  in a terminal, pick a default, and choose a different agent per repository if you like. The dashboard never handles
+  credentials.
+- **One agent, one worktree**: before starting the agent the dashboard creates a git worktree for the session on
+  `feat/<change>` (archiving: `chore/archive-<change>`) under `~/.openspec-dashboard/worktrees/` — outside the
+  repository, so your main checkout's branch, index and files are never touched and no untracked directory appears in
+  it. The branch starts from your local `origin/HEAD` (the dashboard does not fetch). A change that exists only
+  uncommitted in your main checkout is copied into the worktree. Ending a session offers to remove the worktree only
+  when it is clean and holds no commit that exists nowhere else.
+- **It keeps running**: hide the panel and the agent carries on; open it again (or a second tab, or reload) and the
+  terminal shows what happened meanwhile. Cards show `running`, `quiet 12m` (the terminal has been silent — the agent is
+  probably waiting for you) or how the session ended. **Resume** starts the agent's resume command in the same worktree.
+  Stopping the dashboard ends its agents; their output stays viewable.
+- **What protects you**: the feature is off until you enable it; the server only listens on `127.0.0.1`; the terminal
+  WebSocket and every mutating route accept only the dashboard's own origin, so another web page cannot type into your
+  agent; agents are started without a shell from the argument list you configured; and what an agent may do is decided
+  by *its* permission prompts, which you answer in the terminal. The dashboard refuses profiles containing a
+  permission-bypass flag.
 
 ## How it reads OpenSpec
 

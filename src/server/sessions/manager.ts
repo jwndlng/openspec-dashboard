@@ -1,32 +1,19 @@
-// Session manager (design.md D7, D8): owns the state machine, the per-change uniqueness, the running limit and
-// queue, idle shutdown with lazy resume, and failure classification. Talks to the agent only through `Runner`.
+// Session manager (design.md D15–D17). A session is an agent CLI running in a terminal inside the change's own git
+// worktree. The manager creates the worktree, starts the process, keeps a scrollback for late or returning viewers,
+// fans output out to attached terminals and takes their input. It does not interpret what the agent prints.
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
-import {
-  availableActions,
-  repoAgentEnabled,
-  SESSION_ACTIONS,
-  OPEN_SESSION_STATES,
-  type AgentAvailability,
-  type Config,
-  type Session,
-  type SessionAction,
-  type SessionEvent,
-  type SessionFailure,
-  type SessionState,
-  type Snapshot,
-} from "../../shared/types.ts";
-import { DEFAULT_ALLOWED_TOOLS } from "../../shared/agentDefaults.ts";
+import { availableActions, OPEN_SESSION_STATES, repoAgentEnabled, SESSION_ACTIONS, type AgentAvailability, type Config, type Session, type SessionAction, type Snapshot } from "../../shared/types.ts";
+import { worktreesDir } from "../paths.ts";
 import { CHANGE_NAME } from "../source.ts";
-import type { Runner, RunnerEvent, RunnerProcess } from "./runner.ts";
+import { agentEnv, agentFor, availability, launchCommand, openingPrompt } from "./agents.ts";
 import { SessionStore } from "./store.ts";
-import { checkWorktreeRemovable, removeWorktree, type Removable } from "./worktree.ts";
+import { spawnTerminal, type TerminalProcess } from "./terminal.ts";
+import { checkWorktreeRemovable, copyChangeIfMissing, ensureWorktree, removeWorktree, type Removable } from "./worktree.ts";
 
-export { DEFAULT_ALLOWED_TOOLS };
-
-const STOP_FALLBACK_MS = 5_000;
-const END_GRACE_MS = 3_000;
-const AVAILABILITY_TTL_MS = 60_000;
+export const SCROLLBACK_BYTES = 1024 * 1024;
+const TYPE_PROMPT_DELAY_MS = 1500;
+const OUTPUT_STAMP_MS = 5000;
 
 export class SessionError extends Error {
   constructor(
@@ -35,11 +22,6 @@ export class SessionError extends Error {
   ) {
     super(message);
   }
-}
-
-export function renderCommand(template: string, change: string): string {
-  if (!CHANGE_NAME.test(change)) throw new SessionError(400, "invalid change name");
-  return template.replaceAll("{change}", change);
 }
 
 /** Archiving gets a worktree of its own: the implementation worktree of the same change may still exist, on an old base. */
@@ -51,65 +33,65 @@ export function sessionBranch(action: SessionAction, change: string): string {
   return action === "archive" ? `chore/archive-${change}` : `feat/${change}`;
 }
 
-export function worktreeSystemPrompt(repoPath: string, change: string, action: SessionAction = "implement"): string {
-  const changeDir = `openspec/changes/${change}`;
-  const branch = sessionBranch(action, change);
-  return [
-    `You were started by the OpenSpec dashboard to work on the change "${change}".`,
-    `You run in your own git worktree of the repository at ${repoPath}. That worktree is yours alone.`,
-    `Never edit, stage, commit or switch branches in the main checkout at ${repoPath}, and never touch another worktree.`,
-    `Before your first commit, rename your branch to ${branch} with: git branch -m ${branch}`,
-    `If ${changeDir}/ does not exist in your worktree, copy it from ${join(repoPath, changeDir)} (you can read it), and commit it first.`,
-    "Tool calls outside your allow-list are denied without a prompt; when that happens, say what you needed and carry on with what you can do.",
-  ].join("\n");
+/** Keeps the last `limit` bytes of terminal output, for viewers that attach later. */
+export class Scrollback {
+  private chunks: Uint8Array[] = [];
+  private size = 0;
+  constructor(private readonly limit = SCROLLBACK_BYTES) {}
+
+  push(chunk: Uint8Array): void {
+    this.chunks.push(chunk);
+    this.size += chunk.length;
+    while (this.size > this.limit && this.chunks.length > 1) this.size -= (this.chunks.shift() as Uint8Array).length;
+  }
+
+  bytes(): Uint8Array {
+    const out = new Uint8Array(this.size);
+    let offset = 0;
+    for (const chunk of this.chunks) {
+      out.set(chunk, offset);
+      offset += chunk.length;
+    }
+    return out;
+  }
 }
+
+type Viewer = (chunk: Uint8Array) => void;
 
 interface Live {
-  proc?: RunnerProcess;
-  pending: string[];
-  /** Exits we caused ourselves are not failures. */
-  expectExit: boolean;
-  costBase: number;
-  queuedAt: number;
-  idleTimer?: ReturnType<typeof setTimeout>;
-  stopTimer?: ReturnType<typeof setTimeout>;
+  proc?: TerminalProcess;
+  scrollback: Scrollback;
+  viewers: Set<Viewer>;
+  lastStamp: number;
 }
-
-type Listener = (event: SessionEvent) => void;
 
 export interface ManagerDeps {
   getConfig: () => Config;
   getSnapshot: () => Snapshot;
-  runner: Runner;
   store?: SessionStore;
-  /** Test seam: real timings are minutes and seconds. */
-  timing?: { idleMs?: number; stopFallbackMs?: number };
+  /** Test seam; the real delay gives an agent time to draw its prompt before text is typed into it. */
+  typePromptDelayMs?: number;
 }
 
 export class SessionManager {
   private sessions = new Map<string, Session>();
   private live = new Map<string, Live>();
-  private listeners = new Map<string, Set<Listener>>();
-  private availability?: { at: number; value: AgentAvailability };
   private readonly store: SessionStore;
 
   constructor(private readonly deps: ManagerDeps) {
     this.store = deps.store ?? new SessionStore();
   }
 
-  /** Loads stored sessions; anything that claimed to be running has no process any more. */
+  /** Loads stored sessions. A terminal cannot outlive the dashboard, so anything recorded as running has ended. */
   async init(): Promise<void> {
     for (const session of await this.store.loadAll()) {
       this.sessions.set(session.id, session);
-      if (session.state === "running" || session.state === "queued") await this.setState(session, "interrupted");
+      if (session.state === "running") await this.end(session, null, "the dashboard was restarted while this session was running");
     }
   }
 
-  async agentAvailability(force = false): Promise<AgentAvailability> {
-    if (!force && this.availability && Date.now() - this.availability.at < AVAILABILITY_TTL_MS) return this.availability.value;
-    const value = await this.deps.runner.available();
-    this.availability = { at: Date.now(), value };
-    return value;
+  agents(): AgentAvailability[] {
+    return availability(this.deps.getConfig());
   }
 
   list(): Session[] {
@@ -120,19 +102,6 @@ export class SessionManager {
     const session = this.sessions.get(id);
     if (!session) throw new SessionError(404, "unknown session");
     return session;
-  }
-
-  events(id: string, afterSeq: number): Promise<SessionEvent[]> {
-    this.get(id);
-    return this.store.readEvents(id, afterSeq);
-  }
-
-  subscribe(id: string, listener: Listener): () => void {
-    this.get(id);
-    const set = this.listeners.get(id) ?? new Set();
-    set.add(listener);
-    this.listeners.set(id, set);
-    return () => set.delete(listener);
   }
 
   async open(input: { repoId?: unknown; change?: unknown; action?: unknown }): Promise<Session> {
@@ -156,313 +125,179 @@ export class SessionManager {
     const existing = this.list().find((s) => s.repoId === repo.id && s.change === change && OPEN_SESSION_STATES.includes(s.state));
     if (existing) return existing;
 
-    const availability = await this.agentAvailability(true);
-    if (!availability.available) throw new SessionError(503, availability.reason ?? "the agent CLI is unavailable");
+    const agent = agentFor(config, repo);
+    if (!agent) throw new SessionError(503, "no agent is configured");
+    const prompt = openingPrompt(agent, action, change);
+    if (!prompt) throw new SessionError(400, `${agent.name} has no "${action}" prompt configured`);
+    if (!Bun.which(agent.command[0])) throw new SessionError(503, `${agent.name} was not found (${agent.command[0]}); install it or change its command in Settings`);
 
     const now = new Date().toISOString();
-    const session: Session = { id: randomUUID(), repoId: repo.id, change, action, cliSessionId: randomUUID(), state: "queued", createdAt: now, updatedAt: now, turns: 0, costUsd: 0, lastSeq: 0 };
+    const session: Session = {
+      id: randomUUID(),
+      repoId: repo.id,
+      change,
+      action,
+      agentId: agent.id,
+      agentName: agent.name,
+      state: "running",
+      worktreePath: join(worktreesDir(), repo.id, worktreeName(action, change)),
+      branch: sessionBranch(action, change),
+      createdAt: now,
+      updatedAt: now,
+      resumable: agent.resumeCommand !== undefined,
+    };
+    try {
+      await ensureWorktree(repo.path, session.worktreePath, session.branch);
+      await copyChangeIfMissing(repo.path, session.worktreePath, change);
+    } catch (err) {
+      throw new SessionError(500, err instanceof Error ? err.message : String(err));
+    }
     this.sessions.set(session.id, session);
-    this.live.set(session.id, { pending: [], expectExit: false, costBase: 0, queuedAt: Date.now() });
     await this.store.saveMeta(session);
-    await this.enqueue(session, renderCommand(config.agentSessions.commands[action], change));
+    const launch = launchCommand(agent, prompt);
+    this.start(session, launch.argv, agentEnv(agent, process.env), launch.typed);
     for (const removed of await this.store.prune(this.list())) this.sessions.delete(removed);
     return session;
   }
 
-  async send(id: string, text: unknown): Promise<Session> {
+  /** Continues the agent's latest conversation in the session's worktree, in the same session record. */
+  async resume(id: string): Promise<Session> {
     const session = this.get(id);
-    if (!OPEN_SESSION_STATES.includes(session.state)) throw new SessionError(409, `the session is ${session.state}`);
-    if (typeof text !== "string" || !text.trim()) throw new SessionError(400, "message text is required");
-    if (!this.deps.getConfig().agentSessions.enabled) throw new SessionError(403, "agent sessions are disabled");
-    await this.enqueue(session, text);
+    if (session.state === "running") return session;
+    const config = this.deps.getConfig();
+    if (!config.agentSessions.enabled) throw new SessionError(403, "agent sessions are disabled");
+    const agent = config.agentSessions.agents.find((a) => a.id === session.agentId);
+    if (!agent?.resumeCommand) throw new SessionError(400, "this agent has no resume command configured");
+    if (!Bun.which(agent.resumeCommand[0])) throw new SessionError(503, `${agent.name} was not found (${agent.resumeCommand[0]})`);
+    const running = this.list().find((s) => s.id !== id && s.repoId === session.repoId && s.change === session.change && s.state === "running");
+    if (running) throw new SessionError(409, "another session for this change is running");
+    const repo = config.repos.find((r) => r.id === session.repoId);
+    if (!repo) throw new SessionError(409, "the repository is no longer configured");
+    try {
+      await ensureWorktree(repo.path, session.worktreePath, session.branch);
+    } catch (err) {
+      throw new SessionError(500, err instanceof Error ? err.message : String(err));
+    }
+    session.state = "running";
+    session.exitCode = undefined;
+    session.error = undefined;
+    await this.touch(session);
+    this.start(session, [...agent.resumeCommand], agentEnv(agent, process.env));
     return session;
   }
 
-  private liveOf(session: Session): Live {
-    let live = this.live.get(session.id);
-    if (!live) {
-      live = { pending: [], expectExit: false, costBase: session.costUsd, queuedAt: Date.now() };
-      this.live.set(session.id, live);
+  private start(session: Session, argv: string[], env: Record<string, string>, typed?: string): void {
+    const live: Live = { scrollback: this.live.get(session.id)?.scrollback ?? new Scrollback(), viewers: this.live.get(session.id)?.viewers ?? new Set(), lastStamp: 0 };
+    this.live.set(session.id, live);
+    let proc: TerminalProcess;
+    try {
+      proc = spawnTerminal({ argv, cwd: session.worktreePath, env, onData: (chunk) => this.onOutput(session, live, chunk) });
+    } catch (err) {
+      session.state = "failed";
+      session.error = `could not start the agent: ${err instanceof Error ? err.message : String(err)}`;
+      void this.touch(session);
+      return;
     }
-    return live;
-  }
-
-  private async enqueue(session: Session, text: string): Promise<void> {
-    const live = this.liveOf(session);
-    if (live.pending.length === 0) live.queuedAt = Date.now();
-    live.pending.push(text);
-    await this.record(session, { kind: "user", text });
-    if (session.state === "waiting" || session.state === "interrupted") await this.setState(session, "queued");
-    await this.pump();
-  }
-
-  private runningCount(): number {
-    return this.list().filter((s) => s.state === "running").length;
-  }
-
-  /** Starts queued turns, oldest first, while the running limit allows. */
-  private async pump(): Promise<void> {
-    const max = this.deps.getConfig().agentSessions.maxRunning;
-    const queued = this.list()
-      .filter((s) => s.state === "queued" && (this.live.get(s.id)?.pending.length ?? 0) > 0)
-      .sort((a, b) => (this.live.get(a.id)?.queuedAt ?? 0) - (this.live.get(b.id)?.queuedAt ?? 0));
-    for (const session of queued) {
-      if (this.runningCount() >= max) return;
-      await this.startTurn(session);
+    live.proc = proc;
+    if (typed) {
+      const timer = setTimeout(() => live.proc === proc && proc.write(`${typed}\r`), this.deps.typePromptDelayMs ?? TYPE_PROMPT_DELAY_MS);
+      (timer as { unref?: () => void }).unref?.();
     }
-  }
-
-  private async startTurn(session: Session): Promise<void> {
-    const live = this.liveOf(session);
-    const text = live.pending.shift();
-    if (text === undefined) return;
-    clearTimeout(live.idleTimer);
-    if (!live.proc) {
-      try {
-        live.proc = this.spawn(session);
-      } catch (err) {
-        await this.fail(session, "cli-missing", err instanceof Error ? err.message : String(err));
-        return;
-      }
-      live.expectExit = false;
-      live.costBase = session.costUsd;
-      void this.consume(session, live, live.proc);
-    }
-    // `setState` assigns the state synchronously and only its persistence is awaited, so the state change and the
-    // hand-over of the message happen in one tick: a Stop can neither overtake the message nor see a stale state,
-    // and a fast answer cannot be overwritten by a late "running".
-    const announced = this.setState(session, "running");
-    live.proc.send(text);
-    await announced;
-  }
-
-  private spawn(session: Session): RunnerProcess {
-    const config = this.deps.getConfig();
-    const repo = config.repos.find((r) => r.id === session.repoId);
-    if (!repo) throw new Error("the repository is no longer configured");
-    const fresh = !session.worktreePath;
-    return this.deps.runner.start({
-      cwd: fresh ? repo.path : (session.worktreePath as string),
-      cliSessionId: session.cliSessionId,
-      mode: fresh ? { kind: "fresh", worktreeName: worktreeName(session.action, session.change) } : { kind: "resume" },
-      allowedTools: [...DEFAULT_ALLOWED_TOOLS, ...(repo.agent?.allowedTools ?? [])],
-      addDirs: [join(repo.path, "openspec", "changes", session.change)],
-      systemPrompt: worktreeSystemPrompt(repo.path, session.change, session.action),
-      passApiKeyEnv: config.agentSessions.passApiKeyEnv,
+    void proc.exited.then((code) => {
+      if (live.proc !== proc) return;
+      live.proc = undefined;
+      void this.end(session, code);
     });
   }
 
-  private async consume(session: Session, live: Live, proc: RunnerProcess): Promise<void> {
-    try {
-      for await (const event of proc.events) await this.onRunnerEvent(session, live, event);
-    } catch (err) {
-      // Never leave a session "running" with nobody listening to it.
-      if (live.proc === proc) live.proc = undefined;
-      proc.kill();
-      if (OPEN_SESSION_STATES.includes(session.state)) {
-        await this.fail(session, "crashed", `lost the agent's output: ${err instanceof Error ? err.message : String(err)}`).catch(() => undefined);
-      }
-      return;
-    }
-    const exit = await proc.exited;
-    if (live.proc === proc) live.proc = undefined;
-    clearTimeout(live.stopTimer);
-    if (live.expectExit || !OPEN_SESSION_STATES.includes(session.state)) return;
-    if (session.state === "running" || session.state === "queued") {
-      const detail = exit.stderr.trim().split("\n").slice(-3).join(" ").slice(0, 400);
-      await this.fail(session, "crashed", `the agent process ended unexpectedly (exit ${exit.code ?? "?"})${detail ? `: ${detail}` : ""}`);
-    }
-    // A waiting session whose process went away is simply resumed on the next message.
-  }
-
-  private async onRunnerEvent(session: Session, live: Live, event: RunnerEvent): Promise<void> {
-    switch (event.type) {
-      case "init": {
-        const repoPath = this.deps.getConfig().repos.find((r) => r.id === session.repoId)?.path;
-        if (event.cwd && event.cwd !== repoPath && event.cwd !== session.worktreePath) session.worktreePath = event.cwd;
-        if (event.apiKeySource && event.apiKeySource !== session.apiKeySource) {
-          session.apiKeySource = event.apiKeySource;
-          if (event.apiKeySource !== "none" && !this.deps.getConfig().agentSessions.passApiKeyEnv) {
-            await this.record(session, { kind: "error", text: `the agent reports credentials from "${event.apiKeySource}" rather than its own login` });
-          }
-        }
-        await this.touch(session);
-        return;
-      }
-      case "user":
-        return; // our own messages replayed; they were recorded when they were sent
-      case "assistant":
-        await this.record(session, { kind: "assistant", text: event.text });
-        return;
-      case "tool_use":
-        await this.record(session, { kind: "tool_use", tool: { name: event.name, input: event.input } });
-        return;
-      case "tool_result":
-        await this.record(session, { kind: "tool_result", text: event.content, isError: event.isError });
-        return;
-      case "rate_limit":
-        session.rateLimit = { status: event.status, windows: event.windows };
-        await this.touch(session);
-        return;
-      case "unparsed":
-        await this.record(session, { kind: "error", text: `unrecognised agent output: ${event.raw}` });
-        return;
-      case "control_response":
-        return;
-      case "result":
-        await this.onResult(session, live, event);
+  private onOutput(session: Session, live: Live, chunk: Uint8Array): void {
+    live.scrollback.push(chunk);
+    for (const viewer of live.viewers) viewer(chunk);
+    const now = Date.now();
+    session.lastOutputAt = new Date(now).toISOString();
+    if (now - live.lastStamp > OUTPUT_STAMP_MS) {
+      live.lastStamp = now;
+      void this.touch(session);
     }
   }
 
-  private async onResult(session: Session, live: Live, result: Extract<RunnerEvent, { type: "result" }>): Promise<void> {
-    clearTimeout(live.stopTimer);
-    session.turns += 1;
-    if (result.costUsd !== undefined) session.costUsd = live.costBase + result.costUsd;
-    for (const denial of result.denials) await this.record(session, { kind: "denied", tool: { name: denial.tool, input: denial.input } });
-    const aborted = result.terminalReason === "aborted_streaming";
-    await this.record(session, { kind: "result", text: aborted ? "turn stopped" : result.text, isError: result.isError && !aborted, costUsd: session.costUsd });
-
-    if (result.isError && !aborted) {
-      const text = result.text ?? "";
-      if (/not logged in|\/login|authenticat/i.test(text)) return this.fail(session, "auth", "the agent CLI is not logged in — run `claude` in a terminal and log in");
-      if ((session.rateLimit && session.rateLimit.status !== "allowed") || /usage limit|rate limit/i.test(text)) return this.fail(session, "usage-limit", text || "the account's usage limit is reached");
-    }
-    await this.setState(session, live.pending.length > 0 ? "queued" : "waiting");
-    if (session.state === "waiting") this.armIdle(session, live);
-    await this.pump();
+  private async end(session: Session, exitCode: number | null, error?: string): Promise<void> {
+    session.state = "exited";
+    session.exitCode = exitCode;
+    if (error) session.error = error;
+    const live = this.live.get(session.id);
+    if (live) await this.store.saveOutput(session.id, live.scrollback.bytes()).catch(() => undefined);
+    await this.touch(session);
+    for (const viewer of live?.viewers ?? []) viewer(new Uint8Array()); // an empty chunk tells viewers the process ended
   }
 
-  private armIdle(session: Session, live: Live): void {
-    clearTimeout(live.idleTimer);
-    const ms = this.deps.timing?.idleMs ?? this.deps.getConfig().agentSessions.idleMinutes * 60_000;
-    live.idleTimer = setTimeout(() => {
-      if (session.state === "waiting" && live.proc) this.endProcess(live);
-    }, ms);
-    (live.idleTimer as { unref?: () => void }).unref?.();
-  }
-
-  private endProcess(live: Live): void {
-    const proc = live.proc;
-    if (!proc) return;
-    live.expectExit = true;
-    proc.end();
-    const timer = setTimeout(() => proc.kill(), END_GRACE_MS);
-    (timer as { unref?: () => void }).unref?.();
-    void proc.exited.then(() => clearTimeout(timer));
-  }
-
-  /** Interrupts the current turn; the conversation stays open. */
-  async stop(id: string): Promise<Session> {
+  /**
+   * Attaches a viewer: returns what the terminal has shown so far and then streams new output. For an ended session
+   * the stored tail is returned and nothing follows.
+   */
+  async attach(id: string, viewer: Viewer): Promise<{ scrollback: Uint8Array; detach: () => void }> {
     const session = this.get(id);
-    const live = this.liveOf(session);
-    if (session.state === "queued") {
-      live.pending = [];
-      await this.setState(session, session.turns > 0 ? "waiting" : "interrupted");
-      return session;
-    }
-    if (session.state !== "running" || !live.proc) throw new SessionError(409, `the session is ${session.state}`);
-    const proc = live.proc;
-    proc.interrupt();
-    live.stopTimer = setTimeout(() => {
-      if (session.state !== "running" || live.proc !== proc) return;
-      live.expectExit = true; // SIGINT-equivalent fallback: the process goes away, the conversation is resumed later
-      proc.kill();
-      void this.record(session, { kind: "result", text: "turn stopped" }).then(() => this.setState(session, "waiting")).then(() => this.pump());
-    }, this.deps.timing?.stopFallbackMs ?? STOP_FALLBACK_MS);
-    return session;
+    const live = this.live.get(id);
+    if (!live) return { scrollback: await this.store.readOutput(session.id), detach: () => {} };
+    live.viewers.add(viewer);
+    return { scrollback: live.scrollback.bytes(), detach: () => live.viewers.delete(viewer) };
   }
 
+  write(id: string, data: string): void {
+    this.live.get(id)?.proc?.write(data);
+  }
+
+  resize(id: string, cols: number, rows: number): void {
+    this.live.get(id)?.proc?.resize(cols, rows);
+  }
+
+  /** Ends the agent (as closing its terminal window would) and optionally removes the worktree when that is safe. */
   async close(id: string, options: { removeWorktree?: boolean } = {}): Promise<{ session: Session; worktree?: Removable }> {
     const session = this.get(id);
-    if (!OPEN_SESSION_STATES.includes(session.state)) throw new SessionError(409, `the session is ${session.state}`);
-    const live = this.liveOf(session);
-    live.pending = [];
-    clearTimeout(live.idleTimer);
-    const exited = live.proc?.exited;
-    this.endProcess(live);
-    await this.setState(session, "closed");
+    const proc = this.live.get(id)?.proc;
+    if (proc) {
+      proc.kill();
+      await proc.exited;
+      // `end` runs from the exit handler; wait for the state it writes
+      for (let i = 0; i < 50 && session.state === "running"; i++) await new Promise((r) => setTimeout(r, 20));
+    }
     let worktree: Removable | undefined;
-    if (options.removeWorktree && session.worktreePath) {
-      await exited;
+    if (options.removeWorktree) {
       const repo = this.deps.getConfig().repos.find((r) => r.id === session.repoId);
       worktree = repo ? await removeWorktree(repo.path, session.worktreePath) : { removable: false, reason: "the repository is no longer configured" };
-      await this.record(session, { kind: worktree.removable ? "state" : "error", text: worktree.removable ? "worktree removed" : `worktree kept: ${worktree.reason}`, state: "closed" });
     }
-    await this.pump();
     return { session, worktree };
   }
 
-  async worktreeStatus(id: string): Promise<Removable> {
-    const session = this.get(id);
-    if (!session.worktreePath) return { removable: false, reason: "the session has no worktree yet" };
-    return checkWorktreeRemovable(session.worktreePath);
-  }
-
-  async cancel(id: string): Promise<Session> {
-    const session = this.get(id);
-    if (!OPEN_SESSION_STATES.includes(session.state)) throw new SessionError(409, `the session is ${session.state}`);
-    const live = this.liveOf(session);
-    live.pending = [];
-    live.expectExit = true;
-    clearTimeout(live.idleTimer);
-    clearTimeout(live.stopTimer);
-    live.proc?.kill();
-    await this.setState(session, "cancelled");
-    await this.pump();
-    return session;
+  worktreeStatus(id: string): Promise<Removable> {
+    return checkWorktreeRemovable(this.get(id).worktreePath);
   }
 
   async remove(id: string): Promise<void> {
     const session = this.get(id);
-    if (OPEN_SESSION_STATES.includes(session.state)) throw new SessionError(409, "close or cancel the session first");
+    if (session.state === "running") throw new SessionError(409, "close the session first");
     await this.store.delete(id);
     this.sessions.delete(id);
     this.live.delete(id);
-    this.listeners.delete(id);
   }
 
-  /** Dashboard shutdown: stop every child; work in flight is marked interrupted and can be resumed. */
+  /** Dashboard shutdown: terminals cannot outlive it, so every agent is ended and its output tail kept. */
   async shutdown(): Promise<void> {
-    for (const session of this.list()) {
-      const live = this.live.get(session.id);
-      if (live) {
-        live.expectExit = true;
-        clearTimeout(live.idleTimer);
-        clearTimeout(live.stopTimer);
-        live.proc?.kill();
-      }
-      if (session.state === "running" || session.state === "queued") await this.setState(session, "interrupted");
-    }
-  }
-
-  private async fail(session: Session, failure: SessionFailure, message: string): Promise<void> {
-    const live = this.liveOf(session);
-    live.pending = [];
-    live.expectExit = true;
-    clearTimeout(live.idleTimer);
-    live.proc?.kill();
-    session.failure = failure;
-    session.error = message;
-    await this.record(session, { kind: "error", text: message });
-    await this.setState(session, "failed");
-    await this.pump();
-  }
-
-  private async setState(session: Session, state: SessionState): Promise<void> {
-    if (session.state === state) return this.touch(session);
-    session.state = state;
-    await this.record(session, { kind: "state", state });
+    await Promise.all(
+      this.list()
+        .filter((s) => s.state === "running")
+        .map(async (session) => {
+          const live = this.live.get(session.id);
+          const proc = live?.proc;
+          if (live) live.proc = undefined; // the exit handler must not overwrite the reason
+          proc?.kill();
+          await this.end(session, null, "the dashboard was stopped while this session was running");
+        }),
+    );
   }
 
   private async touch(session: Session): Promise<void> {
     session.updatedAt = new Date().toISOString();
     await this.store.saveMeta(session);
-  }
-
-  private async record(session: Session, partial: Omit<SessionEvent, "seq" | "at">): Promise<void> {
-    const event: SessionEvent = { seq: ++session.lastSeq, at: new Date().toISOString(), ...partial };
-    await this.store.append(session.id, event);
-    await this.touch(session);
-    for (const listener of this.listeners.get(session.id) ?? []) listener(event);
   }
 }

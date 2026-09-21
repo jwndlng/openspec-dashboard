@@ -65,3 +65,8 @@ export function onRouteChange(listener: () => void): () => void {
     removeEventListener("hashchange", listener);
   };
 }
+
+/** `ws://host` (or `wss://`) of the page, for the dashboard's own WebSocket endpoints. */
+export function socketOrigin(loc: Pick<Location, "protocol" | "host"> = location): string {
+  return `${loc.protocol === "https:" ? "wss" : "ws"}://${loc.host}`;
+}

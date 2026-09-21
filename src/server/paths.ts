@@ -10,9 +10,14 @@ export function configPath(): string {
   return join(dashboardHome(), "config.json");
 }
 
-/** Agent session records (metadata + transcript); never inside a repository. */
+/** Agent session records (metadata and the stored tail of terminal output); never inside a repository. */
 export function sessionsDir(): string {
   return join(dashboardHome(), "sessions");
+}
+
+/** Session worktrees live in the dashboard home, so tracked repositories never see an untracked directory. */
+export function worktreesDir(): string {
+  return join(dashboardHome(), "worktrees");
 }
 
 export function sharedConfigPath(): string {

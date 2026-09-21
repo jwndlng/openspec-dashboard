@@ -2,9 +2,9 @@
 // card shows (starter buttons, or a badge that opens the session panel).
 import { createContext, type ComponentChildren } from "preact";
 import { useCallback, useContext, useEffect, useMemo, useState } from "preact/hooks";
-import { availableActions, type AgentAvailability, type ChangeSnapshot, type Config, type Session, type SessionAction } from "../shared/types.ts";
+import type { AgentAvailability, ChangeSnapshot, Config, Session, SessionAction } from "../shared/types.ts";
 import { api } from "./api.ts";
-import { searchWithSession, sessionBadge, sessionForChange, sessionIdFromSearch, sessionsEnabledFor } from "./sessionState.ts";
+import { agentForRepo, searchWithSession, sessionBadge, sessionForChange, sessionIdFromSearch, sessionsEnabledFor, startersFor } from "./sessionState.ts";
 import { currentQuery, replaceQuery } from "./url.ts";
 
 const POLL_MS = 3000;
@@ -12,7 +12,7 @@ const POLL_MS = 3000;
 interface SessionUi {
   config: Config | null;
   sessions: Session[];
-  agent?: AgentAvailability;
+  agents: AgentAvailability[];
   panelId?: string;
   error?: string;
   openPanel(id: string | undefined): void;
@@ -21,14 +21,14 @@ interface SessionUi {
 }
 
 const noop = async () => {};
-const Context = createContext<SessionUi>({ config: null, sessions: [], openPanel: () => {}, start: noop, refresh: noop });
+const Context = createContext<SessionUi>({ config: null, sessions: [], agents: [], openPanel: () => {}, start: noop, refresh: noop });
 
 export const useSessionUi = () => useContext(Context);
 
 export function SessionProvider({ config, children }: { config: Config | null; children: ComponentChildren }) {
   const enabled = config?.agentSessions.enabled === true;
   const [sessions, setSessions] = useState<Session[]>([]);
-  const [agent, setAgent] = useState<AgentAvailability>();
+  const [agents, setAgents] = useState<AgentAvailability[]>([]);
   const [error, setError] = useState<string>();
   const [panelId, setPanelId] = useState<string | undefined>(() => sessionIdFromSearch(currentQuery()));
 
@@ -36,7 +36,7 @@ export function SessionProvider({ config, children }: { config: Config | null; c
     try {
       const result = await api.sessions();
       setSessions(result.sessions);
-      setAgent(result.agent);
+      setAgents(result.agents);
       setError(undefined);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -68,15 +68,15 @@ export function SessionProvider({ config, children }: { config: Config | null; c
     [refresh, openPanel],
   );
 
-  const value = useMemo(() => ({ config, sessions, agent, panelId, error, openPanel, start, refresh }), [config, sessions, agent, panelId, error, openPanel, start, refresh]);
+  const value = useMemo(() => ({ config, sessions, agents, panelId, error, openPanel, start, refresh }), [config, sessions, agents, panelId, error, openPanel, start, refresh]);
   return <Context.Provider value={value}>{children}</Context.Provider>;
 }
 
 const STARTER_LABEL: Record<SessionAction, string> = { draft: "Draft artifacts", implement: "Implement", archive: "Archive" };
 const STARTER_HINT: Record<SessionAction, string> = {
-  draft: "Open an agent session that writes this change's missing artifacts",
-  implement: "Open an agent session that implements this change's tasks",
-  archive: "Open an agent session that archives this completed change and syncs its specs",
+  draft: "Start an agent in a terminal to write this change's missing artifacts",
+  implement: "Start an agent in a terminal to implement this change's tasks",
+  archive: "Start an agent in a terminal to archive this completed change",
 };
 
 /** Rendered inside a card. Shows nothing at all unless the feature is on and the card's repository has not been switched off. */
@@ -95,9 +95,11 @@ export function SessionControls({ card }: { card: Pick<ChangeSnapshot, "repoId" 
     );
   }
 
-  const actions = availableActions(card);
+  const actions = startersFor(ui.config, card);
   if (actions.length === 0) return null;
-  const unavailable = ui.agent && !ui.agent.available ? ui.agent.reason : undefined;
+  const agent = agentForRepo(ui.config, card.repoId);
+  const found = ui.agents.find((a) => a.id === agent?.id);
+  const unavailable = found && !found.available ? `${found.name} was not found on this machine — check its command in Settings` : undefined;
   return (
     <>
       {actions.map((action) => (
@@ -105,7 +107,7 @@ export function SessionControls({ card }: { card: Pick<ChangeSnapshot, "repoId" 
           type="button"
           class="btn sm session-start"
           key={action}
-          title={unavailable ?? STARTER_HINT[action]}
+          title={unavailable ?? `${STARTER_HINT[action]} (${agent?.name})`}
           disabled={Boolean(unavailable) || starting !== undefined}
           onClick={async () => {
             setStarting(action);
