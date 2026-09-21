@@ -235,10 +235,13 @@ export function Settings({ config, snapshot, onSaved, onRescan }: Props) {
 
   return (
     <>
-      <div class="settings-layout">
-        <SettingsNav sections={sections} current={nav.current} onJump={nav.jump} />
-        <div class="settings" ref={scroller}>
-          <SettingsSections sections={sections} />
+      {/* One scroll area for the whole page: the navigation moves with the sections, and the wheel works anywhere. */}
+      <div class="settings-scroll" ref={scroller}>
+        <div class="settings-layout">
+          <SettingsNav sections={sections} current={nav.current} onJump={nav.jump} />
+          <div class="settings">
+            <SettingsSections sections={sections} />
+          </div>
         </div>
       </div>
       <div class="savebar">

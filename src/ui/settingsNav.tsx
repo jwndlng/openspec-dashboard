@@ -1,7 +1,7 @@
 // Section navigation of the Settings page: jump links, the "which section is in view" marker and ?section= deep links.
 import type { ComponentChildren, RefObject } from "preact";
 import { useEffect, useRef, useState } from "preact/hooks";
-import { currentSection, SECTION_IDS, serializeSection } from "./settingsSections.ts";
+import { currentSection, rowScrollLeft, SECTION_IDS, serializeSection } from "./settingsSections.ts";
 import { currentQuery, hrefWithQuery, replaceQuery } from "./url.ts";
 
 export interface SettingsSection {
@@ -109,9 +109,12 @@ function isPlainClick(e: MouseEvent): boolean {
 export function SettingsNav({ sections, current, onJump }: { sections: SettingsSection[]; current: string | undefined; onJump: (id: string) => void }) {
   const list = useRef<HTMLUListElement>(null);
 
-  // In the narrow-screen row the current entry may be off to the side.
+  // In the narrow-screen row the current entry may be off to the side. Only ever scroll the row itself: the navigation
+  // moves with the page, and revealing the entry any other way would pull the page back up to it.
   useEffect(() => {
-    list.current?.querySelector('[aria-current="true"]')?.scrollIntoView({ block: "nearest", inline: "nearest" });
+    const row = list.current;
+    const entry = row?.querySelector<HTMLElement>('[aria-current="true"]')?.parentElement;
+    if (row && entry) row.scrollLeft = rowScrollLeft(row, { offsetLeft: entry.offsetLeft - row.offsetLeft, offsetWidth: entry.offsetWidth });
   }, [current]);
 
   return (
