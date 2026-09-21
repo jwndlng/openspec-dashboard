@@ -1,4 +1,5 @@
-import type { PullResult, ShipResult, WorkStatus } from "../shared/types.ts";
+import type { ActivityQuery } from "../shared/activity.ts";
+import type { ActivityPage, PullResult, ShipResult, WorkStatus } from "../shared/types.ts";
 import type { AgentAvailability, ArtifactFileContent, ChangeArtifacts, Config, DiscoverResult, ScanTriggerResult, Session, SessionAction, SessionWorktree, SharedConfig, SharedConfigApplyResult, SharedConfigAssignment, SharedConfigPreview, Snapshot } from "../shared/types.ts";
 import { socketOrigin } from "./url.ts";
 
@@ -32,6 +33,8 @@ export interface Api {
   changeArtifacts(repoId: string, change: string): Promise<ChangeArtifacts>;
   /** Read-only: one file of a change. `ApiError` 400 for a bad path, 404 when it is not a file of the change, 413 when too large. */
   artifactFile(repoId: string, change: string, path: string): Promise<ArtifactFileContent>;
+  /** What the dashboard observed, newest first. Read-only history; nothing else depends on it. */
+  activity(query?: ActivityQuery): Promise<ActivityPage>;
   config(): Promise<Config>;
   saveConfig(config: Config): Promise<Config>;
   /** Read-only; pass the draft roots and ignore paths to discover against unsaved edits. */
@@ -96,10 +99,22 @@ export interface TerminalConnection {
   close(): void;
 }
 
+export function activityQueryString(query: ActivityQuery): string {
+  const params = new URLSearchParams();
+  if (query.limit !== undefined) params.set("limit", String(query.limit));
+  if (query.before) params.set("before", query.before);
+  if (query.repos?.length) params.set("repos", query.repos.join(","));
+  if (query.kinds?.length) params.set("kinds", query.kinds.join(","));
+  if (query.since !== undefined) params.set("since", query.since);
+  const text = params.toString();
+  return text ? `?${text}` : "";
+}
+
 export const httpApi: Api = {
   state: () => call<Snapshot>("/api/state"),
   changeArtifacts: (repoId, change) => call<ChangeArtifacts>(`/api/repos/${encodeURIComponent(repoId)}/changes/${encodeURIComponent(change)}/artifacts`),
   artifactFile: (repoId, change, path) => call<ArtifactFileContent>(`/api/repos/${encodeURIComponent(repoId)}/changes/${encodeURIComponent(change)}/file?path=${encodeURIComponent(path)}`),
+  activity: (query = {}) => call<ActivityPage>(`/api/activity${activityQueryString(query)}`),
   config: () => call<Config>("/api/config"),
   saveConfig: (config) => call<Config>("/api/config", { method: "PUT", body: JSON.stringify(config) }),
   discover: (scanRoots, ignorePaths) =>
@@ -155,6 +170,7 @@ export const api: Api = {
   state: () => current.state(),
   changeArtifacts: (...args) => current.changeArtifacts(...args),
   artifactFile: (...args) => current.artifactFile(...args),
+  activity: (query) => current.activity(query),
   config: () => current.config(),
   saveConfig: (config) => current.saveConfig(config),
   discover: (scanRoots, ignorePaths) => current.discover(scanRoots, ignorePaths),

@@ -2,6 +2,7 @@
 export type Route =
   | { view: "overview" }
   | { view: "board" }
+  | { view: "activity" }
   | { view: "repo"; repoId: string }
   | { view: "change"; repoId: string; changeName: string }
   | { view: "settings" };
@@ -10,6 +11,7 @@ export function routeFromPath(pathname: string): Route {
   const path = pathname.replace(/\/+$/, "");
   if (path === "/settings") return { view: "settings" };
   if (path === "/board") return { view: "board" };
+  if (path === "/activity") return { view: "activity" };
   try {
     const change = /^\/repo\/([^/]+)\/change\/([^/]+)$/.exec(path);
     if (change) return { view: "change", repoId: decodeURIComponent(change[1]), changeName: decodeURIComponent(change[2]) };

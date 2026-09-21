@@ -371,6 +371,76 @@ export interface ArtifactFileContent {
   text: string;
 }
 
+// ---- Activity feed (openspec/specs/activity-feed) ----
+
+interface ActivityBase {
+  /** Format version of a log entry. */
+  v: 1;
+  /** Unique and sortable: later events have greater ids. */
+  id: string;
+  /** When it happened as far as the dashboard can tell (see `diffSnapshots`), ISO. */
+  at: string;
+  /** When the dashboard noticed, ISO. */
+  detectedAt: string;
+  repoId: string;
+  /** The repository's name at that time, so entries of repositories that are no longer tracked stay readable. */
+  repoName: string;
+  /** Noticed on the first scan after the dashboard had not been running for a while. */
+  catchUp?: boolean;
+}
+
+export type ActivityEvent = ActivityBase &
+  (
+    | { kind: "change-created"; change: string; to: string; tasks?: TaskProgress }
+    | { kind: "change-moved"; change: string; from: string; to: string; tasks?: TaskProgress }
+    | { kind: "tasks-progress"; change: string; column: string; from: TaskProgress; to: TaskProgress }
+    | { kind: "change-archived"; change: string; from?: string }
+    | { kind: "change-removed"; change: string; from: string }
+    | { kind: "repo-tracked"; openChanges: number }
+    | { kind: "repo-untracked" }
+    | { kind: "repo-failing"; error: string }
+    | { kind: "repo-recovered" }
+    | { kind: "session-started"; change: string; action: string; agentName: string; resumed?: boolean }
+    | { kind: "session-ended"; change: string; exitCode?: number; error?: string }
+    | { kind: "session-shipped"; change: string; submitted?: boolean }
+  );
+
+export type ActivityKind = ActivityEvent["kind"];
+
+export const ACTIVITY_KINDS: readonly ActivityKind[] = [
+  "change-created",
+  "change-moved",
+  "tasks-progress",
+  "change-archived",
+  "change-removed",
+  "repo-tracked",
+  "repo-untracked",
+  "repo-failing",
+  "repo-recovered",
+  "session-started",
+  "session-ended",
+  "session-shipped",
+];
+
+/** The filter groups of the Activity view. */
+export const ACTIVITY_GROUPS: Readonly<Record<"changes" | "tasks" | "sessions" | "repositories", readonly ActivityKind[]>> = {
+  changes: ["change-created", "change-moved", "change-archived", "change-removed"],
+  tasks: ["tasks-progress"],
+  sessions: ["session-started", "session-ended", "session-shipped"],
+  repositories: ["repo-tracked", "repo-untracked", "repo-failing", "repo-recovered"],
+};
+
+export interface ActivityPage {
+  /** Newest first; consecutive task progress of one change is already collapsed. */
+  events: ActivityEvent[];
+  /** Pass as `before` to get older events; absent when there are none. */
+  nextBefore?: string;
+  /** The newest recorded event, whatever the filters; absent when nothing is recorded. */
+  newestId?: string;
+  /** Only when the request named `since`: how many recorded events are newer than that one, whatever the filters. */
+  newerThanSince?: number;
+}
+
 /**
  * What the pull action did for one repository. The fetch and the update of the main checkout are reported separately:
  * the fetch is always safe, the update only happens when it is an unambiguous fast-forward on the default branch.

@@ -7,6 +7,7 @@ import { availableActions, OPEN_SESSION_STATES, repoAgentEnabled, SESSION_ACTION
 import { worktreesDir } from "../paths.ts";
 import { CHANGE_NAME } from "../source.ts";
 import { agentEnv, agentFor, availability, launchCommand, openingPrompt, shipPrompt } from "./agents.ts";
+import type { SessionActivity } from "../activity/events.ts";
 import { SessionStore } from "./store.ts";
 import { submitText, validSubmission, type SubmitOptions } from "./submit.ts";
 import { spawnTerminal, type TerminalProcess } from "./terminal.ts";
@@ -81,6 +82,8 @@ export interface ManagerDeps {
   typePromptDelayMs?: number;
   /** Test seam for how long a submission waits for its echo and before Enter. */
   submitTimings?: SubmitOptions;
+  /** Told when a session starts, ends or ships, for the activity feed. Never consulted for any decision. */
+  onActivity?: (session: Session, activity: SessionActivity) => void;
 }
 
 export class SessionManager {
@@ -178,6 +181,7 @@ export class SessionManager {
     await this.store.saveMeta(session);
     const launch = launchCommand(agent, prompt);
     this.start(session, launch.argv, agentEnv(agent, process.env), launch.typed);
+    if (session.state === "running") this.report(session, { kind: "session-started", action, agentName: session.agentName });
     for (const removed of await this.store.prune(this.list())) this.sessions.delete(removed);
     return session;
   }
@@ -229,6 +233,7 @@ export class SessionManager {
     session.error = undefined;
     await this.touch(session);
     this.start(session, argv, env, typed);
+    if (session.state === "running") this.report(session, { kind: "session-started", action: session.action, agentName: session.agentName, resumed: true });
   }
 
   /**
@@ -246,11 +251,13 @@ export class SessionManager {
     const proc = this.live.get(id)?.proc;
     if (session.state === "running" && proc) {
       const { submitted } = await this.submit(id, prompt);
+      this.report(session, { kind: "session-shipped", submitted });
       return { ...session, submitted };
     }
     const launch = agent.resumeCommand ? { argv: [...agent.resumeCommand], typed: prompt } : launchCommand(agent, prompt);
     if (!Bun.which(launch.argv[0])) throw new SessionError(503, `${agent.name} was not found (${launch.argv[0]})`);
     await this.restart(session, repo.path, launch.argv, agentEnv(agent, process.env), launch.typed);
+    this.report(session, { kind: "session-shipped", submitted: true });
     // Handed to a starting agent (as its argument, or submitted once it has started); the terminal shows how that went.
     return { ...session, submitted: true };
   }
@@ -318,6 +325,7 @@ export class SessionManager {
       session.state = "failed";
       session.error = `could not start the agent: ${err instanceof Error ? err.message : String(err)}`;
       this.touchLater(session);
+      this.report(session, { kind: "session-ended", error: session.error });
       return;
     }
     live.proc = proc;
@@ -352,7 +360,16 @@ export class SessionManager {
     const live = this.live.get(session.id);
     if (live) await this.store.saveOutput(session.id, live.scrollback.bytes()).catch(() => undefined);
     await this.touch(session);
+    this.report(session, { kind: "session-ended", ...(exitCode === null ? {} : { exitCode }), ...(error ? { error } : {}) });
     for (const viewer of live?.viewers ?? []) viewer(new Uint8Array()); // an empty chunk tells viewers the process ended
+  }
+
+  private report(session: Session, activity: SessionActivity): void {
+    try {
+      this.deps.onActivity?.(session, activity);
+    } catch {
+      // the feed is history only; it must never get in a session's way
+    }
   }
 
   /**

@@ -266,6 +266,8 @@ export interface ScannerOptions {
   /** Test seam; defaults to the shared config stored in the dashboard home. */
   sharedConfig?: () => Promise<SharedConfig | undefined>;
   persist?: boolean;
+  /** Called after every completed scan with the snapshot that was current before it and the new one. */
+  onSnapshots?: (previous: Snapshot, next: Snapshot) => void;
 }
 
 /** Owns the current snapshot and the polling schedule (design.md D4). */
@@ -348,7 +350,13 @@ export class Scanner {
     };
     await Promise.all(Array.from({ length: Math.min(concurrency, repos.length) }, worker));
 
+    const before = this.snapshot;
     this.snapshot = { generatedAt: new Date().toISOString(), repos: results };
+    try {
+      this.options.onSnapshots?.(before, this.snapshot);
+    } catch (err) {
+      console.warn("activity could not be recorded:", err); // history is never a reason to fail a scan
+    }
     if (this.options.persist !== false) {
       await writeSnapshot(this.snapshot).catch((err) => console.warn("could not write snapshot cache:", err));
     }
