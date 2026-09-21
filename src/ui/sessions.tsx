@@ -108,14 +108,18 @@ export function SessionProvider({ config, snapshot = null, children }: { config:
       try {
         const into = nextStepFor(sessions, repoId, change, action).promptSessionId;
         const session = into ? await api.promptSession(into, action) : await api.openSession(repoId, change, action);
-        if (into) setFocusTick((t) => ({ id: into, tick: t.tick + 1 }));
+        if (into) {
+          // Sent under the rules for text sent on the user's behalf: say so when the agent never showed it.
+          reportUnsent("submitted" in session && !session.submitted ? into : undefined);
+          setFocusTick((t) => ({ id: into, tick: t.tick + 1 }));
+        }
         await refresh();
         openPanel(session.id);
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err));
       }
     },
-    [refresh, openPanel, sessions],
+    [refresh, openPanel, sessions, reportUnsent],
   );
 
   const value = useMemo(() => ({ config, snapshot, sessions, agents, worktrees, shown, hidePane, focusPane, panelId, endingId, focusTick, unsentId, reportUnsent, requestEnd, error, openPanel, start, refresh }), [config, snapshot, sessions, agents, worktrees, shown, hidePane, focusPane, panelId, endingId, focusTick, unsentId, error, openPanel, start, refresh]);
@@ -279,7 +283,7 @@ export function SessionControls({ card }: { card: Pick<ChangeSnapshot, "repoId" 
       ))}
       {worktree && <WorkBadge worktree={worktree} />}
       {startersFor(ui.config, card).map((action) => {
-        // The change's running session takes the next step as typed input; only archiving always starts its own.
+        // The change's running session is sent the next step; only archiving always starts its own.
         const step = nextStepFor(ui.sessions, card.repoId, card.name, action);
         if (step.blocked) return null;
         const intoRunning = step.promptSessionId !== undefined;
@@ -289,7 +293,7 @@ export function SessionControls({ card }: { card: Pick<ChangeSnapshot, "repoId" 
             type="button"
             class="btn sm session-start"
             key={action}
-            title={blockedBy ?? (intoRunning ? `Types the “${STARTER_LABEL[action]}” prompt into the running session — press Enter there to send it` : `${STARTER_HINT[action]} (${agent?.name})`)}
+            title={blockedBy ?? (intoRunning ? `Sends the “${STARTER_LABEL[action]}” prompt to the running session` : `${STARTER_HINT[action]} (${agent?.name})`)}
             disabled={Boolean(blockedBy) || starting !== undefined}
             onClick={async () => {
               setStarting(action);

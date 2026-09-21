@@ -1,9 +1,22 @@
 // Repository grouping and colours for the board (group-changes-by-repo design D2, D5).
 // Pure helpers: a repository contributes a hue only; the theme supplies lightness and chroma in CSS.
 
-const SLOTS = 24;
-const SLOT_DEGREES = 360 / SLOTS;
-/** Coprime with SLOTS, so probing reaches every slot and lands a displaced repo ~105° away. */
+/**
+ * The hues a repository may be painted in. Not a wheel: the status roles own six hues of their own
+ * (danger, branch, warning, success, the brand accent, info — see the token block in styles.css), and a
+ * repository must never wear one of them, or its accent would read as "running" or "uncommitted". These 19 are
+ * as many as the circle holds once each of those hues is given a ±12° berth and they keep 12° from each other
+ * too — the arcs left over simply do not fit a twentieth. test/repoContrast.test.ts recomputes both properties
+ * from the tokens rather than trusting this comment, so a retuned status colour fails there instead of quietly
+ * colliding.
+ */
+export const REPO_HUES = [27, 39, 70, 105, 117, 129, 141, 178, 207, 219, 231, 243, 277, 289, 301, 313, 325, 337, 349];
+
+/** The berth every repository hue keeps from every status hue, and from its neighbours, in degrees. */
+export const MIN_HUE_GAP = 12;
+
+const SLOTS = REPO_HUES.length;
+/** Coprime with SLOTS, so probing reaches every slot and lands a displaced repo far from its first choice. */
 const PROBE_STRIDE = 7;
 
 function fnv1a(text: string): number {
@@ -16,8 +29,8 @@ function fnv1a(text: string): number {
 }
 
 /**
- * Assign every repository id a hue (0–345, multiples of 15). Deterministic for a given set of ids,
- * distinct for up to 24 ids. Pass all snapshot repositories, not the filtered ones, so filters never change a colour.
+ * Assign every repository id one of `REPO_HUES`. Deterministic for a given set of ids, distinct for up to 19 ids.
+ * Pass all snapshot repositories, not the filtered ones, so filters never change a colour.
  */
 export function assignRepoHues(ids: string[]): Map<string, number> {
   const hues = new Map<string, number>();
@@ -29,7 +42,7 @@ export function assignRepoHues(ids: string[]): Map<string, number> {
       while (taken.has(slot)) slot = (slot + PROBE_STRIDE) % SLOTS;
       taken.add(slot);
     }
-    hues.set(id, slot * SLOT_DEGREES);
+    hues.set(id, REPO_HUES[slot]);
   }
   return hues;
 }
@@ -56,4 +69,13 @@ export function groupByRepo<T extends { repoId: string; repoName: string }>(card
   return [...groups.values()].sort(
     (a, b) => a.repoName.localeCompare(b.repoName, undefined, { sensitivity: "base" }) || a.repoId.localeCompare(b.repoId),
   );
+}
+
+/**
+ * Tint props for an element that stands for a repository: the `repo-tint` class and the hue the theme turns into a
+ * colour. A repository with no hue — one that is not in the snapshot — is left untinted.
+ */
+export function repoTint(hues: Map<string, number>, repoId: string): { class: string; style?: Record<string, string> } {
+  const hue = hues.get(repoId);
+  return hue === undefined ? { class: "" } : { class: "repo-tint", style: { "--repo-hue": String(hue) } };
 }

@@ -301,7 +301,7 @@ export function Settings({ config, snapshot, onSaved, onRescan }: Props) {
         <button type="button" class="btn primary" onClick={save} disabled={!dirty || saving}>
           {saving ? "Saving…" : "Save"}
         </button>
-        {dirty && <span class="badge warn">unsaved changes</span>}
+        {dirty && <span class="badge warning">unsaved changes</span>}
         {message && (
           <span class={`notice ${message.kind}`}>
             {message.text}

@@ -1,5 +1,5 @@
 import type { ActivityQuery } from "../shared/activity.ts";
-import type { ActivityPage, PullResult, ShipResult, WorkStatus } from "../shared/types.ts";
+import type { ActivityPage, PromptResult, PullResult, ShipResult, WorkStatus } from "../shared/types.ts";
 import type { AgentAvailability, ArtifactFileContent, ChangeArtifacts, Config, DiscoverResult, ScanTriggerResult, Session, SessionAction, SessionWorktree, SharedConfig, SharedConfigApplyResult, SharedConfigAssignment, SharedConfigPreview, Snapshot } from "../shared/types.ts";
 import { socketOrigin } from "./url.ts";
 
@@ -72,8 +72,8 @@ export interface Api {
   deleteSession(id: string): Promise<{ deleted: boolean }>;
   /** Whether the worktree could be removed, and its work status read at this moment (not from the list's cache). */
   worktreeStatus(id: string): Promise<{ removable: boolean; reason?: string; work?: WorkStatus }>;
-  /** Types a starter's prompt into the running session's terminal; Enter stays with the user. */
-  promptSession(id: string, action: SessionAction): Promise<Session>;
+  /** Sends a starter's prompt to the running session's terminal, under the rules for text sent on the user's behalf. */
+  promptSession(id: string, action: SessionAction): Promise<PromptResult>;
   /**
    * The byte stream of a session's terminal. Part of this interface — not a WebSocket opened by the view — so that a
    * backend without a server (the demo) can stand in for it.
@@ -141,7 +141,7 @@ export const httpApi: Api = {
   closeSession: (id, removeWorktree) => call(`/api/sessions/${id}/close`, { method: "POST", body: JSON.stringify({ removeWorktree }) }),
   deleteSession: (id) => call<{ deleted: boolean }>(`/api/sessions/${id}`, { method: "DELETE" }),
   worktreeStatus: (id) => call<{ removable: boolean; reason?: string; work?: WorkStatus }>(`/api/sessions/${id}/worktree`),
-  promptSession: (id, action) => call<Session>(`/api/sessions/${id}/prompt`, { method: "POST", body: JSON.stringify({ action }) }),
+  promptSession: (id, action) => call<PromptResult>(`/api/sessions/${id}/prompt`, { method: "POST", body: JSON.stringify({ action }) }),
   openTerminal: (id, handlers) => {
     const socket = new WebSocket(terminalSocketUrl(id));
     socket.binaryType = "arraybuffer";

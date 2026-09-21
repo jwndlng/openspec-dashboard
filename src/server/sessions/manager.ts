@@ -3,7 +3,7 @@
 // fans output out to attached terminals and takes their input. It does not interpret what the agent prints.
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
-import { availableActions, OPEN_SESSION_STATES, repoAgentEnabled, SESSION_ACTIONS, SHIPPABLE_WORK, type AgentAvailability, type Config, type Session, type SessionAction, type SessionWorktree, type Snapshot, type WorkStatus, type ShipResult } from "../../shared/types.ts";
+import { availableActions, OPEN_SESSION_STATES, repoAgentEnabled, SESSION_ACTIONS, SHIPPABLE_WORK, type AgentAvailability, type Config, type Session, type SessionAction, type SessionWorktree, type Snapshot, type WorkStatus, type PromptResult, type ShipResult } from "../../shared/types.ts";
 import { worktreesDir } from "../paths.ts";
 import { CHANGE_NAME } from "../source.ts";
 import { agentEnv, agentFor, availability, launchCommand, openingPrompt, shipPrompt } from "./agents.ts";
@@ -263,11 +263,12 @@ export class SessionManager {
   }
 
   /**
-   * The next step of a change, in the session that is already running for it: the starter's prompt is typed into the
-   * terminal. Never Enter — a terminal cannot tell us whether the agent shows a prompt or a menu, and in a menu Enter
-   * would confirm whatever is highlighted. Archive is not typed here: it belongs in its own worktree.
+   * The next step of a change, in the session that is already running for it: the starter's prompt is submitted to the
+   * terminal under the rules for text sent on the user's behalf — typed, then Enter as a separate key press only once
+   * the agent has shown the text, so a selection menu is never confirmed. Archive is not sent here: it belongs in its
+   * own worktree.
    */
-  prompt(id: string, input: { action?: unknown }): Session {
+  async prompt(id: string, input: { action?: unknown }): Promise<PromptResult> {
     const session = this.get(id);
     const config = this.deps.getConfig();
     if (!config.agentSessions.enabled) throw new SessionError(403, "agent sessions are disabled");
@@ -285,10 +286,11 @@ export class SessionManager {
     const agent = config.agentSessions.agents.find((a) => a.id === session.agentId);
     const text = agent && openingPrompt(agent, action, session.change);
     if (!text) throw new SessionError(400, `${session.agentName} has no "${action}" prompt configured`);
-    proc.write(text);
+    // The recorded action is what the user asked for, whether or not the agent's terminal echoed the prompt in time.
     session.action = action;
     this.touchLater(session);
-    return session;
+    const { submitted } = await this.submit(id, text);
+    return { ...session, submitted };
   }
 
   /** For worktrees whose session record is gone; the path is built here, never taken from the request. */

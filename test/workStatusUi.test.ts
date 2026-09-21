@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import type { Session, SessionWorktree, WorkStatus } from "../src/shared/types.ts";
-import { endSeverity, hideSession, searchWithShown, showSession, shownFromSearch, endWarning, nextStepFor, openWork, sessionsForChange, sessionTabs, staleAge, workBadge, worktreeForChange } from "../src/ui/sessionState.ts";
+import { endSeverity, hideSession, pullOffer, searchWithShown, showSession, shownFromSearch, endWarning, nextStepFor, openWork, sessionsForChange, sessionTabs, staleAge, workBadge, worktreeForChange } from "../src/ui/sessionState.ts";
 
 const NOW = Date.parse("2026-09-21T12:00:00Z");
 const ago = (hours: number) => new Date(NOW - hours * 3_600_000).toISOString();
@@ -19,9 +19,12 @@ const wt = (name: string, work: WorkStatus, hours = 1, patch: Partial<SessionWor
 const running = (id: string) => ({ id, state: "running" }) as Session;
 
 test("badges say what is left to do, in words", () => {
-  expect(workBadge(wt("a", { state: "uncommitted", count: 3 }), [], NOW)).toMatchObject({ label: "✎ 3 uncommitted", tone: "warn" });
+  // Everything short of merged is work in a branch, so it wears one role; merged is the one finished state.
+  expect(workBadge(wt("a", { state: "uncommitted", count: 3 }), [], NOW)).toMatchObject({ label: "✎ 3 uncommitted", tone: "branch" });
+  expect(workBadge(wt("a", { state: "unpushed", count: 1 }), [], NOW)).toMatchObject({ tone: "branch" });
   expect(workBadge(wt("a", { state: "unpushed", count: 1 }), [], NOW)?.title).toContain("1 commit exist");
-  expect(workBadge(wt("a", { state: "pushed", base: "origin/main" }), [], NOW)).toMatchObject({ label: "⇡ pushed", tone: "brand" });
+  expect(workBadge(wt("a", { state: "pushed", base: "origin/main" }), [], NOW)).toMatchObject({ label: "⇡ pushed", tone: "branch" });
+  expect(workBadge(wt("a", { state: "merged", base: "origin/main" }), [], NOW)).toMatchObject({ label: "✓ merged", tone: "success" });
   expect(workBadge(wt("a", { state: "merged", base: "origin/main" }), [], NOW)?.title).toContain("as of your last fetch");
   expect(workBadge(wt("a", { state: "clean" }), [], NOW)).toBeUndefined();
   expect(workBadge(wt("a", { state: "missing" }), [], NOW)).toBeUndefined();
@@ -33,6 +36,8 @@ test("open work goes stale after a day, pushed work after a week, and never whil
   expect(workBadge(wt("a", { state: "uncommitted", count: 2 }, 72), [], NOW)).toMatchObject({ label: "✎ 2 uncommitted · 3d", tone: "danger" });
   expect(staleAge(wt("a", { state: "pushed" }, 72), [], NOW)).toBeUndefined();
   expect(staleAge(wt("a", { state: "pushed" }, 8 * 24), [], NOW)).toBe("8d");
+  // A pushed branch may simply be waiting for review, so going stale only warns.
+  expect(workBadge(wt("a", { state: "pushed" }, 8 * 24), [], NOW)).toMatchObject({ label: "⇡ pushed · 8d", tone: "warning" });
   expect(staleAge(wt("a", { state: "merged" }, 900), [], NOW)).toBeUndefined();
   expect(staleAge(wt("a", { state: "unpushed", count: 1 }, 72, { sessionId: "s1" }), [running("s1")], NOW)).toBeUndefined();
 });
@@ -88,6 +93,20 @@ test("ending is questioned as loudly as the work is unshipped", () => {
   expect(endWarning({ state: "uncommitted", count: 3 })).toContain("3 uncommitted files exist only in this worktree");
   expect(endWarning({ state: "unpushed", count: 1 })).toContain("1 commit exists only on this machine");
   expect(endWarning({ state: "clean" })).toBeUndefined();
+});
+
+test("the pull is offered for a repository it can run in, and starts ticked only for merged work", () => {
+  const git = { isGit: true, ok: true };
+  expect(pullOffer(git, { state: "merged" })).toEqual({ offered: true, preselected: true });
+  // offered, but the user has to ask for it: the work is not known to have landed
+  for (const state of ["uncommitted", "unpushed", "pushed", "clean", "missing"] as const) {
+    expect(pullOffer(git, { state })).toEqual({ offered: true, preselected: false });
+  }
+  expect(pullOffer(git, undefined)).toEqual({ offered: true, preselected: false });
+  // nothing the pull action can run in
+  expect(pullOffer({ isGit: false, ok: true }, { state: "merged" })).toEqual({ offered: false, preselected: false });
+  expect(pullOffer({ isGit: true, ok: false }, { state: "merged" })).toEqual({ offered: false, preselected: false });
+  expect(pullOffer(undefined, { state: "merged" })).toEqual({ offered: false, preselected: false });
 });
 
 test("the dock shows at most three sessions: a fourth replaces the focused pane, shown ones are only focused", () => {

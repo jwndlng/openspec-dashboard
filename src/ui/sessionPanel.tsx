@@ -2,11 +2,12 @@
 // the agent shows and interprets none of it; keystrokes go straight to the agent, exactly as in a terminal window.
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
-import { useEffect, useRef, useState } from "preact/hooks";
+import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { SHIPPABLE_WORK, type SessionAction } from "../shared/types.ts";
 import { api, type TerminalMessage } from "./api.ts";
 import { cdCommand } from "./format.ts";
 import { DEFAULT_QUICK_REPLIES, NOT_SUBMITTED_NOTICE, replyHint, replyMessage, type QuickReply } from "./quickReplies.ts";
+import { assignRepoHues, repoTint } from "./repoGroups.ts";
 import {
   clampDockHeight,
   DOCK_DEFAULT_RATIO,
@@ -72,7 +73,7 @@ function TerminalView({ sessionId, running, onExit }: { sessionId: string; runni
   // A default response goes to the server as `submit`: typed, and sent with Enter only once the agent has shown it.
   // The server answers this socket with `submitted`; until then the clicked response stays inert.
   const pending = useRef<string[]>([]);
-  // Something was typed into this terminal on the user's behalf (a next step): hand them the keyboard for Enter.
+  // Text went into this terminal on the user's behalf (a next step): put the keyboard back where the agent is.
   const { focusTick, panelId, unsentId, reportUnsent } = useSessionUi();
   const wantsFocus = useRef(panelId === sessionId);
   wantsFocus.current = panelId === sessionId;
@@ -196,6 +197,8 @@ const STEP_LABEL: Record<SessionAction, string> = { draft: "Draft artifacts", im
 function SessionTabs() {
   const ui = useSessionUi();
   const tabs = sessionTabs(ui.sessions, ui.shown);
+  // The same colours as the board: derived from every repository in the snapshot, never from the filtered ones.
+  const hues = useMemo(() => assignRepoHues((ui.snapshot?.repos ?? []).map((r) => r.id)), [ui.snapshot]);
   const select = (index: number) => ui.openPanel(tabs[(index + tabs.length) % tabs.length].id);
   return (
     <div class="session-tabs" role="tablist" aria-label="Agent sessions">
@@ -204,6 +207,7 @@ function SessionTabs() {
         const shown = ui.shown.includes(tab.id);
         const focused = tab.id === ui.panelId;
         const repoName = ui.config?.repos.find((r) => r.id === tab.repoId)?.name ?? tab.repoId;
+        const tint = repoTint(hues, tab.repoId);
         return (
           <button
             type="button"
@@ -211,7 +215,8 @@ function SessionTabs() {
             key={tab.id}
             aria-selected={shown}
             tabIndex={focused || (ui.panelId === undefined && index === 0) ? 0 : -1}
-            class={`session-tab${shown ? " shown" : ""}${focused ? " active" : ""}`}
+            class={`session-tab${shown ? " shown" : ""}${focused ? " active" : ""}${tint.class ? ` ${tint.class}` : ""}`}
+            style={tint.style}
             title={`${repoName} · ${tab.change} · ${badge.title}${shown ? " · shown in the dock" : ui.shown.length >= MAX_SHOWN ? " · replaces the pane you are in" : ""}`}
             onClick={() => ui.openPanel(tab.id)}
             onKeyDown={(e) => {
@@ -222,7 +227,7 @@ function SessionTabs() {
             <span class="tab-mark" aria-hidden="true">
               {shown ? "▣" : "▢"}
             </span>
-            <span class="hint">{repoName}</span>
+            <span class="hint repo-name">{repoName}</span>
             <span class="mono">{tab.change}</span>
             <SessionBadgeView badge={badge} />
           </button>
@@ -458,7 +463,7 @@ function SessionPane({ id }: { id: string }) {
                 type="button"
                 class="btn sm session-start"
                 key={action}
-                title={`Types the “${STEP_LABEL[action]}” prompt into this terminal — press Enter to send it`}
+                title={`Sends the “${STEP_LABEL[action]}” prompt to this session’s agent`}
                 onClick={() => act(() => ui.start(session.repoId, session.change, action))}
               >
                 ↳ {STEP_LABEL[action]}

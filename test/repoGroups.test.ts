@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { assignRepoHues, groupByRepo, recentArchived } from "../src/ui/repoGroups.ts";
+import { assignRepoHues, groupByRepo, recentArchived, REPO_HUES, repoTint } from "../src/ui/repoGroups.ts";
 
 const ids = (n: number) => Array.from({ length: n }, (_, i) => `repo-${i.toString(16).padStart(4, "0")}`);
 
@@ -11,27 +11,23 @@ test("assignRepoHues is deterministic regardless of input order", () => {
   expect(assignRepoHues(list)).toEqual(forward);
 });
 
-test("assignRepoHues gives distinct hues for up to 24 repositories", () => {
-  for (const n of [17, 24]) {
+test("assignRepoHues gives distinct hues for up to 19 repositories", () => {
+  for (const n of [17, 19]) {
     const hues = [...assignRepoHues(ids(n)).values()];
     expect(hues).toHaveLength(n);
     expect(new Set(hues).size).toBe(n);
   }
 });
 
-test("assignRepoHues still colours every repository beyond 24", () => {
+test("assignRepoHues still colours every repository beyond 19", () => {
   const list = ids(30);
   const hues = assignRepoHues(list);
   expect(hues.size).toBe(30);
   for (const id of list) expect(hues.has(id)).toBe(true);
 });
 
-test("assignRepoHues only produces multiples of 15 within 0–345", () => {
-  for (const hue of assignRepoHues(ids(30)).values()) {
-    expect(hue % 15).toBe(0);
-    expect(hue).toBeGreaterThanOrEqual(0);
-    expect(hue).toBeLessThanOrEqual(345);
-  }
+test("assignRepoHues only hands out hues the status roles left free", () => {
+  for (const hue of assignRepoHues(ids(30)).values()) expect(REPO_HUES).toContain(hue);
 });
 
 test("assignRepoHues ignores duplicate ids and handles an empty set", () => {
@@ -79,4 +75,17 @@ test("recentArchived returns everything when under the bound and does not mutate
   expect(recentArchived(cards, 25).map((c) => c.name)).toEqual(["b", "a", "x"]);
   expect(cards).toEqual(before);
   expect(recentArchived([], 25)).toEqual([]);
+});
+
+test("repoTint gives a repository of the snapshot the board's own hue", () => {
+  const hues = assignRepoHues(ids(5));
+  for (const id of ids(5)) {
+    expect(repoTint(hues, id)).toEqual({ class: "repo-tint", style: { "--repo-hue": String(hues.get(id)) } });
+  }
+});
+
+test("repoTint leaves a repository outside the snapshot untinted", () => {
+  const hues = assignRepoHues(ids(3));
+  expect(repoTint(hues, "not-in-the-snapshot")).toEqual({ class: "" });
+  expect(repoTint(new Map(), ids(1)[0]).style).toBeUndefined();
 });

@@ -1,5 +1,5 @@
 // Pure helpers for the agent-session UI; free of DOM access at import time so they can be unit-tested.
-import { availableActions, repoAgentEnabled, SHIPPABLE_WORK, type AgentProfile, type ChangeSnapshot, type Config, type Session, type SessionAction, type SessionWorktree, type WorkStatus } from "../shared/types.ts";
+import { availableActions, repoAgentEnabled, SHIPPABLE_WORK, type AgentProfile, type ChangeSnapshot, type Config, type RepoSnapshot, type Session, type SessionAction, type SessionWorktree, type WorkStatus } from "../shared/types.ts";
 
 /** Session starters are shown when the feature is on, for every tracked repository that has not been switched off. */
 export function sessionsEnabledFor(config: Config | null, repoId: string): boolean {
@@ -64,6 +64,23 @@ export function endWarning(work: WorkStatus | undefined): string | undefined {
   return undefined;
 }
 
+export interface PullOffer {
+  /** Whether the end-session dialog offers to pull at all: only a repository the pull action can run in. */
+  offered: boolean;
+  /** Whether that offer starts ticked. Merged work is the case the offer exists for. */
+  preselected: boolean;
+}
+
+/**
+ * Ending a session is the moment the user knows the work landed, so the dialog offers to bring the main checkout —
+ * what archives, specs and progress are read from — up to date with it. Deliberately independent of whether the
+ * worktree can be removed: a worktree kept for a reason should still let the checkout catch up.
+ */
+export function pullOffer(repo: Pick<RepoSnapshot, "isGit" | "ok"> | undefined, work: Pick<WorkStatus, "state"> | undefined): PullOffer {
+  const offered = repo?.isGit === true && repo.ok === true;
+  return { offered, preselected: offered && work?.state === "merged" };
+}
+
 /** The one session a card stands for, where only one fits (see `sessionsForChange`). */
 export function sessionForChange(sessions: Session[], repoId: string, change: string): Session | undefined {
   return sessionsForChange(sessions, repoId, change)[0];
@@ -75,7 +92,7 @@ export interface SessionBadge {
   /** True only while an agent is visibly working: the one state that is shown with motion. */
   live?: boolean;
   label: string;
-  tone: "brand" | "warn" | "danger" | "";
+  tone: "info" | "branch" | "success" | "warning" | "danger" | "";
   title: string;
 }
 
@@ -89,8 +106,9 @@ export function sessionBadge(session: Session, now = Date.now()): SessionBadge {
   if (session.state === "running") {
     const last = session.lastOutputAt ? Date.parse(session.lastOutputAt) : Number.NaN;
     const quiet = Number.isNaN(last) ? 0 : now - last;
-    if (quiet > QUIET_AFTER_MS) return { icon: "◆", label: `quiet ${Math.floor(quiet / 60_000)}m`, tone: "warn", title: "the terminal has printed nothing for a while — the agent is probably waiting for you" };
-    return { icon: "●", label: "running", live: true, tone: "brand", title: `${session.agentName} is running in its terminal` };
+    // Both are the same thing — an agent that is up — so both wear the live role; the words and the motion separate them.
+    if (quiet > QUIET_AFTER_MS) return { icon: "◆", label: `quiet ${Math.floor(quiet / 60_000)}m`, tone: "info", title: "the terminal has printed nothing for a while — the agent is probably waiting for you" };
+    return { icon: "●", label: "running", live: true, tone: "info", title: `${session.agentName} is running in its terminal` };
   }
   if (session.state === "failed") return { icon: "⚠", label: "failed", tone: "danger", title: session.error ?? "the agent could not be started" };
   const code = session.exitCode;
@@ -114,16 +132,19 @@ export function staleAge(worktree: SessionWorktree, sessions: Session[], now = D
 
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
-/** Text plus colour, never colour alone. Nothing for `clean` and `missing`: there is nothing to say about them. */
+/**
+ * Text plus colour, never colour alone. Nothing for `clean` and `missing`: there is nothing to say about them.
+ * Everything short of merged is work in a branch, so it wears the branch role; stale overrides that with danger.
+ */
 export function workBadge(worktree: SessionWorktree, sessions: Session[], now = Date.now()): SessionBadge | undefined {
   const { state, count = 0, base } = worktree.work;
   const stale = staleAge(worktree, sessions, now);
   const tail = stale ? ` · ${stale}` : "";
   const waiting = stale ? ` — untouched for ${stale}` : "";
-  if (state === "uncommitted") return { label: `✎ ${count} uncommitted${tail}`, tone: stale ? "danger" : "warn", title: `${plural(count, "file")} in the worktree ${count === 1 ? "is" : "are"} not committed${waiting}` };
-  if (state === "unpushed") return { label: `↑ ${count} not pushed${tail}`, tone: stale ? "danger" : "warn", title: `${plural(count, "commit")} exist only on this machine${waiting}` };
-  if (state === "pushed") return { label: `⇡ pushed${tail}`, tone: stale ? "warn" : "brand", title: `pushed, but not in ${base ?? "the default branch"} as of your last fetch${waiting}` };
-  if (state === "merged") return { label: "✓ merged", tone: "", title: `merged into ${base ?? "the default branch"} as of your last fetch — the worktree can be removed` };
+  if (state === "uncommitted") return { label: `✎ ${count} uncommitted${tail}`, tone: stale ? "danger" : "branch", title: `${plural(count, "file")} in the worktree ${count === 1 ? "is" : "are"} not committed${waiting}` };
+  if (state === "unpushed") return { label: `↑ ${count} not pushed${tail}`, tone: stale ? "danger" : "branch", title: `${plural(count, "commit")} exist only on this machine${waiting}` };
+  if (state === "pushed") return { label: `⇡ pushed${tail}`, tone: stale ? "warning" : "branch", title: `pushed, but not in ${base ?? "the default branch"} as of your last fetch${waiting}` };
+  if (state === "merged") return { label: "✓ merged", tone: "success", title: `merged into ${base ?? "the default branch"} as of your last fetch — the worktree can be removed` };
   return undefined;
 }
 

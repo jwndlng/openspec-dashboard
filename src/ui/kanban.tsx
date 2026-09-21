@@ -52,7 +52,7 @@ export function CopyButton({ text, label = "Copy apply" }: { text: string; label
 export function BranchBadge({ branch, hint }: { branch: string; hint: string }) {
   const { head, tail } = splitBranchLabel(branch);
   return (
-    <span class="badge brand mono truncate" title={`${branch} — ${hint}`} role="img" aria-label={`branch ${branch}`}>
+    <span class="badge branch mono truncate" title={`${branch} — ${hint}`} role="img" aria-label={`branch ${branch}`}>
       <span aria-hidden="true">⎇</span>
       <span class="text" aria-hidden="true">
         <span class="head">{head}</span>
@@ -113,19 +113,19 @@ export function ChangeCard({ card, now, showRepo, from }: { card: Card; now: num
         <span class="badge" title={card.lastActivityAt ? `last activity ${card.lastActivityAt}` : "no activity date"}>
           {card.archived ? `archived ${card.archived}` : `${relTime(card.lastActivityAt, now)} ago`}
         </span>
-        {isComplete(card.stage) && age !== undefined && <span class="badge ok">✓ complete · {age}d</span>}
+        {isComplete(card.stage) && age !== undefined && <span class="badge success">✓ complete · {age}d</span>}
         {pending && (
-          <span class="badge warn" title={pending.title}>
+          <span class="badge warning" title={pending.title}>
             ⑂ {pending.label}
           </span>
         )}
         {card.branchMatch && <BranchBadge branch={card.branchMatch} hint={checkoutHint(card)} />}
         {card.prompt && (
-          <span class="badge brand" title={card.prompt} role="img" aria-label={`prompt: ${card.prompt}`}>
+          <span class="badge" title={card.prompt} role="img" aria-label={`prompt: ${card.prompt}`}>
             ✎ prompt
           </span>
         )}
-        {noTasks && <span class="badge warn">no tasks</span>}
+        {noTasks && <span class="badge warning">no tasks</span>}
         <SessionControls card={card} />
         {card.warnings?.filter((w) => w !== "tasks file has no tasks").map((w) => (
           <span class="badge danger" title={w}>
@@ -255,7 +255,7 @@ function RepoHeader({ repo, now, onCreated }: { repo: RepoSnapshot; now: number;
           </span>
         )}
         {repo.sharedConfig?.applied.map((p) => (
-          <span key={p.id} class={`badge ${p.state === "in-sync" ? "" : "warn"}`} title="Shared OpenSpec config profile carried by openspec/config.yaml">
+          <span key={p.id} class={`badge ${p.state === "in-sync" ? "" : "warning"}`} title="Shared OpenSpec config profile carried by openspec/config.yaml">
             ⚙ {p.id}
             {p.state === "in-sync" ? "" : ` · ${p.state}`}
           </span>
