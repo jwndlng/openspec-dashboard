@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, expect, test } from "bun:test";
+import { afterAll, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { newRepoConfig } from "../src/server/config.ts";
@@ -6,6 +6,10 @@ import { scanRepo } from "../src/server/scanner.ts";
 import { LocalRepoSource } from "../src/server/source.ts";
 import { tempDir, useTempHome } from "./helpers.ts";
 import { fixture, git } from "./pullHelpers.ts";
+
+// These tests create git repositories, run real git against local remotes and wait on deliberately slow fake remotes;
+// slow CI runners need more than the 5 s default.
+setDefaultTimeout(60_000);
 
 let cleanup: () => Promise<void>;
 const bases: string[] = [];
