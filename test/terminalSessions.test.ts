@@ -1,6 +1,6 @@
 import { afterAll, afterEach, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
 import { existsSync } from "node:fs";
-import { mkdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { sessionsDir, worktreesDir } from "../src/server/paths.ts";
 import { scanRepo } from "../src/server/scanner.ts";
@@ -334,4 +334,35 @@ test("bookkeeping nobody waits for cannot take the dashboard down, and shutdown 
   await h.manager.shutdown();
   const meta = JSON.parse(await readFile(join(dir, "meta.json"), "utf8"));
   expect(meta.state).not.toBe("running");
+});
+
+test("ending a session, worktree removal included, never reaches a remote — only the pull action does", async () => {
+  const h = track(await harness());
+  // Every access to this remote goes through a fake ssh that leaves a marker before failing.
+  const dir = await realpath(await tempDir("osd-remote-"));
+  const marker = join(dir, "contacted");
+  const fakeSsh = join(dir, "fake-ssh.sh");
+  await writeFile(fakeSsh, `#!/bin/sh\necho contacted >> "${marker}"\nexit 1\n`);
+  await chmod(fakeSsh, 0o755);
+  git(h.repoPath, "remote", "add", "origin", "ssh://git.example.invalid/team/repo.git");
+  const previousSsh = process.env.GIT_SSH_COMMAND;
+  process.env.GIT_SSH_COMMAND = fakeSsh;
+
+  try {
+    const s = await h.manager.open({ repoId: h.repoId, change: "upgrade-runtime", action: "implement" });
+    const view = await watch(h.manager, s.id);
+    await waitFor(() => view.text().includes("fake-agent ready"), "the agent running"); // its cwd wraps in the terminal; the worktree is asserted below
+
+    // What the end-session dialog does: read the status it warns on, then end and remove.
+    expect(await h.manager.worktreeStatus(s.id)).toMatchObject({ removable: true });
+    const closed = await h.manager.close(s.id, { removeWorktree: true });
+    expect(closed.worktree).toEqual({ removable: true });
+    expect(existsSync(s.worktreePath)).toBe(false);
+
+    // Catching the main checkout up is a separate action the user asks for; ending a session is not one.
+    expect(existsSync(marker)).toBe(false);
+  } finally {
+    if (previousSsh === undefined) delete process.env.GIT_SSH_COMMAND;
+    else process.env.GIT_SSH_COMMAND = previousSsh;
+  }
 });
