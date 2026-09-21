@@ -140,6 +140,10 @@ the dashboard shows it, passes your keystrokes on, and interprets nothing.
   terminal shows what happened meanwhile. Cards show `running`, `quiet 12m` (the terminal has been silent — the agent is
   probably waiting for you) or how the session ended. **Resume** starts the agent's resume command in the same worktree.
   Stopping the dashboard ends its agents; their output stays viewable.
+- **Default responses**: while a session is running, the panel offers `Yes, go ahead`, `Yes, create a PR` and
+  `No, stop here` under the terminal. A click types that text and presses Enter — nothing more. The dashboard does not
+  know what the agent is asking, so look at the terminal first: if the agent shows a selection menu rather than a text
+  prompt, the Enter may confirm whatever option is highlighted.
 - **Nothing is left behind**: every session worktree gets a work status, also after its session ended or its record
   was deleted — `3 uncommitted`, `2 not pushed`, `pushed` or `merged` — shown on the card and in **Open work** in the
   top bar, which lists all of them across repositories and highlights work nobody touched for a day (pushed: a week).
