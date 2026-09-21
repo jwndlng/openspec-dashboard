@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { assignRepoHues, groupByRepo, recentArchived } from "../src/ui/repoGroups.ts";
+import { assignRepoHues, groupByRepo, recentArchived, repoTint } from "../src/ui/repoGroups.ts";
 
 const ids = (n: number) => Array.from({ length: n }, (_, i) => `repo-${i.toString(16).padStart(4, "0")}`);
 
@@ -79,4 +79,17 @@ test("recentArchived returns everything when under the bound and does not mutate
   expect(recentArchived(cards, 25).map((c) => c.name)).toEqual(["b", "a", "x"]);
   expect(cards).toEqual(before);
   expect(recentArchived([], 25)).toEqual([]);
+});
+
+test("repoTint gives a repository of the snapshot the board's own hue", () => {
+  const hues = assignRepoHues(ids(5));
+  for (const id of ids(5)) {
+    expect(repoTint(hues, id)).toEqual({ class: "repo-tint", style: { "--repo-hue": String(hues.get(id)) } });
+  }
+});
+
+test("repoTint leaves a repository outside the snapshot untinted", () => {
+  const hues = assignRepoHues(ids(3));
+  expect(repoTint(hues, "not-in-the-snapshot")).toEqual({ class: "" });
+  expect(repoTint(new Map(), ids(1)[0]).style).toBeUndefined();
 });
