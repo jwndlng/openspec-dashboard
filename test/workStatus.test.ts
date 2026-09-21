@@ -206,7 +206,7 @@ test("API: worktrees ride along with the sessions; removal validates its input, 
   git(h.repoPath, "push", "-q", "origin", "main");
   git(h.repoPath, "push", "-q", "origin", "--delete", "feat/upgrade-runtime");
   await call(`/api/sessions/${s.id}/close`, {});
-  expect(await (await call(`/api/sessions/${s.id}/worktree`)).json()).toEqual({ removable: true });
+  expect(await (await call(`/api/sessions/${s.id}/worktree`)).json()).toEqual({ removable: true, work: { state: "merged", base: "origin/main" } });
   await h.manager.remove(s.id);
 
   await mkdir(join(s.worktreePath, "scratch"));

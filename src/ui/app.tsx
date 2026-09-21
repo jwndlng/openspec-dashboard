@@ -6,6 +6,7 @@ import { Kanban } from "./kanban.tsx";
 import { Overview } from "./overview.tsx";
 import { enabledOnly } from "./overviewState.ts";
 import { type Route, routeFromPath } from "./routes.ts";
+import { EndSessionDialog } from "./endSessionDialog.tsx";
 import { SessionPanel } from "./sessionPanel.tsx";
 import { OpenWork, SessionProvider } from "./sessions.tsx";
 import { Settings } from "./settings.tsx";
@@ -112,7 +113,7 @@ export function App() {
 
   return (
     <div class="app">
-      <SessionProvider config={config}>
+      <SessionProvider config={config} snapshot={shown}>
       <header class="topbar">
         <div class="brand">
           <span class="dot" />
@@ -152,6 +153,7 @@ export function App() {
         )}
       </main>
       <SessionPanel />
+      <EndSessionDialog />
       </SessionProvider>
     </div>
   );

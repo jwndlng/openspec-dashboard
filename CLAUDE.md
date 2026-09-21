@@ -64,6 +64,9 @@ bun test test/scanner.test.ts   # a single test file
   into an agent on this machine. It has its own guard, `webSocketRefusal` (loopback Host, the dashboard's own `Origin`,
   missing `Origin` refused) because the JSON guard cannot cover a WebSocket handshake. Never loosen it, and never bind
   anything but loopback.
+- Text the dashboard types into a *running* agent for the user (next-step prompts, default responses) never includes
+  Enter: a terminal cannot tell us whether the agent shows a prompt or a selection menu, and in a menu Enter confirms
+  whatever is highlighted — possibly a permission. One running session per worktree; archiving has its own.
 - **Work status** (`workStatus.ts`) is read per worktree *directory* — directories outlive session records — with
   read-only git and no network, so `merged` means "as of the user's last fetch"; squash merges are recognised by
   comparing the content of the files the branch touched. The dashboard never commits, pushes or calls `gh`: **Ship** only

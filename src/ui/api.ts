@@ -1,3 +1,4 @@
+import type { WorkStatus } from "../shared/types.ts";
 import type { AgentAvailability, Config, DiscoverResult, ScanTriggerResult, Session, SessionAction, SessionWorktree, SharedConfig, SharedConfigApplyResult, SharedConfigAssignment, SharedConfigPreview, Snapshot } from "../shared/types.ts";
 import { socketOrigin } from "./url.ts";
 
@@ -51,7 +52,10 @@ export interface Api {
   /** Ends the agent if it is running; removes the worktree only when asked and safe. */
   closeSession(id: string, removeWorktree: boolean): Promise<{ session: Session; worktree?: { removable: boolean; reason?: string } }>;
   deleteSession(id: string): Promise<{ deleted: boolean }>;
-  worktreeStatus(id: string): Promise<{ removable: boolean; reason?: string }>;
+  /** Whether the worktree could be removed, and its work status read at this moment (not from the list's cache). */
+  worktreeStatus(id: string): Promise<{ removable: boolean; reason?: string; work?: WorkStatus }>;
+  /** Types a starter's prompt into the running session's terminal; Enter stays with the user. */
+  promptSession(id: string, action: SessionAction): Promise<Session>;
 }
 
 export const httpApi: Api = {
@@ -72,7 +76,8 @@ export const httpApi: Api = {
   removeWorktree: (repoId, name) => call("/api/worktrees/remove", { method: "POST", body: JSON.stringify({ repoId, name }) }),
   closeSession: (id, removeWorktree) => call(`/api/sessions/${id}/close`, { method: "POST", body: JSON.stringify({ removeWorktree }) }),
   deleteSession: (id) => call<{ deleted: boolean }>(`/api/sessions/${id}`, { method: "DELETE" }),
-  worktreeStatus: (id) => call<{ removable: boolean; reason?: string }>(`/api/sessions/${id}/worktree`),
+  worktreeStatus: (id) => call<{ removable: boolean; reason?: string; work?: WorkStatus }>(`/api/sessions/${id}/worktree`),
+  promptSession: (id, action) => call<Session>(`/api/sessions/${id}/prompt`, { method: "POST", body: JSON.stringify({ action }) }),
 };
 
 let current: Api = httpApi;
@@ -101,6 +106,7 @@ export const api: Api = {
   closeSession: (...args) => current.closeSession(...args),
   deleteSession: (...args) => current.deleteSession(...args),
   worktreeStatus: (...args) => current.worktreeStatus(...args),
+  promptSession: (...args) => current.promptSession(...args),
 };
 
 /** Where the terminal of a session is served: a WebSocket on the dashboard's own host. */

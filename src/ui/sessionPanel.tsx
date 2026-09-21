@@ -3,11 +3,11 @@
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
 import { useEffect, useRef, useState } from "preact/hooks";
-import { SHIPPABLE_WORK, type Session } from "../shared/types.ts";
+import { SHIPPABLE_WORK, type SessionAction } from "../shared/types.ts";
 import { api, terminalSocketUrl } from "./api.ts";
 import { cdCommand } from "./format.ts";
 import { DEFAULT_QUICK_REPLIES, replyHint, replyInput, type QuickReply } from "./quickReplies.ts";
-import { sessionBadge, workBadge } from "./sessionState.ts";
+import { nextStepFor, sessionBadge, sessionTabs, startersFor, workBadge } from "./sessionState.ts";
 import { SessionBadgeView, useSessionUi } from "./sessions.tsx";
 
 function Copy({ text, label }: { text: string; label: string }) {
@@ -50,6 +50,12 @@ function TerminalView({ sessionId, running, onExit }: { sessionId: string; runni
 
   // A default response is plain terminal input: the same message a keystroke produces. The defaults only type; the
   // user presses Enter in the focused terminal (see quickReplies.ts for why).
+  // Something was typed into this terminal on the user's behalf (a next step): hand them the keyboard for Enter.
+  const { focusTick } = useSessionUi();
+  useEffect(() => {
+    if (focusTick > 0) live.current?.focus();
+  }, [focusTick]);
+
   const reply = (r: QuickReply) => {
     if (guard.current.has(r.id)) return;
     guard.current.add(r.id);
@@ -126,41 +132,40 @@ function TerminalView({ sessionId, running, onExit }: { sessionId: string; runni
   );
 }
 
-function CloseDialog({ session, merged, onDone, onCancel }: { session: Session; merged: boolean; onDone: () => void; onCancel: () => void }) {
-  const [status, setStatus] = useState<{ removable: boolean; reason?: string }>();
-  const [remove, setRemove] = useState(merged); // merged work: removing the worktree is what is left to do
-  const [busy, setBusy] = useState(false);
-  useEffect(() => {
-    api.worktreeStatus(session.id).then(setStatus).catch(() => setStatus({ removable: false, reason: "could not check the worktree" }));
-  }, [session.id]);
+const STEP_LABEL: Record<SessionAction, string> = { draft: "Draft artifacts", implement: "Implement", archive: "Archive" };
+
+/** One tab per running session, so several agents can be steered without hiding the panel in between. */
+function SessionTabs() {
+  const ui = useSessionUi();
+  const tabs = sessionTabs(ui.sessions, ui.panelId);
+  if (tabs.length < 2) return null;
+  const select = (index: number) => ui.openPanel(tabs[(index + tabs.length) % tabs.length].id);
   return (
-    <div class="session-confirm">
-      <strong>{session.state === "running" ? "End this session?" : "Clean up this session?"}</strong>
-      {session.state === "running" && " The agent is stopped, as if you closed its terminal window."} The worktree and its branch stay unless removed.
-      {status?.removable ? (
-        <label class="check">
-          <input type="checkbox" checked={remove} onChange={(e) => setRemove(e.currentTarget.checked)} /> also remove the worktree (clean, and nothing in it exists only there)
-        </label>
-      ) : (
-        <div class="hint">The worktree is kept{status?.reason ? `: ${status.reason}` : "…"}</div>
-      )}
-      <div class="row">
-        <button
-          type="button"
-          class="btn primary sm"
-          disabled={busy}
-          onClick={async () => {
-            setBusy(true);
-            await api.closeSession(session.id, remove && status?.removable === true).catch(() => undefined);
-            onDone();
-          }}
-        >
-          {session.state === "running" ? "End session" : "Done"}
-        </button>
-        <button type="button" class="btn sm ghost" onClick={onCancel}>
-          Cancel
-        </button>
-      </div>
+    <div class="session-tabs" role="tablist" aria-label="Running sessions">
+      {tabs.map((tab, index) => {
+        const badge = sessionBadge(tab);
+        const selected = tab.id === ui.panelId;
+        return (
+          <button
+            type="button"
+            role="tab"
+            key={tab.id}
+            aria-selected={selected}
+            tabIndex={selected ? 0 : -1}
+            class={`session-tab${selected ? " active" : ""}`}
+            title={`${ui.config?.repos.find((r) => r.id === tab.repoId)?.name ?? tab.repoId} · ${tab.change} · ${badge.title}`}
+            onClick={() => ui.openPanel(tab.id)}
+            onKeyDown={(e) => {
+              if (e.key === "ArrowRight") select(index + 1);
+              else if (e.key === "ArrowLeft") select(index - 1);
+            }}
+          >
+            <span class="hint">{ui.config?.repos.find((r) => r.id === tab.repoId)?.name ?? tab.repoId}</span>
+            <span class="mono">{tab.change}</span>
+            <SessionBadgeView badge={badge} />
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -169,12 +174,17 @@ export function SessionPanel() {
   const ui = useSessionUi();
   const id = ui.panelId;
   const session = ui.sessions.find((s) => s.id === id);
-  const [confirmClose, setConfirmClose] = useState(false);
   const [error, setError] = useState<string>();
-  const [generation, setGeneration] = useState(0); // a resumed session gets a fresh terminal view
+  // An agent that was started again (Resume, Ship — from here or from the end-session dialog) gets a fresh terminal view.
+  const [generation, setGeneration] = useState(0);
+  const seen = useRef<{ id?: string; running?: boolean }>({});
+  const runningNow = session?.state === "running";
+  useEffect(() => {
+    if (seen.current.id === session?.id && seen.current.running === false && runningNow) setGeneration((n) => n + 1);
+    seen.current = { id: session?.id, running: session ? runningNow : undefined };
+  }, [session?.id, runningNow, session]);
 
   useEffect(() => {
-    setConfirmClose(false);
     setError(undefined);
   }, [id]);
 
@@ -185,6 +195,9 @@ export function SessionPanel() {
   const work = worktree && workBadge(worktree, ui.sessions);
   const shippable = worktree !== undefined && SHIPPABLE_WORK.includes(worktree.work.state);
   const merged = worktree?.work.state === "merged";
+  // The change's next step, offered here only when it would go into this very terminal.
+  const card = session && ui.snapshot?.repos.find((r) => r.id === session.repoId)?.changes.find((c) => c.name === session.change && !c.archived);
+  const nextSteps = session && card ? startersFor(ui.config, card).filter((action) => nextStepFor(ui.sessions, session.repoId, session.change, action).promptSessionId === session.id) : [];
 
   const act = async (fn: () => Promise<unknown>) => {
     try {
@@ -198,6 +211,7 @@ export function SessionPanel() {
 
   return (
     <aside class="session-panel" aria-label="Agent session">
+      <SessionTabs />
       <header class="session-head">
         <div class="row">
           <strong class="mono">{session?.change ?? "session"}</strong>
@@ -241,11 +255,7 @@ export function SessionPanel() {
                     : `Starts ${session.agentName} in this worktree with a prompt to commit, push and open a pull request`
                 }
                 onClick={() =>
-                  act(async () => {
-                    const wasRunning = session.state === "running";
-                    await api.shipSession(session.id);
-                    if (!wasRunning) setGeneration((n) => n + 1);
-                  })
+                  act(() => api.shipSession(session.id))
                 }
               >
                 ⇪ Ship
@@ -257,16 +267,24 @@ export function SessionPanel() {
                 class="btn sm"
                 title="Start the agent again in the same worktree, continuing its latest conversation"
                 onClick={() =>
-                  act(async () => {
-                    await api.resumeSession(session.id);
-                    setGeneration((n) => n + 1);
-                  })
+                  act(() => api.resumeSession(session.id))
                 }
               >
                 ▶ Resume
               </button>
             )}
-            <button type="button" class="btn sm" onClick={() => setConfirmClose(true)}>
+            {nextSteps.map((action) => (
+              <button
+                type="button"
+                class="btn sm session-start"
+                key={action}
+                title={`Types the “${STEP_LABEL[action]}” prompt into this terminal — press Enter to send it`}
+                onClick={() => act(() => ui.start(session.repoId, session.change, action))}
+              >
+                ↳ {STEP_LABEL[action]}
+              </button>
+            ))}
+            <button type="button" class="btn sm" onClick={() => ui.requestEnd(session.id)}>
               {session.state === "running" ? "End session" : "Clean up"}
             </button>
             {session.state !== "running" && (
@@ -286,17 +304,6 @@ export function SessionPanel() {
             )}
             <Copy text={cdCommand(session.worktreePath)} label="Copy cd" />
           </div>
-        )}
-        {confirmClose && session && (
-          <CloseDialog
-            session={session}
-            merged={merged && session.state !== "running"}
-            onCancel={() => setConfirmClose(false)}
-            onDone={() => {
-              setConfirmClose(false);
-              void ui.refresh();
-            }}
-          />
         )}
         {(error ?? session?.error) && <div class="notice danger">{error ?? session?.error}</div>}
       </header>

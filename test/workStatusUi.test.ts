@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import type { Session, SessionWorktree, WorkStatus } from "../src/shared/types.ts";
-import { openWork, staleAge, workBadge, worktreeForChange } from "../src/ui/sessionState.ts";
+import { endSeverity, endWarning, nextStepFor, openWork, sessionsForChange, sessionTabs, staleAge, workBadge, worktreeForChange } from "../src/ui/sessionState.ts";
 
 const NOW = Date.parse("2026-09-21T12:00:00Z");
 const ago = (hours: number) => new Date(NOW - hours * 3_600_000).toISOString();
@@ -50,4 +50,42 @@ test("the open work list counts what is unshipped and puts stale work first, mer
   const { items, unshipped } = openWork(list, [], NOW);
   expect(items.map((w) => w.name)).toEqual(["old", "fresh", "merged"]);
   expect(unshipped).toBe(2);
+});
+
+const sess = (id: string, patch: Partial<Session> = {}): Session => ({ id, repoId: "r", change: "add-x", action: "implement", agentId: "a", agentName: "A", state: "running", worktreePath: `/w/${id}`, branch: "feat/add-x", createdAt: `2026-09-21T10:0${id.length}:00Z`, updatedAt: "", resumable: true, ...patch });
+
+test("a starter goes into the change's running session; archive always gets its own", () => {
+  const draft = sess("d", { action: "draft" });
+  expect(nextStepFor([draft], "r", "add-x", "implement")).toEqual({ promptSessionId: "d" });
+  expect(nextStepFor([draft], "r", "add-x", "archive")).toEqual({ blocked: false });
+  expect(nextStepFor([sess("d", { state: "exited" })], "r", "add-x", "implement")).toEqual({ promptSessionId: undefined });
+  const arch = sess("ar", { action: "archive" });
+  expect(nextStepFor([arch], "r", "add-x", "implement")).toEqual({ promptSessionId: undefined }); // never typed into an archive session
+  expect(nextStepFor([arch], "r", "add-x", "archive")).toEqual({ blocked: true });
+  expect(nextStepFor([draft], "r", "other", "implement")).toEqual({ promptSessionId: undefined });
+});
+
+test("a card shows every running session, else the latest one that went wrong", () => {
+  const a = sess("a");
+  const arch = sess("arc", { action: "archive" });
+  expect(sessionsForChange([a, arch, sess("x", { change: "other" })], "r", "add-x").map((s) => s.id).sort()).toEqual(["a", "arc"]);
+  expect(sessionsForChange([sess("a", { state: "exited", exitCode: 0 })], "r", "add-x")).toEqual([]);
+  expect(sessionsForChange([sess("a", { state: "exited", exitCode: 2 })], "r", "add-x").map((s) => s.id)).toEqual(["a"]);
+});
+
+test("tabs: running sessions oldest first, plus the one shown if it has ended", () => {
+  const list = [sess("bbb"), sess("a"), sess("cc", { state: "exited" }), sess("dddd", { state: "exited" })];
+  expect(sessionTabs(list, undefined).map((s) => s.id)).toEqual(["a", "bbb"]);
+  expect(sessionTabs(list, "cc").map((s) => s.id)).toEqual(["a", "cc", "bbb"]);
+});
+
+test("ending is questioned as loudly as the work is unshipped", () => {
+  expect(endSeverity({ state: "uncommitted" })).toBe("danger");
+  expect(endSeverity({ state: "unpushed" })).toBe("danger");
+  expect(endSeverity({ state: "pushed" })).toBe("notice");
+  for (const state of ["clean", "merged", "missing"] as const) expect(endSeverity({ state })).toBe("plain");
+  expect(endSeverity(undefined)).toBe("plain");
+  expect(endWarning({ state: "uncommitted", count: 3 })).toContain("3 uncommitted files exist only in this worktree");
+  expect(endWarning({ state: "unpushed", count: 1 })).toContain("1 commit exists only on this machine");
+  expect(endWarning({ state: "clean" })).toBeUndefined();
 });
