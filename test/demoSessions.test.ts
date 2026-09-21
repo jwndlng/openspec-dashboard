@@ -185,7 +185,7 @@ test("closing and removing: unsafe removal is refused with the dashboard's reaso
   expect(await refusal(api.removeWorktree("a71c02e9", "nothing-here"))).toBe("404: unknown worktree");
 });
 
-test("deleting a record leaves its worktree in the Open work list; resume and typed prompts work on the open terminal", async () => {
+test("deleting a record leaves its worktree in the Open work list; resume and next-step prompts work on the open terminal", async () => {
   const { api, advance, terminal } = demo();
   const ended = await byChange(api, "pin-terraform-providers");
   expect(await api.deleteSession(ended.id)).toEqual({ deleted: true });
@@ -198,8 +198,10 @@ test("deleting a record leaves its worktree in the Open work list; resume and ty
   expect((await api.resumeSession(pushed.id)).state).toBe("running");
   advance(10_000);
   expect(view.text()).toContain("Picking up versioned-api-reference");
-  await api.promptSession(pushed.id, "implement");
-  expect(view.text().endsWith("/opsx:apply versioned-api-reference")).toBe(true); // typed, Enter stays with the visitor
+  const sent = await api.promptSession(pushed.id, "implement");
+  expect(sent.submitted).toBe(true); // one activation sends it, as in the dashboard
+  advance(2000);
+  expect(view.text()).toContain("/opsx:apply versioned-api-reference"); // the agent took it up
   expect(await refusal(api.promptSession(pushed.id, "archive"))).toBe("400: archiving runs in its own session");
 });
 

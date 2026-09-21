@@ -322,7 +322,7 @@ test("bookkeeping nobody waits for cannot take the dashboard down, and shutdown 
     await rm(dir, { recursive: true, force: true });
     await writeFile(dir, "in the way");
     // `prompt` records the action in the background (nobody awaits that write). It fails now.
-    expect(h.manager.prompt(s.id, { action: "implement" }).action).toBe("implement");
+    expect((await h.manager.prompt(s.id, { action: "implement" })).action).toBe("implement");
     await new Promise((r) => setTimeout(r, 150));
     expect(unhandled).toEqual([]);
   } finally {

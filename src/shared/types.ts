@@ -177,6 +177,8 @@ export type PromptKey = SessionAction | "ship";
 /** What Ship answers: the session, and whether the prompt was submitted. `false` means the agent of a running session
  *  did not show the typed prompt (it may be showing a menu), so Enter was not pressed and nothing was confirmed. */
 export type ShipResult = Session & { submitted: boolean };
+/** What a next step sent into a running session answers: the same shape, under the same rules. */
+export type PromptResult = ShipResult;
 
 export const DEFAULT_SHIP_PROMPT =
   "Ship the work in this worktree: commit everything that belongs to it with a Conventional Commit message, push the branch, and open a pull request against the default branch if there is none yet. Do not merge it. Tell me the pull request URL.";

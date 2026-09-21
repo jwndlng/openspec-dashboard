@@ -72,7 +72,7 @@ function TerminalView({ sessionId, running, onExit }: { sessionId: string; runni
   // A default response goes to the server as `submit`: typed, and sent with Enter only once the agent has shown it.
   // The server answers this socket with `submitted`; until then the clicked response stays inert.
   const pending = useRef<string[]>([]);
-  // Something was typed into this terminal on the user's behalf (a next step): hand them the keyboard for Enter.
+  // Text went into this terminal on the user's behalf (a next step): put the keyboard back where the agent is.
   const { focusTick, panelId, unsentId, reportUnsent } = useSessionUi();
   const wantsFocus = useRef(panelId === sessionId);
   wantsFocus.current = panelId === sessionId;
@@ -458,7 +458,7 @@ function SessionPane({ id }: { id: string }) {
                 type="button"
                 class="btn sm session-start"
                 key={action}
-                title={`Types the “${STEP_LABEL[action]}” prompt into this terminal — press Enter to send it`}
+                title={`Sends the “${STEP_LABEL[action]}” prompt to this session’s agent`}
                 onClick={() => act(() => ui.start(session.repoId, session.change, action))}
               >
                 ↳ {STEP_LABEL[action]}
