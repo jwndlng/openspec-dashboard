@@ -1,8 +1,8 @@
 import { afterAll, afterEach, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
 import { existsSync } from "node:fs";
-import { mkdir, readFile, realpath, writeFile } from "node:fs/promises";
+import { mkdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { worktreesDir } from "../src/server/paths.ts";
+import { sessionsDir, worktreesDir } from "../src/server/paths.ts";
 import { scanRepo } from "../src/server/scanner.ts";
 import { SessionManager } from "../src/server/sessions/manager.ts";
 import { SessionStore } from "../src/server/sessions/store.ts";
@@ -293,4 +293,30 @@ test("submit refuses what is not plain text, and sessions that are not running",
   h.manager.write(s.id, "exit\r");
   await waitFor(() => h.manager.get(s.id).state === "exited", "exit");
   expect(() => h.manager.submit(s.id, "Yes, go ahead")).toThrow(expect.objectContaining({ status: 409 }));
+});
+
+test("bookkeeping nobody waits for cannot take the dashboard down, and shutdown leaves no write behind", async () => {
+  const h = track(await harness());
+  const s = await h.manager.open({ repoId: h.repoId, change: "upgrade-runtime", action: "implement" });
+  const unhandled: unknown[] = [];
+  const onUnhandled = (reason: unknown) => unhandled.push(reason);
+  process.on("unhandledRejection", onUnhandled);
+  const dir = join(sessionsDir(), s.id);
+  try {
+    // Make the session's record unwritable: a file where its directory should be.
+    await rm(dir, { recursive: true, force: true });
+    await writeFile(dir, "in the way");
+    // `prompt` records the action in the background (nobody awaits that write). It fails now.
+    expect(h.manager.prompt(s.id, { action: "implement" }).action).toBe("implement");
+    await new Promise((r) => setTimeout(r, 150));
+    expect(unhandled).toEqual([]);
+  } finally {
+    await rm(dir, { force: true });
+    process.off("unhandledRejection", onUnhandled);
+  }
+
+  // After shutdown nothing is still being written: the record is complete on disk the moment it returns.
+  await h.manager.shutdown();
+  const meta = JSON.parse(await readFile(join(dir, "meta.json"), "utf8"));
+  expect(meta.state).not.toBe("running");
 });

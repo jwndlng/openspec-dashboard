@@ -62,6 +62,10 @@ test("callers cannot mutate the demo's state through returned objects", async ()
 
 test("shared config in the demo: per-repository profiles, outdated after an edit, orphaned after a delete, nothing persisted", async () => {
   const { api } = demo();
+  // the demo starts with profiles already carried (see the seed test below); clear the slate for this walk-through
+  await api.saveSharedConfig({ profiles: [] });
+  const everyRepo = (await api.state()).repos.map((r) => ({ repoId: r.id, profileIds: [] }));
+  await api.applySharedConfig(everyRepo);
   expect(await api.sharedConfig()).toEqual({ profiles: [] });
   expect((await api.state()).repos.every((r) => r.sharedConfig === undefined)).toBe(true);
 
@@ -91,7 +95,7 @@ test("shared config in the demo: per-repository profiles, outdated after an edit
   repos = (await api.state()).repos;
   expect(repos[0].sharedConfig?.applied).toEqual([{ id: "base", state: "outdated" }, { id: "security", state: "orphaned" }]);
 
-  expect(await demo().api.sharedConfig()).toEqual({ profiles: [] }); // a reload starts over
+  expect((await demo().api.sharedConfig()).profiles.map((p) => p.id)).toEqual(["base", "security"]); // a reload starts over, from the seed
 });
 
 test("pull in the demo: canned outcomes, the notice's repositories are only fetched, nothing persists", async () => {
