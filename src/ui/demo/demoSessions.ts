@@ -3,7 +3,7 @@
 //
 // All of it is invented, like the rest of the sample (see sampleData.ts): every repository, change, branch and path
 // comes from the sample, and terminal output comes from the hand-written transcripts.
-import { availableActions, type Config, type Session, type SessionAction, type SessionWorktree, type ShipResult, SHIPPABLE_WORK, type Snapshot, type WorkStatus, type Worktree } from "../../shared/types.ts";
+import { availableActions, type Config, type Session, type SessionAction, type PromptResult, type SessionWorktree, type ShipResult, SHIPPABLE_WORK, type Snapshot, type WorkStatus, type Worktree } from "../../shared/types.ts";
 import { ApiError, type TerminalConnection, type TerminalHandlers } from "../api.ts";
 import { DEMO_AGENT, DEMO_ROOT } from "./sampleData.ts";
 import { type Clock, type Playback, type Position, playTranscript, positionAfter, TRANSCRIPTS, type TranscriptName, workAfter } from "./transcripts.ts";
@@ -323,14 +323,15 @@ export function createDemoSessions({ now, getConfig, getSnapshot, clock }: DemoS
       return { ...s.session, submitted: true };
     },
 
-    prompt(id: string, action: SessionAction): Session {
+    prompt(id: string, action: SessionAction): PromptResult {
       requireEnabled();
       const s = find(id);
       if (action === "archive" || s.session.action === "archive") throw new ApiError(400, "archiving runs in its own session");
       if (s.session.state !== "running") throw new ApiError(409, "the session is not running");
-      // Typed, not sent: Enter stays with the visitor, as in the dashboard.
-      playing.get(id)?.playback.type((DEMO_AGENT.prompts[action] ?? "").replaceAll("{change}", s.session.change));
-      return s.session;
+      // Sent with one activation, as in the dashboard: the recording's agent takes the prompt up straight away.
+      s.session.action = action;
+      run(s, action);
+      return { ...s.session, submitted: true };
     },
 
     status(id: string) {
