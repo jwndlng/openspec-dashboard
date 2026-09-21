@@ -74,7 +74,7 @@ A session SHALL run the agent attached to a pseudo-terminal, and the session pan
 - **THEN** the terminal shows the earlier output and continues live; the agent was not interrupted
 
 ### Requirement: Every session works in its own git worktree, created by the dashboard
-A session MUST NOT run in the repository's main checkout. Before starting the agent, the dashboard SHALL ensure a git worktree for the session under `~/.openspec-dashboard/worktrees/<repository id>/`, outside the repository's working tree, on branch `feat/<change>` — or, for **Archive**, in a worktree and branch of its own (`archive-<change>`, `chore/archive-<change>`). An existing worktree for that name SHALL be reused; an existing branch SHALL be checked out; otherwise the branch SHALL be created from the repository's default branch as currently known locally (`origin/HEAD`, else `HEAD`). The dashboard MUST NOT contact a remote for this. If the change's directory exists only uncommitted in the main checkout, the dashboard SHALL copy it into the worktree. The main checkout's branch, index and working tree MUST NOT be changed. The session record and panel SHALL show the worktree path and branch.
+A session MUST NOT run in the repository's main checkout. Before starting the agent, the dashboard SHALL ensure a git worktree for the session under `~/.openspec-dashboard/worktrees/<repository id>/`, outside the repository's working tree, on branch `feat/<change>` — or, for **Archive**, in a worktree and branch of its own (`archive-<change>`, `chore/archive-<change>`). An existing worktree for that name SHALL be reused; an existing branch SHALL be checked out; otherwise the branch SHALL be created from the repository's default branch as currently known locally (`origin/HEAD`, else `HEAD`). As the one exception, when a Draft or Implement session's branch `feat/<change>` is already checked out in another linked worktree of the repository, the session SHALL adopt that worktree — run the agent there instead of creating one — and SHALL record and show that the worktree was adopted. The dashboard MUST NOT contact a remote for this. If the change's directory is missing from the session's worktree, the dashboard SHALL copy it from the checkout the change's data comes from (the main checkout or a linked worktree), including when it exists there only uncommitted. The main checkout's branch, index and working tree MUST NOT be changed. The session record and panel SHALL show the worktree path and branch.
 
 #### Scenario: Two sessions in one repository
 - **WHEN** sessions are open for changes `audit-trail` and `upgrade-runtime` of the same repository
@@ -83,6 +83,14 @@ A session MUST NOT run in the repository's main checkout. Before starting the ag
 #### Scenario: Uncommitted change directory
 - **WHEN** a session is opened for a change whose directory exists only uncommitted in the main checkout
 - **THEN** the worktree contains a copy of that directory before the agent starts
+
+#### Scenario: Change lives only in another worktree on another branch
+- **WHEN** a session is opened for change `audit-trail`, which exists only in a worktree on branch `wip/compliance`
+- **THEN** a session worktree on `feat/audit-trail` is created and contains a copy of the change directory from that worktree before the agent starts
+
+#### Scenario: The change's branch is already checked out
+- **WHEN** an Implement session is opened for change `audit-trail` and branch `feat/audit-trail` is checked out in a linked worktree that the user created
+- **THEN** the agent runs in that worktree, no new worktree is created, and the panel shows the worktree as adopted
 
 #### Scenario: Archiving does not reuse the implementation worktree
 - **WHEN** a change was implemented in a session whose worktree still exists, and the user later starts **Archive** for it
@@ -126,7 +134,7 @@ Session metadata SHALL be stored only under `~/.openspec-dashboard/sessions/<ses
 - **THEN** the stored terminal output is shown and no input is accepted
 
 ### Requirement: Worktree clean-up is offered only when safe
-When ending or cleaning up a session, or for a worktree that has no session record, the dashboard SHALL offer to remove the worktree only if it has no uncommitted changes and either its work status is `merged` or it has no commits that exist nowhere else (nothing ahead of its upstream, or, without an upstream, no commit that is unreachable from every other local or remote-tracking branch). Removal SHALL happen only after the user confirms, by a non-forcing `git worktree remove`; the branch is never deleted. Otherwise the worktree MUST be kept and the reason shown. A worktree MUST NOT be removed while a session is running in it.
+When ending or cleaning up a session, or for a worktree that has no session record, the dashboard SHALL offer to remove the worktree only if the dashboard created it, it has no uncommitted changes, and either its work status is `merged` or it has no commits that exist nowhere else (nothing ahead of its upstream, or, without an upstream, no commit that is unreachable from every other local or remote-tracking branch). Removal SHALL happen only after the user confirms, by a non-forcing `git worktree remove`; the branch is never deleted. Otherwise the worktree MUST be kept and the reason shown. A worktree MUST NOT be removed while a session is running in it. A worktree that a session adopted MUST NOT be offered for removal and MUST NOT be removed by the dashboard.
 
 #### Scenario: Unpushed work
 - **WHEN** the user ends a session whose worktree has commits that exist only on its branch
@@ -139,6 +147,10 @@ When ending or cleaning up a session, or for a worktree that has no session reco
 #### Scenario: Squash-merged and the remote branch is gone
 - **WHEN** the worktree is clean, its work status is `merged`, its upstream no longer exists, and the user confirms removal
 - **THEN** the worktree is removed and its local branch still exists
+
+#### Scenario: Adopted worktree
+- **WHEN** the user ends a session that adopted a worktree the user had created, and that worktree is clean
+- **THEN** removal is not offered and the worktree is kept
 
 ### Requirement: Every session worktree has a work status
 For every directory under `~/.openspec-dashboard/worktrees/<repoId>/` of a configured repository the dashboard SHALL derive a work status from local git, using read-only commands and without contacting a remote. The base is the repository's default branch as locally known (`origin/HEAD`), or the main checkout's `HEAD` when there is none. The status SHALL be the first that applies: `missing` when the directory is not a git worktree; `uncommitted` with the number of changed or untracked files; `merged` when the branch has no commit that the base lacks and a remote-tracking branch of the same name exists, or when every file the branch changed has the same content in the base (which also recognises squash and rebase merges); `clean` when the branch has no commit that the base lacks; `unpushed` with the number of commits ahead of its upstream, or all commits the base lacks when it has no upstream; otherwise `pushed`. Statuses MAY be cached for up to 15 seconds and MUST be recomputed after a session ends, a Ship action or a worktree removal. Because nothing is fetched, `merged` reflects the user's last fetch; the UI MUST say so.
