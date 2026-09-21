@@ -32,6 +32,16 @@ export function pullOutcome(result: PullResult): PullOutcome {
   }
 }
 
+/**
+ * Whether an outcome has to be put in front of the user rather than just badged. True exactly when the main checkout
+ * was left behind — fetched only, refused, or failed — which is the outdated view a pull was asked for to prevent;
+ * a fast-forward, an up-to-date checkout and a repository with no remote need no second look.
+ */
+export function pullNeedsReport(result: PullResult): boolean {
+  const { tone } = pullOutcome(result);
+  return tone === "warn" || tone === "danger";
+}
+
 export interface BranchNotice {
   /** For a badge in a row. */
   short: string;

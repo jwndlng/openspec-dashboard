@@ -1,5 +1,5 @@
 // Pure helpers for the agent-session UI; free of DOM access at import time so they can be unit-tested.
-import { availableActions, repoAgentEnabled, SHIPPABLE_WORK, type AgentProfile, type ChangeSnapshot, type Config, type Session, type SessionAction, type SessionWorktree, type WorkStatus } from "../shared/types.ts";
+import { availableActions, repoAgentEnabled, SHIPPABLE_WORK, type AgentProfile, type ChangeSnapshot, type Config, type RepoSnapshot, type Session, type SessionAction, type SessionWorktree, type WorkStatus } from "../shared/types.ts";
 
 /** Session starters are shown when the feature is on, for every tracked repository that has not been switched off. */
 export function sessionsEnabledFor(config: Config | null, repoId: string): boolean {
@@ -62,6 +62,23 @@ export function endWarning(work: WorkStatus | undefined): string | undefined {
   if (work?.state === "unpushed") return `${n} commit${n === 1 ? "" : "s"} exist${n === 1 ? "s" : ""} only on this machine. Nothing has been pushed.`;
   if (work?.state === "pushed") return `The work is pushed but not merged into ${work.base ?? "the default branch"} as of your last fetch.`;
   return undefined;
+}
+
+export interface PullOffer {
+  /** Whether the end-session dialog offers to pull at all: only a repository the pull action can run in. */
+  offered: boolean;
+  /** Whether that offer starts ticked. Merged work is the case the offer exists for. */
+  preselected: boolean;
+}
+
+/**
+ * Ending a session is the moment the user knows the work landed, so the dialog offers to bring the main checkout —
+ * what archives, specs and progress are read from — up to date with it. Deliberately independent of whether the
+ * worktree can be removed: a worktree kept for a reason should still let the checkout catch up.
+ */
+export function pullOffer(repo: Pick<RepoSnapshot, "isGit" | "ok"> | undefined, work: Pick<WorkStatus, "state"> | undefined): PullOffer {
+  const offered = repo?.isGit === true && repo.ok === true;
+  return { offered, preselected: offered && work?.state === "merged" };
 }
 
 /** The one session a card stands for, where only one fits (see `sessionsForChange`). */

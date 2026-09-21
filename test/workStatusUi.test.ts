@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import type { Session, SessionWorktree, WorkStatus } from "../src/shared/types.ts";
-import { endSeverity, hideSession, searchWithShown, showSession, shownFromSearch, endWarning, nextStepFor, openWork, sessionsForChange, sessionTabs, staleAge, workBadge, worktreeForChange } from "../src/ui/sessionState.ts";
+import { endSeverity, hideSession, pullOffer, searchWithShown, showSession, shownFromSearch, endWarning, nextStepFor, openWork, sessionsForChange, sessionTabs, staleAge, workBadge, worktreeForChange } from "../src/ui/sessionState.ts";
 
 const NOW = Date.parse("2026-09-21T12:00:00Z");
 const ago = (hours: number) => new Date(NOW - hours * 3_600_000).toISOString();
@@ -88,6 +88,20 @@ test("ending is questioned as loudly as the work is unshipped", () => {
   expect(endWarning({ state: "uncommitted", count: 3 })).toContain("3 uncommitted files exist only in this worktree");
   expect(endWarning({ state: "unpushed", count: 1 })).toContain("1 commit exists only on this machine");
   expect(endWarning({ state: "clean" })).toBeUndefined();
+});
+
+test("the pull is offered for a repository it can run in, and starts ticked only for merged work", () => {
+  const git = { isGit: true, ok: true };
+  expect(pullOffer(git, { state: "merged" })).toEqual({ offered: true, preselected: true });
+  // offered, but the user has to ask for it: the work is not known to have landed
+  for (const state of ["uncommitted", "unpushed", "pushed", "clean", "missing"] as const) {
+    expect(pullOffer(git, { state })).toEqual({ offered: true, preselected: false });
+  }
+  expect(pullOffer(git, undefined)).toEqual({ offered: true, preselected: false });
+  // nothing the pull action can run in
+  expect(pullOffer({ isGit: false, ok: true }, { state: "merged" })).toEqual({ offered: false, preselected: false });
+  expect(pullOffer({ isGit: true, ok: false }, { state: "merged" })).toEqual({ offered: false, preselected: false });
+  expect(pullOffer(undefined, { state: "merged" })).toEqual({ offered: false, preselected: false });
 });
 
 test("the dock shows at most three sessions: a fourth replaces the focused pane, shown ones are only focused", () => {

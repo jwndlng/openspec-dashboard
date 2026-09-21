@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import type { PullResult } from "../src/shared/types.ts";
-import { branchNotice, pullOutcome } from "../src/ui/pullState.ts";
+import { branchNotice, pullNeedsReport, pullOutcome } from "../src/ui/pullState.ts";
 
 const result = (patch: Partial<PullResult>): PullResult => ({ repoId: "r", fetched: true, update: "up-to-date", branch: "main", upstream: "origin/main", defaultBranch: "main", ...patch });
 
@@ -14,6 +14,17 @@ test("every outcome reads as text, with the reason available", () => {
   expect(pullOutcome(result({ update: "refused", reason: "local and remote have diverged (1 ahead, 2 behind)" }))).toMatchObject({ label: "refused", tone: "warn" });
   expect(pullOutcome(result({ fetched: false, update: "failed", reason: "Could not read from remote repository." })).detail).toBe("Could not fetch: Could not read from remote repository.");
   expect(pullOutcome(result({ fetched: false, update: "failed", reason: "timed out" }))).toEqual({ label: "failed", tone: "danger", detail: "Could not fetch: timed out." });
+});
+
+test("an outcome that left the checkout behind is reported, the rest only badged", () => {
+  // stated: the pull was asked for to bring the checkout up to date and it did not
+  expect(pullNeedsReport(result({ update: "skipped", reason: "on feat/redesign, not main; only fetched" }))).toBe(true);
+  expect(pullNeedsReport(result({ update: "refused", reason: "local and remote have diverged (1 ahead, 2 behind)" }))).toBe(true);
+  expect(pullNeedsReport(result({ fetched: false, update: "failed", reason: "timed out" }))).toBe(true);
+  // nothing to say: the checkout is as current as the remote can make it
+  expect(pullNeedsReport(result({ update: "fast-forwarded", commits: 3 }))).toBe(false);
+  expect(pullNeedsReport(result({}))).toBe(false);
+  expect(pullNeedsReport(result({ fetched: false, update: "skipped", reason: "no remote configured; there is nothing to pull" }))).toBe(false);
 });
 
 test("the notice appears only off a known default branch, and says what it means", () => {
