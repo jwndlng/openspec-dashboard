@@ -57,3 +57,12 @@ export function groupByRepo<T extends { repoId: string; repoName: string }>(card
     (a, b) => a.repoName.localeCompare(b.repoName, undefined, { sensitivity: "base" }) || a.repoId.localeCompare(b.repoId),
   );
 }
+
+/**
+ * Tint props for an element that stands for a repository: the `repo-tint` class and the hue the theme turns into a
+ * colour. A repository with no hue — one that is not in the snapshot — is left untinted.
+ */
+export function repoTint(hues: Map<string, number>, repoId: string): { class: string; style?: Record<string, string> } {
+  const hue = hues.get(repoId);
+  return hue === undefined ? { class: "" } : { class: "repo-tint", style: { "--repo-hue": String(hue) } };
+}

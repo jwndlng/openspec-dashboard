@@ -90,6 +90,23 @@ for (const [theme, selector] of [["dark", ":root"], ["light", ':root[data-theme=
   });
 }
 
+// The dock's tab strip: a session tab shows its repository name in the repository colour, on the strip's own
+// background and, for a tab whose session is shown, on the section background (kanban-board spec).
+for (const [theme, selector] of [["dark", ":root"], ["light", ':root[data-theme="light"]']] as const) {
+  test(`a session tab's repository name keeps 4.5:1 on both tab backgrounds in the ${theme} theme`, () => {
+    const block = themeBlock(selector);
+    const repoOf = (h: number): Lch => ({ l: Number(token(block, "--repo-l")), c: Number(token(block, "--repo-c")), h });
+
+    for (const name of ["--bg-base", "--bg-section"]) {
+      const background = hexToLinear(token(block, name));
+      for (const h of HUES) {
+        const ratio = contrast(lchToLinear(repoOf(h)), background);
+        if (ratio < 4.5) throw new Error(`${theme} hue ${h} on ${name}: contrast ${ratio.toFixed(2)} < 4.5`);
+      }
+    }
+  });
+}
+
 test("colour math sanity: white on black is 21:1 and sRGB round-trips through OKLCH", () => {
   expect(contrast(hexToLinear("#ffffff"), hexToLinear("#000000"))).toBeCloseTo(21, 5);
   const rgb = hexToLinear("#71c7c5");

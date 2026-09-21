@@ -528,7 +528,7 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: 
 .session-tab .tab-mark { font-size: 10px; color: var(--fg-subtle); }
 .session-tab.shown .tab-mark { color: var(--brand); }
 .session-tab {
-  display: inline-flex; align-items: center; gap: 6px; flex: none; max-width: 320px; padding: 5px 10px; cursor: pointer;
+  display: inline-flex; align-items: center; gap: 6px; flex: none; max-width: 320px; padding: 5px 10px 5px 12px; cursor: pointer;
   font: inherit; font-size: 12px; color: var(--fg-body); background: transparent;
   border: 1px solid transparent; border-bottom: 0; border-radius: var(--radius) var(--radius) 0 0;
 }
@@ -537,6 +537,10 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: 
 .session-tab:hover { color: var(--fg-heading); }
 .session-tab.shown { color: var(--fg-heading); background: var(--bg-section); border-color: var(--border-light); }
 .session-tab.active { border-top-color: var(--brand); }
+/* The repository's colour on a tab: the 3px leading accent its cards have, and its name in the same colour. An inset
+   bar rather than a border, because .shown sets the border-color shorthand and the tab's geometry must not shift. */
+.session-tab.repo-tint { box-shadow: inset 3px 0 0 var(--repo-color); }
+.session-tab.repo-tint .repo-name { color: var(--repo-color); }
 /* Three terminals a few hundred pixels wide help nobody: on narrow windows only the focused pane is shown. */
 @media (max-width: 900px) {
   .dock-panes { grid-template-columns: minmax(0, 1fr); }
