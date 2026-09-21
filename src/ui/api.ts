@@ -1,4 +1,4 @@
-import type { AgentAvailability, Config, DiscoverResult, ScanTriggerResult, Session, SessionAction, SharedConfig, SharedConfigApplyResult, SharedConfigAssignment, SharedConfigPreview, Snapshot } from "../shared/types.ts";
+import type { AgentAvailability, Config, DiscoverResult, ScanTriggerResult, Session, SessionAction, SessionWorktree, SharedConfig, SharedConfigApplyResult, SharedConfigAssignment, SharedConfigPreview, Snapshot } from "../shared/types.ts";
 import { socketOrigin } from "./url.ts";
 
 export class ApiError extends Error {
@@ -40,10 +40,14 @@ export interface Api {
   applySharedConfig(assignments: SharedConfigAssignment[]): Promise<{ results: SharedConfigApplyResult[] }>;
 
   /** Agent sessions (optional feature): an agent CLI in a terminal, one per change. */
-  sessions(): Promise<{ sessions: Session[]; agents: AgentAvailability[] }>;
+  sessions(): Promise<{ sessions: Session[]; agents: AgentAvailability[]; worktrees: SessionWorktree[] }>;
   openSession(repoId: string, change: string, action: SessionAction): Promise<Session>;
   /** Continues the agent's latest conversation in the session's worktree. */
   resumeSession(id: string): Promise<Session>;
+  /** Asks the session's agent to commit, push and open a pull request. */
+  shipSession(id: string): Promise<Session>;
+  /** For a worktree whose session record is gone; refused unless that is safe. */
+  removeWorktree(repoId: string, name: string): Promise<{ removable: boolean; reason?: string }>;
   /** Ends the agent if it is running; removes the worktree only when asked and safe. */
   closeSession(id: string, removeWorktree: boolean): Promise<{ session: Session; worktree?: { removable: boolean; reason?: string } }>;
   deleteSession(id: string): Promise<{ deleted: boolean }>;
@@ -61,9 +65,11 @@ export const httpApi: Api = {
   saveSharedConfig: (config) => call<SharedConfig>("/api/shared-config", { method: "PUT", body: JSON.stringify(config) }),
   previewSharedConfig: (assignments) => call<{ previews: SharedConfigPreview[] }>("/api/shared-config/preview", { method: "POST", body: JSON.stringify({ assignments }) }),
   applySharedConfig: (assignments) => call<{ results: SharedConfigApplyResult[] }>("/api/shared-config/apply", { method: "POST", body: JSON.stringify({ assignments }) }),
-  sessions: () => call<{ sessions: Session[]; agents: AgentAvailability[] }>("/api/sessions"),
+  sessions: () => call<{ sessions: Session[]; agents: AgentAvailability[]; worktrees: SessionWorktree[] }>("/api/sessions"),
   openSession: (repoId, change, action) => call<Session>("/api/sessions", { method: "POST", body: JSON.stringify({ repoId, change, action }) }),
   resumeSession: (id) => call<Session>(`/api/sessions/${id}/resume`, { method: "POST" }),
+  shipSession: (id) => call<Session>(`/api/sessions/${id}/ship`, { method: "POST" }),
+  removeWorktree: (repoId, name) => call("/api/worktrees/remove", { method: "POST", body: JSON.stringify({ repoId, name }) }),
   closeSession: (id, removeWorktree) => call(`/api/sessions/${id}/close`, { method: "POST", body: JSON.stringify({ removeWorktree }) }),
   deleteSession: (id) => call<{ deleted: boolean }>(`/api/sessions/${id}`, { method: "DELETE" }),
   worktreeStatus: (id) => call<{ removable: boolean; reason?: string }>(`/api/sessions/${id}/worktree`),
@@ -90,6 +96,8 @@ export const api: Api = {
   sessions: (...args) => current.sessions(...args),
   openSession: (...args) => current.openSession(...args),
   resumeSession: (...args) => current.resumeSession(...args),
+  shipSession: (...args) => current.shipSession(...args),
+  removeWorktree: (...args) => current.removeWorktree(...args),
   closeSession: (...args) => current.closeSession(...args),
   deleteSession: (...args) => current.deleteSession(...args),
   worktreeStatus: (...args) => current.worktreeStatus(...args),

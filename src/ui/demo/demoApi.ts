@@ -118,9 +118,11 @@ export function createDemoApi({ now = Date.now, latencyMs = 150 }: DemoApiOption
     },
 
     // Agent sessions start a local CLI; there is nothing to start in a static demo, and its config keeps them off.
-    sessions: () => reply({ sessions: [], agents: [] }),
+    sessions: () => reply({ sessions: [], agents: [], worktrees: [] }),
     openSession: () => Promise.reject(new Error(NO_SESSIONS)),
     resumeSession: () => Promise.reject(new Error(NO_SESSIONS)),
+    shipSession: () => Promise.reject(new Error(NO_SESSIONS)),
+    removeWorktree: () => Promise.reject(new Error(NO_SESSIONS)),
     closeSession: () => Promise.reject(new Error(NO_SESSIONS)),
     deleteSession: () => Promise.reject(new Error(NO_SESSIONS)),
     worktreeStatus: () => Promise.reject(new Error(NO_SESSIONS)),

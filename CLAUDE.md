@@ -64,6 +64,10 @@ bun test test/scanner.test.ts   # a single test file
   into an agent on this machine. It has its own guard, `webSocketRefusal` (loopback Host, the dashboard's own `Origin`,
   missing `Origin` refused) because the JSON guard cannot cover a WebSocket handshake. Never loosen it, and never bind
   anything but loopback.
+- **Work status** (`workStatus.ts`) is read per worktree *directory* — directories outlive session records — with
+  read-only git and no network, so `merged` means "as of the user's last fetch"; squash merges are recognised by
+  comparing the content of the files the branch touched. The dashboard never commits, pushes or calls `gh`: **Ship** only
+  hands the agent a prompt (`prompts.ship`, else `DEFAULT_SHIP_PROMPT`).
 - Tests never start a real agent or use the network: `test/fixtures/fake-agent.ts` is a tiny interactive program run in
   real pseudo-terminals and temp git repositories.
 - Anything here must also work in the compiled binary (`bun run build`), not just under `bun run`.
