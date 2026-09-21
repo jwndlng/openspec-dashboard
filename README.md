@@ -146,7 +146,13 @@ the dashboard shows it, passes your keystrokes on, and interprets nothing.
   `No, stop here` under the terminal. A click types that text into the terminal and focuses it; you press Enter to send.
   It deliberately does not press Enter for you: the dashboard cannot know whether the agent shows a text prompt or a
   selection menu, and in a menu Enter would confirm whatever option is highlighted.
-- **Several at once**: the panel has a tab per running session, so you switch between agents without hiding anything.
+- **A dock, not a side panel**: terminals sit in a dock across the bottom of the window — wide and short, the shape
+  terminal output has — with the board fully usable above it. Drag its top edge (or use the arrow keys on it) to
+  resize; the height is remembered in the browser. **Maximise** gives it the window, **Collapse** leaves only the tabs.
+  Up to **three sessions side by side**; the tab strip lists every running session (▣ marks the ones shown). A tab
+  that is not shown opens in a free pane, or replaces the pane you are in once three are shown; a pane's ✕ closes the
+  pane, never the session. The link in the address bar carries the shown sessions. On narrow windows one pane shows.
+- **Several at once**: the dock has a tab per running session, so you switch between agents without hiding anything.
   A card keeps offering the step that fits the change's stage while its session runs: after *Draft artifacts* has
   finished, **↳ Implement** types the next prompt into the same terminal — you press Enter, because the dashboard cannot
   know whether the agent is showing a prompt or a menu. Archiving always gets its own session and worktree. The ✕ on a

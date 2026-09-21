@@ -43,9 +43,9 @@ export function nextStepFor(sessions: Session[], repoId: string, change: string,
   return { promptSessionId: running.find((s) => s.action !== "archive")?.id };
 }
 
-/** Panel tabs: every running session, oldest first so tabs do not jump, plus the one shown if it has ended. */
-export function sessionTabs(sessions: Session[], shownId: string | undefined): Session[] {
-  return sessions.filter((s) => s.state === "running" || s.id === shownId).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+/** Dock tabs: every running session, oldest first so tabs do not jump, plus shown ones that have ended. */
+export function sessionTabs(sessions: Session[], shown: readonly string[]): Session[] {
+  return sessions.filter((s) => s.state === "running" || shown.includes(s.id)).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
 }
 
 export type EndSeverity = "plain" | "notice" | "danger";
@@ -143,17 +143,57 @@ export function openWork(worktrees: SessionWorktree[], sessions: Session[], now 
 
 const PARAM = "session";
 
-export function sessionIdFromSearch(search: string): string | undefined {
-  return new URLSearchParams(search).get(PARAM) || undefined;
+/** The dock shows at most this many sessions side by side; the tab strip can hold more. */
+export const MAX_SHOWN = 3;
+
+/** `?session=a,b,c` in pane order: the first three distinct ids. A single id — the format of older links — is one pane. */
+export function shownFromSearch(search: string): string[] {
+  const ids = (new URLSearchParams(search).get(PARAM) ?? "").split(",").map((id) => id.trim()).filter(Boolean);
+  return [...new Set(ids)].slice(0, MAX_SHOWN);
 }
 
 /** Sets or clears `?session=` and keeps every other query parameter (board filters live there too). */
-export function searchWithSession(search: string, id: string | undefined): string {
+export function searchWithShown(search: string, shown: readonly string[]): string {
   const params = new URLSearchParams(search);
-  if (id) params.set(PARAM, id);
+  if (shown.length > 0) params.set(PARAM, shown.join(","));
   else params.delete(PARAM);
-  const out = params.toString();
+  // Ids are UUIDs; a readable comma keeps deep links legible.
+  const out = params.toString().replaceAll("%2C", ",");
   return out ? `?${out}` : "";
+}
+
+/** Dock geometry, in one place: the dock never gets too small for a terminal, the board above it never too small to use. */
+export const DOCK_MIN_HEIGHT = 160;
+export const DOCK_MIN_BOARD = 120;
+export const DOCK_TABS_HEIGHT = 36;
+export const DOCK_DEFAULT_RATIO = 0.42;
+
+export function clampDockHeight(height: number, windowHeight: number): number {
+  return Math.round(Math.min(Math.max(height, DOCK_MIN_HEIGHT), Math.max(DOCK_MIN_HEIGHT, windowHeight - DOCK_MIN_BOARD)));
+}
+
+export interface Shown {
+  shown: string[];
+  focusedId?: string;
+}
+
+/**
+ * "Show this session": focus it if it has a pane already, give it a new pane while there is room, otherwise replace the
+ * pane the user is in (the one they are looking at when asking for another session) — the last one if none has focus.
+ */
+export function showSession({ shown, focusedId }: Shown, id: string): Shown {
+  if (shown.includes(id)) return { shown, focusedId: id };
+  if (shown.length < MAX_SHOWN) return { shown: [...shown, id], focusedId: id };
+  const at = focusedId !== undefined && shown.includes(focusedId) ? shown.indexOf(focusedId) : shown.length - 1;
+  return { shown: shown.map((other, i) => (i === at ? id : other)), focusedId: id };
+}
+
+/** Removes a pane (never a session); the keyboard moves to the pane that takes its place, else the one before. */
+export function hideSession({ shown, focusedId }: Shown, id: string): Shown {
+  const at = shown.indexOf(id);
+  if (at < 0) return { shown, focusedId };
+  const rest = shown.filter((other) => other !== id);
+  return { shown: rest, focusedId: focusedId === id ? (rest[at] ?? rest[at - 1]) : focusedId };
 }
 
 /** One argument per line; blank lines are dropped. A command is an argument list, never a shell string. */

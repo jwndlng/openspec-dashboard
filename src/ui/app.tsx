@@ -7,7 +7,7 @@ import { Overview } from "./overview.tsx";
 import { enabledOnly } from "./overviewState.ts";
 import { type Route, routeFromPath } from "./routes.ts";
 import { EndSessionDialog } from "./endSessionDialog.tsx";
-import { SessionPanel } from "./sessionPanel.tsx";
+import { SessionDock } from "./sessionPanel.tsx";
 import { OpenWork, SessionProvider } from "./sessions.tsx";
 import { Settings } from "./settings.tsx";
 import { currentPath, href, navigate, onRouteChange } from "./url.ts";
@@ -152,7 +152,7 @@ export function App() {
           <Kanban key={route.view === "repo" ? route.repoId : "all"} snapshot={shown} config={config} repoId={route.view === "repo" ? route.repoId : undefined} />
         )}
       </main>
-      <SessionPanel />
+      <SessionDock />
       <EndSessionDialog />
       </SessionProvider>
     </div>
