@@ -3,6 +3,7 @@ import { beforeAll, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { buildSample, DEMO_MARKER } from "../src/ui/demo/sampleData.ts";
+import { TRANSCRIPTS } from "../src/ui/demo/transcripts.ts";
 import { looksLikeRealHome } from "./helpers.ts";
 
 const root = join(import.meta.dir, "..");
@@ -35,4 +36,12 @@ test("the product bundle contains neither the demo marker nor the sample data", 
   expect(html).not.toContain(DEMO_MARKER);
   for (const name of sampleNames) expect(html).not.toContain(name);
   expect(html).not.toContain("/home/demo");
+  // nor the simulated sessions: no recording text, no fictional agent
+  for (const needle of ["demo recording", "demo-agent", "Demo Agent", "sliding window counter"]) expect([needle, html.includes(needle)]).toEqual([needle, false]);
+  expect(Object.keys(TRANSCRIPTS).length).toBeGreaterThan(4);
+});
+
+test("the demo bundle carries the recordings and the fictional agent", () => {
+  const html = withoutFonts(read("demo"));
+  for (const needle of ["demo recording", "Demo Agent", "sliding window counter"]) expect([needle, html.includes(needle)]).toEqual([needle, true]);
 });
