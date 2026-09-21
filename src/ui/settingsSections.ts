@@ -20,6 +20,20 @@ export function serializeSection(query: string, id: string | undefined, first?: 
   return out ? `?${out}` : "";
 }
 
+/**
+ * Where the narrow-screen navigation row has to scroll (horizontally) so that an entry is fully visible: unchanged when
+ * it already is, otherwise the smallest shift that reveals it. An entry wider than the row is aligned to its start.
+ * Deliberately not `scrollIntoView`: that also scrolls the page, which would drag it back to a navigation that has
+ * scrolled out of view.
+ */
+export function rowScrollLeft(row: { scrollLeft: number; clientWidth: number }, entry: { offsetLeft: number; offsetWidth: number }): number {
+  const start = entry.offsetLeft;
+  const end = entry.offsetLeft + entry.offsetWidth;
+  if (start < row.scrollLeft || entry.offsetWidth > row.clientWidth) return Math.max(0, start);
+  if (end > row.scrollLeft + row.clientWidth) return Math.max(0, end - row.clientWidth);
+  return row.scrollLeft;
+}
+
 export interface SectionRect {
   id: string;
   /** Distance from the top of the scroll view to the top of the section; negative once scrolled past. */
