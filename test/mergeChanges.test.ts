@@ -78,3 +78,22 @@ test("mergeChanges: worktrees that merely carry main's copy along are not listed
   const [wtOnly] = mergeChanges([copy(wt("x"), "ready", "Ready"), copy(wt("y"), "ready", "Ready")], new Map());
   expect(wtOnly.otherCheckouts).toEqual([{ ...wt("y"), column: "Ready" }]);
 });
+
+test("a pending archive leads: one archived change from the worktree, active copies as its other checkouts", () => {
+  const archivedCopy = (name: string, date: string) => copy(wt(name, `chore/${name}`), "archived", "Archived", { archived: date });
+  const main = copy(MAIN, "implementing", "Implementing", { created: "2026-09-10" });
+  const stale = copy(wt("stale"), "artifact", "Proposal", { created: "2026-09-10" });
+
+  const [one, ...rest] = mergeChanges([stale, main], new Map(), [archivedCopy("archive-a", "2026-09-18"), archivedCopy("archive-b", "2026-09-20")]);
+  expect(rest).toEqual([]);
+  expect(one).toMatchObject({ archived: "2026-09-20", column: "Archived", checkout: { branch: "chore/archive-b", isMain: false } }); // the latest of several
+  expect(one.otherCheckouts?.map((o) => [o.isMain, o.column])).toEqual([[true, "Implementing"], [false, "Proposal"]]);
+
+  // nothing active left anywhere: still reported, without other checkouts
+  expect(mergeChanges([], new Map(), [archivedCopy("archive-a", "2026-09-18")])).toMatchObject([{ archived: "2026-09-18", otherCheckouts: undefined }]);
+
+  // a change created after that archive reuses the name and stays active on its own
+  const reused = copy(MAIN, "artifact", "Proposal", { created: "2026-10-02" });
+  const both = mergeChanges([reused, stale], new Map(), [archivedCopy("archive-a", "2026-09-18")]);
+  expect(both.map((c) => [c.column, c.checkout?.isMain, c.otherCheckouts?.length]).sort()).toEqual([["Archived", false, 1], ["Proposal", true, undefined]].sort());
+});

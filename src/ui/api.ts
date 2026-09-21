@@ -1,4 +1,4 @@
-import type { WorkStatus } from "../shared/types.ts";
+import type { ShipResult, WorkStatus } from "../shared/types.ts";
 import type { AgentAvailability, Config, DiscoverResult, ScanTriggerResult, Session, SessionAction, SessionWorktree, SharedConfig, SharedConfigApplyResult, SharedConfigAssignment, SharedConfigPreview, Snapshot } from "../shared/types.ts";
 import { socketOrigin } from "./url.ts";
 
@@ -46,7 +46,7 @@ export interface Api {
   /** Continues the agent's latest conversation in the session's worktree. */
   resumeSession(id: string): Promise<Session>;
   /** Asks the session's agent to commit, push and open a pull request. */
-  shipSession(id: string): Promise<Session>;
+  shipSession(id: string): Promise<ShipResult>;
   /** For a worktree whose session record is gone; refused unless that is safe. */
   removeWorktree(repoId: string, name: string): Promise<{ removable: boolean; reason?: string }>;
   /** Ends the agent if it is running; removes the worktree only when asked and safe. */
@@ -69,10 +69,16 @@ export interface TerminalHandlers {
   onData(bytes: Uint8Array): void;
   /** The agent's process ended. */
   onExit(): void;
+  /** The answer to a `submit` message: whether Enter was pressed. Answers arrive in the order of the submissions. */
+  onSubmitted(ok: boolean): void;
   onClose(): void;
 }
 
-export type TerminalMessage = { type: "input"; data: string } | { type: "resize"; cols: number; rows: number };
+export type TerminalMessage =
+  | { type: "input"; data: string }
+  /** Typed, and sent with Enter only once the agent's terminal has shown the text; answered with `onSubmitted`. */
+  | { type: "submit"; data: string }
+  | { type: "resize"; cols: number; rows: number };
 
 export interface TerminalConnection {
   /** Dropped while the connection is not open. */
@@ -94,7 +100,7 @@ export const httpApi: Api = {
   sessions: () => call<{ sessions: Session[]; agents: AgentAvailability[]; worktrees: SessionWorktree[] }>("/api/sessions"),
   openSession: (repoId, change, action) => call<Session>("/api/sessions", { method: "POST", body: JSON.stringify({ repoId, change, action }) }),
   resumeSession: (id) => call<Session>(`/api/sessions/${id}/resume`, { method: "POST" }),
-  shipSession: (id) => call<Session>(`/api/sessions/${id}/ship`, { method: "POST" }),
+  shipSession: (id) => call<ShipResult>(`/api/sessions/${id}/ship`, { method: "POST" }),
   removeWorktree: (repoId, name) => call("/api/worktrees/remove", { method: "POST", body: JSON.stringify({ repoId, name }) }),
   closeSession: (id, removeWorktree) => call(`/api/sessions/${id}/close`, { method: "POST", body: JSON.stringify({ removeWorktree }) }),
   deleteSession: (id) => call<{ deleted: boolean }>(`/api/sessions/${id}`, { method: "DELETE" }),
@@ -106,7 +112,9 @@ export const httpApi: Api = {
     socket.onopen = () => handlers.onOpen();
     socket.onmessage = (event) => {
       if (typeof event.data === "string") {
-        if (JSON.parse(event.data).type === "exit") handlers.onExit();
+        const frame = JSON.parse(event.data) as { type?: string; ok?: boolean };
+        if (frame.type === "exit") handlers.onExit();
+        else if (frame.type === "submitted") handlers.onSubmitted(frame.ok === true);
       } else {
         handlers.onData(new Uint8Array(event.data as ArrayBuffer));
       }

@@ -22,6 +22,9 @@ interface SessionUi {
   endingId?: string;
   /** Bumped whenever the terminal should take the keyboard (after something was typed into it for the user). */
   focusTick: number;
+  /** The session whose last text sent on the user's behalf was typed but not submitted; its panel says so. */
+  unsentId?: string;
+  reportUnsent(id: string | undefined): void;
   /** Opens the end-session dialog; nothing is ended before the user confirms there. */
   requestEnd(id: string | undefined): void;
   error?: string;
@@ -31,7 +34,7 @@ interface SessionUi {
 }
 
 const noop = async () => {};
-const Context = createContext<SessionUi>({ config: null, snapshot: null, sessions: [], agents: [], worktrees: [], focusTick: 0, requestEnd: () => {}, openPanel: () => {}, start: noop, refresh: noop });
+const Context = createContext<SessionUi>({ config: null, snapshot: null, sessions: [], agents: [], worktrees: [], focusTick: 0, reportUnsent: () => {}, requestEnd: () => {}, openPanel: () => {}, start: noop, refresh: noop });
 
 export const useSessionUi = () => useContext(Context);
 
@@ -69,6 +72,7 @@ export function SessionProvider({ config, snapshot = null, children }: { config:
 
   const [endingId, requestEnd] = useState<string>();
   const [focusTick, setFocusTick] = useState(0);
+  const [unsentId, reportUnsent] = useState<string>();
 
   const start = useCallback(
     async (repoId: string, change: string, action: SessionAction) => {
@@ -85,7 +89,7 @@ export function SessionProvider({ config, snapshot = null, children }: { config:
     [refresh, openPanel, sessions],
   );
 
-  const value = useMemo(() => ({ config, snapshot, sessions, agents, worktrees, panelId, endingId, focusTick, requestEnd, error, openPanel, start, refresh }), [config, snapshot, sessions, agents, worktrees, panelId, endingId, focusTick, error, openPanel, start, refresh]);
+  const value = useMemo(() => ({ config, snapshot, sessions, agents, worktrees, panelId, endingId, focusTick, unsentId, reportUnsent, requestEnd, error, openPanel, start, refresh }), [config, snapshot, sessions, agents, worktrees, panelId, endingId, focusTick, unsentId, error, openPanel, start, refresh]);
   return <Context.Provider value={value}>{children}</Context.Provider>;
 }
 

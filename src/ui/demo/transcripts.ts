@@ -265,16 +265,19 @@ export function playTranscript(steps: Step[], { from, values, handlers, onProgre
 
   return {
     send(message: TerminalMessage) {
-      if (closed || message.type !== "input") return;
-      const answered = /[\r\n]/.test(message.data);
+      if (closed || message.type === "resize") return;
+      // The recorded agent always shows a text prompt, so a submitted response is typed and sent.
+      const data = message.type === "submit" ? `${message.data}\r` : message.data;
+      const answered = /[\r\n]/.test(data);
       // echo what was typed, like a terminal in cooked mode would
-      write(message.data.replace(/\r\n?|\n/g, "\r\n").replace(/\x7f/g, "\b \b"));
+      write(data.replace(/\r\n?|\n/g, "\r\n").replace(/\x7f/g, "\b \b"));
       if (waiting && answered) {
         waiting = false;
         index++;
         progress();
         schedule();
       }
+      if (message.type === "submit") handlers.onSubmitted(true);
     },
     type(text: string) {
       if (!closed) write(text);

@@ -158,10 +158,11 @@ test("archived on main wins over a stale active copy; a later-created change of 
   snap = await scan(root);
   expect(byName(snap, "audit-trail").map((c) => [c.column, c.checkout?.path ?? "main-archive"]).sort()).toEqual([["Archived", "main-archive"], ["Design", reused]].sort());
 
-  // an archive directory inside a worktree is never read
+  // that worktree's branch carries main's archive along: it is reported once, from main (asserted above); an
+  // archive only the worktree has is a pending archive
   await mkdir(join(reused, "openspec", "changes", "archive", "2026-01-01-ghost"), { recursive: true });
   await writeFile(join(reused, "openspec", "changes", "archive", "2026-01-01-ghost", "proposal.md"), "# x\n");
-  expect(byName(await scan(root), "ghost")).toEqual([]);
+  expect(byName(await scan(root), "ghost").map((c) => [c.column, c.archived, c.checkout?.path])).toEqual([["Archived", "2026-01-01", reused]]);
 });
 
 test("spec sync is judged in the change's own checkout", async () => {
@@ -266,4 +267,55 @@ test("unchanged elsewhere: non-git repositories scan as before, and discovery st
   await worktree(root, join(root, "..", "sibling-worktree"), "feat/sibling");
   const found = await discoverRepos([], [join(root, "..")]);
   expect(found.candidates.map((c) => c.path.split("/").pop())).toEqual(["alpha-infra"]);
+});
+
+test("archived in a worktree leads over the main checkout's stale active copy", async () => {
+  const root = await repo();
+  await writeChange(root, "audit-trail", { created: "2026-09-10", artifacts: ["proposal", "design", "specs", "tasks"], tasks: "- [x] 1.1 a\n- [x] 1.2 b\n- [ ] 1.3 c\n" });
+  await git(root, "add", "-A");
+  await git(root, "commit", "-q", "-m", "work");
+  const archive = await worktree(root, join(root, ".claude", "worktrees", "archive-audit-trail"), "chore/archive-audit-trail");
+  await mkdir(join(archive, "openspec", "changes", "archive"), { recursive: true });
+  await git(archive, "mv", "openspec/changes/audit-trail", "openspec/changes/archive/2026-09-20-audit-trail");
+  await git(archive, "commit", "-q", "-m", "archive");
+
+  const cards = byName(await scan(root), "audit-trail");
+  expect(cards).toHaveLength(1);
+  expect(cards[0]).toMatchObject({ column: "Archived", archived: "2026-09-20", checkout: { path: archive, branch: "chore/archive-audit-trail", isMain: false } });
+  expect(cards[0].otherCheckouts).toEqual([{ path: root, branch: "main", isMain: true, column: "Implementing" }]);
+
+  // once main has the archive too, it is an ordinary archived change again
+  await git(root, "merge", "-q", "chore/archive-audit-trail");
+  const merged = byName(await scan(root), "audit-trail");
+  expect(merged.map((c) => [c.column, c.checkout, c.otherCheckouts])).toEqual([["Archived", undefined, undefined]]);
+});
+
+test("a name reused after a pending archive stays a separate active change", async () => {
+  const root = await repo();
+  await writeChange(root, "audit-trail", { created: "2026-10-02" });
+  await git(root, "add", "-A");
+  await git(root, "commit", "-q", "-m", "v2");
+  const old = await worktree(root, join(root, ".claude", "worktrees", "old"), "chore/old-archive");
+  await rm(join(old, "openspec", "changes", "audit-trail"), { recursive: true, force: true });
+  await mkdir(join(old, "openspec", "changes", "archive", "2026-09-20-audit-trail"), { recursive: true });
+  await writeFile(join(old, "openspec", "changes", "archive", "2026-09-20-audit-trail", "proposal.md"), "# x\n");
+  const cards = byName(await scan(root), "audit-trail");
+  expect(cards.map((c) => [c.column, c.checkout?.isMain]).sort()).toEqual([["Archived", false], ["Proposal", true]].sort());
+});
+
+test("a project in a subdirectory of its repository is read from the same subdirectory of each worktree", async () => {
+  const root = await repo(); // has its own openspec/ at the top level, which must not leak into the nested project
+  const project = join(root, "services", "billing");
+  await mkdir(join(project, "openspec", "changes"), { recursive: true });
+  await writeFile(join(project, "openspec", "config.yaml"), "schema: spec-driven\n");
+  await writeChange(project, "invoice-export", { created: "2026-09-01" });
+  await writeChange(root, "outer-change");
+  await git(root, "add", "-A");
+  await git(root, "commit", "-q", "-m", "nested project");
+  const wt = await worktree(root, join(root, ".claude", "worktrees", "invoice-export"), "feat/invoice-export");
+  await writeChange(join(wt, "services", "billing"), "invoice-export", { created: "2026-09-01", artifacts: ["proposal", "design"] });
+
+  const snap = await scan(project);
+  expect(snap.changes.map((c) => c.name)).toEqual(["invoice-export"]); // nothing from the repository's top-level openspec/
+  expect(byName(snap, "invoice-export")[0]).toMatchObject({ column: "Design", checkout: { path: join(wt, "services", "billing"), isMain: false } });
 });

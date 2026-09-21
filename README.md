@@ -152,9 +152,11 @@ the dashboard shows it, passes your keystrokes on, and interprets nothing.
   probably waiting for you) or how the session ended. **Resume** starts the agent's resume command in the same worktree.
   Stopping the dashboard ends its agents; their output stays viewable.
 - **Default responses**: while a session is running, the panel offers `Yes, go ahead`, `Yes, create a PR` and
-  `No, stop here` under the terminal. A click types that text into the terminal and focuses it; you press Enter to send.
-  It deliberately does not press Enter for you: the dashboard cannot know whether the agent shows a text prompt or a
-  selection menu, and in a menu Enter would confirm whatever option is highlighted.
+  `No, stop here` under the terminal. One click sends it: the text is typed, and Enter follows as soon as the agent's
+  terminal shows the text back — which a text prompt does and a selection menu does not. At a menu (a permission or
+  trust question) nothing is confirmed: the text stays typed, and the panel tells you it was not sent. Ship and opening
+  prompts that are typed after start-up are sent the same way, so an agent that opens with a dialog is never answered
+  for you.
 - **Several at once**: the panel has a tab per running session, so you switch between agents without hiding anything.
   A card keeps offering the step that fits the change's stage while its session runs: after *Draft artifacts* has
   finished, **↳ Implement** types the next prompt into the same terminal — you press Enter, because the dashboard cannot
@@ -165,7 +167,7 @@ the dashboard shows it, passes your keystrokes on, and interprets nothing.
   was deleted — `3 uncommitted`, `2 not pushed`, `pushed` or `merged` — shown on the card and in **Open work** in the
   top bar, which lists all of them across repositories and highlights work nobody touched for a day (pushed: a week).
   It is read from local git only, so "pushed" and "merged" are as of your last `git fetch`; squash merges are
-  recognised. **Ship** asks the agent to commit, push and open a pull request (the prompt is editable per agent) — the
+  recognised. **Ship** sends the agent a prompt to commit, push and open a pull request (editable per agent) with one click — the
   dashboard itself never commits or pushes. Once the work is merged, clean-up offers to remove the worktree; the branch
   is kept.
 - **What protects you**: the feature is off until you enable it; the server only listens on `127.0.0.1`; the terminal
@@ -187,8 +189,12 @@ unreadable is skipped with a warning).
   checkout it lives in, the tooltip names the worktree and any other checkout whose copy is at a different stage, and
   "Copy apply command" `cd`s into that checkout — not into the main one.
 - **Archived on main wins.** Branches cut before an archive still carry the change as active; such leftovers are
-  ignored (unless the copy was created after the archive, which makes it a new change reusing the name). Archives and
-  main specs are always read from the main checkout.
+  ignored (unless the copy was created after the archive, which makes it a new change reusing the name).
+- **Archived in a worktree counts too.** Agents archive on a branch in a worktree, and the main checkout only catches up
+  when that branch is merged *and* pulled. An archive that only a worktree has therefore leads like any other furthest
+  stage: the card is in Archived with a badge `on <branch> · not in main checkout`, and its tooltip names the checkouts
+  that still hold an active copy. Archives the main checkout has are read from there only; main specs always are.
+- A project in a subdirectory of its git repository is read from that same subdirectory of every worktree.
 - Progress, last activity (uncommitted edits in a worktree count) and Done-vs-Synced are evaluated in the checkout the
   change lives in. A repository's "last updated" covers its worktrees too.
 - **Agent sessions** copy a change from wherever it lives. If the branch a session would use (`feat/<change>`) is

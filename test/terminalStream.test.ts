@@ -35,6 +35,7 @@ test("the product's terminal stream is the session's WebSocket, mapped one to on
     onOpen: () => events.push("open"),
     onData: (bytes) => events.push(`data:${new TextDecoder().decode(bytes)}`),
     onExit: () => events.push("exit"),
+    onSubmitted: (ok) => events.push(`submitted:${ok}`),
     onClose: () => events.push("close"),
   });
   const socket = FakeSocket.last;
@@ -49,13 +50,16 @@ test("the product's terminal stream is the session's WebSocket, mapped one to on
   socket.onopen?.();
   connection.send({ type: "resize", cols: 80, rows: 24 });
   connection.send({ type: "input", data: "y\r" });
+  connection.send({ type: "submit", data: "Yes, go ahead" });
   socket.onmessage?.({ data: new TextEncoder().encode("hello").buffer });
+  socket.onmessage?.({ data: JSON.stringify({ type: "submitted", ok: true }) });
+  socket.onmessage?.({ data: JSON.stringify({ type: "submitted", ok: false }) });
   socket.onmessage?.({ data: JSON.stringify({ type: "something-else" }) });
   socket.onmessage?.({ data: JSON.stringify({ type: "exit" }) });
   socket.onclose?.();
   connection.close();
 
-  expect(socket.sent).toEqual(['{"type":"resize","cols":80,"rows":24}', '{"type":"input","data":"y\\r"}']);
-  expect(events).toEqual(["open", "data:hello", "exit", "close"]);
+  expect(socket.sent).toEqual(['{"type":"resize","cols":80,"rows":24}', '{"type":"input","data":"y\\r"}', '{"type":"submit","data":"Yes, go ahead"}']);
+  expect(events).toEqual(["open", "data:hello", "submitted:true", "submitted:false", "exit", "close"]);
   expect(socket.closed).toBe(true);
 });

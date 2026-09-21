@@ -6,7 +6,7 @@ import { useEffect, useRef, useState } from "preact/hooks";
 import { SHIPPABLE_WORK, type SessionAction } from "../shared/types.ts";
 import { api, type TerminalMessage } from "./api.ts";
 import { cdCommand } from "./format.ts";
-import { DEFAULT_QUICK_REPLIES, replyHint, replyInput, type QuickReply } from "./quickReplies.ts";
+import { DEFAULT_QUICK_REPLIES, NOT_SUBMITTED_NOTICE, replyHint, replyMessage, type QuickReply } from "./quickReplies.ts";
 import { nextStepFor, sessionBadge, sessionTabs, startersFor, workBadge } from "./sessionState.ts";
 import { SessionBadgeView, useSessionUi } from "./sessions.tsx";
 
@@ -36,8 +36,12 @@ function terminalTheme(el: HTMLElement) {
   return { background: token("--bg-base", "#0b0d10"), foreground: token("--fg-heading", "#f3f5f7"), cursor: token("--brand", "#71c7c5"), selectionBackground: token("--bg-elevated", "#313437") };
 }
 
-/** How long a default response stays inert after a click, so a double click sends it once. */
+/** How long a typed-only response stays inert after a click, so a double click types it once. */
 const REPLY_GUARD_MS = 600;
+/** A submitted response stays inert until the server answers; this only covers an answer that never comes. */
+const SUBMIT_GUARD_MS = 10_000;
+/** How long the "typed but not sent" notice stays before it dismisses itself. */
+const UNSENT_NOTICE_MS = 12_000;
 
 function TerminalView({ sessionId, running, onExit }: { sessionId: string; running: boolean; onExit: () => void }) {
   const host = useRef<HTMLDivElement>(null);
@@ -48,25 +52,48 @@ function TerminalView({ sessionId, running, onExit }: { sessionId: string; runni
   const guard = useRef(new Set<string>());
   const [guarded, setGuarded] = useState<readonly string[]>([]);
 
-  // A default response is plain terminal input: the same message a keystroke produces. The defaults only type; the
-  // user presses Enter in the focused terminal (see quickReplies.ts for why).
+  // A default response goes to the server as `submit`: typed, and sent with Enter only once the agent has shown it.
+  // The server answers this socket with `submitted`; until then the clicked response stays inert.
+  const pending = useRef<string[]>([]);
   // Something was typed into this terminal on the user's behalf (a next step): hand them the keyboard for Enter.
-  const { focusTick } = useSessionUi();
+  const { focusTick, unsentId, reportUnsent } = useSessionUi();
   useEffect(() => {
     if (focusTick > 0) live.current?.focus();
   }, [focusTick]);
 
+  const release = (id: string) => {
+    guard.current.delete(id);
+    setGuarded([...guard.current]);
+  };
   const reply = (r: QuickReply) => {
     if (guard.current.has(r.id)) return;
     guard.current.add(r.id);
     setGuarded([...guard.current]);
-    live.current?.send({ type: "input", data: replyInput(r) });
+    reportUnsent(undefined);
+    live.current?.send(replyMessage(r));
     live.current?.focus();
-    setTimeout(() => {
-      guard.current.delete(r.id);
-      setGuarded([...guard.current]);
-    }, REPLY_GUARD_MS);
+    if (r.submit) pending.current.push(r.id);
+    setTimeout(
+      () => {
+        pending.current = pending.current.filter((id) => id !== r.id);
+        release(r.id);
+      },
+      r.submit ? SUBMIT_GUARD_MS : REPLY_GUARD_MS,
+    );
   };
+  // Answers arrive in the order the submissions were made (the server runs them one after another).
+  const onSubmitted = useRef<(ok: boolean) => void>(() => {});
+  onSubmitted.current = (ok) => {
+    const id = pending.current.shift();
+    if (id) release(id);
+    if (!ok) reportUnsent(sessionId);
+  };
+
+  useEffect(() => {
+    if (unsentId !== sessionId) return;
+    const timer = setTimeout(() => reportUnsent(undefined), UNSENT_NOTICE_MS);
+    return () => clearTimeout(timer);
+  }, [unsentId, sessionId, reportUnsent]);
 
   useEffect(() => {
     const el = host.current;
@@ -86,6 +113,7 @@ function TerminalView({ sessionId, running, onExit }: { sessionId: string; runni
       },
       onData: (bytes) => term.write(bytes),
       onExit,
+      onSubmitted: (ok) => onSubmitted.current(ok),
       onClose: () => setStatus("closed"),
     });
     const send = (message: TerminalMessage) => connection.send(message);
@@ -115,6 +143,14 @@ function TerminalView({ sessionId, running, onExit }: { sessionId: string; runni
         <div ref={host} class="session-terminal-host" />
         {status !== "open" && <div class="session-terminal-note">{status === "connecting" ? "connecting to the terminal…" : "terminal disconnected"}</div>}
       </div>
+      {unsentId === sessionId && (
+        <div class="session-unsent notice warn" role="status">
+          <span>{NOT_SUBMITTED_NOTICE}</span>
+          <button type="button" class="btn sm ghost" aria-label="Dismiss" onClick={() => reportUnsent(undefined)}>
+            ×
+          </button>
+        </div>
+      )}
       {running && status === "open" && (
         // biome-ignore lint/a11y/useSemanticElements: a fieldset would bring legend/border styling the response row does not want
         <div class="session-replies" role="group" aria-label="Default responses">
@@ -248,11 +284,14 @@ export function SessionPanel() {
                 class="btn sm primary"
                 title={
                   session.state === "running"
-                    ? `Types a prompt into the terminal asking ${session.agentName} to commit, push and open a pull request`
+                    ? `Sends ${session.agentName} a prompt asking it to commit, push and open a pull request`
                     : `Starts ${session.agentName} in this worktree with a prompt to commit, push and open a pull request`
                 }
                 onClick={() =>
-                  act(() => api.shipSession(session.id))
+                  act(async () => {
+                    const result = await api.shipSession(session.id);
+                    ui.reportUnsent(result.submitted ? undefined : session.id);
+                  })
                 }
               >
                 ⇪ Ship

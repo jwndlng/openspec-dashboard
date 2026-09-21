@@ -3,7 +3,7 @@
 //
 // All of it is invented, like the rest of the sample (see sampleData.ts): every repository, change, branch and path
 // comes from the sample, and terminal output comes from the hand-written transcripts.
-import { availableActions, type Config, type Session, type SessionAction, type SessionWorktree, SHIPPABLE_WORK, type Snapshot, type WorkStatus, type Worktree } from "../../shared/types.ts";
+import { availableActions, type Config, type Session, type SessionAction, type SessionWorktree, type ShipResult, SHIPPABLE_WORK, type Snapshot, type WorkStatus, type Worktree } from "../../shared/types.ts";
 import { ApiError, type TerminalConnection, type TerminalHandlers } from "../api.ts";
 import { DEMO_AGENT, DEMO_ROOT } from "./sampleData.ts";
 import { type Clock, type Playback, type Position, playTranscript, positionAfter, TRANSCRIPTS, type TranscriptName, workAfter } from "./transcripts.ts";
@@ -315,12 +315,12 @@ export function createDemoSessions({ now, getConfig, getSnapshot, clock }: DemoS
       return s.session;
     },
 
-    ship(id: string): Session {
+    ship(id: string): ShipResult {
       const s = find(id);
       const work = workOf(s);
       if (!SHIPPABLE_WORK.includes(work.state)) throw new ApiError(409, `there is nothing to ship (${work.state})`);
       run(s, "ship");
-      return s.session;
+      return { ...s.session, submitted: true };
     },
 
     prompt(id: string, action: SessionAction): Session {

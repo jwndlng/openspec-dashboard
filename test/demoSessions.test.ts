@@ -31,7 +31,7 @@ function demo(start = Date.parse("2026-06-01T12:00:00.000Z")) {
   const terminal = (id: string) => {
     const events: string[] = [];
     const decoder = new TextDecoder();
-    const handlers: TerminalHandlers = { onOpen: () => events.push("<open>"), onData: (b) => events.push(decoder.decode(b)), onExit: () => events.push("<exit>"), onClose: () => events.push("<close>") };
+    const handlers: TerminalHandlers = { onOpen: () => events.push("<open>"), onData: (b) => events.push(decoder.decode(b)), onExit: () => events.push("<exit>"), onSubmitted: (ok) => events.push(`<submitted:${ok}>`), onClose: () => events.push("<close>") };
     const connection = api.openTerminal(id, handlers);
     return { connection, events, text: () => events.filter((e) => !e.startsWith("<")).join("") };
   };

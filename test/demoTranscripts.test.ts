@@ -47,7 +47,7 @@ function play(from: Position, steps = STEPS) {
     values: VALUES,
     clock: t.clock,
     onProgress: (p, w) => progress.push([p, w]),
-    handlers: { onOpen: () => events.push("<open>"), onData: (b) => events.push(decoder.decode(b)), onExit: () => events.push("<exit>"), onClose: () => events.push("<close>") },
+    handlers: { onOpen: () => events.push("<open>"), onData: (b) => events.push(decoder.decode(b)), onExit: () => events.push("<exit>"), onSubmitted: (ok) => events.push(`<submitted:${ok}>`), onClose: () => events.push("<close>") },
   });
   return { ...t, events, progress, playback, text: () => events.filter((e) => !e.startsWith("<")).join("") };
 }
@@ -98,6 +98,16 @@ test("a line of input answers the question — typed, or sent by a quick-reply b
     expect(p.progress.at(-1)).toEqual([{ index: STEPS.length, waiting: false }, { state: "uncommitted", count: 2 }]);
     expect(p.pending()).toBe(0);
   }
+});
+
+test("a default response arrives as `submit`: it is typed, sent with Enter, and answered as submitted", () => {
+  const p = play({ index: 0, waiting: false });
+  p.advance(60_000);
+  p.playback.send({ type: "submit", data: "Yes, go ahead" });
+  expect(p.text().endsWith("ok? Yes, go ahead\r\n")).toBe(true);
+  expect(p.events.at(-1)).toBe("<submitted:true>");
+  p.advance(500);
+  expect(p.text()).toContain("three feat/add-rate-limiting");
 });
 
 test("reopening: what already happened is scrollback at once, then playback continues; a pending question is asked again", () => {
