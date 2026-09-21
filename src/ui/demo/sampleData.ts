@@ -4,9 +4,8 @@
 //
 // Ages are relative to `now`, so the published demo never looks abandoned. Column and stage are derived with the
 // same rules the scanner uses, so the sample cannot disagree with the board.
-import { defaultAgentSessions } from "../../shared/agentDefaults.ts";
 import { deriveStage } from "../../shared/columns.ts";
-import type { ActivityEvent, ArtifactStatus, ChangeSnapshot, Config, RepoConfig, RepoSnapshot, Snapshot } from "../../shared/types.ts";
+import type { ActivityEvent, AgentProfile, ArtifactStatus, ChangeSnapshot, Config, RepoConfig, RepoSnapshot, SharedProfile, Snapshot } from "../../shared/types.ts";
 
 /** Appears in the demo bundle only; test/demoBundle.test.ts uses it to tell the two bundles apart. */
 export const DEMO_MARKER = "openspec-dashboard-demo-build";
@@ -79,6 +78,28 @@ function checkouts(r: SampleRepo, c: SampleChange): Pick<ChangeSnapshot, "checko
     otherCheckouts: inWorktree && c.onMain ? [{ ...main, column: c.onMain }] : undefined,
   };
 }
+
+/** Shared OpenSpec config the demo starts with, so Projects shows carried profiles without any setup. */
+export const DEMO_PROFILES: SharedProfile[] = [
+  { id: "base", name: "Base", context: "We use conventional commits.\nSpecs use SHALL for requirements and one scenario per behaviour.", rules: { proposal: ["Always include a Non-goals section"], tasks: ["Keep tasks under two hours"] } },
+  { id: "security", name: "Security", context: "Threat-model every new endpoint and state the data classification.", rules: { design: ["List trust boundaries"] } },
+];
+/** Repository name → profiles it carries; `stale` marks a profile applied before its last edit (shown as outdated). */
+export const DEMO_CARRIED: Record<string, { id: string; stale?: boolean }[]> = {
+  "atlas-api": [{ id: "base" }, { id: "security" }],
+  "harbor-web": [{ id: "base", stale: true }],
+  "lantern-infra": [{ id: "base" }, { id: "security" }],
+  "quill-docs": [{ id: "base" }],
+};
+
+/** The demo's only agent: made up, vendor-neutral, and never executed. */
+export const DEMO_AGENT: AgentProfile = {
+  id: "demo-agent",
+  name: "Demo Agent",
+  command: ["demo-agent", "{prompt}"],
+  prompts: { draft: "/opsx:ff {change}", implement: "/opsx:apply {change}", archive: "/opsx:archive {change}" },
+  resumeCommand: ["demo-agent", "--continue"],
+};
 
 const REPOS: SampleRepo[] = [
   {
@@ -300,7 +321,8 @@ export function buildSample(now: number): Sample {
     repos: REPOS.map((r) => ({ id: r.id, path: repoPath(r.name), name: r.name, enabled: true })),
     pollIntervalSeconds: 60,
     port: 4711,
-    agentSessions: defaultAgentSessions(), // off: a static demo has no agent to start
+    // On by default, so the session features show without setup. The agent is fictional; nothing is ever started.
+    agentSessions: { enabled: true, agents: [structuredClone(DEMO_AGENT)], defaultAgent: DEMO_AGENT.id },
   } satisfies Config;
 
   const candidates = CANDIDATES.map(([id, name]) => ({ id, path: repoPath(name), name: name.split("/").pop() ?? name, enabled: false })) satisfies RepoConfig[];
