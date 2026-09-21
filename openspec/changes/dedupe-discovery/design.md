@@ -65,3 +65,7 @@ Ship as a normal build. First start migrates `~/.openspec-dashboard/config.json`
 ## Open Questions
 
 - Should the per-candidate "Ignore" action offer the parent directory as well as the repo itself? v1 adds the repo path; the manual input covers parents.
+
+## Spec base
+
+The `dashboard-api` delta was rebased on 2026-09-21 onto the requirement text as it stood after `shared-openspec-config` and `run-agent-actions-from-ui` were archived: "The dashboard never writes to tracked repositories" keeps its enumerated exceptions, and this change only adds `config --get` to the read-only git list plus one scenario. Re-check the `Config endpoints` and `Discover endpoint` blocks against the main spec before implementing; they predate several changes to those routes.
