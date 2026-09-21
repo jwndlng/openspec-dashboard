@@ -78,7 +78,31 @@ what it found under **Discovered**; click **Enable** on the repos to track, then
 State lives in `~/.openspec-dashboard/` (`config.json`, `shared-config.json`, `cache/snapshot.json`, `sessions/`, `worktrees/`). The dashboard
 only runs read-only `git` commands (`rev-parse`, `log`, `worktree list`, `status` — with optional locks disabled, so
 not even `.git/index` is refreshed), and scanning, polling, discovery and saving settings never write to a tracked
-repository. The things that do are described next: shared config, and the opt-in agent sessions further down.
+repository, and none of them contacts a remote. The things that do are described next: the Pull button, shared config,
+and the opt-in agent sessions further down.
+
+## Pull, and the branch notice
+
+Work gets merged on the remote; a main checkout only learns about it through `git pull`. Until then the dashboard is
+right about an older state: archived changes and specs come from the main checkout, and `merged` / ahead-behind
+figures are "as of your last fetch". **⇣ Pull** (per repository, in its board header and its Projects row, plus
+**Pull all**) does that for you — and it is the only thing in the dashboard that ever contacts a remote, and only when
+you click it.
+
+- **What it runs.** `git fetch` of the repository's remote, then a **fast-forward-only** update of the main checkout.
+  Never a merge commit, a rebase, a stash, a reset, a force or a branch switch; linked worktrees and submodules are not
+  touched. Uncommitted edits to files the update does not touch stay as they are.
+- **When it only fetches.** If the checkout is not on the default branch (or detached), has no upstream, has diverged,
+  or has an uncommitted edit the update would overwrite, the checkout is left exactly as it is and the badge says why
+  (`fetched only` / `refused`, with git's own message). The fetch still makes work statuses current.
+- **Credentials, prompts, hooks.** It uses git's own credentials (SSH agent, credential helper); the dashboard never
+  sees, stores or asks for them. Nothing can prompt — a remote that needs a login fails with a message — and a fetch is
+  stopped after 60 s. Repository hooks are **not** run (a plain `git pull` would run `post-merge`); if the repository has
+  one, the outcome says so, so you can run it yourself.
+- **Branch notice.** If a main checkout is not on its default branch (what `origin/HEAD` points to, else `main`, else
+  `master`), its Projects row and board header say so: archived changes, specs and progress for that repository come
+  from whatever branch is checked out and may be outdated. Changes living in worktrees are read from their own
+  checkouts and are unaffected. Nothing is hidden; it is a notice.
 
 ## Shared OpenSpec config
 

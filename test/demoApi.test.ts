@@ -93,3 +93,28 @@ test("shared config in the demo: per-repository profiles, outdated after an edit
 
   expect(await demo().api.sharedConfig()).toEqual({ profiles: [] }); // a reload starts over
 });
+
+test("pull in the demo: canned outcomes, the notice's repositories are only fetched, nothing persists", async () => {
+  const { api } = demo();
+  const repos = (await api.state()).repos;
+  const offDefault = repos.filter((r) => r.onDefaultBranch === false).map((r) => r.name);
+  expect(offDefault.sort()).toEqual(["ember-mobile", "harbor-web"]); // the sample shows the notice at first sight
+  expect(repos.every((r) => r.defaultBranch === "main")).toBe(true);
+
+  const onMain = repos.find((r) => r.name === "atlas-api")!;
+  const first = await api.pullRepo(onMain.id);
+  expect(first).toMatchObject({ fetched: true, update: "fast-forwarded", branch: "main", upstream: "origin/main" });
+  expect(first.commits).toBeGreaterThan(0);
+  expect((await api.pullRepo(onMain.id)).update).toBe("up-to-date");
+
+  const harbor = repos.find((r) => r.name === "harbor-web")!;
+  expect(await api.pullRepo(harbor.id)).toMatchObject({ fetched: true, update: "skipped", reason: "on feat/redesign-settings-page, not main; only fetched" });
+
+  const failedScan = repos.find((r) => !r.ok)!;
+  await expect(api.pullRepo(failedScan.id)).rejects.toThrow("not a tracked");
+  await expect(api.pullRepo("nope")).rejects.toThrow("not a tracked");
+
+  const { results } = await api.pullAll();
+  expect(results.map((r) => r.repoId).sort()).toEqual(repos.filter((r) => r.ok).map((r) => r.id).sort());
+  expect((await demo().api.pullRepo(onMain.id)).update).toBe("fast-forwarded"); // a reload starts over
+});

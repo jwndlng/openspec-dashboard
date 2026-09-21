@@ -3,6 +3,8 @@ import { boardColumns, isComplete } from "../shared/columns.ts";
 import type { ChangeSnapshot, Config, RepoSnapshot, Snapshot } from "../shared/types.ts";
 import { NoRepos } from "./empty.tsx";
 import { EMPTY_FILTERS, parseFilters, serializeFilters, type Filters } from "./filters.ts";
+import { PullButton } from "./pull.tsx";
+import { branchNotice } from "./pullState.ts";
 import { applyCommand, cdCommand, checkoutHint, daysSince, relTime, splitBranchLabel } from "./format.ts";
 import { isMinimized, loadGroupState, saveGroupState, toggleGroup, type GroupOverrides } from "./groupState.ts";
 import { assignRepoHues, groupByRepo, recentArchived } from "./repoGroups.ts";
@@ -185,6 +187,7 @@ function Column({ label, cards, now, hot, showRepo, countLabel, groups }: { labe
 
 function RepoHeader({ repo, now }: { repo: RepoSnapshot; now: number }) {
   const updated = repo.lastUpdatedAt ? relTime(repo.lastUpdatedAt, now) : undefined;
+  const notice = branchNotice(repo);
   return (
     <div class="repo-head">
       <div class="row">
@@ -203,6 +206,7 @@ function RepoHeader({ repo, now }: { repo: RepoSnapshot; now: number }) {
           {repo.name}
         </h1>
         {repo.currentBranch && <BranchBadge branch={repo.currentBranch} hint="current branch" />}
+        {repo.isGit && repo.ok && <PullButton repoId={repo.id} />}
         {repo.worktrees.length > 0 && (
           <span class="badge" title={repo.worktrees.map((w) => `${w.branch ?? "detached"} — ${w.path}`).join("\n")}>
             {repo.worktrees.length} {repo.worktrees.length === 1 ? "worktree" : "worktrees"}
@@ -229,6 +233,11 @@ function RepoHeader({ repo, now }: { repo: RepoSnapshot; now: number }) {
         <code>{repo.path}</code>
         <CopyButton text={cdCommand(repo.path)} label="Copy cd" />
       </div>
+      {notice && (
+        <div class="notice warn" role="note">
+          ⎇ {notice.long}
+        </div>
+      )}
       {!repo.ok && <div class="notice danger">Scan failed: {repo.error} — showing the last good data.</div>}
       {repo.warnings?.map((w) => (
         <div key={w} class="notice warn">

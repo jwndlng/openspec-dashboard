@@ -27,12 +27,19 @@ bun test test/scanner.test.ts   # a single test file
 1. **Read-only towards tracked repositories, with enumerated exceptions.** The dashboard writes to a tracked
    repository only in response to an explicit user action, only to the paths enumerated in the "never writes"
    requirement of `openspec/specs/dashboard-api/spec.md`, never deletes or moves anything there, and never runs a git
-   command that writes (one enumerated exception below). Today that list has two entries: the managed sections of `openspec/config.yaml` (applying shared config profiles,
+   command that writes (the enumerated exceptions below). Today that list has three entries: the managed sections of `openspec/config.yaml` (applying shared config profiles,
    `src/server/sharedConfig.ts`), and — for agent sessions, off by default — a session's git worktree: created with
    `git worktree add` (directory under `~/.openspec-dashboard/worktrees/`, never inside the repository's working tree)
    and removed with a non-forcing `git worktree remove` after the user confirmed and read-only checks proved nothing
-   would be lost (`src/server/sessions/worktree.ts`, the only place that runs a git command that writes). The main
-   checkout's branch, index and files are never touched, and the dashboard never contacts a remote. Starting the user's
+   would be lost (`src/server/sessions/worktree.ts`); and the **pull action** — `git fetch` of the repository's own
+   remote, then a fast-forward-only `git merge` of the main checkout's upstream, with hooks disabled, never a merge
+   commit, rebase, stash, reset, force or branch switch, and only fetching when the checkout is off its default branch,
+   has no upstream, has diverged or has overlapping local edits (`src/server/pull.ts`, the only place that contacts a
+   remote or changes a main checkout). Those two modules are the only places that run a git command that writes. Apart
+   from the pull action the main checkout's index and files are never touched and no remote is ever contacted; the main
+   checkout's branch is never changed by anything; and the pull action runs only on the user's explicit request — never
+   on a timer, during a scan, on page load or as a side effect (`test/pull.test.ts` proves scans leave a recording
+   remote untouched). Starting the user's
    agent in that worktree on the user's click is not a write by the dashboard: what the agent changes is decided by its
    own permission prompts. With agent sessions disabled no process that can modify a repository is ever started. Scanning, polling, discovery, previews and saving settings
    write nothing to a repository. All other writes stay under `~/.openspec-dashboard/` (or `OPENSPEC_DASHBOARD_HOME`
@@ -46,8 +53,10 @@ bun test test/scanner.test.ts   # a single test file
    `resolveSchema`/`loadChangeContext`: they locate files via `import.meta.url`, which does not exist inside the
    compiled binary. The adapter embeds the schema at build time. Anything that works under `bun run` but reads files
    relative to a module path must also be verified in `dist/openspec-dashboard`.
-4. **No network at runtime.** The UI is one HTML file with inlined JS, CSS and fonts; do not add CDN links, remote
-   fonts or fetches to other hosts.
+4. **No network at runtime, except the pull action.** The UI is one HTML file with inlined JS, CSS and fonts; do not
+   add CDN links, remote fonts or fetches to other hosts. The server reaches a network only when git does, inside the
+   pull action of invariant 1, on the user's click, using git's own credentials — the dashboard never sees, stores or
+   asks for them, never prompts, and masks credentials in any error text it passes on.
 5. **The repository is the source of truth.** The dashboard indexes; it never stores facts about changes that are not
    derivable from the repositories.
 6. **Change names reaching git or the file system are validated** (`CHANGE_NAME` in `src/server/source.ts`).

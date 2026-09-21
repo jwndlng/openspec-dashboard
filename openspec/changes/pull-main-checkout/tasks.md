@@ -30,17 +30,17 @@
 
 ## 5. UI
 
-- [ ] 5.1 `src/ui/api.ts`: `pullRepo(id)` and `pullAll()` on the `Api` interface, HTTP implementation and forwarder
-- [ ] 5.2 Pure helpers with unit tests: outcome label and tone from a `PullResult` (`up to date`, `+N commits`, `fetched only`, `refused`, `failed`, plus the hooks note), and the notice text from `currentBranch` / `defaultBranch` (including detached)
-- [ ] 5.3 Repository board header: Pull button (running state, outcome badge with reason as tooltip) and the not-on-default-branch notice line
-- [ ] 5.4 Projects overview: compact Pull button per git row that does not navigate, outcome badge, notice badge in the row, "Pull all" in the toolbar with a result list; reload the state after a pull
-- [ ] 5.5 Styles with existing tokens only; both themes; narrow window
-- [ ] 5.6 Demo: implement both operations in `src/ui/demo/demoApi.ts` (delay, canned outcomes from the sample: fast-forward on the default branch, fetched-only otherwise, nothing for the repository whose scan failed), set `defaultBranch` / `onDefaultBranch` in `sampleData.ts`, and extend the demo tests (notice visible in the sample, outcomes, no persistence, no network)
+- [x] 5.1 `src/ui/api.ts`: `pullRepo(id)` and `pullAll()` on the `Api` interface, HTTP implementation and forwarder
+- [x] 5.2 Pure helpers with unit tests: outcome label and tone from a `PullResult` (`up to date`, `+N commits`, `fetched only`, `refused`, `failed`, plus the hooks note), and the notice text from `currentBranch` / `defaultBranch` (including detached)
+- [x] 5.3 Repository board header: Pull button (running state, outcome badge with reason as tooltip) and the not-on-default-branch notice line
+- [x] 5.4 Projects overview: compact Pull button per git row that does not navigate, outcome badge, notice badge in the row, "Pull all" in the toolbar with a result list; reload the state after a pull
+- [x] 5.5 Styles with existing tokens only; both themes; narrow window
+- [x] 5.6 Demo: implement both operations in `src/ui/demo/demoApi.ts` (delay, canned outcomes from the sample: fast-forward on the default branch, fetched-only otherwise, nothing for the repository whose scan failed), set `defaultBranch` / `onDefaultBranch` in `sampleData.ts`, and extend the demo tests (notice visible in the sample, outcomes, no persistence, no network)
 
 ## 6. Invariants, docs, verification
 
-- [ ] 6.1 Reword `CLAUDE.md` invariant 1 (third enumerated exception: fetch + fast-forward-only of the main checkout, on explicit request, hooks disabled, `src/server/pull.ts` the only place) and invariant 4 (the UI never reaches other hosts; the server contacts a git remote only through the pull action)
-- [ ] 6.2 Update `README.md`: what Pull does and never does, the refusal cases, credentials and hooks, that nothing is fetched unless asked, and what the branch notice means
-- [ ] 6.3 `bun run check`, `bun run build`, `bun run build:demo`
-- [ ] 6.4 Verify with the compiled binary against a throwaway dashboard home and temporary repositories with a local bare remote, in a browser: fast-forward, fetched-only with the notice, refused with reason, failed, Pull all, state refresh — do not pull any real repository during verification
-- [ ] 6.5 Before merging and again before archiving, rebase the `dashboard-api` never-writes delta on main's then-current text (`dedupe-discovery` and `create-change-from-dashboard` modify the same requirement), and implement in the demo any `Api` operation that landed meanwhile
+- [x] 6.1 Reword `CLAUDE.md` invariant 1 (third enumerated exception: fetch + fast-forward-only of the main checkout, on explicit request, hooks disabled, `src/server/pull.ts` the only place) and invariant 4 (the UI never reaches other hosts; the server contacts a git remote only through the pull action)
+- [x] 6.2 Update `README.md`: what Pull does and never does, the refusal cases, credentials and hooks, that nothing is fetched unless asked, and what the branch notice means
+- [x] 6.3 `bun run check`, `bun run build`, `bun run build:demo`
+- [x] 6.4 Verify with the compiled binary against a throwaway dashboard home and temporary repositories with a local bare remote, in a browser: fast-forward, fetched-only with the notice, refused with reason, failed, Pull all, state refresh — do not pull any real repository during verification
+- [x] 6.5 Before merging and again before archiving, rebase the `dashboard-api` never-writes delta on main's then-current text (`dedupe-discovery` and `create-change-from-dashboard` modify the same requirement), and implement in the demo any `Api` operation that landed meanwhile — checked before opening the pull request: main's text is what the delta was built from (all 8 scenarios kept); to be repeated at archive time. `demo-live-sessions` (#34) is not merged yet: it rewrites `demoApi.ts`, so whichever lands second merges the two demo additions

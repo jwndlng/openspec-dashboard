@@ -70,6 +70,10 @@ export interface OverviewRow {
   archived: number;
   lastUpdatedAt?: string;
   sharedConfig?: RepoSharedConfig;
+  isGit: boolean;
+  currentBranch?: string;
+  defaultBranch?: string;
+  onDefaultBranch?: boolean;
 }
 
 function newestActivity(repo: RepoSnapshot): string | undefined {
@@ -133,6 +137,10 @@ export function overviewRows(snapshot: Snapshot): OverviewRow[] {
       // Snapshots cached by older versions, and repos that never scanned cleanly, have no repo-level date.
       lastUpdatedAt: repo.lastUpdatedAt ?? newestActivity(repo),
       sharedConfig: repo.sharedConfig,
+      isGit: repo.isGit,
+      currentBranch: repo.currentBranch,
+      defaultBranch: repo.defaultBranch,
+      onDefaultBranch: repo.onDefaultBranch,
     };
   });
   addHints(rows);
