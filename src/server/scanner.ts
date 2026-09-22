@@ -3,6 +3,7 @@ import { deriveStage } from "../shared/columns.ts";
 import type { ChangeSnapshot, Config, RepoConfig, RepoSnapshot, SharedConfig, Snapshot, Worktree } from "../shared/types.ts";
 import { summarizeWorkInProgress } from "../shared/workInProgress.ts";
 import { emptySnapshot, writeSnapshot } from "./cache.ts";
+import { type ChangeCopy, mergeChanges } from "./mergeChanges.ts";
 import { readChangeArtifacts } from "./openspecAdapter.ts";
 import { loadSharedConfig, repoSharedConfig } from "./sharedConfig.ts";
 import { changeSpecsSynced } from "./specSync.ts";
@@ -16,6 +17,8 @@ export const ARCHIVED_ACTIVITY_LIMIT = 25;
 /** Linked worktrees that get a `git status` per repository; the main checkout always does. The rest are listed uninspected. */
 export const MAX_INSPECTED_WORKTREES = 12;
 const CHECKOUT_CONCURRENCY = 3;
+/** Cap the size of a change's `prompt.md` in the snapshot; a tooltip does not need more. */
+export const PROMPT_LIMIT_BYTES = 8 * 1024;
 
 // `.openspec.yaml` and `openspec/config.yaml` are flat enough to read without a YAML parser.
 const SCHEMA_LINE = /^schema:\s*["']?([A-Za-z0-9._-]+)/m;
@@ -94,10 +97,21 @@ function newestDirty(files: DirtyFile[], under: string): string | undefined {
   return newest ? new Date(newest).toISOString() : undefined;
 }
 
+/** At most this many linked worktrees are read per repository; the most recently touched ones win. */
+export const WORKTREE_LIMIT = 12;
+const WORKTREE_CONCURRENCY = 3;
+const WORKTREE_TIMEOUT_MS = 10_000;
+
+/** One checkout of a repository being scanned: the main working tree or a linked worktree. */
 interface RepoContext {
   repo: RepoConfig;
+  /** Reads from this checkout. */
   source: RepoSource;
+  /** This checkout's directory; changes, specs and git commands are resolved against it. */
+  root: string;
+  isMain: boolean;
   isGit: boolean;
+  /** The branch checked out here. */
   branch?: string;
   worktrees: Worktree[];
   /** Files under `openspec/` that differ from HEAD, with their mtimes. */
@@ -113,7 +127,7 @@ async function scanChange(ctx: RepoContext, entry: ChangeDirEntry, withGit: bool
   let artifacts: ChangeSnapshot["artifacts"] = [];
   let tasksPath: string | undefined;
   try {
-    const info = readChangeArtifacts(ctx.repo.path, entry.name, {
+    const info = readChangeArtifacts(ctx.root, entry.name, {
       changeDir: entry.dir,
       schemaName: marker.schema ?? ctx.projectSchema,
       skipSpecs: marker.skipSpecs,
@@ -127,6 +141,22 @@ async function scanChange(ctx: RepoContext, entry: ChangeDirEntry, withGit: bool
 
   const tasksMd = tasksPath ? await ctx.source.readText(tasksPath) : undefined;
   const tasks = tasksMd === undefined ? null : parseTaskProgress(tasksMd);
+
+  // `prompt.md` is a free-text hint, not an artifact: read it when it exists, do not fail the change on a bad read.
+  const promptPath = join(entry.dir, "prompt.md");
+  let prompt: string | undefined;
+  const promptInfo = await ctx.source.readFileInfo(promptPath);
+  if (promptInfo?.isFile) {
+    const text = await ctx.source.readText(promptPath);
+    if (text === undefined) {
+      warnings.push("could not read prompt.md");
+    } else if (text.length > PROMPT_LIMIT_BYTES) {
+      prompt = text.slice(0, PROMPT_LIMIT_BYTES);
+      warnings.push(`prompt.md is larger than ${PROMPT_LIMIT_BYTES} bytes and was truncated`);
+    } else {
+      prompt = text;
+    }
+  }
   if (tasks && tasks.total === 0 && artifacts.length > 0 && artifacts.every((a) => a.status === "done")) {
     warnings.push("tasks file has no tasks");
   }
@@ -157,9 +187,11 @@ async function scanChange(ctx: RepoContext, entry: ChangeDirEntry, withGit: bool
     archived: entry.archived,
     lastActivityAt,
     specsSynced,
-    branchMatch: entry.archived ? undefined : findBranchMatch(entry.name, ctx.branch, ctx.worktrees),
+    // In the main checkout the branch is a guess from names; a linked worktree's copy is on that worktree's branch.
+    branchMatch: entry.archived ? undefined : ctx.isMain ? findBranchMatch(entry.name, ctx.branch, ctx.worktrees) : ctx.branch,
     stage,
     column,
+    prompt,
     warnings: warnings.length ? warnings : undefined,
   };
 }
@@ -174,6 +206,9 @@ export async function scanRepo(repo: RepoConfig, source: RepoSource = new LocalR
   const [branch, listed] = isGit ? await Promise.all([source.branch(), source.worktrees()]) : [undefined, []];
   const worktrees = await inspectCheckouts(source, listed);
   const workInProgress = isGit ? summarizeWorkInProgress(worktrees) : undefined;
+  // Archives, specs and progress come from the main checkout; off its default branch they may be outdated.
+  const mainBranch = isGit ? await source.defaultBranch().catch(() => undefined) : undefined;
+  const onDefaultBranch = mainBranch === undefined ? undefined : branch === mainBranch;
   const configYaml = await source.readText(join(repo.path, "openspec", "config.yaml"));
   const projectSchema = parseMarker(configYaml).schema;
   const sharedConfig = shared && shared.profiles.length > 0 ? repoSharedConfig(configYaml, shared) : undefined;
@@ -182,14 +217,104 @@ export async function scanRepo(repo: RepoConfig, source: RepoSource = new LocalR
   const lastUpdatedAt = isGit
     ? latestIso(await source.lastActivity(openspecDir), newestDirty(dirty, openspecDir))
     : await source.newestMtime(openspecDir);
-  const ctx: RepoContext = { repo, source, isGit, branch, worktrees, dirty, projectSchema };
+  const ctx: RepoContext = { repo, source, root: repo.path, isMain: true, isGit, branch, worktrees, dirty, projectSchema };
 
   const listing = await source.listChanges();
-  const changes: ChangeSnapshot[] = [];
-  for (const entry of listing.active) changes.push(await scanChange(ctx, entry, true));
-  for (const [i, entry] of listing.archived.entries()) changes.push(await scanChange(ctx, entry, i < ARCHIVED_ACTIVITY_LIMIT));
+  const warnings = [...listing.warnings];
+  const mainCheckout = { path: repo.path, branch, isMain: true };
+  const copies: ChangeCopy[] = [];
+  for (const entry of listing.active) copies.push({ change: await scanChange(ctx, entry, true), checkout: mainCheckout });
+  const archived: ChangeSnapshot[] = [];
+  for (const [i, entry] of listing.archived.entries()) archived.push(await scanChange(ctx, entry, i < ARCHIVED_ACTIVITY_LIMIT));
 
-  return { ...base, ok: true, warnings: listing.warnings.length ? listing.warnings : undefined, isGit, currentBranch: branch, worktrees, workInProgress, lastUpdatedAt, sharedConfig, changes };
+  // Newest archive date per name: `listing.archived` is sorted newest first, so the first one seen wins.
+  const archivedOnMain = new Map<string, string>();
+  for (const change of archived) if (change.archived && !archivedOnMain.has(change.name)) archivedOnMain.set(change.name, change.archived);
+
+  // Work happens in linked worktrees; a board that only read the main checkout would show none of it.
+  const fromWorktrees = await scanWorktrees(ctx, archivedOnMain);
+  copies.push(...fromWorktrees.copies);
+  warnings.push(...fromWorktrees.warnings);
+
+  const active = isGit ? mergeChanges(copies, archivedOnMain, fromWorktrees.pending) : copies.map((c) => c.change);
+  const changes = [...active, ...archived];
+
+  return {
+    ...base,
+    ok: true,
+    warnings: warnings.length ? warnings : undefined,
+    isGit,
+    currentBranch: branch,
+    defaultBranch: mainBranch,
+    onDefaultBranch,
+    worktrees,
+    workInProgress,
+    // A repository whose only activity is in a worktree is still an active repository.
+    lastUpdatedAt: latestIso(lastUpdatedAt, ...active.map((c) => c.lastActivityAt)),
+    sharedConfig,
+    changes,
+  };
+}
+
+const worktreeLabel = (w: Worktree) => w.branch ?? w.path;
+
+interface WorktreeCopies {
+  copies: ChangeCopy[];
+  /** Archives this worktree has and the main checkout does not (yet): agents archive on a branch, in a worktree. */
+  pending: ChangeCopy[];
+}
+
+/** Changes of every readable linked worktree. A worktree that cannot be read becomes a warning, never an error. */
+async function scanWorktrees(main: RepoContext, archivedOnMain: Map<string, string>): Promise<WorktreeCopies & { warnings: string[] }> {
+  const warnings: string[] = [];
+  const candidates: { worktree: Worktree; source: RepoSource; mtime: number }[] = [];
+  // A project in a subdirectory of its repository is in that same subdirectory of every worktree; a worktree's top
+  // level would be some other project's `openspec/` (or none).
+  const subdir = await main.source.subdirectory().catch(() => "");
+  for (const listed of main.worktrees) {
+    if (listed.isMain || listed.prunable || listed.bare) continue;
+    const worktree = subdir ? { ...listed, path: join(listed.path, subdir) } : listed;
+    if (worktree.path === main.root) continue;
+    const source = main.source.forCheckout(worktree.path);
+    const mtime = await source.mtimeMs(join(worktree.path, "openspec", "changes")).catch(() => undefined);
+    if (mtime !== undefined) candidates.push({ worktree, source, mtime });
+  }
+  candidates.sort((a, b) => b.mtime - a.mtime || a.worktree.path.localeCompare(b.worktree.path));
+  const selected = candidates.slice(0, WORKTREE_LIMIT);
+  if (candidates.length > selected.length) warnings.push(`${candidates.length - selected.length} of ${candidates.length} worktrees were not read (limit ${WORKTREE_LIMIT}; the most recently changed ones are)`);
+
+  const results: WorktreeCopies[] = new Array(selected.length).fill({ copies: [], pending: [] });
+  let next = 0;
+  const worker = async (): Promise<void> => {
+    while (next < selected.length) {
+      const index = next++;
+      const { worktree, source } = selected[index];
+      try {
+        results[index] = await withTimeout(scanWorktree(main, worktree, source, archivedOnMain), WORKTREE_TIMEOUT_MS, `worktree ${worktreeLabel(worktree)}`);
+      } catch (err) {
+        warnings.push(`worktree ${worktreeLabel(worktree)}: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(WORKTREE_CONCURRENCY, selected.length) }, worker));
+  return { copies: results.flatMap((r) => r.copies), pending: results.flatMap((r) => r.pending), warnings };
+}
+
+async function scanWorktree(main: RepoContext, worktree: Worktree, source: RepoSource, archivedOnMain: Map<string, string>): Promise<WorktreeCopies> {
+  const listing = await source.listChanges();
+  // Every branch carries main's archives along; only what main lacks (by name, as of that date) is news worth reading.
+  const pendingEntries = listing.archived.filter((entry) => !((archivedOnMain.get(entry.name) ?? "") >= (entry.archived ?? "")));
+  if (listing.active.length === 0 && pendingEntries.length === 0) return { copies: [], pending: [] };
+  // A branch may carry its own config; it is that checkout's changes it applies to.
+  const projectSchema = parseMarker(await source.readText(join(worktree.path, "openspec", "config.yaml"))).schema ?? main.projectSchema;
+  const dirty = await source.dirtyFiles().catch(() => []);
+  const ctx: RepoContext = { ...main, source, root: worktree.path, isMain: false, branch: worktree.branch, dirty, projectSchema };
+  const checkout = { path: worktree.path, branch: worktree.branch, isMain: false };
+  const copies: ChangeCopy[] = [];
+  for (const entry of listing.active) copies.push({ change: await scanChange(ctx, entry, true), checkout });
+  const pending: ChangeCopy[] = [];
+  for (const entry of pendingEntries) pending.push({ change: await scanChange(ctx, entry, true), checkout });
+  return { copies, pending };
 }
 
 function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
@@ -207,6 +332,8 @@ export interface ScannerOptions {
   /** Test seam; defaults to the shared config stored in the dashboard home. */
   sharedConfig?: () => Promise<SharedConfig | undefined>;
   persist?: boolean;
+  /** Called after every completed scan with the snapshot that was current before it and the new one. */
+  onSnapshots?: (previous: Snapshot, next: Snapshot) => void;
 }
 
 /** Owns the current snapshot and the polling schedule (design.md D4). */
@@ -277,6 +404,8 @@ export class Scanner {
             scannedAt: new Date().toISOString(),
             isGit: prev?.isGit ?? false,
             currentBranch: prev?.currentBranch,
+            defaultBranch: prev?.defaultBranch,
+            onDefaultBranch: prev?.onDefaultBranch,
             worktrees: prev?.worktrees ?? [],
             workInProgress: prev?.workInProgress,
             lastUpdatedAt: prev?.lastUpdatedAt,
@@ -288,7 +417,13 @@ export class Scanner {
     };
     await Promise.all(Array.from({ length: Math.min(concurrency, repos.length) }, worker));
 
+    const before = this.snapshot;
     this.snapshot = { generatedAt: new Date().toISOString(), repos: results };
+    try {
+      this.options.onSnapshots?.(before, this.snapshot);
+    } catch (err) {
+      console.warn("activity could not be recorded:", err); // history is never a reason to fail a scan
+    }
     if (this.options.persist !== false) {
       await writeSnapshot(this.snapshot).catch((err) => console.warn("could not write snapshot cache:", err));
     }

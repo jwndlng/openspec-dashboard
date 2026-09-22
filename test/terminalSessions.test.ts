@@ -1,8 +1,9 @@
 import { afterAll, afterEach, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
 import { existsSync } from "node:fs";
-import { mkdir, readFile, realpath, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { worktreesDir } from "../src/server/paths.ts";
+import { sessionsDir, worktreesDir } from "../src/server/paths.ts";
+import { scanRepo } from "../src/server/scanner.ts";
 import { SessionManager } from "../src/server/sessions/manager.ts";
 import { SessionStore } from "../src/server/sessions/store.ts";
 import { checkWorktreeRemovable, copyChangeIfMissing, ensureWorktree, removeWorktree } from "../src/server/sessions/worktree.ts";
@@ -130,6 +131,21 @@ test("one running session per change; archive gets its own worktree and branch; 
   expect(view.text()).toContain(`cwd=${await realpath(a.worktreePath)}`);
 });
 
+test("archive is offered in Synced too: the delta is already in the main specs, only archiving is left", async () => {
+  const h = track(await harness());
+  const delta = await readFile(join(h.repoPath, "openspec", "changes", "bump-toolchain", "specs", "bump-toolchain", "spec.md"), "utf8");
+  await mkdir(join(h.repoPath, "openspec", "specs", "bump-toolchain"), { recursive: true });
+  await writeFile(join(h.repoPath, "openspec", "specs", "bump-toolchain", "spec.md"), `# bump-toolchain\n\n## Purpose\n\nToolchain bumps.\n\n${delta.replace("## ADDED Requirements", "## Requirements")}`);
+  git(h.repoPath, "add", "-A");
+  git(h.repoPath, "commit", "-q", "-m", "sync specs");
+  h.snapshot.repos[0] = await scanRepo(h.config.repos[0]);
+  expect(h.snapshot.repos[0].changes.find((c) => c.name === "bump-toolchain")).toMatchObject({ stage: "synced", column: "Synced" });
+
+  const arch = await h.manager.open({ repoId: h.repoId, change: "bump-toolchain", action: "archive" });
+  expect(arch).toMatchObject({ state: "running", action: "archive", branch: "chore/archive-bump-toolchain" });
+  expect(arch.worktreePath.endsWith("archive-bump-toolchain")).toBe(true);
+});
+
 test("refusals", async () => {
   const open = (h: { manager: SessionManager; repoId: string }, change: unknown, action: unknown = "implement") => h.manager.open({ repoId: h.repoId, change, action });
   await expect(open(track(await harness({ enabled: false })), "upgrade-runtime")).rejects.toMatchObject({ status: 403 });
@@ -167,4 +183,186 @@ test("a crash is recorded; shutdown ends agents; a restarted dashboard knows not
   await next.init();
   expect(next.get(stale.id)).toMatchObject({ state: "exited", error: expect.stringContaining("restarted") });
   await expect(next.remove(stale.id)).resolves.toBeUndefined();
+});
+
+test("a change that lives only in a worktree on another branch is copied into the session's worktree from there", async () => {
+  const h = track(await harness());
+  const theirs = join(h.repoPath, ".claude", "worktrees", "compliance");
+  git(h.repoPath, "worktree", "add", "-q", "-b", "wip/compliance", theirs);
+  await mkdir(join(theirs, "openspec", "changes", "ledger-export"), { recursive: true });
+  await writeFile(join(theirs, "openspec", "changes", "ledger-export", ".openspec.yaml"), "schema: spec-driven\ncreated: 2026-09-01\n");
+  await writeFile(join(theirs, "openspec", "changes", "ledger-export", "proposal.md"), "# only here\n");
+  h.snapshot.repos[0] = await scanRepo(h.config.repos[0]);
+  expect(h.snapshot.repos[0].changes.find((c) => c.name === "ledger-export")?.checkout?.path).toBe(await realpath(theirs));
+
+  const s = await h.manager.open({ repoId: h.repoId, change: "ledger-export", action: "draft" });
+  expect([s.adopted, s.branch, s.worktreePath]).toEqual([undefined, "feat/ledger-export", join(worktreesDir(), h.repoId, "ledger-export")]);
+  expect(await readFile(join(s.worktreePath, "openspec", "changes", "ledger-export", "proposal.md"), "utf8")).toBe("# only here\n");
+  expect(existsSync(join(h.repoPath, "openspec", "changes", "ledger-export"))).toBe(false); // the main checkout is left alone
+});
+
+test("when the session's branch is already checked out in someone's worktree, the session adopts it and never removes it", async () => {
+  const h = track(await harness());
+  const theirs = await realpath(await tempDir("osd-theirs-")).then((d) => join(d, "upgrade-runtime")); // outside the repository
+  git(h.repoPath, "worktree", "add", "-q", "-b", "feat/upgrade-runtime", theirs);
+  const listedBefore = git(h.repoPath, "worktree", "list", "--porcelain");
+
+  const s = await h.manager.open({ repoId: h.repoId, change: "upgrade-runtime", action: "implement" });
+  expect([s.adopted, s.worktreePath, s.branch]).toEqual([true, theirs, "feat/upgrade-runtime"]);
+  expect(existsSync(join(worktreesDir(), h.repoId, "upgrade-runtime"))).toBe(false); // none was created
+  expect(git(h.repoPath, "worktree", "list", "--porcelain")).toBe(listedBefore);
+  const view = await watch(h.manager, s.id);
+  await waitFor(() => view.text().includes(`cwd=${theirs}`), "agent running in the adopted worktree");
+
+  // clean and fully merged — and still not ours to remove
+  expect(await h.manager.worktreeStatus(s.id)).toMatchObject({ removable: false });
+  const closed = await h.manager.close(s.id, { removeWorktree: true });
+  expect(closed.worktree).toMatchObject({ removable: false });
+  expect(closed.worktree?.reason).toContain("not created by the dashboard");
+  expect(existsSync(theirs)).toBe(true);
+
+  // survives a restart of the dashboard, and resume continues there
+  const again = h.newManager();
+  managers.push(again);
+  await again.init();
+  expect(again.get(s.id).adopted).toBe(true);
+  expect((await again.resume(s.id)).worktreePath).toBe(theirs);
+
+  // once its owner removed it, there is nowhere to continue — and nothing is re-created at their path
+  await again.close(s.id);
+  git(h.repoPath, "worktree", "remove", "--force", theirs);
+  await expect(again.resume(s.id)).rejects.toThrow("no longer exists");
+  expect(existsSync(theirs)).toBe(false);
+});
+
+test("archive never adopts, and the main checkout is never adopted", async () => {
+  const h = track(await harness());
+  const theirs = join(h.repoPath, ".claude", "worktrees", "arch");
+  git(h.repoPath, "worktree", "add", "-q", "-b", "chore/archive-configurable-builder", theirs);
+  await expect(h.manager.open({ repoId: h.repoId, change: "configurable-builder", action: "archive" })).rejects.toThrow(); // git's refusal, as before
+
+  git(h.repoPath, "checkout", "-q", "-b", "feat/upgrade-runtime"); // the main checkout itself sits on the session's branch
+  await expect(h.manager.open({ repoId: h.repoId, change: "upgrade-runtime", action: "implement" })).rejects.toThrow();
+  expect(h.manager.list().some((s) => s.worktreePath === h.repoPath)).toBe(false);
+});
+
+const FAST_SUBMIT = { submitTimings: { echoTimeoutMs: 600, settleMs: 20 } };
+
+test("submitted text reaches an agent that shows it, with Enter as a separate write", async () => {
+  const h = await harness();
+  const manager = h.newManager(FAST_SUBMIT);
+  managers.push(manager);
+  const s = await manager.open({ repoId: h.repoId, change: "upgrade-runtime", action: "implement" });
+  const view = await watch(manager, s.id);
+  await waitFor(() => view.text().includes("fake-agent ready"), "agent banner");
+  expect(await manager.submit(s.id, "Yes, go ahead")).toEqual({ submitted: true });
+  await waitFor(() => view.text().includes("you said: Yes, go ahead"), "the agent received the submitted line");
+});
+
+test("an agent showing a menu gets the text but never an Enter, and keeps running", async () => {
+  const h = await harness({ agent: { command: [FAKE_AGENT, "--menu", "{prompt}"] } });
+  const manager = h.newManager(FAST_SUBMIT);
+  managers.push(manager);
+  const s = await manager.open({ repoId: h.repoId, change: "upgrade-runtime", action: "implement" });
+  const view = await watch(manager, s.id);
+  await waitFor(() => view.text().includes("Enter to confirm"), "the menu");
+  expect(await manager.submit(s.id, "Yes, go ahead")).toEqual({ submitted: false });
+  await new Promise((r) => setTimeout(r, 200));
+  expect(view.text()).not.toContain("menu confirmed by Enter");
+  expect(manager.get(s.id).state).toBe("running");
+  // a real Enter from the keyboard still confirms: only the blind one is withheld
+  manager.write(s.id, "\r");
+  await waitFor(() => view.text().includes("menu confirmed by Enter"), "a typed Enter reaches the menu");
+});
+
+test("an opening prompt typed after start-up is not sent into a dialog", async () => {
+  const h = await harness({ agent: { command: [FAKE_AGENT, "--menu"] } });
+  const manager = h.newManager(FAST_SUBMIT);
+  managers.push(manager);
+  const s = await manager.open({ repoId: h.repoId, change: "upgrade-runtime", action: "implement" });
+  const view = await watch(manager, s.id);
+  await waitFor(() => view.text().includes("Enter to confirm"), "the menu");
+  await new Promise((r) => setTimeout(r, 150 + 600 + 300)); // start-up delay + echo timeout + margin
+  expect(view.text()).not.toContain("menu confirmed by Enter");
+  expect(manager.get(s.id).state).toBe("running");
+});
+
+test("submissions to one session run one after another", async () => {
+  const h = await harness();
+  const manager = h.newManager(FAST_SUBMIT);
+  managers.push(manager);
+  const s = await manager.open({ repoId: h.repoId, change: "upgrade-runtime", action: "implement" });
+  const view = await watch(manager, s.id);
+  await waitFor(() => view.text().includes("fake-agent ready"), "agent banner");
+  const results = await Promise.all([manager.submit(s.id, "first message"), manager.submit(s.id, "second message")]);
+  expect(results).toEqual([{ submitted: true }, { submitted: true }]);
+  await waitFor(() => view.text().includes("you said: second message"), "both lines");
+  expect(view.text()).toContain("you said: first message (");
+  expect(view.text()).toContain("you said: second message (");
+});
+
+test("submit refuses what is not plain text, and sessions that are not running", async () => {
+  const h = track(await harness());
+  const s = await h.manager.open({ repoId: h.repoId, change: "upgrade-runtime", action: "implement" });
+  for (const bad of ["", "two\rlines", `esc${String.fromCharCode(27)}[A`, 7, undefined]) expect(() => h.manager.submit(s.id, bad)).toThrow(expect.objectContaining({ status: 400 }));
+  h.manager.write(s.id, "exit\r");
+  await waitFor(() => h.manager.get(s.id).state === "exited", "exit");
+  expect(() => h.manager.submit(s.id, "Yes, go ahead")).toThrow(expect.objectContaining({ status: 409 }));
+});
+
+test("bookkeeping nobody waits for cannot take the dashboard down, and shutdown leaves no write behind", async () => {
+  const h = track(await harness());
+  const s = await h.manager.open({ repoId: h.repoId, change: "upgrade-runtime", action: "implement" });
+  const unhandled: unknown[] = [];
+  const onUnhandled = (reason: unknown) => unhandled.push(reason);
+  process.on("unhandledRejection", onUnhandled);
+  const dir = join(sessionsDir(), s.id);
+  try {
+    // Make the session's record unwritable: a file where its directory should be.
+    await rm(dir, { recursive: true, force: true });
+    await writeFile(dir, "in the way");
+    // `prompt` records the action in the background (nobody awaits that write). It fails now.
+    expect((await h.manager.prompt(s.id, { action: "implement" })).action).toBe("implement");
+    await new Promise((r) => setTimeout(r, 150));
+    expect(unhandled).toEqual([]);
+  } finally {
+    await rm(dir, { force: true });
+    process.off("unhandledRejection", onUnhandled);
+  }
+
+  // After shutdown nothing is still being written: the record is complete on disk the moment it returns.
+  await h.manager.shutdown();
+  const meta = JSON.parse(await readFile(join(dir, "meta.json"), "utf8"));
+  expect(meta.state).not.toBe("running");
+});
+
+test("ending a session, worktree removal included, never reaches a remote — only the pull action does", async () => {
+  const h = track(await harness());
+  // Every access to this remote goes through a fake ssh that leaves a marker before failing.
+  const dir = await realpath(await tempDir("osd-remote-"));
+  const marker = join(dir, "contacted");
+  const fakeSsh = join(dir, "fake-ssh.sh");
+  await writeFile(fakeSsh, `#!/bin/sh\necho contacted >> "${marker}"\nexit 1\n`);
+  await chmod(fakeSsh, 0o755);
+  git(h.repoPath, "remote", "add", "origin", "ssh://git.example.invalid/team/repo.git");
+  const previousSsh = process.env.GIT_SSH_COMMAND;
+  process.env.GIT_SSH_COMMAND = fakeSsh;
+
+  try {
+    const s = await h.manager.open({ repoId: h.repoId, change: "upgrade-runtime", action: "implement" });
+    const view = await watch(h.manager, s.id);
+    await waitFor(() => view.text().includes("fake-agent ready"), "the agent running"); // its cwd wraps in the terminal; the worktree is asserted below
+
+    // What the end-session dialog does: read the status it warns on, then end and remove.
+    expect(await h.manager.worktreeStatus(s.id)).toMatchObject({ removable: true });
+    const closed = await h.manager.close(s.id, { removeWorktree: true });
+    expect(closed.worktree).toEqual({ removable: true });
+    expect(existsSync(s.worktreePath)).toBe(false);
+
+    // Catching the main checkout up is a separate action the user asks for; ending a session is not one.
+    expect(existsSync(marker)).toBe(false);
+  } finally {
+    if (previousSsh === undefined) delete process.env.GIT_SSH_COMMAND;
+    else process.env.GIT_SSH_COMMAND = previousSsh;
+  }
 });

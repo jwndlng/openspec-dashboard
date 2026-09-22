@@ -2,7 +2,9 @@
 
 ## Purpose
 Defines the Kanban board UI: how changes map to columns, what cards display, filtering, the archived column, refresh behaviour, the copy-apply-command action and the visual design tokens.
+
 ## Requirements
+
 ### Requirement: Board columns are derived from schema and implementation state
 The board SHALL place each change in exactly one column, where a column names the last step of the lifecycle that is complete. Using, in order: `Archived` if the change is archived; `Synced` if `tasks.total > 0`, `tasks.done == tasks.total` and the change's delta specs are synced into the main specs (a change without delta specs counts as synced); `Done` if `tasks.total > 0` and `tasks.done == tasks.total`; `Implementing` if `tasks.done > 0`; `Ready` if every artifact is done (ready to apply, nothing ticked yet); `Unknown` if the change's artifacts could not be read; otherwise, taking the schema's artifacts in display order, `New` if the first artifact is not done, else the display name of the last artifact of the longest leading run of done artifacts.
 
@@ -148,15 +150,47 @@ The board SHALL fetch `GET /api/state` on load, re-fetch on the poll interval, a
 - **WHEN** a tracked repo failed to scan
 - **THEN** a warning indicator with the error message is visible in the header
 
+### Requirement: Cards show a prompt badge for changes with a prompt.md
+A card SHALL show a `prompt` badge — text plus colour — when the change has a `prompt.md`. The badge's tooltip and accessible name SHALL contain the prompt's text as written. The badge MUST NOT affect artifact status, column placement, progress or session actions. When the change has no `prompt.md`, no such badge SHALL be shown.
+
+#### Scenario: Change with prompt
+- **WHEN** a change `add-audit-trail` has a `prompt.md` containing "Log every mutation"
+- **THEN** the card shows a `prompt` badge whose tooltip contains "Log every mutation"
+
+#### Scenario: Change without prompt
+- **WHEN** a change has no `prompt.md`
+- **THEN** the card shows no prompt badge
+
 ### Requirement: Copy apply command
-Each card SHALL offer a "Copy apply command" action that copies `cd <repoPath> && claude "/opsx:apply <changeName>"` to the clipboard. The dashboard MUST NOT execute the command.
+Each card SHALL offer a copy action. For a change whose column is `Ready`, `Implementing`, `Done`, `Synced` or `Archived`, the action SHALL copy `cd <checkoutPath> && claude "/opsx:apply <changeName>"` to the clipboard. For a change in any earlier column (`New`, or any artifact column such as `Proposal`, `Design`, `Specs`, `Brief`, `Plan` — anything that is not yet `Ready`), the action SHALL instead copy a **start command** that continues drafting the change:
+
+- Base: `cd <checkoutPath> && claude "/opsx:continue <changeName>"`.
+- When the change has a `prompt.md`, the command SHALL be extended to point the agent at it: the start command SHALL be `cd <checkoutPath> && claude "/opsx:continue <changeName> — see openspec/changes/<changeName>/prompt.md"`.
+
+`<checkoutPath>` is the path of the checkout the change's data comes from — the linked worktree of its leading copy, or the repository path when that is the main checkout. The action's label SHALL make clear which command it copies (an apply command or a start command). The dashboard MUST NOT execute the copied command.
 
 #### Scenario: Copy
-- **WHEN** the user clicks "Copy apply command" on change `multi-tenant-sync` in `/Users/x/Workspace/acme/forum-admin`
+- **WHEN** the user clicks "Copy apply command" on change `multi-tenant-sync` in `/Users/x/Workspace/acme/forum-admin`, which lives in the main checkout and is in `Ready`
 - **THEN** the clipboard contains `cd /Users/x/Workspace/acme/forum-admin && claude "/opsx:apply multi-tenant-sync"`
 
+#### Scenario: Change lives in a worktree
+- **WHEN** the user clicks "Copy apply command" on change `audit-trail` in `Ready` whose leading copy is in the worktree `/Users/x/Workspace/acme/forum-admin/.claude/worktrees/audit-trail`
+- **THEN** the clipboard contains `cd /Users/x/Workspace/acme/forum-admin/.claude/worktrees/audit-trail && claude "/opsx:apply audit-trail"`
+
+#### Scenario: Copy start command for a new change
+- **WHEN** the user activates the copy action on change `add-audit-trail` in `New` in repository `/Users/x/Workspace/acme/forum-admin`, and the change has no `prompt.md`
+- **THEN** the clipboard contains `cd /Users/x/Workspace/acme/forum-admin && claude "/opsx:continue add-audit-trail"`
+
+#### Scenario: Start command points at prompt.md
+- **WHEN** the same change also has a `prompt.md`
+- **THEN** the clipboard contains `cd /Users/x/Workspace/acme/forum-admin && claude "/opsx:continue add-audit-trail — see openspec/changes/add-audit-trail/prompt.md"`
+
+#### Scenario: Artifact column before Ready copies the start command
+- **WHEN** the user activates the copy action on a change in `Proposal` (any column that is not `Ready` or later)
+- **THEN** the clipboard contains a start command, not an apply command
+
 ### Requirement: Visual design follows the dashboard token set
-The UI SHALL define its colours as two token sets sharing the same token names: the dark set defined in design.md (backgrounds `#080d16`…`#243350`, teal brand `#71c7c5`) and a light set (backgrounds `#f6f8fb`…`#d3dbe6`, teal brand `#1f8a88`). Both themes SHALL share Space Grotesk for text, JetBrains Mono for identifiers and a 4px radius, with fonts bundled locally. Component styles MUST reference colour tokens only and MUST NOT contain literal colour values. In both themes, text and status colours SHALL have a contrast ratio of at least 4.5:1 against the backgrounds they are rendered on. The UI MUST render correctly without network access.
+The UI SHALL define its colours as two token sets sharing the same token names: the dark set defined in design.md (neutral grey backgrounds `#141619`…`#3b3e41`, teal brand `#71c7c5`) and a light set (backgrounds `#f6f8fb`…`#d3dbe6`, teal brand `#1f8a88`). The dark theme's background, text and border tokens SHALL be near-neutral greys with at most a slight cool tint; in the dark theme teal SHALL be used only as an accent (focus, active state, primary actions, progress) and MUST NOT be the colour of panel or card borders, nor the colour of any status label. Both themes SHALL share Space Grotesk for text, JetBrains Mono for identifiers and a 4px radius, with fonts bundled locally. Component styles MUST reference colour tokens only and MUST NOT contain literal colour values. In both themes, text and status colours SHALL have a contrast ratio of at least 4.5:1 against the backgrounds they are rendered on. The token set SHALL keep the status roles, the brand accent and the repository colours in three disjoint colour ranges, so that no status label can be mistaken for a repository accent and no repository can be shown in a colour that means a status. The UI MUST render correctly without network access.
 
 #### Scenario: Offline rendering
 - **WHEN** the dashboard is opened with no network connectivity
@@ -169,6 +203,77 @@ The UI SHALL define its colours as two token sets sharing the same token names: 
 #### Scenario: Status badges readable in light theme
 - **WHEN** the light theme is active and a card shows success, warning and danger badges
 - **THEN** each badge's text has a contrast ratio of at least 4.5:1 against the card background and is still accompanied by a text label
+
+#### Scenario: Dark ground is neutral grey
+- **WHEN** the dark theme is active
+- **THEN** the page, column, card and panel backgrounds are near-neutral greys whose red, green and blue channels differ by no more than 6 of 255, and panel and card borders are grey rather than teal
+
+#### Scenario: Subtle text readable on dark cards
+- **WHEN** the dark theme is active and a card shows heading, body and subtle text
+- **THEN** each has a contrast ratio of at least 4.5:1 against the card background
+
+#### Scenario: Status text readable on dark cards
+- **WHEN** the dark theme is active and a card shows success, warning and danger badges
+- **THEN** each badge's text has a contrast ratio of at least 4.5:1 against the card background
+
+#### Scenario: Status, brand and repository colours do not overlap
+- **WHEN** the colours a repository can be assigned are compared with the status roles and the brand accent
+- **THEN** none of them coincides, in either theme
+
+### Requirement: Status labels use a semantic colour palette
+Every label the board paints in a colour SHALL draw that colour from a fixed set of semantic roles, and each role SHALL
+mean one thing across the whole UI. The roles are `info` (blue), `branch` (orange), `success`, `warning`, `danger` and
+`neutral`. Each role SHALL be defined as theme tokens for its text and border in both themes; every role SHALL share
+the badge's own background so that one contrast check covers them all. Component styles MUST reference those tokens
+rather than literal colours or the brand accent.
+
+Labels SHALL use the roles as follows:
+
+- `info` — something in flight: an agent session that is running, including its `quiet` state, and outside the board an
+  action that is planned but not yet applied. On a card no label other than a running session's SHALL use it, so that
+  on the board blue means exactly "an agent is up".
+- `branch` — anything naming a working copy that is not merged yet: the branch badge on a card, on the change detail
+  view and in the repository board header, and the `uncommitted`, `unpushed` and `pushed` work-status badges.
+- `success` — a complete change and `merged` work.
+- `warning` — a condition the user should look at but that is not an error: a missing tasks file, an archive the main
+  checkout does not have yet.
+- `danger` — a failed or erroring session, a scan warning, and uncommitted or unpushed work that has gone stale.
+  Stale `pushed` work stays `warning`: a pushed branch may simply be waiting for review.
+- `neutral` — labels that carry no status: the activity age, the `prompt` note, the column a change sits in, and
+  markers such as which agent profile is the default.
+
+The brand accent SHALL NOT be the colour of any status label; it stays reserved for focus, active state, primary
+actions and progress. Colour MUST NOT be the only cue: every label SHALL keep its text, and its role MUST NOT change
+what it says. Every role's text SHALL keep a contrast ratio of at least 4.5:1 against the card and panel backgrounds in
+both themes.
+
+#### Scenario: A live agent is blue
+- **WHEN** a card's change has a running session that printed something within the last minute
+- **THEN** its badge reads `running` in the `info` role, and no other label on that card uses `info`
+
+#### Scenario: A quiet session keeps the live role
+- **WHEN** a running session's terminal has printed nothing for more than a minute
+- **THEN** its badge reads `quiet <duration>` in the `info` role, without motion
+
+#### Scenario: Branch and uncommitted work share the orange role
+- **WHEN** a card shows the branch badge `feat/add-login` and its worktree holds 3 uncommitted files
+- **THEN** both labels are painted in the `branch` role, and both still read their own text
+
+#### Scenario: The brand accent is not a status
+- **WHEN** any card on the board is rendered in either theme
+- **THEN** none of its labels uses the brand accent colour, while focus rings, primary buttons and the progress bar still do
+
+#### Scenario: Stale open work escalates
+- **WHEN** a worktree has had unpushed commits for two days and no session is running
+- **THEN** its badge is painted in the `danger` role and still says how long it has been untouched
+
+#### Scenario: A stale pushed branch is only a warning
+- **WHEN** a worktree's branch has been pushed and untouched for eight days and no session is running
+- **THEN** its badge is painted in the `warning` role, not `danger`
+
+#### Scenario: Roles are legible in both themes
+- **WHEN** the theme is switched between dark and light
+- **THEN** each role's text keeps a contrast ratio of at least 4.5:1 against the badge's own ground and against the card it sits in
 
 ### Requirement: Cards are grouped by repository within each column
 Within every column, including the expanded `Archived` column, the board SHALL group cards by repository: all cards of one repository SHALL be adjacent, under a group header showing the repository name and the number of cards in that group. Groups SHALL be ordered by repository name, case-insensitively, and the order SHALL be the same in every column. Within a group, cards SHALL keep the order they would have had without grouping. A repository with no visible cards in a column SHALL NOT produce a group there. Column counts SHALL remain the total number of cards in the column. Grouping SHALL be applied after filtering, and in the `Archived` column after selecting the most recently archived changes, so it never changes which cards are shown.
@@ -194,7 +299,7 @@ Within every column, including the expanded `Archived` column, the board SHALL g
 - **THEN** the 25 most recently archived changes are shown, grouped by repository, with each group's cards in archive-date descending order, and the column header still reports the total of `96`
 
 ### Requirement: Each repository has its own stable colour
-The board SHALL assign every repository in the snapshot a colour derived deterministically from its repository id, without any configuration. The assignment SHALL be computed over all repositories in the snapshot, independent of the active filters, so that the same set of tracked repositories always yields the same colours across reloads, scans and filter changes. Repositories tracked at the same time SHALL receive distinct colours for up to 24 repositories. The repository colour SHALL be shown on the repository's group header, as an accent on each of its cards including the card's repository label, and on its repository filter chip. The colour SHALL adapt to the active theme so that repository-coloured text keeps a contrast ratio of at least 4.5:1 against its background in every supported theme. Colour MUST NOT be the only cue: wherever a repository colour is shown, the repository name SHALL be shown with it. The error styling of a repository filter chip SHALL take precedence over its repository colour.
+The board SHALL assign every repository in the snapshot a colour derived deterministically from its repository id, without any configuration. The assignment SHALL be computed over all repositories in the snapshot, independent of the active filters, so that the same set of tracked repositories always yields the same colours across reloads, scans and filter changes. Repositories tracked at the same time SHALL receive distinct colours for up to 19 repositories. The colours a repository can be assigned SHALL exclude the hues the status roles and the brand accent own: every assignable repository hue SHALL differ from every one of those hues by at least 12°, so a repository is never shown in a colour that means "running", "uncommitted", "complete", "needs attention" or "error". The repository colour SHALL be shown on the repository's group header, as an accent on each of its cards including the card's repository label, on its repository filter chip, and on each agent session tab in the dock's tab strip — as an accent on the tab and on the repository name it shows. A session tab whose repository is not in the current snapshot SHALL be shown without a repository colour. The repository colour on a tab MUST NOT replace or obscure the marks that say which sessions are shown and which tab is focused; those marks SHALL stay distinguishable from every assignable repository colour. The colour SHALL adapt to the active theme so that repository-coloured text keeps a contrast ratio of at least 4.5:1 against its background in every supported theme, including the background of the dock's tab strip and of a tab whose session is shown. Colour MUST NOT be the only cue: wherever a repository colour is shown, the repository name SHALL be shown with it. The error styling of a repository filter chip SHALL take precedence over its repository colour.
 
 #### Scenario: Distinct colours
 - **WHEN** 17 repositories are tracked
@@ -212,13 +317,33 @@ The board SHALL assign every repository in the snapshot a colour derived determi
 - **WHEN** repository `beta-soc` has cards in three columns
 - **THEN** its group headers, the accent and repository label on all of its cards, and its filter chip all use the same colour, each alongside the name `beta-soc`
 
+#### Scenario: Session tabs carry the repository colour
+- **WHEN** the dock shows tabs for sessions of `beta-soc` and of `alpha-infra`
+- **THEN** each tab shows its repository's accent and its repository name in that repository's colour, the same colour that repository's cards and group headers use, and both tabs still show the repository name as text
+
+#### Scenario: Filtering the board does not recolour a tab
+- **WHEN** the user filters the board to `alpha-infra` only while a `beta-soc` session is in the tab strip
+- **THEN** the `beta-soc` tab keeps the colour it had with no filter applied
+
+#### Scenario: Shown and focused marks survive the tint
+- **WHEN** a tinted tab's session has a pane in the dock and its tab is the focused one
+- **THEN** the tab still shows the mark that says its session is shown and the marking of the focused tab, both distinguishable from the repository colour
+
+#### Scenario: Session of an untracked repository
+- **WHEN** a session's repository is switched off in Settings while its tab is in the strip
+- **THEN** that tab is shown without a repository colour and stays readable
+
 #### Scenario: Theme change
 - **WHEN** the user switches from the dark to the light theme
-- **THEN** each repository keeps the same hue, and repository-coloured text remains legible (contrast ≥ 4.5:1) on the light backgrounds
+- **THEN** each repository keeps the same hue, and repository-coloured text remains legible (contrast ≥ 4.5:1) on the light backgrounds, on the board and in the dock's tab strip
 
 #### Scenario: Repository in error
 - **WHEN** a tracked repository failed to scan
 - **THEN** its filter chip shows the error styling rather than its repository colour
+
+#### Scenario: No repository wears a status colour
+- **WHEN** 19 repositories are tracked
+- **THEN** every assigned hue is at least 12° away from each of the status role hues and from the brand accent
 
 ### Requirement: Repository groups are visually distinct
 On a board showing more than one repository, each repository group SHALL be rendered as an enclosing panel that contains its group header and all of its cards. The panel SHALL have a background that differs from the column background and is tinted with the repository's colour, and a border in the same tint. The repository name in the group header SHALL be rendered in bold. The vertical distance between two adjacent groups SHALL be larger than the distance between two adjacent cards within a group. Cards SHALL remain visually distinguishable from the panel they sit on. The panel tint SHALL be derived from the repository colour and theme tokens so that it adapts to every supported theme, and repository-coloured text shown on the panel SHALL keep a contrast ratio of at least 4.5:1 against the panel background in every supported theme.
@@ -286,3 +411,206 @@ Minimizing MUST NOT change which cards match the active filters or any count: th
 - **WHEN** the browser refuses access to local storage
 - **THEN** the board shows the default states, toggling still works for the current page, and no error is shown
 
+### Requirement: Cards offer session starters and show session state
+When agent sessions are enabled and the card's repository is tracked and not excluded, a card SHALL offer the session starters available for its change — **Draft artifacts** while an artifact is not done, **Implement** in `Ready` or `Implementing`, **Archive** in `Done`, none for archived changes — limited to the starters the repository's agent has a prompt for, and disabled with an explanation when that agent's executable is not found. A card whose change has a running session SHALL instead show a badge — `running`, or `quiet <duration>` when the terminal has been silent for more than a minute — and a card whose latest session failed to start or ended with an error SHALL show that; activating the badge SHALL open the session panel. Status MUST be conveyed by text as well as colour. The existing copy actions remain available. When agent sessions are disabled or the repository is excluded, cards MUST look and behave exactly as before.
+
+#### Scenario: Done change offers Archive
+- **WHEN** a change is in `Done` and agent sessions are enabled
+- **THEN** the card offers **Archive** next to its "complete" badge
+
+#### Scenario: Ready change
+- **WHEN** a change is in `Ready`, agent sessions are enabled and its repository is not excluded
+- **THEN** the card offers **Implement** and still offers the copy action
+
+#### Scenario: Running session
+- **WHEN** a change has a running session
+- **THEN** its card shows a session badge and no starter, and activating the badge opens the session panel
+
+#### Scenario: Feature off
+- **WHEN** agent sessions are disabled
+- **THEN** no card shows a starter or a session badge
+
+### Requirement: Session panel
+The board SHALL show agent sessions in a dock at the bottom of the window that spans its full width, addressable in the URL so that it survives reload and working in both routing modes. For each session shown it SHALL present the change, repository, agent, worktree path and branch and the session's state; the session's terminal, coloured from the dashboard's theme tokens and rendered without loading anything from the network; and the actions End session or Clean up (with the remove-worktree confirmation when removal is safe), Resume when available, Delete record for an ended session, and "Copy cd" for the worktree. The page SHALL reserve the dock's height below its content so that no part of the board is hidden behind it. The dock's height SHALL be adjustable by dragging its top edge and by keyboard, within limits that keep both the board and a terminal usable, and SHALL be remembered in the browser; the dock SHALL offer maximising and collapsing to its tab strip. Hiding a session, collapsing the dock or closing it MUST NOT end any session, and the board MUST stay usable above the dock. When no session is shown and none is running there SHALL be no dock.
+
+#### Scenario: Deep link
+- **WHEN** the user reloads the page while a session panel is open
+- **THEN** the same session's terminal is shown again, including its earlier output
+
+#### Scenario: Hiding the panel
+- **WHEN** the user closes the panel while the agent is working
+- **THEN** the agent keeps running and the card keeps showing the session badge
+
+#### Scenario: Nothing hidden behind the dock
+- **WHEN** the dock is open and the user scrolls the board to its end
+- **THEN** the last cards are fully visible above the dock
+
+#### Scenario: Height is remembered
+- **WHEN** the user drags the dock to a new height and reloads the page
+- **THEN** the dock opens at that height
+
+#### Scenario: Collapsed
+- **WHEN** the user collapses the dock while two sessions run
+- **THEN** only the tab strip remains at the bottom, both sessions keep running, and selecting a tab expands the dock with that session
+
+### Requirement: Cards say which checkout a change lives in
+The board SHALL show a change once per repository regardless of how many checkouts hold a copy of it. When a change's data comes from a linked worktree, its card SHALL show that worktree's branch in the branch badge, and the badge's tooltip SHALL state the worktree's path. When other checkouts hold a copy, the tooltip SHALL list them with their branch (or "main checkout", or "detached") and column. The card MUST NOT require the change to exist in the main checkout.
+
+#### Scenario: Worktree-only change
+- **WHEN** change `audit-trail` exists only in a worktree on `feat/audit-trail`
+- **THEN** the board shows one `audit-trail` card with the badge `feat/audit-trail` whose tooltip names the worktree path
+
+#### Scenario: Copies in several checkouts
+- **WHEN** `audit-trail` is `Implementing` in a worktree and `Proposal` in the main checkout
+- **THEN** one card is shown in `Implementing`, and its badge tooltip lists the main checkout with `Proposal`
+
+### Requirement: Cards show the work status of their change's worktree
+When agent sessions apply to a card's repository and a session worktree exists for its change, the card SHALL show a work-status badge as text plus colour — the number of uncommitted files, the number of commits not pushed, `pushed`, or `merged` — also when no session is running, next to the running session's badge if there is one. Nothing is shown for `clean` or `missing`. Open work whose last activity is older than 24 hours (`uncommitted`, `unpushed`) or 7 days (`pushed`), with no session running, SHALL be highlighted as stale with its age. The badge of `merged` SHALL state that this is as of the last fetch and that the worktree can be removed. Activating the badge opens the session panel of the worktree's most recent session.
+
+#### Scenario: Ended session with uncommitted work
+- **WHEN** a change's session has ended cleanly and its worktree holds 3 uncommitted files
+- **THEN** the card shows "3 uncommitted" and activating it opens that session's panel
+
+#### Scenario: Stale
+- **WHEN** a worktree has had unpushed commits for two days and no session is running
+- **THEN** the badge is highlighted and says so
+
+### Requirement: Open work list
+While agent sessions are enabled the top bar SHALL show an "Open work" control with the number of worktrees whose status is `uncommitted`, `unpushed` or `pushed`; it is hidden when there is no such worktree and none that is `merged`. Opening it SHALL list those worktrees and the `merged` ones across all repositories — including worktrees of archived or vanished changes and worktrees without a session record — with repository, change, branch, status and age, stale entries first. An entry with a session SHALL open its panel; an entry without one SHALL offer copying a `cd` command and, after confirmation, removal when that is safe.
+
+#### Scenario: Archive worktree of an archived change
+- **WHEN** the archive worktree of a change that is already archived holds a commit that is not pushed
+- **THEN** it appears in the Open work list although no card offers it
+
+#### Scenario: Nothing open
+- **WHEN** no session worktree exists
+- **THEN** the top bar shows no Open work control
+
+### Requirement: The session panel shows work status and offers Ship
+The session panel SHALL show the work status of the session's worktree and a Ship button while that status is `uncommitted`, `unpushed` or `pushed`, naming what it will do. For `merged` the panel SHALL suggest removing the worktree, and the clean-up dialog SHALL preselect removal.
+
+#### Scenario: Ship from the panel
+- **WHEN** the user presses Ship on an ended session with uncommitted work
+- **THEN** the agent starts in the terminal with the Ship prompt
+
+#### Scenario: Merged
+- **WHEN** the panel is opened for a session whose worktree is `merged`
+- **THEN** Ship is not offered and removal of the worktree is suggested
+
+### Requirement: The dock shows up to three sessions side by side
+The dock SHALL show one, two or three sessions next to each other in panes of equal width, each with its own header, actions, terminal and default responses, and MUST NOT show more than three at once. The tab strip SHALL list every running session, however many, plus shown sessions that have ended, and SHALL mark, as text or shape as well as colour, which sessions are currently shown. Selecting a tab whose session is not shown SHALL open it in a new pane while fewer than three are shown, and otherwise replace the pane that last had the keyboard focus; selecting a tab whose session is shown SHALL move the keyboard focus to its terminal. Each pane SHALL have a control that removes it from the dock without ending its session; removing the last pane collapses the dock. Opening a session from a card, from Open work or by starting one follows the same rule as selecting its tab. The URL SHALL carry the shown sessions in pane order, and a URL naming a single session SHALL open one pane; sessions in the URL that do not exist are ignored, and no more than the first three are shown. Typing, default responses and next-step prompts MUST reach only the session of the pane they were used in.
+
+#### Scenario: Three at once, more in tabs
+- **WHEN** five sessions are running and three of them are shown
+- **THEN** three terminals are visible side by side and the tab strip lists all five, marking the three that are shown
+
+#### Scenario: Fourth session replaces the focused pane
+- **WHEN** three sessions are shown, the keyboard focus is in the second pane, and the user selects the tab of a fourth session
+- **THEN** the second pane shows the fourth session, the other two panes are unchanged, and the replaced session keeps running
+
+#### Scenario: Pane closed
+- **WHEN** the user removes one of two panes
+- **THEN** the remaining pane takes the full width and the removed session keeps running and stays in the tab strip
+
+#### Scenario: Deep link with several sessions
+- **WHEN** the page is loaded with two session ids in the URL
+- **THEN** both terminals are shown in that order with their earlier output
+
+#### Scenario: Input stays in its pane
+- **WHEN** two sessions are shown and the user presses a default response in the first pane
+- **THEN** only the first session's terminal receives it
+
+### Requirement: Cards mark an archive that the main checkout does not have yet
+A card of an archived change whose checkout is a linked worktree SHALL show a badge, as text plus colour, naming the branch that holds the archive and stating that it is not in the main checkout yet. Its tooltip SHALL name the worktree and list the checkouts that still hold an active copy with their columns, and say that merging the branch and updating the main checkout resolves it. Cards of changes archived in the main checkout MUST look as before.
+
+#### Scenario: Pending archive
+- **WHEN** `audit-trail` is archived only in a worktree on `chore/archive-audit-trail` and still `Implementing` in the main checkout
+- **THEN** its card is in `Archived` with a badge naming `chore/archive-audit-trail`, and the tooltip says the main checkout still has it in `Implementing`
+
+#### Scenario: Ordinary archive
+- **WHEN** a change is archived in the main checkout
+- **THEN** its card shows no such badge
+
+### Requirement: The running session badge shows activity through motion
+The session badge of a running session whose terminal is not quiet SHALL be animated wherever it is shown (cards and the session panel): its dot pulses and a lighter colour sweeps across its label, in a loop of about two seconds that never hides the label or reduces its contrast below that of the static badge. The `quiet`, ended and failed badges, work-status badges and every other badge MUST NOT be animated, so that motion means exactly "an agent is working now". The animation MUST be decorative only: the label still reads `running`, the dot is hidden from assistive technology, and status remains conveyed by text as well as colour. When the user prefers reduced motion (`prefers-reduced-motion: reduce`) the badge MUST be static and look as it did without this requirement. Colours MUST come from the theme tokens so that both themes apply.
+
+#### Scenario: Running
+- **WHEN** a change has a running session that printed something within the last minute
+- **THEN** its badge reads `running`, its dot pulses and a colour sweeps across the label
+
+#### Scenario: Quiet session is still
+- **WHEN** a running session has been silent for more than a minute
+- **THEN** its `quiet` badge is not animated
+
+#### Scenario: Reduced motion
+- **WHEN** the user's system asks for reduced motion
+- **THEN** the running badge is static and still reads `running`
+
+### Requirement: Cards keep offering the next step while a session runs
+A card whose change has a running session SHALL show the session badge and, next to it, the starters available in the change's current stage. For Draft and Implement with a running session in the change's own worktree, the starter SHALL send its prompt to that session and open the panel with the terminal focused; its label and tooltip MUST say that it sends the prompt to the running session, and MUST NOT ask the user for a further key press. When the prompt was typed but not submitted, the panel SHALL say so as it does for any other text sent on the user's behalf. Archive SHALL open its own session as before. The panel header SHALL offer the same next-step buttons for the session shown.
+
+#### Scenario: Draft finished
+- **WHEN** a Draft session is still running and the change has moved to `Ready`
+- **THEN** the card shows the running (or quiet) badge and an **Implement** button, and pressing it sends the Implement prompt to that session and opens the panel
+
+#### Scenario: The prompt was not sent
+- **WHEN** the next step is sent to a session whose agent never shows the typed prompt
+- **THEN** the panel says that the text was typed but not sent, and the session keeps running
+
+#### Scenario: Nothing new to do
+- **WHEN** an Implement session is running and the change is `Implementing`
+- **THEN** the card offers Implement next to the badge and no other starter
+
+### Requirement: Running sessions can be ended from the card
+The badge of a running session SHALL carry a small close control with an accessible name. Activating it MUST NOT end the session directly but open the end-session dialog.
+
+#### Scenario: Close control
+- **WHEN** the user activates the close control on a running badge
+- **THEN** the end-session dialog opens and the session keeps running until confirmed
+
+### Requirement: The end-session dialog is graded by work status
+Ending a session — from a card or from the panel — SHALL go through one dialog that reads the worktree's work status fresh and grades its warning: a plain confirmation for `clean`, `merged` or `missing`; a notice for `pushed` that the work is not merged as of the last fetch; and for `uncommitted` or `unpushed` a strong warning, as text plus colour, naming the number of files or commits that exist only in this worktree, with **Ship instead** offered and the confirming button labelled **End anyway**. The dialog MUST state that the worktree and branch are kept, and SHALL offer worktree removal only when that is safe. Cancelling MUST change nothing.
+
+#### Scenario: Unshipped work
+- **WHEN** the user ends a session whose worktree holds 3 uncommitted files
+- **THEN** the dialog warns that 3 files exist only in this worktree, offers Ship instead, and ends the session only on **End anyway**
+
+#### Scenario: Nothing unshipped
+- **WHEN** the user ends a session whose worktree is `clean`
+- **THEN** the dialog asks for a plain confirmation
+
+### Requirement: The session panel has a tab per running session
+The session panel SHALL show a tab strip with every running session across repositories — repository, change and its live badge — plus the session currently shown when it has ended. Selecting a tab SHALL show that session's terminal with its earlier output and update the URL; it MUST NOT end, restart or otherwise affect any session. Tabs SHALL be keyboard-operable and expose the selected one to assistive technology. With a single session the strip MAY be omitted.
+
+#### Scenario: Switching
+- **WHEN** two sessions are running and the user selects the other tab
+- **THEN** the other session's terminal is shown including its earlier output, both sessions keep running, and reloading the page shows the same tab
+
+#### Scenario: Session ends while shown
+- **WHEN** the session shown ends
+- **THEN** its tab stays until the user selects another or hides the panel
+
+### Requirement: Cards open the change detail view
+Every card on the combined board and on a repository board SHALL be a link to its change's detail view (`change-detail`), including cards in the `Archived` column. The link SHALL be a real anchor with an `href`, so it can be opened in a new tab, copied and focused with the keyboard, and it SHALL carry the board the card was clicked on together with its active filters, so the detail view can return to it.
+
+Activating a control inside a card — the copy action and any session starter — MUST NOT navigate to the detail view. The card's content, layout, grouping, colouring and counts SHALL be unchanged by being a link.
+
+#### Scenario: Click a card
+- **WHEN** the user clicks a card for change `cloud-deployment` of repository `demo-ops`
+- **THEN** the detail view for that change is shown
+
+#### Scenario: Open in a new tab
+- **WHEN** the user ⌘-clicks or middle-clicks a card
+- **THEN** the detail view opens in a new tab and the board in the current tab is unchanged
+
+#### Scenario: Copy action does not navigate
+- **WHEN** the user clicks "Copy apply command" on a card
+- **THEN** the command is copied and the board stays on screen
+
+#### Scenario: Archived cards link too
+- **WHEN** the user clicks a card in the `Archived` column
+- **THEN** the detail view for that archived change is shown
+
+#### Scenario: Keyboard
+- **WHEN** the user tabs to a card and presses Enter
+- **THEN** the detail view for that change is shown

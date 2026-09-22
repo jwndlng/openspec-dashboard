@@ -48,6 +48,54 @@ export function applyCommand(repoPath: string, changeName: string): string {
   return `cd ${shellQuote(repoPath)} && claude "/opsx:apply ${changeName}"`;
 }
 
+/** Columns where a card offers "apply"; earlier columns offer "start" (drafting) instead. */
+const APPLY_COLUMNS = new Set(["Ready", "Implementing", "Done", "Synced", "Archived"]);
+
+/** True when a card of this column offers the start command (`/opsx:continue`) rather than the apply command. */
+export function isStartColumn(column: string): boolean {
+  return !APPLY_COLUMNS.has(column);
+}
+
+/**
+ * Continues drafting a change: extends with a pointer to `prompt.md` when the change reports one, so the agent knows
+ * where to find the user's initial description.
+ */
+export function startCommand(repoPath: string, changeName: string, hasPrompt: boolean): string {
+  const suffix = hasPrompt ? ` — see openspec/changes/${changeName}/prompt.md` : "";
+  return `cd ${shellQuote(repoPath)} && claude "/opsx:continue ${changeName}${suffix}"`;
+}
+
+/**
+ * Card copy action: apply command for `Ready` onwards, start command otherwise (with `prompt.md` pointer when set).
+ */
+export function copyCommandFor(change: { column: string; name: string; prompt?: string }, repoPath: string): { label: string; text: string } {
+  if (isStartColumn(change.column)) return { label: "Copy start", text: startCommand(repoPath, change.name, change.prompt !== undefined && change.prompt !== "") };
+  return { label: "Copy apply", text: applyCommand(repoPath, change.name) };
+}
+
+/**
+ * Tooltip for a card's branch badge: where the change's data comes from, and which other checkouts hold a copy that
+ * is at a different point.
+ */
+export function checkoutHint(change: { checkout?: { path: string; isMain: boolean }; otherCheckouts?: { branch?: string; isMain: boolean; column: string }[] }): string {
+  const lines = [change.checkout && !change.checkout.isMain ? `lives in worktree ${change.checkout.path}` : "a branch or worktree matches this change"];
+  for (const other of change.otherCheckouts ?? []) lines.push(`also in: ${other.isMain ? "main checkout" : (other.branch ?? "detached worktree")} — ${other.column}`);
+  return lines.join("\n");
+}
+
+/**
+ * An archive found only in a linked worktree: agents archive on a branch, and the main checkout catches up when that
+ * branch is merged and pulled. Undefined for ordinary archives (and for anything that is not archived).
+ */
+export function pendingArchiveHint(change: { archived?: string | null; checkout?: { path: string; branch?: string; isMain: boolean }; otherCheckouts?: { branch?: string; isMain: boolean; column: string }[] }): { label: string; title: string } | undefined {
+  if (!change.archived || !change.checkout || change.checkout.isMain) return undefined;
+  const where = change.checkout.branch ?? "a detached worktree";
+  const lines = [`archived on ${where}, in worktree ${change.checkout.path} — the main checkout does not have this archive yet`];
+  for (const other of change.otherCheckouts ?? []) lines.push(`still active in: ${other.isMain ? "main checkout" : (other.branch ?? "detached worktree")} — ${other.column}`);
+  lines.push("merge that branch and update the main checkout to bring it here");
+  return { label: `on ${where} · not in main checkout`, title: lines.join("\n") };
+}
+
 export function cdCommand(repoPath: string): string {
   return `cd ${shellQuote(repoPath)}`;
 }

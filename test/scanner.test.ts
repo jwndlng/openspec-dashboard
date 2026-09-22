@@ -3,7 +3,7 @@ import { appendFile, mkdir, realpath, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { defaultConfig, newRepoConfig } from "../src/server/config.ts";
 import type { ParsedStatus } from "../src/server/git.ts";
-import { MAX_INSPECTED_WORKTREES, Scanner, scanRepo } from "../src/server/scanner.ts";
+import { MAX_INSPECTED_WORKTREES, PROMPT_LIMIT_BYTES, Scanner, scanRepo } from "../src/server/scanner.ts";
 import { LocalRepoSource } from "../src/server/source.ts";
 import type { Worktree } from "../src/shared/types.ts";
 import { FIXTURES, gitIn, tempDir, useTempHome } from "./helpers.ts";
@@ -363,4 +363,40 @@ test("checkouts: a non-git repository reports none and no summary", async () => 
   expect(snap.ok).toBe(true);
   expect(snap.worktrees).toEqual([]);
   expect(snap.workInProgress).toBeUndefined();
+});
+
+test("scanner reports prompt.md: absent, small, oversized, and does not affect artifact status", async () => {
+  const root = await tempDir();
+  const changeRoot = join(root, "openspec", "changes");
+  await mkdir(changeRoot, { recursive: true });
+  await writeFile(join(root, "openspec", "config.yaml"), "schema: spec-driven\n");
+
+  await mkdir(join(changeRoot, "no-prompt"), { recursive: true });
+  await writeFile(join(changeRoot, "no-prompt", ".openspec.yaml"), "schema: spec-driven\ncreated: 2026-09-01\n");
+
+  await mkdir(join(changeRoot, "with-prompt"), { recursive: true });
+  await writeFile(join(changeRoot, "with-prompt", ".openspec.yaml"), "schema: spec-driven\ncreated: 2026-09-02\n");
+  await writeFile(join(changeRoot, "with-prompt", "prompt.md"), "# Prompt\n\nLog every mutation\n");
+
+  await mkdir(join(changeRoot, "oversized"), { recursive: true });
+  await writeFile(join(changeRoot, "oversized", ".openspec.yaml"), "schema: spec-driven\ncreated: 2026-09-03\n");
+  await writeFile(join(changeRoot, "oversized", "prompt.md"), "a".repeat(PROMPT_LIMIT_BYTES + 100));
+
+  const snap = await scanRepo(newRepoConfig(root, true));
+  const byName = new Map(snap.changes.map((c) => [c.name, c]));
+
+  const noPrompt = byName.get("no-prompt")!;
+  expect(noPrompt.prompt).toBeUndefined();
+  // Artifact status unchanged by the prompt logic — proposal not done ⇒ "New".
+  expect(noPrompt.column).toBe("New");
+
+  const withPrompt = byName.get("with-prompt")!;
+  expect(withPrompt.prompt).toBe("# Prompt\n\nLog every mutation\n");
+  expect(withPrompt.column).toBe("New");
+
+  const oversized = byName.get("oversized")!;
+  expect(oversized.prompt?.length).toBe(PROMPT_LIMIT_BYTES);
+  expect(oversized.warnings?.some((w) => w.includes("larger than"))).toBe(true);
+
+  await rm(root, { recursive: true, force: true });
 });

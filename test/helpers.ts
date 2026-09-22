@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { lstat, mkdtemp, readdir, readFile, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -19,8 +19,9 @@ export async function useTempHome(): Promise<{ home: string; cleanup: () => Prom
   };
 }
 
+/** Canonical, because repository paths are: on macOS the temp dir is reached through the /var → /private/var symlink. */
 export async function tempDir(prefix = "osd-"): Promise<string> {
-  return mkdtemp(join(tmpdir(), prefix));
+  return realpath(await mkdtemp(join(tmpdir(), prefix)));
 }
 
 /** True for strings that contain something shaped like a real user's home directory (the demo's /home/demo is allowed). */
@@ -38,4 +39,23 @@ export async function gitIn(cwd: string, ...args: string[]): Promise<void> {
     env: { ...process.env, GIT_AUTHOR_DATE: date, GIT_COMMITTER_DATE: date },
   });
   if ((await proc.exited) !== 0) throw new Error(`git ${args.join(" ")}: ${await new Response(proc.stderr).text()}`);
+}
+
+/** Every file and directory under `root` with size, mtime and content hash — equal before and after means nothing was created, modified or deleted. */
+export async function treeFingerprint(root: string): Promise<string> {
+  const lines: string[] = [];
+  const visit = async (dir: string): Promise<void> => {
+    for (const entry of (await readdir(dir, { withFileTypes: true })).sort((a, b) => a.name.localeCompare(b.name))) {
+      const p = join(dir, entry.name);
+      const info = await lstat(p);
+      if (entry.isDirectory()) {
+        lines.push(`d ${p} ${info.mtimeMs}`);
+        await visit(p);
+      } else {
+        lines.push(`f ${p} ${info.size} ${info.mtimeMs} ${entry.isFile() ? Bun.hash(await readFile(p)) : "link"}`);
+      }
+    }
+  };
+  await visit(root);
+  return lines.join("\n");
 }

@@ -34,9 +34,42 @@ export async function currentBranch(cwd: string): Promise<string | undefined> {
   return out && out !== "HEAD" ? out : undefined;
 }
 
+/** URL of the `origin` remote as configured; undefined without one or outside a git repository. Reads config only. */
+export async function originUrl(cwd: string): Promise<string | undefined> {
+  return (await git(cwd, ["config", "--get", "remote.origin.url"]))?.trim() || undefined;
+}
+
 /**
- * Parses `git worktree list --porcelain` into one entry per record. Git lists the main working tree first; detached,
- * locked, prunable and bare records are kept and flagged. Flags are only set when they apply.
+ * `host/org/repo` for the scp-style (`git@host:org/repo.git`) and URL (`https://host/org/repo`, `ssh://git@host/…`)
+ * forms of a remote, so that two clones of one project compare equal whatever protocol they use. The host is
+ * lower-cased; user, port, a trailing slash and `.git` are dropped. Anything else (a local path) is returned trimmed.
+ */
+export function normalizeRemote(url: string): string | undefined {
+  const trimmed = url.trim();
+  if (!trimmed) return undefined;
+  const match = /^[a-z][a-z0-9+.-]*:\/\/(?:[^@/]*@)?([^/:]+)(?::\d+)?\/(.+)$/i.exec(trimmed) ?? /^(?:[^@/]+@)?([^/:]+):(?!\/)(.+)$/.exec(trimmed);
+  if (!match) return trimmed.replace(/\/+$/, "");
+  const path = match[2].replace(/\/+$/, "").replace(/\.git$/, "").replace(/^\/+/, "");
+  return `${match[1].toLowerCase()}/${path}`;
+}
+
+/**
+ * The repository's default branch as it is known locally — never asks the remote: what `origin/HEAD` points to, else a
+ * local `main`, else a local `master`.
+ */
+export async function defaultBranch(cwd: string): Promise<string | undefined> {
+  const head = (await git(cwd, ["symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"]))?.trim();
+  if (head) return head.replace(/^origin\//, "");
+  for (const candidate of ["main", "master"]) {
+    if ((await git(cwd, ["show-ref", "--verify", "--quiet", `refs/heads/${candidate}`])) !== undefined) return candidate;
+  }
+  return undefined;
+}
+
+/**
+ * Parses `git worktree list --porcelain`: one entry per record, in git's order — the main working tree first, then the
+ * linked worktrees. Detached worktrees have no branch; locked, prunable and bare records are kept and flagged. Flags are
+ * only set when they apply.
  */
 export function parseWorktrees(porcelain: string): Worktree[] {
   const result: Worktree[] = [];
@@ -46,9 +79,9 @@ export function parseWorktrees(porcelain: string): Worktree[] {
       current = { path: line.slice("worktree ".length) };
       if (result.length === 0) current.isMain = true;
       result.push(current);
-    }
-    if (!current) continue;
-    if (line.startsWith("HEAD ")) {
+    } else if (!current) {
+      // stray line before the first record
+    } else if (line.startsWith("HEAD ")) {
       current.head = line.slice("HEAD ".length, "HEAD ".length + 7);
     } else if (line.startsWith("branch ")) {
       current.branch = line.slice("branch ".length).replace(/^refs\/heads\//, "");
@@ -71,6 +104,11 @@ export function parseWorktrees(porcelain: string): Worktree[] {
 export async function worktrees(cwd: string): Promise<Worktree[]> {
   const out = await git(cwd, ["worktree", "list", "--porcelain"]);
   return out ? parseWorktrees(out) : [];
+}
+
+/** Where `cwd` sits below its repository's top level (`""` at the top level), so the same project can be found in a linked worktree. */
+export async function subdirectory(cwd: string): Promise<string> {
+  return ((await git(cwd, ["rev-parse", "--show-prefix"]))?.trim() ?? "").replace(/\/+$/, "");
 }
 
 /** Committer date (ISO 8601) of the last commit touching `relPath`, or undefined if none. */

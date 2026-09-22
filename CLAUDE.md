@@ -26,18 +26,33 @@ bun test test/scanner.test.ts   # a single test file
 
 1. **Read-only towards tracked repositories, with enumerated exceptions.** The dashboard writes to a tracked
    repository only in response to an explicit user action, only to the paths enumerated in the "never writes"
-   requirement of `openspec/specs/dashboard-api/spec.md`, never deletes or moves anything there, and never runs a git
-   command that writes (one enumerated exception below). Today that list has two entries: the managed sections of `openspec/config.yaml` (applying shared config profiles,
-   `src/server/sharedConfig.ts`), and — for agent sessions, off by default — a session's git worktree: created with
+   requirement of `openspec/specs/dashboard-api/spec.md`, never deletes or moves anything there, and runs a git
+   command that writes only where enumerated below. Today that list has five entries: the managed sections of `openspec/config.yaml` (applying shared config profiles,
+   `src/server/sharedConfig.ts`); for agent sessions, off by default, a session's git worktree, created with
    `git worktree add` (directory under `~/.openspec-dashboard/worktrees/`, never inside the repository's working tree)
    and removed with a non-forcing `git worktree remove` after the user confirmed and read-only checks proved nothing
-   would be lost (`src/server/sessions/worktree.ts`, the only place that runs a git command that writes). The main
-   checkout's branch, index and files are never touched, and the dashboard never contacts a remote. Starting the user's
+   would be lost (`src/server/sessions/worktree.ts`); the **pull action** — `git fetch` of the repository's own
+   remote, then a fast-forward-only `git merge` of the main checkout's upstream, with hooks disabled, never a merge
+   commit, rebase, stash, reset, force or branch switch, and only fetching when the checkout is off its default branch,
+   has no upstream, has diverged or has overlapping local edits (`src/server/pull.ts`, the only place that contacts a
+   remote or changes a main checkout); and the **create-change action** — a new `openspec/changes/<name>/` directory
+   with the schema marker `.openspec.yaml` and, when the user typed one, `prompt.md`, written directly with an
+   exclusive-create so two concurrent requests cannot both succeed, and never through git or the `openspec` CLI
+   (`src/server/createChange.ts`, `POST /api/repos/<id>/changes`); and, once those files are written, **staging that
+   new directory** — a single `git add -- openspec/changes/<name>/`, the directory just created and nothing else,
+   best-effort (a non-git repository or any git failure leaves the change in place, merely untracked, reported as
+   `staged: false`), never run for a refused create, and never followed by a commit (same module and route). Those
+   four modules are the only places that write to a tracked repository. Apart from the pull action and that one
+   `git add`, the main checkout's index and files are never touched and no remote is ever contacted; the main
+   checkout's branch is never changed by anything; and the pull action runs only on the user's explicit request — never
+   on a timer, during a scan, on page load or as a side effect (`test/pull.test.ts` proves scans leave a recording
+   remote untouched). Starting the user's
    agent in that worktree on the user's click is not a write by the dashboard: what the agent changes is decided by its
    own permission prompts. With agent sessions disabled no process that can modify a repository is ever started. Scanning, polling, discovery, previews and saving settings
    write nothing to a repository. All other writes stay under `~/.openspec-dashboard/` (or `OPENSPEC_DASHBOARD_HOME`
-   in tests). Git is invoked only with the read-only subcommands listed in that spec. Adding a path or a subcommand
-   means changing that spec first.
+   in tests). Apart from the worktree commands, the pull action's `fetch` and `merge --ff-only` and the create-change
+   `add`, git is invoked only with the read-only subcommands listed in that spec. Adding a path or a subcommand means
+   changing that spec first.
 2. **Loopback only.** The server binds `127.0.0.1`; there is no auth because nothing else can reach it.
 2a. **Mutating API routes are same-origin only.** Every non-GET `/api/` request passes `crossSiteRefusal` in
    `src/server/api.ts` (JSON content type, loopback host, own origin); the terminal WebSocket has `webSocketRefusal`. Loopback binding alone does not stop a web page
@@ -46,10 +61,14 @@ bun test test/scanner.test.ts   # a single test file
    `resolveSchema`/`loadChangeContext`: they locate files via `import.meta.url`, which does not exist inside the
    compiled binary. The adapter embeds the schema at build time. Anything that works under `bun run` but reads files
    relative to a module path must also be verified in `dist/openspec-dashboard`.
-4. **No network at runtime.** The UI is one HTML file with inlined JS, CSS and fonts; do not add CDN links, remote
-   fonts or fetches to other hosts.
-5. **The repository is the source of truth.** The dashboard indexes; it never stores facts about changes that are not
-   derivable from the repositories.
+4. **No network at runtime, except the pull action.** The UI is one HTML file with inlined JS, CSS and fonts; do not
+   add CDN links, remote fonts or fetches to other hosts. The server reaches a network only when git does, inside the
+   pull action of invariant 1, on the user's click, using git's own credentials — the dashboard never sees, stores or
+   asks for them, never prompts, and masks credentials in any error text it passes on.
+5. **The repository is the source of truth.** The dashboard indexes; everything it shows about the *current state* of a
+   change is derived from the repositories. The one thing it keeps that cannot be re-derived is history: the activity
+   log (`~/.openspec-dashboard/activity.jsonl`, `src/server/activity/`) records what the dashboard observed and when.
+   It is never an input to scanning, columns, counts or actions, and deleting it loses history only.
 6. **Change names reaching git or the file system are validated** (`CHANGE_NAME` in `src/server/source.ts`).
 7. **Nothing from a real repository goes into this one.** No copied `openspec/` trees, repo names, paths, hostnames or
    people from other projects — not in fixtures, tests, specs, proposals or commit messages. Use made-up names
@@ -64,6 +83,17 @@ bun test test/scanner.test.ts   # a single test file
   into an agent on this machine. It has its own guard, `webSocketRefusal` (loopback Host, the dashboard's own `Origin`,
   missing `Origin` refused) because the JSON guard cannot cover a WebSocket handshake. Never loosen it, and never bind
   anything but loopback.
+- Text the dashboard sends into a *running* agent for the user (next-step prompts, default responses, Ship) goes
+  through `submit.ts` and never gets a blind Enter: it is typed, the terminal's own output is watched for that same
+  text, and only then is Enter pressed as a separate key press. A terminal cannot tell us whether the agent shows a
+  prompt or a selection menu, and in a menu Enter confirms whatever is highlighted — possibly a permission; so when
+  the text never appears, nothing is sent and the user is told it was typed but not confirmed. That echo check is the
+  one thing the dashboard may read out of an agent's output, and only to decide about Enter. One running session per
+  worktree; archiving has its own.
+- **Work status** (`workStatus.ts`) is read per worktree *directory* — directories outlive session records — with
+  read-only git and no network, so `merged` means "as of the user's last fetch"; squash merges are recognised by
+  comparing the content of the files the branch touched. The dashboard never commits, pushes or calls `gh`: **Ship** only
+  hands the agent a prompt (`prompts.ship`, else `DEFAULT_SHIP_PROMPT`).
 - Tests never start a real agent or use the network: `test/fixtures/fake-agent.ts` is a tiny interactive program run in
   real pseudo-terminals and temp git repositories.
 - Anything here must also work in the compiled binary (`bun run build`), not just under `bun run`.

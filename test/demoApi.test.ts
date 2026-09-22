@@ -62,6 +62,10 @@ test("callers cannot mutate the demo's state through returned objects", async ()
 
 test("shared config in the demo: per-repository profiles, outdated after an edit, orphaned after a delete, nothing persisted", async () => {
   const { api } = demo();
+  // the demo starts with profiles already carried (see the seed test below); clear the slate for this walk-through
+  await api.saveSharedConfig({ profiles: [] });
+  const everyRepo = (await api.state()).repos.map((r) => ({ repoId: r.id, profileIds: [] }));
+  await api.applySharedConfig(everyRepo);
   expect(await api.sharedConfig()).toEqual({ profiles: [] });
   expect((await api.state()).repos.every((r) => r.sharedConfig === undefined)).toBe(true);
 
@@ -91,5 +95,61 @@ test("shared config in the demo: per-repository profiles, outdated after an edit
   repos = (await api.state()).repos;
   expect(repos[0].sharedConfig?.applied).toEqual([{ id: "base", state: "outdated" }, { id: "security", state: "orphaned" }]);
 
-  expect(await demo().api.sharedConfig()).toEqual({ profiles: [] }); // a reload starts over
+  expect((await demo().api.sharedConfig()).profiles.map((p) => p.id)).toEqual(["base", "security"]); // a reload starts over, from the seed
+});
+
+test("pull in the demo: canned outcomes, the notice's repositories are only fetched, nothing persists", async () => {
+  const { api } = demo();
+  const repos = (await api.state()).repos;
+  const offDefault = repos.filter((r) => r.onDefaultBranch === false).map((r) => r.name);
+  expect(offDefault.sort()).toEqual(["ember-mobile", "harbor-web"]); // the sample shows the notice at first sight
+  expect(repos.every((r) => r.defaultBranch === "main")).toBe(true);
+
+  const onMain = repos.find((r) => r.name === "atlas-api")!;
+  const first = await api.pullRepo(onMain.id);
+  expect(first).toMatchObject({ fetched: true, update: "fast-forwarded", branch: "main", upstream: "origin/main" });
+  expect(first.commits).toBeGreaterThan(0);
+  expect((await api.pullRepo(onMain.id)).update).toBe("up-to-date");
+
+  const harbor = repos.find((r) => r.name === "harbor-web")!;
+  expect(await api.pullRepo(harbor.id)).toMatchObject({ fetched: true, update: "skipped", reason: "on feat/redesign-settings-page, not main; only fetched" });
+
+  const failedScan = repos.find((r) => !r.ok)!;
+  await expect(api.pullRepo(failedScan.id)).rejects.toThrow("not a tracked");
+  await expect(api.pullRepo("nope")).rejects.toThrow("not a tracked");
+
+  const { results } = await api.pullAll();
+  expect(results.map((r) => r.repoId).sort()).toEqual(repos.filter((r) => r.ok).map((r) => r.id).sort());
+  expect((await demo().api.pullRepo(onMain.id)).update).toBe("fast-forwarded"); // a reload starts over
+});
+
+test("change artifacts in the demo: files follow the sample's state, tasks.md agrees with the card, errors match the server's", async () => {
+  const { api } = demo();
+  const [repo] = (await api.state()).repos;
+  const inProgress = repo.changes.find((c) => c.name === "add-rate-limiting")!;
+  const listing = await api.changeArtifacts(repo.id, inProgress.name);
+  expect(listing.change).toEqual({ repoId: repo.id, name: "add-rate-limiting", schema: "spec-driven", dir: `${repo.path}/openspec/changes/add-rate-limiting`, archived: false });
+  expect(listing.artifacts.map((a) => a.id)).toEqual(inProgress.artifacts.map((a) => a.id));
+  expect(listing.artifacts.every((a) => a.files.length > 0 && a.files.every((f) => f.bytes > 0))).toBe(true);
+
+  const tasks = await api.artifactFile(repo.id, inProgress.name, "tasks.md");
+  expect(tasks.text.match(/^- \[x\]/gm)?.length).toBe(inProgress.tasks!.done);
+  expect(tasks.text.match(/^- \[[ x]\]/gm)?.length).toBe(inProgress.tasks!.total);
+  expect(tasks.bytes).toBe(new TextEncoder().encode(tasks.text).length);
+
+  const early = await api.changeArtifacts(repo.id, "idempotency-keys");
+  expect(early.artifacts.map((a) => [a.id, a.status, a.files.length])).toEqual([["proposal", "done", 1], ["specs", "ready", 0], ["design", "ready", 0], ["tasks", "blocked", 0]]);
+
+  const archived = repo.changes.find((c) => c.archived)!;
+  const old = await api.changeArtifacts(repo.id, archived.name);
+  expect(old.change.archived).toBe(true);
+  expect(old.change.dir).toBe(`${repo.path}/openspec/changes/archive/${archived.archived}-${archived.name}`);
+
+  const status = (p: Promise<unknown>) => p.then(() => 200, (err) => (err as { status?: number }).status);
+  expect(await status(api.changeArtifacts(repo.id, "never-existed"))).toBe(404);
+  expect(await status(api.changeArtifacts("nope", inProgress.name))).toBe(404);
+  expect(await status(api.artifactFile(repo.id, "never-existed", "proposal.md"))).toBe(404);
+  expect(await status(api.artifactFile(repo.id, inProgress.name, "missing.md"))).toBe(404);
+  expect(await status(api.artifactFile(repo.id, inProgress.name, "../secrets.md"))).toBe(400);
+  expect(await status(api.artifactFile(repo.id, "a/b", "proposal.md"))).toBe(400);
 });

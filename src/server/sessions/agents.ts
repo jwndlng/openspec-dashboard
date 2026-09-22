@@ -1,5 +1,5 @@
 // Agent profiles (design.md D16): an agent is a command line plus opening prompts. Nothing here knows any vendor.
-import type { AgentAvailability, AgentProfile, Config, RepoConfig, SessionAction } from "../../shared/types.ts";
+import { DEFAULT_SHIP_PROMPT, type AgentAvailability, type AgentProfile, type Config, type RepoConfig, type SessionAction } from "../../shared/types.ts";
 import { CHANGE_NAME } from "../source.ts";
 
 export function agentFor(config: Config, repo: RepoConfig): AgentProfile | undefined {
@@ -20,6 +20,12 @@ export function openingPrompt(agent: AgentProfile, action: SessionAction, change
   if (!template) return undefined;
   if (!CHANGE_NAME.test(change)) throw new Error("invalid change name");
   return template.replaceAll("{change}", change);
+}
+
+/** Every agent can ship: a profile without its own Ship prompt gets the agent-neutral default. */
+export function shipPrompt(agent: AgentProfile, change: string): string {
+  if (!CHANGE_NAME.test(change)) throw new Error("invalid change name");
+  return (agent.prompts.ship ?? DEFAULT_SHIP_PROMPT).replaceAll("{change}", change);
 }
 
 export interface Launch {

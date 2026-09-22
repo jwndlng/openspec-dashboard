@@ -1,15 +1,23 @@
+import { ACTIVITY_KINDS, type ActivityKind } from "../shared/types.ts";
+import { MAX_PAGE, type ActivityLog, type PageQuery } from "./activity/log.ts";
 import type { Config, DiscoverResult, RepoConfig, ScanTriggerResult, SharedConfigApplyResult, SharedConfigAssignment, SharedConfigPreview } from "../shared/types.ts";
-import { ConfigValidationError, saveConfig, validateConfig, validateScanRoots } from "./config.ts";
+import { changeDirFor, listArtifactFiles, readArtifactFile } from "./artifacts.ts";
+import { ConfigValidationError, saveConfig, validateConfig, validateIgnorePaths, validateScanRoots } from "./config.ts";
+import { createChange } from "./createChange.ts";
 import { discoverRepos } from "./discover.ts";
+import { PullBusyError, pullAll, pullRepository } from "./pull.ts";
 import type { Scanner } from "./scanner.ts";
 import { applyTo, EMPTY_SHARED_CONFIG, loadSharedConfig, previewFor, SharedConfigValidationError, saveSharedConfig } from "./sharedConfig.ts";
 import { SessionError, type SessionManager } from "./sessions/manager.ts";
+import { LocalRepoSource } from "./source.ts";
 
 export interface AppState {
   config: Config;
   scanner: Scanner;
   /** Absent in contexts that never run agent sessions (some tests); the routes then answer 403. */
   sessions?: SessionManager;
+  /** History for the Activity view. Absent in contexts that record none; the endpoint then answers with an empty feed. */
+  activity?: ActivityLog;
 }
 
 /** The part of Bun's server object the handler needs: upgrading the terminal request to a WebSocket. */
@@ -58,11 +66,12 @@ async function putConfig(state: AppState, req: Request): Promise<Response> {
 }
 
 /**
- * Read-only: walks the roots from the body (the UI's unsaved draft) or, without
- * a body, the saved ones. Never touches `state.config`.
+ * Read-only: walks the roots and honours the ignore paths from the body (the UI's unsaved draft) or, where the body
+ * has none, the saved ones. Never touches `state.config`.
  */
 async function postDiscover(state: AppState, req: Request): Promise<Response> {
   let roots = state.config.scanRoots;
+  let ignorePaths = state.config.ignorePaths;
   const text = await req.text();
   if (text.trim()) {
     let body: unknown;
@@ -71,17 +80,16 @@ async function postDiscover(state: AppState, req: Request): Promise<Response> {
     } catch {
       return json({ error: "body must be JSON" }, 400);
     }
-    const scanRoots = (body as { scanRoots?: unknown } | null)?.scanRoots;
-    if (scanRoots !== undefined) {
-      try {
-        roots = validateScanRoots(scanRoots);
-      } catch (err) {
-        if (err instanceof ConfigValidationError) return json({ error: err.message, issues: err.issues }, 400);
-        throw err;
-      }
+    const draft = body as { scanRoots?: unknown; ignorePaths?: unknown } | null;
+    try {
+      if (draft?.scanRoots !== undefined) roots = validateScanRoots(draft.scanRoots);
+      if (draft?.ignorePaths !== undefined) ignorePaths = validateIgnorePaths(draft.ignorePaths);
+    } catch (err) {
+      if (err instanceof ConfigValidationError) return json({ error: err.message, issues: err.issues }, 400);
+      throw err;
     }
   }
-  const result: DiscoverResult = await discoverRepos(state.config.repos, roots);
+  const result: DiscoverResult = await discoverRepos(state.config.repos, roots, ignorePaths);
   return json(result);
 }
 
@@ -126,8 +134,9 @@ interface TerminalSocket {
 
 /**
  * Wire format: server → client binary frames are raw terminal output (first the scrollback), and one text frame
- * `{"type":"exit"}` when the process ends; client → server text frames are `{"type":"input","data":…}` and
- * `{"type":"resize","cols":…,"rows":…}`.
+ * `{"type":"exit"}` when the process ends; client → server text frames are `{"type":"input","data":…}` (keystrokes,
+ * passed on unobserved), `{"type":"resize","cols":…,"rows":…}` and `{"type":"submit","data":…}` — text sent on the
+ * user's behalf, answered to that socket with `{"type":"submitted","ok":…}` (`false`: typed, but Enter was withheld).
  */
 export function createWebSocketHandlers(state: AppState) {
   return {
@@ -155,6 +164,17 @@ export function createWebSocketHandlers(state: AppState) {
         return;
       }
       if (parsed.type === "input" && typeof parsed.data === "string") state.sessions.write(ws.data.sessionId, parsed.data);
+      else if (parsed.type === "submit") {
+        const answer = (ok: boolean) => ws.send(JSON.stringify({ type: "submitted", ok }));
+        try {
+          state.sessions.submit(ws.data.sessionId, parsed.data).then(
+            (result) => answer(result.submitted),
+            () => answer(false),
+          );
+        } catch {
+          answer(false); // not running, or not plain text
+        }
+      }
       else if (parsed.type === "resize" && typeof parsed.cols === "number" && typeof parsed.rows === "number") state.sessions.resize(ws.data.sessionId, parsed.cols, parsed.rows);
     },
     close(ws: TerminalSocket) {
@@ -169,7 +189,7 @@ async function sessionRoutes(state: AppState, req: Request, url: URL, server?: S
   const [, , , id, sub] = url.pathname.split("/"); // /api/sessions/<id>/<sub>
   try {
     if (!id) {
-      if (req.method === "GET") return json({ sessions: sessions.list(), agents: sessions.agents() });
+      if (req.method === "GET") return json({ sessions: sessions.list(), agents: sessions.agents(), worktrees: await sessions.worktrees() });
       if (req.method === "POST") return json(await sessions.open(await readJson(req)), 201);
     } else if (!sub) {
       if (req.method === "GET") return json(sessions.get(id));
@@ -188,6 +208,8 @@ async function sessionRoutes(state: AppState, req: Request, url: URL, server?: S
       return json(await sessions.worktreeStatus(id));
     } else if (req.method === "POST") {
       if (sub === "resume") return json(await sessions.resume(id));
+      if (sub === "ship") return json(await sessions.ship(id));
+      if (sub === "prompt") return json(await sessions.prompt(id, await readJson(req)));
       if (sub === "close") return json(await sessions.close(id, { removeWorktree: (await readJson(req)).removeWorktree === true }));
     }
   } catch (err) {
@@ -272,6 +294,96 @@ async function postSharedConfigApply(state: AppState, req: Request): Promise<Res
   return json({ results });
 }
 
+const ARTIFACT_ROUTE = /^\/api\/repos\/([^/]+)\/changes\/([^/]+)\/(artifacts|file)$/;
+const FILE_ERROR_STATUS = { "bad-path": 400, "not-found": 404, "too-large": 413 } as const;
+
+/**
+ * Read-only artifact list and single-file read for the change detail view. The request names a repository id, a
+ * change name and a relative path; the directory always comes from the config and `listChanges()`.
+ */
+async function artifactRoutes(state: AppState, url: URL, match: RegExpExecArray): Promise<Response> {
+  let repoId: string;
+  let changeName: string;
+  try {
+    repoId = decodeURIComponent(match[1]);
+    changeName = decodeURIComponent(match[2]);
+  } catch {
+    return json({ error: "malformed URL encoding" }, 400);
+  }
+  const repo = state.config.repos.find((r) => r.enabled && r.id === repoId);
+  if (!repo) return json({ error: NOT_TRACKED }, 404);
+  // The board shows a change's leading copy, which may live in a linked worktree: read where the scanner read. The
+  // checkout path is the scanner's (from `git worktree list`), never the request's.
+  const checkout = state.scanner.snapshot.repos.find((r) => r.id === repo.id)?.changes.find((c) => c.name === changeName)?.checkout;
+  const source = new LocalRepoSource(checkout && !checkout.isMain ? checkout.path : repo.path);
+  const found = await changeDirFor(source, changeName);
+  if (!found.ok) return found.reason === "invalid-name" ? json({ error: "invalid change name" }, 400) : json({ error: "unknown change" }, 404);
+  if (match[3] === "artifacts") return json(await listArtifactFiles(source, repo.id, found.entry));
+  const result = await readArtifactFile(source, found.entry.dir, url.searchParams.get("path"));
+  return result.ok ? json(result.file) : json({ error: result.message }, FILE_ERROR_STATUS[result.reason]);
+}
+
+/**
+ * The one API route that writes into a tracked repository outside `openspec/config.yaml`: creates
+ * `openspec/changes/<name>/` with its schema marker and, if given, `prompt.md`, then stages that directory. Refused
+ * for any reason means nothing was written and no git was run; the create itself is atomic (exclusive-create), so
+ * two concurrent requests cannot both succeed. A staging failure is reported (`staged: false`), never a failure.
+ */
+async function postCreateChange(state: AppState, req: Request, repoId: string): Promise<Response> {
+  const repo = state.config.repos.find((r) => r.id === repoId);
+  if (!repo) return json({ error: "unknown repository" }, 404);
+  if (!repo.enabled) return json({ error: "repository is disabled" }, 409);
+  const scanned = state.scanner.snapshot.repos.find((r) => r.id === repoId);
+  if (!scanned || !scanned.ok) return json({ error: "repository has not been successfully scanned" }, 409);
+  let body: Record<string, unknown>;
+  try {
+    body = await readJson(req);
+  } catch (err) {
+    if (err instanceof SessionError) return json({ error: err.message }, err.status);
+    throw err;
+  }
+  const name = body.name;
+  const prompt = body.prompt;
+  if (typeof name !== "string") return json({ error: "name must be a string" }, 400);
+  if (prompt !== undefined && prompt !== null && typeof prompt !== "string") return json({ error: "prompt must be a string" }, 400);
+  const result = await createChange(repo.path, name, typeof prompt === "string" ? prompt : undefined);
+  if (!result.ok) {
+    const status = result.reason === "invalid-name" || result.reason === "invalid-prompt" ? 400 : result.reason === "no-openspec-dir" || result.reason === "duplicate-active" || result.reason === "duplicate-archived" ? 409 : 500;
+    return json({ error: result.message }, status);
+  }
+  state.scanner.trigger();
+  return json({ name: result.name, staged: result.staged }, 201);
+}
+
+/**
+ * Repositories the pull action may run in: tracked, scanned without error, and git. The path comes from the config —
+ * a request only ever names an id.
+ */
+function pullable(state: AppState): RepoConfig[] {
+  const scanned = new Map(state.scanner.snapshot.repos.map((r) => [r.id, r]));
+  return state.config.repos.filter((r) => r.enabled && scanned.get(r.id)?.ok === true && scanned.get(r.id)?.isGit === true);
+}
+
+/** The one route that contacts a remote and updates a main checkout — and only because the user asked for it. */
+async function postPull(state: AppState, repoId: string): Promise<Response> {
+  const repo = pullable(state).find((r) => r.id === repoId);
+  if (!repo) return json({ error: "not a tracked, successfully scanned git repository" }, 404);
+  try {
+    const result = await pullRepository(repo);
+    state.scanner.trigger();
+    return json(result);
+  } catch (err) {
+    if (err instanceof PullBusyError) return json({ error: err.message }, 409);
+    throw err;
+  }
+}
+
+async function postPullAll(state: AppState): Promise<Response> {
+  const results = await pullAll(pullable(state));
+  state.scanner.trigger();
+  return json({ results });
+}
+
 const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "[::1]"]);
 
 /**
@@ -300,7 +412,37 @@ export function crossSiteRefusal(req: Request): string | undefined {
   return undefined;
 }
 
+/** Read-only; the feed is history and never an input to anything else. */
+function getActivity(state: AppState, url: URL): Response {
+  const params = url.searchParams;
+  const list = (name: string) => (params.get(name) ?? "").split(",").filter(Boolean);
+  const query: PageQuery = {};
+  if (params.has("limit")) {
+    const limit = Number(params.get("limit"));
+    if (!Number.isInteger(limit) || limit < 1 || limit > MAX_PAGE) return json({ error: `limit must be an integer between 1 and ${MAX_PAGE}` }, 400);
+    query.limit = limit;
+  }
+  const kinds = list("kinds");
+  const unknown = kinds.filter((k) => !ACTIVITY_KINDS.includes(k as ActivityKind));
+  if (unknown.length > 0) return json({ error: `unknown kind: ${unknown.join(", ")}` }, 400);
+  query.kinds = kinds as ActivityKind[];
+  query.repos = list("repos");
+  if (params.has("before")) query.before = params.get("before") ?? undefined;
+  if (params.has("since")) query.since = params.get("since") ?? "";
+  return json(state.activity?.page(query) ?? { events: [] });
+}
+
 /** Builds the `fetch` handler for Bun.serve (design.md D8). */
+async function postWorktreeRemove(state: AppState, req: Request): Promise<Response> {
+  if (!state.sessions) return json({ error: "agent sessions are not available" }, 403);
+  try {
+    return json(await state.sessions.removeWorktreeByName(await readJson(req)));
+  } catch (err) {
+    if (err instanceof SessionError) return json({ error: err.message }, err.status);
+    throw err;
+  }
+}
+
 export function createFetchHandler({ state, indexHtml }: AppOptions): (req: Request, server?: ServerLike) => Promise<Response> {
   return async (req, server) => {
     const url = new URL(req.url);
@@ -312,7 +454,11 @@ export function createFetchHandler({ state, indexHtml }: AppOptions): (req: Requ
         if (refusal) return json({ error: refusal }, 403);
       }
       if (pathname === "/api/sessions" || pathname.startsWith("/api/sessions/")) return sessionRoutes(state, req, url, server);
+      const artifactMatch = req.method === "GET" ? ARTIFACT_ROUTE.exec(pathname) : null;
+      if (artifactMatch) return artifactRoutes(state, url, artifactMatch);
+      if (req.method === "POST" && pathname === "/api/worktrees/remove") return postWorktreeRemove(state, req);
       if (req.method === "GET" && pathname === "/api/state") return json(state.scanner.snapshot);
+      if (req.method === "GET" && pathname === "/api/activity") return getActivity(state, url);
       if (req.method === "GET" && pathname === "/api/config") return json(state.config);
       if (req.method === "PUT" && pathname === "/api/config") return putConfig(state, req);
       if (req.method === "POST" && pathname === "/api/discover") return postDiscover(state, req);
@@ -320,6 +466,11 @@ export function createFetchHandler({ state, indexHtml }: AppOptions): (req: Requ
       if (req.method === "PUT" && pathname === "/api/shared-config") return putSharedConfig(state, req);
       if (req.method === "POST" && pathname === "/api/shared-config/preview") return postSharedConfigPreview(state, req);
       if (req.method === "POST" && pathname === "/api/shared-config/apply") return postSharedConfigApply(state, req);
+      if (req.method === "POST" && pathname === "/api/pull") return postPullAll(state);
+      const pullOne = /^\/api\/repos\/([^/]+)\/pull$/.exec(pathname);
+      if (req.method === "POST" && pullOne) return postPull(state, decodeURIComponent(pullOne[1]));
+      const createChangeMatch = /^\/api\/repos\/([^/]+)\/changes$/.exec(pathname);
+      if (req.method === "POST" && createChangeMatch) return postCreateChange(state, req, decodeURIComponent(createChangeMatch[1]));
       if (req.method === "POST" && pathname === "/api/scan") {
         const result: ScanTriggerResult = { started: state.scanner.trigger().started };
         return json(result);

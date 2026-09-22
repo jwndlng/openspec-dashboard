@@ -4,9 +4,8 @@
 //
 // Ages are relative to `now`, so the published demo never looks abandoned. Column and stage are derived with the
 // same rules the scanner uses, so the sample cannot disagree with the board.
-import { defaultAgentSessions } from "../../shared/agentDefaults.ts";
 import { deriveStage } from "../../shared/columns.ts";
-import type { ArtifactStatus, ChangeSnapshot, CheckoutStatus, Config, RepoConfig, RepoSnapshot, Snapshot, Worktree } from "../../shared/types.ts";
+import type { ActivityEvent, AgentProfile, ArtifactStatus, ChangeSnapshot, CheckoutStatus, Config, RepoConfig, RepoSnapshot, SharedProfile, Snapshot, Worktree } from "../../shared/types.ts";
 import { summarizeWorkInProgress } from "../../shared/workInProgress.ts";
 
 /** Appears in the demo bundle only; test/demoBundle.test.ts uses it to tell the two bundles apart. */
@@ -37,7 +36,10 @@ interface SampleChange {
   /** Age of the last activity in days. */
   age: number;
   synced?: boolean;
+  /** When it is one of the repository's worktree branches, the change lives in that worktree. */
   branch?: string;
+  /** The column of the main checkout's (older) copy, for a change whose work continues in a worktree. */
+  onMain?: string;
   warnings?: string[];
 }
 
@@ -101,6 +103,40 @@ function artifacts(written: Written): ArtifactStatus[] {
   }));
 }
 
+const worktreePath = (r: SampleRepo, branch: string) => `${repoPath(r.name)}-worktrees/${branch.replace("/", "-")}`;
+
+/** Where a sample change "lives": in the worktree that has its branch checked out, else in the main checkout. */
+function checkouts(r: SampleRepo, c: SampleChange): Pick<ChangeSnapshot, "checkout" | "otherCheckouts"> {
+  const main = { path: repoPath(r.name), branch: r.branch, isMain: true };
+  const inWorktree = c.branch !== undefined && (r.worktrees ?? []).some(([branch]) => branch === c.branch);
+  return {
+    checkout: inWorktree ? { path: worktreePath(r, c.branch as string), branch: c.branch, isMain: false } : main,
+    otherCheckouts: inWorktree && c.onMain ? [{ ...main, column: c.onMain }] : undefined,
+  };
+}
+
+/** Shared OpenSpec config the demo starts with, so Projects shows carried profiles without any setup. */
+export const DEMO_PROFILES: SharedProfile[] = [
+  { id: "base", name: "Base", context: "We use conventional commits.\nSpecs use SHALL for requirements and one scenario per behaviour.", rules: { proposal: ["Always include a Non-goals section"], tasks: ["Keep tasks under two hours"] } },
+  { id: "security", name: "Security", context: "Threat-model every new endpoint and state the data classification.", rules: { design: ["List trust boundaries"] } },
+];
+/** Repository name → profiles it carries; `stale` marks a profile applied before its last edit (shown as outdated). */
+export const DEMO_CARRIED: Record<string, { id: string; stale?: boolean }[]> = {
+  "atlas-api": [{ id: "base" }, { id: "security" }],
+  "harbor-web": [{ id: "base", stale: true }],
+  "lantern-infra": [{ id: "base" }, { id: "security" }],
+  "quill-docs": [{ id: "base" }],
+};
+
+/** The demo's only agent: made up, vendor-neutral, and never executed. */
+export const DEMO_AGENT: AgentProfile = {
+  id: "demo-agent",
+  name: "Demo Agent",
+  command: ["demo-agent", "{prompt}"],
+  prompts: { draft: "/opsx:ff {change}", implement: "/opsx:apply {change}", archive: "/opsx:archive {change}" },
+  resumeCommand: ["demo-agent", "--continue"],
+};
+
 const REPOS: SampleRepo[] = [
   {
     id: "a71c02e9",
@@ -112,7 +148,8 @@ const REPOS: SampleRepo[] = [
       ["fix/flaky-health-check", "never-pushed"],
     ],
     changes: [
-      { name: "add-rate-limiting", tasks: [9, 14], age: 0.1, branch: "feat/add-rate-limiting" },
+      // proposed on main, being implemented in a worktree: one card, led by the worktree's copy
+      { name: "add-rate-limiting", tasks: [9, 14], age: 0.1, branch: "feat/add-rate-limiting", onMain: "Proposal" },
       { name: "paginate-list-endpoints", tasks: [3, 22], age: 2 },
       { name: "migrate-to-postgres-16", tasks: [0, 31], age: 5 },
       { name: "structured-error-codes", written: "specs", age: 1 },
@@ -292,6 +329,7 @@ export function buildSample(now: number): Sample {
         created: day(c.age + 6),
         lastActivityAt: iso(c.age * DAY),
         branchMatch: c.branch,
+        ...checkouts(r, c),
         specsSynced: c.synced,
         warnings: c.warnings,
         ...deriveStage(input),
@@ -313,7 +351,7 @@ export function buildSample(now: number): Sample {
     });
     const worktrees = [
       checkout(repoPath(r.name), r.branch, r.main ?? "clean", true),
-      ...(r.worktrees ?? []).map(([branch, state]) => checkout(`${repoPath(r.name)}-worktrees/${branch.replace("/", "-")}`, branch, state)),
+      ...(r.worktrees ?? []).map(([branch, state]) => checkout(worktreePath(r, branch), branch, state)),
     ];
     return {
       id: r.id,
@@ -325,6 +363,9 @@ export function buildSample(now: number): Sample {
       scannedAt: iso(r.error ? 3 * HOUR : 0),
       isGit: true,
       currentBranch: r.branch,
+      // every sample repository's default branch is main; two of them sit on another branch and show the notice
+      defaultBranch: "main",
+      onDefaultBranch: r.branch === "main",
       worktrees,
       workInProgress: summarizeWorkInProgress(worktrees),
       lastUpdatedAt: iso(r.updated * HOUR),
@@ -335,13 +376,56 @@ export function buildSample(now: number): Sample {
   const config = {
     version: 1,
     scanRoots: [DEMO_ROOT],
+    ignorePaths: [],
     repos: REPOS.map((r) => ({ id: r.id, path: repoPath(r.name), name: r.name, enabled: true })),
     pollIntervalSeconds: 60,
     port: 4711,
-    agentSessions: defaultAgentSessions(), // off: a static demo has no agent to start
+    // On by default, so the session features show without setup. The agent is fictional; nothing is ever started.
+    agentSessions: { enabled: true, agents: [structuredClone(DEMO_AGENT)], defaultAgent: DEMO_AGENT.id },
   } satisfies Config;
 
   const candidates = CANDIDATES.map(([id, name]) => ({ id, path: repoPath(name), name: name.split("/").pop() ?? name, enabled: false })) satisfies RepoConfig[];
 
   return { snapshot: { generatedAt: iso(0), repos }, config, candidates };
+}
+
+const FLOW = ["New", "Proposal", "Design", "Specs", "Tasks", "Ready", "Implementing", "Done", "Synced"];
+
+/**
+ * A feed that fits the sample: what would have been observed on the way to the snapshot's state. Derived from the
+ * sample itself, so it only ever contains the made-up names above.
+ */
+export function buildActivity(snapshot: Snapshot, now: number): ActivityEvent[] {
+  type Draft = { at: number; repo: RepoSnapshot; rest: Record<string, unknown> };
+  const drafts: Draft[] = [];
+  const HOUR = DAY / 24;
+  for (const repo of snapshot.repos) {
+    drafts.push({ at: now - 30 * DAY, repo, rest: { kind: "repo-tracked", openChanges: repo.changes.filter((c) => !c.archived).length } });
+    for (const change of repo.changes) {
+      const last = change.lastActivityAt ? Date.parse(change.lastActivityAt) : now - 3 * DAY;
+      if (change.archived) {
+        const at = Date.parse(`${change.archived}T16:30:00`);
+        if (now - at < 21 * DAY) drafts.push({ at, repo, rest: { kind: "change-archived", change: change.name, from: "Synced" } });
+        continue;
+      }
+      const step = FLOW.indexOf(change.column);
+      if (step <= 1) drafts.push({ at: last, repo, rest: { kind: "change-created", change: change.name, to: change.column } });
+      else drafts.push({ at: last - (change.column === "Implementing" ? 2 * HOUR : 0), repo, rest: { kind: "change-moved", change: change.name, from: FLOW[step - 1], to: change.column, ...(change.tasks ? { tasks: change.column === "Implementing" ? { done: 0, total: change.tasks.total } : change.tasks } : {}) } });
+      if (change.column === "Implementing" && change.tasks && change.tasks.done > 0) {
+        const { done, total } = change.tasks;
+        const mid = Math.max(0, done - 2);
+        drafts.push({ at: last - HOUR, repo, rest: { kind: "session-started", change: change.name, action: "implement", agentName: "Claude Code" } });
+        if (mid > 0) drafts.push({ at: last - 40 * 60_000, repo, rest: { kind: "tasks-progress", change: change.name, column: "Implementing", from: { done: 0, total }, to: { done: mid, total } } });
+        drafts.push({ at: last - 15 * 60_000, repo, rest: { kind: "tasks-progress", change: change.name, column: "Implementing", from: { done: mid, total }, to: { done, total } } });
+        drafts.push({ at: last, repo, rest: { kind: "session-ended", change: change.name, exitCode: 0 } });
+      }
+    }
+  }
+  return drafts
+    .filter((d) => d.at <= now)
+    .sort((a, b) => a.at - b.at)
+    .map((d, i) => {
+      const at = new Date(d.at).toISOString();
+      return { v: 1, id: `demo${String(i).padStart(6, "0")}`, at, detectedAt: at, repoId: d.repo.id, repoName: d.repo.name, ...d.rest } as ActivityEvent;
+    });
 }

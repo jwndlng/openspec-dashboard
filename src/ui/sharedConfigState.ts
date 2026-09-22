@@ -49,12 +49,12 @@ export function pendingAssignments(rows: GridRow[], profiles: SharedProfile[]): 
 }
 
 /** One-line summary for the overview and tooltips; undefined when there is nothing to say. */
-export function summarize(current: RepoSharedConfig | undefined, profiles: { id: string; name: string }[]): { text: string; level: "ok" | "warn" | "danger" } | undefined {
+export function summarize(current: RepoSharedConfig | undefined, profiles: { id: string; name: string }[]): { text: string; level: "ok" | "warning" | "danger" } | undefined {
   if (!current) return undefined;
   if (current.unreadable) return { text: "config unreadable", level: "danger" };
   if (current.applied.length === 0) return undefined;
   const name = (id: string) => profiles.find((p) => p.id === id)?.name ?? id;
   const stale = current.applied.filter((p) => p.state !== "in-sync");
   const text = current.applied.map((p) => (p.state === "in-sync" ? name(p.id) : `${name(p.id)} (${p.state})`)).join(", ");
-  return { text, level: stale.length ? "warn" : "ok" };
+  return { text, level: stale.length ? "warning" : "ok" };
 }

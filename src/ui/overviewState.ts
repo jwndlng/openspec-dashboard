@@ -77,6 +77,10 @@ export interface OverviewRow {
   archived: number;
   lastUpdatedAt?: string;
   sharedConfig?: RepoSharedConfig;
+  isGit: boolean;
+  currentBranch?: string;
+  defaultBranch?: string;
+  onDefaultBranch?: boolean;
   /** Absent for non-git repositories and until the first scan after an upgrade. */
   workInProgress?: WorkInProgress;
   /** Every checkout of the repository, the main one included. */
@@ -172,6 +176,10 @@ export function overviewRows(snapshot: Snapshot): OverviewRow[] {
       sharedConfig: repo.sharedConfig,
       workInProgress: repo.workInProgress,
       worktrees: repo.worktrees,
+      isGit: repo.isGit,
+      currentBranch: repo.currentBranch,
+      defaultBranch: repo.defaultBranch,
+      onDefaultBranch: repo.onDefaultBranch,
     };
   });
   addHints(rows);

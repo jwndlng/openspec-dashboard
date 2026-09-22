@@ -2,7 +2,7 @@
 // change, so the section says plainly what that means. An agent is just a command line and its opening prompts.
 import { useEffect, useState } from "preact/hooks";
 import { CLAUDE_PROFILE } from "../shared/agentDefaults.ts";
-import { repoAgentEnabled, SESSION_ACTIONS, type AgentAvailability, type AgentProfile, type AgentSessionsConfig, type Config, type RepoConfig, type Session, type SessionAction } from "../shared/types.ts";
+import { DEFAULT_SHIP_PROMPT, repoAgentEnabled, SESSION_ACTIONS, type AgentAvailability, type AgentProfile, type AgentSessionsConfig, type Config, type RepoConfig, type Session, type SessionAction } from "../shared/types.ts";
 import { api } from "./api.ts";
 import { parseArgLines, slugId } from "./sessionState.ts";
 
@@ -18,8 +18,8 @@ function AgentEditor({ agent, found, isDefault, canRemove, onChange, onRemove, o
     <details class="agent-card" open={isDefault}>
       <summary>
         <strong>{agent.name}</strong> <code>{agent.command[0]}</code>
-        {isDefault && <span class="badge brand">default</span>}
-        {found && (found.available ? <span class="badge ok" title={found.path}>✓ found</span> : <span class="badge danger">⚠ not found on this machine</span>)}
+        {isDefault && <span class="badge">default</span>}
+        {found && (found.available ? <span class="badge success" title={found.path}>✓ found</span> : <span class="badge danger">⚠ not found on this machine</span>)}
       </summary>
       <div class="agent-fields">
         <label class="check grow">
@@ -50,6 +50,25 @@ function AgentEditor({ agent, found, isDefault, canRemove, onChange, onRemove, o
             />
           </label>
         ))}
+        <label class="agent-tools">
+          <span class="hint">
+            Ship prompt (optional): what the <strong>Ship</strong> button asks this agent, to get a session's work committed, pushed and into a pull request. Empty uses the default
+            shown; <code>{"{change}"}</code> may be used.
+          </span>
+          <textarea
+            class="input mono"
+            rows={3}
+            placeholder={DEFAULT_SHIP_PROMPT}
+            value={agent.prompts.ship ?? ""}
+            onInput={(e) => {
+              const prompts = { ...agent.prompts };
+              const value = e.currentTarget.value;
+              if (value.trim()) prompts.ship = value;
+              else delete prompts.ship;
+              onChange({ prompts });
+            }}
+          />
+        </label>
         <label class="agent-tools">
           <span class="hint">Resume command (optional, one argument per line): continues the agent's latest conversation in the same worktree.</span>
           <textarea class="input mono" rows={2} value={(agent.resumeCommand ?? []).join("\n")} onInput={(e) => onChange({ resumeCommand: parseArgLines(e.currentTarget.value).length ? parseArgLines(e.currentTarget.value) : undefined })} />

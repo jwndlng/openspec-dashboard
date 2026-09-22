@@ -2,8 +2,9 @@ import { expect, test } from "bun:test";
 import { defaultAgentSessions, defaultConfig, newRepoConfig, validateConfig } from "../src/server/config.ts";
 import { agentEnv, agentFor, launchCommand, openingPrompt } from "../src/server/sessions/agents.ts";
 import { Scrollback, sessionBranch, worktreeName } from "../src/server/sessions/manager.ts";
+import { CLAUDE_PROFILE, FORMER_ARCHIVE_PROMPTS } from "../src/shared/agentDefaults.ts";
 import { availableActions, type Session } from "../src/shared/types.ts";
-import { agentForRepo, parseArgLines, searchWithSession, sessionBadge, sessionForChange, sessionIdFromSearch, sessionsEnabledFor, slugId, startersFor } from "../src/ui/sessionState.ts";
+import { agentForRepo, NEEDS_YOU_AFTER_MS, parseArgLines, searchWithShown, sessionBadge, sessionForChange, shownFromSearch, sessionsEnabledFor, silenceDuration, slugId, startersFor } from "../src/ui/sessionState.ts";
 import { fakeProfile } from "./sessionHelpers.ts";
 
 const base = defaultConfig();
@@ -15,7 +16,21 @@ test("defaults: disabled, Claude Code preconfigured on its own login", () => {
   expect(d.agents.map((a) => a.id)).toEqual(["claude"]);
   expect(d.agents[0].command).toEqual(["claude", "{prompt}"]);
   expect(d.agents[0].unsetEnv).toContain("ANTHROPIC_API_KEY");
-  expect(d.agents[0].prompts.archive).toBe("/opsx:archive {change}");
+});
+
+test("the preconfigured Archive prompt syncs the specs first without asking, as one line", () => {
+  const archive = defaultAgentSessions().agents[0].prompts.archive ?? "";
+  expect(archive.startsWith("/opsx:archive {change}")).toBe(true);
+  expect(archive).toMatch(/sync the delta specs/);
+  expect(archive).toMatch(/without asking/);
+  expect(archive).toMatch(/already in sync, archive right away/);
+  expect(archive).not.toContain("\n");
+  expect(FORMER_ARCHIVE_PROMPTS).toEqual(["/opsx:archive {change}"]);
+  expect(FORMER_ARCHIVE_PROMPTS).not.toContain(archive);
+  const prompt = openingPrompt(CLAUDE_PROFILE, "archive", "cache-api-calls") ?? "";
+  expect(prompt.startsWith("/opsx:archive cache-api-calls — sync")).toBe(true);
+  expect(launchCommand(CLAUDE_PROFILE, prompt)).toEqual({ argv: ["claude", prompt] }); // one argument
+  expect(validateConfig(withAgents([CLAUDE_PROFILE])).agentSessions.agents[0].prompts.archive).toBe(archive); // passes the prompt rules
 });
 
 test("configs from the transcript-based version load: their keys are dropped, defaults fill in", () => {
@@ -73,11 +88,15 @@ test("starters: stage decides, narrowed to the prompts the agent has", () => {
   expect(availableActions({ artifacts: a("done", "ready"), stage: "artifact" })).toEqual(["draft"]);
   expect(availableActions({ artifacts: a("done", "done"), stage: "ready" })).toEqual(["implement"]);
   expect(availableActions({ artifacts: a("done", "done"), stage: "done" })).toEqual(["archive"]);
+  expect(availableActions({ artifacts: a("done", "done"), stage: "synced" })).toEqual(["archive"]);
+  expect(availableActions({ artifacts: a("done", "done"), stage: "implementing" })).toEqual(["implement"]);
   expect(availableActions({ artifacts: a("done", "done"), stage: "archived", archived: "2026-06-18" })).toEqual([]);
   const repo = newRepoConfig("/w/demo-ops", true);
   const cfg = { ...base, repos: [repo], agentSessions: { enabled: true, agents: [fakeProfile({ prompts: { implement: "x {change}" } })], defaultAgent: "fake" } };
   expect(startersFor(cfg, { repoId: repo.id, artifacts: a("done", "done"), stage: "ready" })).toEqual(["implement"]);
   expect(startersFor(cfg, { repoId: repo.id, artifacts: a("done", "done"), stage: "done" })).toEqual([]); // no archive prompt
+  const archiving = { ...cfg, agentSessions: { ...cfg.agentSessions, agents: [fakeProfile({ prompts: { archive: "a {change}" } })] } };
+  for (const stage of ["done", "synced"] as const) expect(startersFor(archiving, { repoId: repo.id, artifacts: a("done", "done"), stage })).toEqual(["archive"]);
   expect(sessionsEnabledFor(cfg, repo.id)).toBe(true);
   expect(sessionsEnabledFor({ ...cfg, repos: [{ ...repo, agent: { enabled: false } }] }, repo.id)).toBe(false);
   expect(sessionsEnabledFor({ ...cfg, agentSessions: { ...cfg.agentSessions, enabled: false } }, repo.id)).toBe(false);
@@ -87,11 +106,61 @@ const session = (patch: Partial<Session>): Session => ({ id: "s", repoId: "r", c
 
 test("badges are honest about what a terminal can tell", () => {
   const now = Date.parse("2026-01-01T01:00:00Z");
-  expect(sessionBadge(session({ lastOutputAt: "2026-01-01T00:59:50Z" }), now)).toMatchObject({ label: "● running", tone: "brand" });
-  expect(sessionBadge(session({ lastOutputAt: "2026-01-01T00:50:00Z" }), now)).toMatchObject({ label: "◆ quiet 10m", tone: "warn" });
+  // The two running states are told apart by their words; tone and motion only reinforce them.
+  expect(sessionBadge(session({ lastOutputAt: "2026-01-01T00:59:50Z" }), now)).toMatchObject({ icon: "●", label: "working", tone: "info", live: true });
+  expect(sessionBadge(session({ lastOutputAt: "2026-01-01T00:50:00Z" }), now)).toMatchObject({ icon: "◆", label: "may need you 10m", tone: "warning" });
   expect(sessionBadge(session({ state: "exited", exitCode: 0 }), now)).toMatchObject({ label: "ended", tone: "" });
-  expect(sessionBadge(session({ state: "exited", exitCode: 3 }), now)).toMatchObject({ label: "⚠ ended (3)", tone: "danger" });
+  expect(sessionBadge(session({ state: "exited", exitCode: 3 }), now)).toMatchObject({ icon: "⚠", label: "ended (3)", tone: "danger" });
   expect(sessionBadge(session({ state: "failed", error: "no such file" }), now)).toMatchObject({ tone: "danger", title: "no such file" });
+});
+
+test("only a terminal that is producing output is shown with motion", () => {
+  const now = Date.parse("2026-01-01T01:00:00Z");
+  const live = (patch: Partial<Session>) => sessionBadge(session(patch), now).live === true;
+  expect(live({ lastOutputAt: "2026-01-01T00:59:50Z" })).toBe(true);
+  expect(live({})).toBe(true); // just started, nothing printed yet
+  expect(live({ lastOutputAt: "2026-01-01T00:50:00Z" })).toBe(false); // silent: may need the user
+  expect(live({ state: "exited", exitCode: 0 })).toBe(false);
+  expect(live({ state: "exited", exitCode: 3 })).toBe(false);
+  expect(live({ state: "failed" })).toBe(false);
+});
+
+test("a silent terminal says the session may need you within seconds, never that the agent waits", () => {
+  const now = Date.parse("2026-01-01T01:00:00Z");
+  const badge = (silentMs: number) => sessionBadge(session({ lastOutputAt: new Date(now - silentMs).toISOString() }), now);
+  expect(NEEDS_YOU_AFTER_MS).toBeLessThanOrEqual(30_000);
+  expect(badge(NEEDS_YOU_AFTER_MS - 1_000).label).toBe("working");
+  expect(badge(NEEDS_YOU_AFTER_MS).label).toBe("working");
+  expect(badge(NEEDS_YOU_AFTER_MS + 1_000).label).toBe(`may need you ${Math.floor((NEEDS_YOU_AFTER_MS + 1_000) / 1000)}s`);
+  expect(badge(45_000).label).toBe("may need you 45s");
+  expect(badge(3 * 60_000 + 20_000).label).toBe("may need you 3m");
+  expect(badge(10 * 60_000).label).toBe("may need you 10m");
+  // worded as a possibility: nothing claims the agent is waiting or working
+  for (const b of [badge(0), badge(45_000)]) expect(`${b.label} ${b.title}`).not.toMatch(/\bis waiting\b|\bwaits\b|\bis working\b/);
+  expect(badge(45_000).title).toContain("may be waiting");
+  // a just-started session has printed nothing yet and is not announced as needing the user
+  expect(sessionBadge(session({}), now).label).toBe("working");
+});
+
+test("the two running states differ in their words, not only in colour and motion", () => {
+  const now = Date.parse("2026-01-01T01:00:00Z");
+  const working = sessionBadge(session({ lastOutputAt: "2026-01-01T00:59:55Z" }), now);
+  const silent = sessionBadge(session({ lastOutputAt: "2026-01-01T00:59:00Z" }), now);
+  expect(working.label).not.toBe(silent.label);
+  expect(working.label).not.toContain("may need you");
+  expect(silent.label).toStartWith("may need you");
+});
+
+test("output resuming after a silent spell returns the badge to working and drops the duration", () => {
+  const now = Date.parse("2026-01-01T01:00:00Z");
+  const silent = session({ lastOutputAt: "2026-01-01T00:55:00Z" });
+  expect(sessionBadge(silent, now).label).toBe("may need you 5m");
+  const resumed = { ...silent, lastOutputAt: "2026-01-01T00:59:59Z" };
+  expect(sessionBadge(resumed, now)).toMatchObject({ label: "working", tone: "info", live: true });
+});
+
+test("a silence is stated in seconds under a minute, in minutes from there on", () => {
+  expect([0, 20_000, 59_000, 59_999, 60_000, 10 * 60_000].map(silenceDuration)).toEqual(["0s", "20s", "59s", "59s", "1m", "10m"]);
 });
 
 test("a card shows its running session, or the latest one if that ended badly", () => {
@@ -110,8 +179,8 @@ test("small helpers", () => {
   expect(sessionBranch("draft", "c")).toBe("feat/c");
   expect(parseArgLines(" claude \n\n {prompt} \n")).toEqual(["claude", "{prompt}"]);
   expect(slugId("My Agent!", ["my-agent"])).toBe("my-agent-2");
-  expect(sessionIdFromSearch("?q=x&session=abc")).toBe("abc");
-  expect(searchWithSession("?q=x&session=abc", undefined)).toBe("?q=x");
+  expect(shownFromSearch("?q=x&session=abc")).toEqual(["abc"]); // links from before the dock had one id
+  expect(searchWithShown("?q=x&session=abc", [])).toBe("?q=x");
   const sb = new Scrollback(10);
   for (const part of ["aaaa", "bbbb", "cccc", "dd"]) sb.push(new TextEncoder().encode(part));
   expect(new TextDecoder().decode(sb.bytes())).toBe("bbbbccccdd"); // oldest chunk dropped once over the limit

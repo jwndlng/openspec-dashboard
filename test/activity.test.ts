@@ -182,8 +182,12 @@ test("git status failing degrades to commit dates without failing the scan", asy
   }
   const snap = await scanRepo(newRepoConfig(root, true), new NoStatus(root));
   expect(snap.ok).toBe(true);
-  expect(at(snap.lastUpdatedAt!)).toBe(at(COMMIT_DATE));
   expect(at(fooOf(snap).lastActivityAt!)).toBe(at(COMMIT_DATE));
+  // The repository is never older than its changes: `new-idea` was never committed, so its time comes from its files
+  // (the mtime fallback), which needs no `git status`.
+  const newest = Math.max(...snap.changes.map((c) => at(c.lastActivityAt!)));
+  expect(newest).toBeGreaterThan(at(COMMIT_DATE));
+  expect(at(snap.lastUpdatedAt!)).toBe(newest);
 });
 
 test("non-git repository uses the newest mtime under openspec/", async () => {

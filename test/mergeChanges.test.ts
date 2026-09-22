@@ -1,0 +1,99 @@
+import { expect, test } from "bun:test";
+import { type ChangeCopy, leadingCopy, mergeChanges } from "../src/server/mergeChanges.ts";
+import type { ChangeSnapshot, Stage } from "../src/shared/types.ts";
+
+const MAIN = { path: "/w/acme/alpha-infra", branch: "main", isMain: true };
+const wt = (name: string, branch: string | undefined = `feat/${name}`) => ({ path: `/w/acme/alpha-infra/.claude/worktrees/${name}`, branch, isMain: false });
+
+function copy(checkout: ChangeCopy["checkout"], stage: Stage, column: string, extra: Partial<ChangeSnapshot> = {}): ChangeCopy {
+  const artifacts = ["proposal", "design", "specs", "tasks"].map((id) => ({ id, status: "ready" as const }));
+  return { checkout, change: { repoId: "r", name: "audit-trail", schema: "spec-driven", artifacts, tasks: null, stage, column, ...extra } };
+}
+const doneArtifacts = (n: number) => ["proposal", "design", "specs", "tasks"].map((id, i) => ({ id, status: i < n ? ("done" as const) : ("ready" as const) }));
+
+test("leadingCopy: stage first, then artifacts, tasks, recency, main, path — whatever the input order", () => {
+  const cases: [string, ChangeCopy, ChangeCopy][] = [
+    ["stage", copy(wt("a"), "implementing", "Implementing"), copy(MAIN, "artifact", "Proposal", { lastActivityAt: "2030-01-01T00:00:00Z" })],
+    ["done artifacts", copy(wt("a"), "artifact", "Design", { artifacts: doneArtifacts(2) }), copy(MAIN, "artifact", "Proposal", { artifacts: doneArtifacts(1) })],
+    ["done tasks", copy(wt("a"), "implementing", "Implementing", { tasks: { done: 5, total: 9 } }), copy(MAIN, "implementing", "Implementing", { tasks: { done: 2, total: 9 } })],
+    ["recency", copy(wt("a"), "ready", "Ready", { lastActivityAt: "2026-09-21T10:00:00+02:00" }), copy(MAIN, "ready", "Ready", { lastActivityAt: "2026-09-21T07:59:00Z" })],
+    ["main before worktrees", copy(MAIN, "ready", "Ready"), copy(wt("a"), "ready", "Ready")],
+    ["path", copy(wt("a"), "ready", "Ready"), copy(wt("b"), "ready", "Ready")],
+  ];
+  for (const [label, winner, loser] of cases) {
+    expect([label, leadingCopy([winner, loser]).checkout.path]).toEqual([label, winner.checkout.path]);
+    expect([label, leadingCopy([loser, winner]).checkout.path]).toEqual([label, winner.checkout.path]);
+  }
+  // identical everywhere → main, every time
+  const same = [copy(wt("b"), "ready", "Ready"), copy(MAIN, "ready", "Ready"), copy(wt("a"), "ready", "Ready")];
+  expect(leadingCopy(same).checkout).toEqual(MAIN);
+  expect(leadingCopy([...same].reverse()).checkout).toEqual(MAIN);
+});
+
+test("mergeChanges: one change per name, data from the leading copy, other checkouts listed", () => {
+  const merged = mergeChanges(
+    [
+      copy(MAIN, "artifact", "Proposal", { branchMatch: "guessed/from-names" }),
+      copy(wt("audit-trail", "wip/compliance"), "implementing", "Implementing", { tasks: { done: 4, total: 12 }, branchMatch: "wip/compliance" }),
+      copy(wt("old", undefined), "new", "New"),
+      { ...copy(wt("other"), "ready", "Ready"), change: { ...copy(MAIN, "ready", "Ready").change, name: "upgrade-runtime" } },
+    ],
+    new Map(),
+  );
+  expect(merged.map((c) => c.name)).toEqual(["audit-trail", "upgrade-runtime"]);
+  const [audit, upgrade] = merged;
+  expect([audit.column, audit.tasks, audit.branchMatch]).toEqual(["Implementing", { done: 4, total: 12 }, "wip/compliance"]);
+  expect(audit.checkout).toEqual(wt("audit-trail", "wip/compliance"));
+  expect(audit.otherCheckouts).toEqual([{ ...MAIN, column: "Proposal" }, { ...wt("old", undefined), column: "New" }]);
+  expect([upgrade.checkout?.isMain, upgrade.otherCheckouts, upgrade.branchMatch]).toEqual([false, undefined, "feat/other"]);
+});
+
+test("mergeChanges: a change that leads from main keeps its name-based branch guess", () => {
+  const [change] = mergeChanges([copy(MAIN, "done", "Done", { branchMatch: "feat/audit-trail" }), copy(wt("stale"), "artifact", "Proposal")], new Map());
+  expect([change.checkout, change.branchMatch, change.column]).toEqual([MAIN, "feat/audit-trail", "Done"]);
+  expect(change.otherCheckouts).toEqual([{ ...wt("stale"), column: "Proposal" }]);
+});
+
+test("mergeChanges: archived on main wins, unless the copy was created after the archive", () => {
+  const archived = new Map([["audit-trail", "2026-09-20"]]);
+  const stale = copy(wt("stale"), "implementing", "Implementing", { created: "2026-09-10" });
+  const undated = copy(wt("undated"), "implementing", "Implementing");
+  const sameDay = copy(wt("same-day"), "implementing", "Implementing", { created: "2026-09-20" });
+  const reused = copy(wt("reused"), "artifact", "Proposal", { created: "2026-10-02" });
+  expect(mergeChanges([stale, undated, sameDay], archived)).toEqual([]);
+  expect(mergeChanges([stale, reused], archived).map((c) => [c.name, c.checkout?.path, c.otherCheckouts])).toEqual([["audit-trail", reused.checkout.path, undefined]]);
+  // an active copy in the main checkout is main's own statement and is never dropped
+  expect(mergeChanges([copy(MAIN, "done", "Done", { created: "2026-09-01" })], archived)).toHaveLength(1);
+});
+
+test("mergeChanges: worktrees that merely carry main's copy along are not listed", () => {
+  const carried = ["b", "c", "d"].map((n) => copy(wt(n), "artifact", "Proposal"));
+  const [change] = mergeChanges([copy(MAIN, "artifact", "Proposal"), copy(wt("a"), "implementing", "Implementing", { tasks: { done: 1, total: 3 } }), ...carried], new Map());
+  expect(change.checkout?.path).toBe(wt("a").path);
+  expect(change.otherCheckouts).toEqual([{ ...MAIN, column: "Proposal" }]);
+  // led from main: identical worktree copies are noise too, a differing one is not
+  const [fromMain] = mergeChanges([copy(MAIN, "ready", "Ready"), copy(wt("same"), "ready", "Ready"), copy(wt("behind"), "artifact", "Proposal")], new Map());
+  expect(fromMain.otherCheckouts).toEqual([{ ...wt("behind"), column: "Proposal" }]);
+  // no main copy at all: every copy is somebody's work
+  const [wtOnly] = mergeChanges([copy(wt("x"), "ready", "Ready"), copy(wt("y"), "ready", "Ready")], new Map());
+  expect(wtOnly.otherCheckouts).toEqual([{ ...wt("y"), column: "Ready" }]);
+});
+
+test("a pending archive leads: one archived change from the worktree, active copies as its other checkouts", () => {
+  const archivedCopy = (name: string, date: string) => copy(wt(name, `chore/${name}`), "archived", "Archived", { archived: date });
+  const main = copy(MAIN, "implementing", "Implementing", { created: "2026-09-10" });
+  const stale = copy(wt("stale"), "artifact", "Proposal", { created: "2026-09-10" });
+
+  const [one, ...rest] = mergeChanges([stale, main], new Map(), [archivedCopy("archive-a", "2026-09-18"), archivedCopy("archive-b", "2026-09-20")]);
+  expect(rest).toEqual([]);
+  expect(one).toMatchObject({ archived: "2026-09-20", column: "Archived", checkout: { branch: "chore/archive-b", isMain: false } }); // the latest of several
+  expect(one.otherCheckouts?.map((o) => [o.isMain, o.column])).toEqual([[true, "Implementing"], [false, "Proposal"]]);
+
+  // nothing active left anywhere: still reported, without other checkouts
+  expect(mergeChanges([], new Map(), [archivedCopy("archive-a", "2026-09-18")])).toMatchObject([{ archived: "2026-09-18", otherCheckouts: undefined }]);
+
+  // a change created after that archive reuses the name and stays active on its own
+  const reused = copy(MAIN, "artifact", "Proposal", { created: "2026-10-02" });
+  const both = mergeChanges([reused, stale], new Map(), [archivedCopy("archive-a", "2026-09-18")]);
+  expect(both.map((c) => [c.column, c.checkout?.isMain, c.otherCheckouts?.length]).sort()).toEqual([["Archived", false, 1], ["Proposal", true, undefined]].sort());
+});

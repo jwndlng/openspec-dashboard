@@ -10,7 +10,7 @@ test("task progress counts mixed list markers", () => {
   expect(parseTaskProgress("")).toEqual({ done: 0, total: 0 });
 });
 
-test("worktree porcelain parsing", () => {
+test("worktree porcelain parsing: main first, detached kept, flags read", () => {
   const porcelain = [
     "worktree /repo",
     "HEAD abc",

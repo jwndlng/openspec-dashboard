@@ -63,11 +63,19 @@ For each non-archived change and for the 25 most recently archived changes, the 
 - **THEN** `lastActivityAt` is the five-month-old commit date
 
 ### Requirement: Branch and worktree matching
-The scanner SHALL record the repository's current branch and its worktrees (`git worktree list --porcelain`). A change SHALL get `branchMatch` set to the first branch or worktree branch whose name contains the change name.
+The scanner SHALL record the repository's current branch and its worktrees (`git worktree list --porcelain`), including detached worktrees (which have no branch) and whether a worktree is prunable. A change whose leading copy was found in a linked worktree SHALL get `branchMatch` set to that worktree's branch. Any other change SHALL get `branchMatch` set to the first branch or worktree branch whose name contains the change name.
 
 #### Scenario: Feature branch checked out in a worktree
 - **WHEN** a worktree is on branch `feat/structured-report-format` and a change `structured-report-format` exists
 - **THEN** the change has `branchMatch: feat/structured-report-format`
+
+#### Scenario: Branch name does not contain the change name
+- **WHEN** change `audit-trail` exists only in a worktree on branch `wip/compliance`
+- **THEN** the change has `branchMatch: wip/compliance`
+
+#### Scenario: Detached worktree
+- **WHEN** a repository has a worktree with a detached HEAD
+- **THEN** that worktree is listed without a branch and no change gets a `branchMatch` from it
 
 ### Requirement: Per-repository failure isolation and snapshot caching
 A failure in one repository MUST NOT fail the scan; the repository is reported with `ok: false` and an `error`, retaining the changes from its last successful scan. After each scan the full snapshot SHALL be written to `~/.openspec-dashboard/cache/snapshot.json`, and on startup the cached snapshot SHALL be served until the first scan completes.
@@ -164,3 +172,137 @@ When at least one shared config profile exists, the scanner SHALL set each succe
 - **WHEN** a repository's `openspec/config.yaml` is not valid YAML
 - **THEN** the repository is reported with `ok: true` and `sharedConfig.unreadable: true`
 
+### Requirement: Changes are read from every checkout of a repository
+For a git repository the scanner SHALL read active changes (`openspec/changes/*` excluding `archive/`) from the main checkout and from every linked worktree that `git worktree list` reports for it, wherever that worktree is located on disk. When the tracked project sits in a subdirectory of its git repository, it SHALL be read from that same subdirectory of each worktree, never from the worktree's top level. A worktree SHALL be skipped when it is prunable, is bare, or has no `openspec/changes` directory there. Archived changes SHALL be read from the main checkout and, by directory name only, from those same worktrees; an archive of a worktree that the main checkout does not have under the same name with the same or a later date is a *pending archive*, and only pending archives are read further. Main specs shown by the dashboard SHALL be read from the main checkout only. Every per-change fact — artifact status, task progress, warnings, `lastActivityAt` and `specsSynced` — SHALL be computed for a copy within the checkout it was found in: git commands run with that checkout as working directory, uncommitted modifications in that checkout count towards `lastActivityAt`, the checkout's own `openspec/config.yaml` supplies the fallback schema, and spec sync is judged against that checkout's `openspec/specs/`. Change directory names found in worktrees SHALL pass the same validation as those in the main checkout. Worktree paths MUST come only from `git worktree list` of a tracked repository. Reading worktrees MUST remain read-only and MUST NOT use any git subcommand beyond those already allowed. Linked worktrees SHALL still not be offered as repositories by discovery.
+
+#### Scenario: Change that exists only in a worktree
+- **WHEN** change `audit-trail` exists, uncommitted, only in a linked worktree of a tracked repository
+- **THEN** it appears in that repository's changes with the artifact status and task progress read from that worktree
+
+#### Scenario: Worktree outside the repository directory
+- **WHEN** a linked worktree of the repository lives under a directory unrelated to the repository's path
+- **THEN** its active changes are read like those of any other worktree
+
+#### Scenario: Uncommitted edit in a worktree drives last activity
+- **WHEN** `tasks.md` of a change in a worktree was modified two minutes ago without committing
+- **THEN** the change's `lastActivityAt` is that modification time
+
+#### Scenario: Spec sync is judged in the change's own checkout
+- **WHEN** a complete change in a worktree has delta specs that are already merged into that worktree's `openspec/specs/` but not into the main checkout's
+- **THEN** `specsSynced` is `true`
+
+#### Scenario: Archive that exists only in a worktree
+- **WHEN** a worktree on an archive branch contains `openspec/changes/archive/2026-09-20-audit-trail/` while the main checkout still has `audit-trail` as an active change
+- **THEN** that archive is read as a pending archive, with its facts computed in that worktree
+
+#### Scenario: Archives come from main only
+- **WHEN** a worktree's `openspec/changes/archive/` holds the same forty archives as the main checkout's
+- **THEN** each is reported once, from the main checkout, and none of them is read from the worktree
+
+#### Scenario: Project in a subdirectory of its repository
+- **WHEN** the tracked project is `services/billing` inside a repository that has its own top-level `openspec/`, and a worktree has progress on a change under its `services/billing/openspec/changes/`
+- **THEN** that progress is reported, and nothing from any top-level `openspec/` appears among the project's changes
+
+#### Scenario: Non-git repository
+- **WHEN** a tracked repository is not a git repository
+- **THEN** its changes are read from its own directory exactly as before
+
+### Requirement: Copies of a change are merged into one change
+All active copies of the same change name across a repository's checkouts SHALL be reported as one change. Its data SHALL be that of the leading copy, chosen by comparing in order: lifecycle stage (`new` before artifact stages before `ready`, `implementing`, `done`, `synced`), number of done artifacts, number of done tasks, latest `lastActivityAt`, then the main checkout before linked worktrees and finally the path, so that the choice is deterministic. The change SHALL report the checkout of the leading copy (`path`, `branch` when it has one, and whether it is the main checkout) and the other checkouts that hold a copy, each with its column — leaving out linked worktrees whose copy shows the same progress as the main checkout's copy, since every branch carries the main branch's committed changes along and such a copy says nothing new. A pending archive leads over every active copy of the same name: the change SHALL be reported once, as archived with that archive's date, with the worktree holding the archive as its checkout and every active copy — the main checkout's included — among its other checkouts with its column; of several pending archives of one name the latest date leads. As the one exception, active copies whose `created` date is later than the pending archive's date SHALL be reported as a separate, active change. A pending archive without any active copy SHALL be reported as archived as well. An active copy in a linked worktree SHALL be ignored when the main checkout has an archived change of the same name, unless the copy's `created` date is later than that archive's date. The repository's `lastUpdatedAt` SHALL be no earlier than the latest `lastActivityAt` among its merged changes.
+
+#### Scenario: Further along in a worktree
+- **WHEN** `audit-trail` is at `Proposal` in the main checkout and has `tasks` `done: 4, total: 12` in a worktree on `feat/audit-trail`
+- **THEN** one change `audit-trail` is reported in `Implementing` with `4/12`, its checkout is that worktree, and the main checkout is listed among its other checkouts as `Proposal`
+
+#### Scenario: Worktrees that merely carry the change along
+- **WHEN** `audit-trail` is at `Proposal` in the main checkout, at `Implementing` in one worktree, and unchanged at `Proposal` in three other worktrees cut from the main branch
+- **THEN** the change's other checkouts list only the main checkout
+
+#### Scenario: Stale copy behind main
+- **WHEN** `audit-trail` has all tasks done in the main checkout and an older copy at `Proposal` in a worktree
+- **THEN** the change is reported from the main checkout and the worktree is listed among its other checkouts
+
+#### Scenario: Finished change is not resurrected
+- **WHEN** the main checkout has `openspec/changes/archive/2026-09-20-audit-trail/` and a worktree cut before the archive still has `openspec/changes/audit-trail/` created on `2026-09-10`
+- **THEN** `audit-trail` is reported only as archived
+
+#### Scenario: Name reused after archiving
+- **WHEN** the main checkout has `audit-trail` archived on `2026-09-20` and a worktree has an active `audit-trail` created on `2026-10-02`
+- **THEN** both are reported: the archived change and the new active one
+
+#### Scenario: Identical copies
+- **WHEN** the same change is at the same stage with the same progress and last activity in the main checkout and in two worktrees
+- **THEN** the main checkout is the leading copy, on every scan
+
+#### Scenario: Repository activity in a worktree only
+- **WHEN** the only recent activity of a repository is an uncommitted edit to a change in a worktree, ten minutes ago
+- **THEN** the repository's `lastUpdatedAt` is that time
+
+#### Scenario: Archived in a worktree, still active in main
+- **WHEN** the main checkout has `audit-trail` at `Implementing` with `5/6` and a worktree on `chore/archive-audit-trail` has `openspec/changes/archive/2026-09-20-audit-trail/`
+- **THEN** one change `audit-trail` is reported, archived on `2026-09-20`, its checkout is that worktree, and the main checkout is listed among its other checkouts as `Implementing`
+
+#### Scenario: Name reused after a pending archive
+- **WHEN** a worktree has `audit-trail` archived on `2026-09-20` and the main checkout has an active `audit-trail` created on `2026-10-02`
+- **THEN** both are reported: the archived change from the worktree and the active one
+
+### Requirement: Reading worktrees is bounded and isolated
+The scanner SHALL read a repository's worktrees with bounded concurrency and SHALL read at most 12 worktrees per repository, preferring those whose `openspec/changes` directory was modified most recently; when worktrees are left out, the repository's warnings SHALL say how many. A worktree that cannot be read, or whose reading fails or times out, SHALL be skipped with a repository warning naming it, and MUST NOT fail the repository's scan or affect changes read from other checkouts. All of it SHALL run within the repository's scan timeout.
+
+#### Scenario: Worktree directory was deleted by hand
+- **WHEN** git reports a worktree as prunable because its directory no longer exists
+- **THEN** it is skipped, the repository is reported with `ok: true`, and changes from other checkouts are unaffected
+
+#### Scenario: One worktree fails
+- **WHEN** reading one worktree throws while two others are readable
+- **THEN** the repository's warnings name the failing worktree and the changes from the main checkout and the other two worktrees are reported
+
+#### Scenario: More worktrees than the cap
+- **WHEN** a repository has 15 linked worktrees with changes
+- **THEN** the 12 with the most recently modified `openspec/changes` are read and the warnings say that 3 were not
+
+### Requirement: The default branch and whether the main checkout is on it are reported
+For each successfully scanned git repository the scanner SHALL report `defaultBranch` — the branch that `refs/remotes/origin/HEAD` points to, or, when that ref does not exist, `main` if such a local branch exists, otherwise `master` if it exists — and `onDefaultBranch`, which is `true` when the main checkout's current branch is that branch and `false` otherwise, including when HEAD is detached. When no default branch can be determined both SHALL be omitted. Determining them MUST use only read-only git commands and MUST NOT contact a remote, and a failure to determine them MUST NOT fail the repository's scan. When a repository's scan fails, the previous values SHALL be retained.
+
+#### Scenario: On the default branch
+- **WHEN** `origin/HEAD` points to `origin/main` and the main checkout is on `main`
+- **THEN** the repository reports `defaultBranch: "main"` and `onDefaultBranch: true`
+
+#### Scenario: On a feature branch
+- **WHEN** `origin/HEAD` points to `origin/main` and the main checkout is on `feat/redesign`
+- **THEN** the repository reports `defaultBranch: "main"` and `onDefaultBranch: false`
+
+#### Scenario: Default branch is not called main
+- **WHEN** `origin/HEAD` points to `origin/trunk` and the main checkout is on `trunk`
+- **THEN** the repository reports `defaultBranch: "trunk"` and `onDefaultBranch: true`
+
+#### Scenario: No origin/HEAD
+- **WHEN** the repository has no `refs/remotes/origin/HEAD`, a local branch `master` and no `main`, and the checkout is on `develop`
+- **THEN** the repository reports `defaultBranch: "master"` and `onDefaultBranch: false`
+
+#### Scenario: Detached HEAD
+- **WHEN** the main checkout has a detached HEAD
+- **THEN** `onDefaultBranch` is `false`
+
+#### Scenario: Cannot tell
+- **WHEN** the repository has no `origin/HEAD` and neither a `main` nor a `master` branch
+- **THEN** neither field is reported and the scan succeeds
+
+### Requirement: The scanner reports the presence and text of a change's prompt.md
+For each change directory the scanner SHALL report whether the change has a top-level `prompt.md` file, and when it does, the file's text (bounded to a reasonable size for a tooltip). `prompt.md` is not a schema artifact and MUST NOT be counted towards artifact status. The field SHALL be reported for changes read from every checkout (main and linked worktrees) and for archived changes alike, on the same rules as other per-change facts. A failure to read the file MUST NOT fail the repository's scan; the change is reported without the prompt text and with a warning.
+
+#### Scenario: Change with a prompt
+- **WHEN** a change contains a `prompt.md` with the text "Log every mutation"
+- **THEN** the change's snapshot reports the presence of the prompt and includes its text
+
+#### Scenario: Change without a prompt
+- **WHEN** a change has no `prompt.md`
+- **THEN** the change's snapshot has no prompt text and reports its absence
+
+#### Scenario: Prompt does not affect artifact status
+- **WHEN** a change has only `.openspec.yaml` and `prompt.md`
+- **THEN** the change's `proposal` artifact is still not done and the change appears in `New`
+
+#### Scenario: Unreadable prompt
+- **WHEN** a change's `prompt.md` cannot be read
+- **THEN** the repository is reported with `ok: true`, the change carries a warning, and its prompt text is absent

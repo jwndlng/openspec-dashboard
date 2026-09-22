@@ -20,6 +20,8 @@ import {
   toggleSort,
   wipIndicator,
 } from "./overviewState.ts";
+import { PullAllButton, PullButton } from "./pull.tsx";
+import { branchNotice } from "./pullState.ts";
 import { repoPath } from "./routes.ts";
 import { summarize } from "./sharedConfigState.ts";
 import { currentQuery, href, navigate, replaceQuery } from "./url.ts";
@@ -37,7 +39,7 @@ function WipIndicator({ summary }: { summary?: WorkInProgress }) {
   if (!indicator) return null;
   return (
     <span
-      class={indicator.warn ? "badge warn wip" : "wip plain"}
+      class={indicator.warn ? "badge warning wip" : "wip plain"}
       title="Checkouts of this repository: linked worktrees, and how many checkouts hold uncommitted changes, unpushed commits or are stale. Unpushed counts reflect the last fetch — the dashboard never fetches."
     >
       {indicator.text}
@@ -75,6 +77,7 @@ function openOnPlainClick(row: OverviewRow) {
 function RepoBadges({ row }: { row: OverviewRow }) {
   // Profile ids rather than names: they are readable slugs and need no extra request here.
   const shared = summarize(row.sharedConfig, []);
+  const notice = branchNotice(row);
   return (
     <>
       {shared && (
@@ -85,6 +88,11 @@ function RepoBadges({ row }: { row: OverviewRow }) {
       {!row.ok && (
         <span class="badge danger" title={row.error}>
           ⚠ scan failed
+        </span>
+      )}
+      {notice && (
+        <span class="badge warning" title={notice.long}>
+          ⎇ {notice.short}
         </span>
       )}
     </>
@@ -116,7 +124,7 @@ function Row({ row, stages, now }: { row: OverviewRow; stages: string[]; now: nu
             </td>
           ))}
           <td class="num total">{row.open}</td>
-          <td class="num">{row.toArchive > 0 ? <span class="badge warn">{row.toArchive} to archive</span> : <span class="zero">·</span>}</td>
+          <td class="num">{row.toArchive > 0 ? <span class="badge warning">{row.toArchive} to archive</span> : <span class="zero">·</span>}</td>
         </>
       )}
       <td class="wip-cell">
@@ -125,6 +133,7 @@ function Row({ row, stages, now }: { row: OverviewRow; stages: string[]; now: nu
       <td class="when" title={row.lastUpdatedAt ?? "no activity date"}>
         {lastUpdated(row, now)}
       </td>
+      <td class="row-actions">{row.isGit && row.ok && <PullButton repoId={row.id} compact />}</td>
     </tr>
   );
 }
@@ -143,6 +152,7 @@ function Tile({ row, stages, now }: { row: OverviewRow; stages: string[]; now: n
         <span class="when" title={row.lastUpdatedAt ?? "no activity date"}>
           {lastUpdated(row, now)}
         </span>
+        {row.isGit && row.ok && <PullButton repoId={row.id} compact />}
       </header>
       <div class="tile-badges">
         <RepoBadges row={row} />
@@ -164,7 +174,7 @@ function Tile({ row, stages, now }: { row: OverviewRow; stages: string[]; now: n
             <span>
               <span class="total">{row.open}</span> open
             </span>
-            {row.toArchive > 0 && <span class="badge warn">{row.toArchive} to archive</span>}
+            {row.toArchive > 0 && <span class="badge warning">{row.toArchive} to archive</span>}
           </div>
         </>
       )}
@@ -244,6 +254,7 @@ export function Overview({ snapshot, config }: { snapshot: Snapshot | null; conf
           </div>
         )}
         <span class="spacer" style={{ flex: 1 }} />
+        <PullAllButton repoIds={rows.filter((r) => r.isGit && r.ok).map((r) => r.id)} />
         <span class="badge mono">
           {rows.length} tracked · {rows.reduce((n, r) => n + r.open, 0)} open · {rows.reduce((n, r) => n + r.toArchive, 0)} to archive
         </span>
@@ -269,6 +280,9 @@ export function Overview({ snapshot, config }: { snapshot: Snapshot | null; conf
                 {header("archive", SORT_LABEL.archive, "num")}
                 {header("wip", SORT_LABEL.wip)}
                 {header("updated", SORT_LABEL.updated, "when")}
+                <th scope="col" class="row-actions">
+                  <span class="visually-hidden">Actions</span>
+                </th>
               </tr>
             </thead>
             <tbody>

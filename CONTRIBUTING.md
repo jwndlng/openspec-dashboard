@@ -68,6 +68,8 @@ published from `main` by `.github/workflows/pages.yml`; nothing generated is com
   every view keeps working in both routing modes.
 - **Screenshots come from the demo build only:** `bun run build:demo && bun run screenshots`. The script takes no URL
   on purpose. The README embeds the published ones, so they follow `main` on their own.
+- **A new Settings panel is one entry in the `sections` array** in `src/ui/settings.tsx`; the navigation and the page are
+  both rendered from it. Its `id` becomes part of the `?section=` deep-link contract (`src/ui/settingsSections.ts`).
 - A new board feature is worth a sample change that shows it — the demo is the first thing a newcomer sees.
 
 ## Toolchain

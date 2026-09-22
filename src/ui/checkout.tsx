@@ -9,7 +9,7 @@ import { splitBranchLabel } from "./format.ts";
 export function BranchBadge({ branch, hint }: { branch: string; hint: string }) {
   const { head, tail } = splitBranchLabel(branch);
   return (
-    <span class="badge brand mono truncate" title={`${branch} — ${hint}`} role="img" aria-label={`branch ${branch}`}>
+    <span class="badge branch mono truncate" title={`${branch} — ${hint}`} role="img" aria-label={`branch ${branch}`}>
       <span aria-hidden="true">⎇</span>
       <span class="text" aria-hidden="true">
         <span class="head">{head}</span>
