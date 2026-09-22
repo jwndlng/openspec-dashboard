@@ -238,7 +238,7 @@ export interface Session {
   branch: string;
   createdAt: string;
   updatedAt: string;
-  /** When the terminal last printed something; a long quiet spell usually means the agent waits for the user. */
+  /** When the terminal last printed something; the only input to whether a running session may need the user. */
   lastOutputAt?: string;
   /** True once the agent has a conversation that `resumeCommand` can continue. */
   resumable: boolean;

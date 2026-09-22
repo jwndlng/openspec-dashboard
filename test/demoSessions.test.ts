@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import { SHIPPABLE_WORK } from "../src/shared/types.ts";
 import { ApiError, type TerminalHandlers } from "../src/ui/api.ts";
 import { createDemoApi } from "../src/ui/demo/demoApi.ts";
+import { NEEDS_YOU_AFTER_MS, sessionBadge } from "../src/ui/sessionState.ts";
 import type { Clock } from "../src/ui/demo/transcripts.ts";
 
 /** The demo API on a wall clock and a timer clock the test advances by hand. */
@@ -53,13 +54,22 @@ test("first load: sessions are on, the agent is available, and every state and w
   expect(new Set(worktrees.map((w) => w.work.state))).toEqual(new Set(["clean", "uncommitted", "unpushed", "pushed", "merged"]));
   expect(worktrees.some((w) => w.sessionId === undefined)).toBe(true); // a worktree whose session record is gone
   expect(sessions.find((s) => s.state === "failed")?.error).toContain("could not create the worktree");
-  // one running session printed seconds ago, the other has been quiet for minutes: it waits at a question
-  const quiet = sessions.filter((s) => s.state === "running").map((s) => Date.parse("2026-06-01T12:00:00.000Z") - Date.parse(s.lastOutputAt ?? ""));
-  expect(quiet.some((ms) => ms < 60_000) && quiet.some((ms) => ms > 10 * 60_000)).toBe(true);
+  // one running session printed seconds ago, the other has been silent for minutes: it waits at a question
+  const silent = sessions.filter((s) => s.state === "running").map((s) => Date.parse("2026-06-01T12:00:00.000Z") - Date.parse(s.lastOutputAt ?? ""));
+  expect(silent.some((ms) => ms < NEEDS_YOU_AFTER_MS) && silent.some((ms) => ms > 10 * 60_000)).toBe(true);
   // shared-config profiles are carried from the start, one of them outdated
   const carried = (await api.state()).repos.flatMap((r) => r.sharedConfig?.applied ?? []);
   expect(carried.filter((p) => p.state === "in-sync").length).toBeGreaterThanOrEqual(4);
   expect(carried.filter((p) => p.state === "outdated")).toHaveLength(1);
+});
+
+test("an unwatched demo session keeps working while the one at a question keeps asking", async () => {
+  const { api, advance } = demo();
+  advance(5 * 60_000);
+  const running = (await api.sessions()).sessions.filter((s) => s.state === "running");
+  const labels = running.map((s) => sessionBadge(s, Date.parse("2026-06-01T12:05:00.000Z")).label);
+  expect(labels).toContain("working");
+  expect(labels.some((l) => l.startsWith("may need you"))).toBe(true);
 });
 
 test("everything a session names exists on the board, under the fictional root", async () => {
