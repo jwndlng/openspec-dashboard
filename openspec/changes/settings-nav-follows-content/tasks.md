@@ -49,3 +49,11 @@
 - [x] 6.4 Remove `navOffset` and its tests; source-level tests: one `scrollIntoView` (the jump's), and `.settings-nav` is sticky
 - [x] 6.5 Real-scroll check over CDP against the demo build (1500×800, 420×800): wheel over a section, the nav and the margin scrolls `.settings-scroll`, the nav stays at the top of the view (`navTop = 0`) throughout, the marker and `?section=` follow, the document never scrolls; click-jumps (real mouse events, repeated from the stuck row) land the section level with the nav (wide) / 16px below the row (narrow); back at the top the nav is level with the first section; no uncaught errors
 - [x] 6.6 Spec delta, proposal, design (D7) and README updated; `bun run check`, `openspec validate settings-nav-follows-content --strict`
+
+## 7. The navigation scrolls away with the content (added after further use)
+
+- [x] 7.1 `src/ui/styles.css`: `.settings-nav` loses `position: sticky; top: 0` (keeps `position: relative` for offsetParent); narrow: drop the row's background, `z-index` and the `--settings-nav-height` `scroll-margin-top`
+- [x] 7.2 `src/ui/settingsNav.tsx`: remove the `--settings-nav-height` `ResizeObserver`; comments no longer describe a sticky nav
+- [x] 7.3 Source-level test: no `.settings-nav` rule is sticky, fixed or has its own vertical overflow
+- [x] 7.4 Real-scroll check over CDP against the demo build (1500×800, 420×800): with each wheel step the nav's top in the view moves by exactly the scrolled distance (0 → −400 → … → −2650), the marker follows, the document never scrolls; a real click-jump scrolls to the section and marks it current
+- [x] 7.5 Spec delta, proposal and design (D8) updated; `bun run check`, `openspec validate settings-nav-follows-content --strict`

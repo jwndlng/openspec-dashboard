@@ -87,9 +87,12 @@ test("the navigation never scrolls the page to reveal itself", async () => {
   expect(source.indexOf("target?.scrollIntoView")).toBeLessThan(source.indexOf("// Follow manual scrolling."));
 });
 
-test("the navigation follows the content by being sticky", async () => {
+test("the navigation scrolls away with the content", async () => {
   const css = await Bun.file(new URL("../src/ui/styles.css", import.meta.url)).text();
-  expect(css).toMatch(/^\.settings-nav \{[^}]*position: sticky; top: 0;/m);
-  // Only the one scroll area: a navigation with its own overflow would stop sticking to the page.
+  const navRules = css.match(/^\s*\.settings-nav \{[^}]*\}/gm) ?? [];
+  expect(navRules.length).toBeGreaterThan(0);
+  // Neither pinned (sticky/fixed) nor a scroll area of its own that the page would scroll past.
+  for (const rule of navRules) expect(rule).not.toMatch(/position: (sticky|fixed)|overflow-y/);
+  // Only the one scroll area: sections with their own overflow would leave the navigation standing still.
   expect(css).not.toMatch(/^\.settings \{[^}]*overflow/m);
 });

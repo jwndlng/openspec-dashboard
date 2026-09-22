@@ -442,13 +442,14 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: 
 
 /* ---- Settings ---- */
 /* One scroll area for the whole page, full width so the scrollbar is at the window edge and the margins scroll too.
-   The navigation is sticky, so it stays beside the section in view while the page scrolls. */
+   The navigation is part of the page: it starts beside the first section and scrolls away with the content. */
 .settings-scroll { flex: 1; min-height: 0; overflow: auto; }
 .settings-layout {
   width: 100%; max-width: 1320px; margin: 0 auto;
   display: grid; grid-template-columns: minmax(168px, 200px) minmax(0, 1fr); align-items: start;
 }
-.settings-nav { padding: var(--gap-2) 0 var(--gap-2) var(--gap-2); position: sticky; top: 0; }
+/* Positioned only so it is its entries' offsetParent (rowScrollLeft measures in the row's own coordinates). */
+.settings-nav { padding: var(--gap-2) 0 var(--gap-2) var(--gap-2); position: relative; }
 .settings-nav ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
 .settings-link {
   display: flex; align-items: center; justify-content: space-between; gap: var(--gap-1);
@@ -479,10 +480,9 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: 
 .savebar { position: sticky; bottom: 0; display: flex; gap: var(--gap-1); align-items: center; padding: var(--gap-1) var(--gap-2); background: var(--bg-section); border-top: 1px solid var(--border-light); }
 
 @media (max-width: 720px) {
-  /* The row sticks to the top above the sections; a jump lands below it (--settings-nav-height, see useSectionNav). */
+  /* The row sits above the sections and scrolls away with them. */
   .settings-layout { grid-template-columns: minmax(0, 1fr); }
-  .settings-nav { z-index: 1; overflow-x: auto; padding: var(--gap-2) var(--gap-2) var(--gap-1); background: var(--bg-base); border-bottom: 1px solid var(--border-light); }
-  .settings-section { scroll-margin-top: calc(var(--settings-nav-height, 0px) + var(--gap-2)); }
+  .settings-nav { overflow-x: auto; padding: var(--gap-2) var(--gap-2) var(--gap-1); border-bottom: 1px solid var(--border-light); }
   .settings-nav ul { flex-direction: row; gap: 4px; }
   .settings-nav li { flex: none; }
   .settings-link { border-left: 0; border-bottom: 2px solid transparent; }
