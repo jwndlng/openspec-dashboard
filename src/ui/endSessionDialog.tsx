@@ -178,8 +178,11 @@ export function EndSessionDialog() {
           )}
           {offer.offered && (
             <label class="check" title="Fetches the repository's remote and fast-forwards its main checkout. Never merges, rebases, stashes or switches branches; off the default branch it only fetches.">
-              <input type="checkbox" checked={pullSelected} onChange={(e) => setPullChoice(e.currentTarget.checked)} /> also pull <span class="mono">{repo?.name}</span> (fast-forwards its main checkout, so the board does
-              not keep showing this change as unmerged)
+              <input type="checkbox" checked={pullSelected} onChange={(e) => setPullChoice(e.currentTarget.checked)} />
+              {/* One flex item: `.check` is a flex row, and the repository name would otherwise become a column of its own. */}
+              <span>
+                also pull <span class="mono">{repo?.name}</span> (fast-forwards its main checkout, so the board does not keep showing this change as unmerged)
+              </span>
             </label>
           )}
           {error && <div class="notice danger">{error}</div>}

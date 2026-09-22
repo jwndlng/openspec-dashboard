@@ -41,19 +41,34 @@
 
 ## 4. Whole-change verification
 
-Verified so far, without a browser: `bun run check` green (431 tests); `bun run build:demo` and `bun run build`
-succeed and the served UI of `dist/openspec-dashboard` carries the new dialog text; against that binary and a local
-bare remote, `POST /api/repos/<id>/pull` returned every outcome the dialog branches on — `fast-forwarded` (+1 commit)
-then `up-to-date` (both close the dialog), and `skipped`/`fetched only` plus `refused` (both keep it open as a
-report). `test/terminalSessions.test.ts` proves ending a session and removing its worktree contacts no remote.
-Still open below: clicking the dialog itself, which needs a browser.
+Verified before the browser walk: `bun run check` green; `bun run build:demo` and `bun run build` succeed; against
+the binary and a local bare remote, `POST /api/repos/<id>/pull` returned every outcome the dialog branches on.
+`test/terminalSessions.test.ts` proves ending a session and removing its worktree contacts no remote.
 
+The walk (4.1, 4.3) drove headless Chrome over the DevTools protocol against a throw-away dashboard home: the fake
+agent, a tracked clone whose `origin` is an `ssh://` URL served through a `GIT_SSH_COMMAND` that logs every contact
+(with the session worktrees present at that moment) before handing over to a local bare repository, and a non-git
+repository. It found and fixed one defect: the pull offer's label was split into three flex columns, because `.check`
+is a flex row and the repository name was a child of its own.
 
-- [ ] 4.1 Walk the spec's scenarios in the running dashboard for both `agent-sessions` requirements and
+- [x] 4.1 Walk the spec's scenarios in the running dashboard for both `agent-sessions` requirements and
       `repository-pull`'s "From the end-session dialog" and "Already running elsewhere": merged work, unshipped work,
       offer declined, cancelled dialog, a non-git repository, refused, failed and successful pulls, and a confirm
       while a pull for the same repository is still running.
-- [ ] 4.2 Check the demo site still works with no demo-specific code: the offer appears and reports from
+      Result: merged work pre-selects both offers; confirming logged one remote contact, made after the worktree was
+      gone, fast-forwarded the checkout, showed `+2 commits` beside the board's Pull and moved the card to done without
+      a reload. Unshipped work offers the pull unselected and contacts nothing; a cleared offer, Cancel and Escape
+      contact nothing (Cancel/Escape also leave the session running). Diverged main keeps the dialog open as a
+      `refused` report with git's reason, "has ended and its worktree was removed", and Close as the only control;
+      an unreachable remote does the same as `failed` in a danger notice. A confirm while the board's Pull ran showed
+      `Pulling…` disabled, logged one contact (the board's) and closed on that pull's `+8 commits`; a second click
+      during the dialog's own pull started nothing. A non-git repository cannot have a session (the worktree cannot be
+      created), so the dialog never exists for it; the scan-failed case is covered by `pullOffer`'s unit test.
+- [x] 4.2 Check the demo site still works with no demo-specific code: the offer appears and reports from
       `demoApi.pullRepo`. Verify by opening the demo build and ending a demo session.
-- [ ] 4.3 Run `bun run check`, then `bun run build` and repeat 4.1's merged-work path against
+      Result: both running demo sessions showed the offer; `harbor-web` (off its default branch) stayed open as a
+      `fetched only` report, `atlas-api` fast-forwarded and closed.
+- [x] 4.3 Run `bun run check`, then `bun run build` and repeat 4.1's merged-work path against
       `dist/openspec-dashboard` so the change is proven in the compiled binary too.
+      Result: `bun run check` green (447 tests); the whole 4.1 walk, not just the merged-work path, passed again
+      against `dist/openspec-dashboard`.
