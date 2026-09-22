@@ -17,6 +17,7 @@ export interface QuickReply {
 export const DEFAULT_QUICK_REPLIES: readonly QuickReply[] = [
   { id: "go-ahead", label: "Yes, go ahead", text: "Yes, go ahead", submit: true },
   { id: "create-pr", label: "Yes, create a PR", text: "Yes, create a PR", submit: true },
+  { id: "resolve-conflicts", label: "Resolve PR conflicts", text: "Resolve PR conflicts", submit: true },
   { id: "stop", label: "No, stop here", text: "No, stop here", submit: true },
 ];
 
