@@ -40,3 +40,12 @@
 - [x] 5.7 `bun run check`, `openspec validate settings-nav-follows-content --strict`
 - [x] 5.8 Found while verifying: keep the placement correct when the layout changes after a jump (late discovery results, enabling a repository, scrollbar appearing) — `ResizeObserver` on the layout re-places the nav and, if the user has not scrolled since the jump, re-scrolls; the narrow row re-reveals its current entry on width changes; section `scroll-margin-top` matches the nav's top padding so both start level
 - [x] 5.9 Found while verifying: the narrow row positioned its current entry from stale measurements — entries are now measured in the row's own coordinates (the row is their offsetParent) and re-revealed when the row's width or the entries' contents change (a count going from "…" to "3 new" shifts the entries after it)
+
+## 6. The navigation follows manual scrolling too (added after further use)
+
+- [x] 6.1 `src/ui/styles.css`: `.settings-nav { position: sticky; top: 0 }` (wide); narrow: sticky row with the page background, `z-index: 1`, sections' `scroll-margin-top` includes `--settings-nav-height`; drop `--nav-offset`, `--nav-order`, `--section-order` and `.settings { display: contents }`
+- [x] 6.2 `src/ui/settingsNav.tsx`: remove the jump placement (`placeNav`, anchor, return-home, resize re-placement); keep the jump pin and the re-scroll when the layout grows before the user scrolls; publish the nav's height as `--settings-nav-height`
+- [x] 6.3 Make the `<nav>` the narrow row's sideways scroller instead of the `<ul>` — Chrome missed clicks on the entries of a sideways-scrolled `<ul>` (also on `main`)
+- [x] 6.4 Remove `navOffset` and its tests; source-level tests: one `scrollIntoView` (the jump's), and `.settings-nav` is sticky
+- [x] 6.5 Real-scroll check over CDP against the demo build (1500×800, 420×800): wheel over a section, the nav and the margin scrolls `.settings-scroll`, the nav stays at the top of the view (`navTop = 0`) throughout, the marker and `?section=` follow, the document never scrolls; click-jumps (real mouse events, repeated from the stuck row) land the section level with the nav (wide) / 16px below the row (narrow); back at the top the nav is level with the first section; no uncaught errors
+- [x] 6.6 Spec delta, proposal, design (D7) and README updated; `bun run check`, `openspec validate settings-nav-follows-content --strict`
