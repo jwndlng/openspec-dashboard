@@ -79,3 +79,24 @@ export function repoTint(hues: Map<string, number>, repoId: string): { class: st
   const hue = hues.get(repoId);
   return hue === undefined ? { class: "" } : { class: "repo-tint", style: { "--repo-hue": String(hue) } };
 }
+
+/** A repository the combined board's "New change" form may create into. */
+export interface NewChangeProject {
+  id: string;
+  name: string;
+}
+
+/**
+ * The repositories the combined board's "New change" form offers, in snapshot order, and the one to pre-select: the only
+ * eligible repository, else the only filtered one that is eligible. Eligible means the last scan succeeded — the same
+ * check as the repository header's action; the server refuses anything else, so this is a convenience, not the guard.
+ */
+export function newChangeTargets(
+  repos: { id: string; name: string; ok: boolean }[],
+  filterRepoIds: string[],
+): { projects: NewChangeProject[]; preselected?: string } {
+  const projects = repos.filter((r) => r.ok).map((r) => ({ id: r.id, name: r.name }));
+  if (projects.length === 1) return { projects, preselected: projects[0].id };
+  const filtered = projects.filter((p) => filterRepoIds.includes(p.id));
+  return filtered.length === 1 ? { projects, preselected: filtered[0].id } : { projects };
+}

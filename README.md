@@ -110,8 +110,8 @@ only runs read-only `git` commands (`rev-parse`, `log`, `worktree list`, `status
 not even `.git/index` is refreshed), and scanning, polling, discovery and saving settings never write to a tracked
 repository, and none of them contacts a remote. Writes to a tracked repository only happen on your click, and only
 through the enumerated exceptions: **Pull** (below), **applying shared config profiles**, opening or removing an
-**agent session**'s worktree, and **New change** — creating a new `openspec/changes/<name>/` directory on the repository
-board, with its schema marker `.openspec.yaml` and, when you typed one, a `prompt.md`. A change created that way sits in
+**agent session**'s worktree, and **New change** — creating a new `openspec/changes/<name>/` directory from the repository
+board's header, or from the combined board, where you pick the project from a dropdown, with its schema marker `.openspec.yaml` and, when you typed one, a `prompt.md`. A change created that way sits in
 the **New** column; on cards before **Ready** the copy action produces a `/opsx:continue` command that points an agent
 at `prompt.md`.
 
