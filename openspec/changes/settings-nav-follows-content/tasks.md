@@ -1,6 +1,6 @@
 ## 0. Prerequisite
 
-- [ ] 0.1 (Open: on 2026-09-21 `add-settings-nav` was still active on `main`. Needed before this change is archived, not before it is merged.) `add-settings-nav` is archived and `openspec/specs/settings-page/spec.md` exists on `main` (this change only modifies that spec); rebase this branch on it
+- [x] 0.1 (Done 2026-09-22: `add-settings-nav` archived in #49; branch fast-forwarded to `main`.) `add-settings-nav` is archived and `openspec/specs/settings-page/spec.md` exists on `main` (this change only modifies that spec); rebase this branch on it
 
 ## 1. Row offset helper
 
