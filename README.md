@@ -51,7 +51,7 @@ what it found under **Discovered**; click **Enable** on the repos to track, then
   previous one, so it also catches up on what happened while the dashboard was not running. Filter by repository and by
   kind; the navigation entry shows how many events are new since you last looked. A repository seen for the first time
   adds one line, not one per change.
-- **Settings** — one page with a section navigation at the top-left that scrolls with the content, like a table of
+- **Settings** — one page with a section navigation at the top-left that follows you as you scroll, like a table of
   contents (jump to a section, see which one is in view,
   link to one with `?section=discovered`; it shows how many discovered repositories are waiting). Workspace roots, discovery of repos containing `openspec/config.yaml` (4 levels deep; skips
   `node_modules`, nested copies and linked git worktrees), opt-in tracking per repo, display names, poll interval.
