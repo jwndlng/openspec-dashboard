@@ -56,10 +56,12 @@ The form SHALL validate the change name against the same `^[A-Za-z0-9._-]+$` pat
 
 ### Requirement: Submitting the form creates the change directory
 On submit the dashboard SHALL send `POST /api/repos/<id>/changes` with `{ name, prompt? }` and, on success, close the form. The server SHALL create `openspec/changes/<name>/` in the repository, atomically (exclusive create so two concurrent requests cannot both succeed), and SHALL write into it:
-- `.openspec.yaml` — a marker with `schema:` taken from the repository's `openspec/config.yaml` (falling back to `spec-driven` when the repository has no `schema` set) and `created:` set to today's date in the server's local time zone. This is the same marker that `openspec new change` writes; the dashboard writes it directly and MUST NOT invoke the `openspec` CLI or any other external command.
+- `.openspec.yaml` — a marker with `schema:` taken from the repository's `openspec/config.yaml` (falling back to `spec-driven` when the repository has no `schema` set) and `created:` set to today's date in the server's local time zone. This is the same marker that `openspec new change` writes; the dashboard writes it directly and MUST NOT invoke the `openspec` CLI or any other external command for it.
 - `prompt.md` — only when a non-empty prompt was submitted, containing the text as written under a short fixed heading. The heading SHALL be `# Prompt`. `prompt.md` is not a schema artifact and does not affect the change's artifact status.
 
-After a successful create the repository SHALL be rescanned and the new change SHALL appear on the board without a page reload. The response SHALL be `201` with `{ name }`.
+Once both writes have succeeded, and only then, the dashboard SHALL stage the new directory in the repository's index so that git tracks the change from the moment it exists, as specified in the "Creating a change stages the new directory" requirement.
+
+After a successful create the repository SHALL be rescanned and the new change SHALL appear on the board without a page reload. The response SHALL be `201` with `{ name, staged }`, where `staged` says whether the new directory was staged.
 
 #### Scenario: Create without prompt
 - **WHEN** the user submits `add-audit-trail` with no prompt
@@ -76,6 +78,10 @@ After a successful create the repository SHALL be rescanned and the new change S
 #### Scenario: Default schema
 - **WHEN** the repository's `openspec/config.yaml` has no `schema` key and the user submits `add-audit-trail`
 - **THEN** the new `.openspec.yaml` sets `schema: spec-driven`
+
+#### Scenario: Staging is reported
+- **WHEN** the user submits `add-audit-trail` into a git repository and the directory is staged
+- **THEN** the `201` body reports `staged` as true
 
 ### Requirement: Creation is refused with a reason
 The server SHALL refuse `POST /api/repos/<id>/changes` without touching the disk when: the name is not a valid change name (`400`); a change with that name already exists at `openspec/changes/<name>/`, active or under `openspec/changes/archive/YYYY-MM-DD-<name>/` (`409`); the repository is not an enabled, successfully scanned repository from the config (`409`); or the repository has no `openspec/changes/` parent directory to create into (`409`). The response body SHALL name the reason as text. The refusal MUST leave the repository untouched — no directory, file, git command or `openspec` invocation.
@@ -104,9 +110,33 @@ The server SHALL refuse `POST /api/repos/<id>/changes` without touching the disk
 - **WHEN** two `POST /api/repos/<id>/changes` requests for the same name arrive at once
 - **THEN** exactly one succeeds with `201` and the other returns `409` with a message naming the clash
 
-### Requirement: The dashboard never executes anything in the repository
-Creating a change MUST NOT run any process in the repository, MUST NOT invoke git, and MUST NOT invoke the `openspec` CLI. The only side effects allowed are (a) the new directory and its files as described above, and (b) the subsequent rescan (which is read-only as specified in the change-scanner capability).
+### Requirement: Creating a change stages the new directory
+After `.openspec.yaml` and any `prompt.md` have been written, the dashboard SHALL stage the new change directory by invoking git exactly once, as `git add -- openspec/changes/<name>/`, run in the repository the change was created in, with terminal prompting disabled and optional locks disabled. The path passed after `--` SHALL be the directory the dashboard has just created and nothing else, so that files the user had already modified or left untracked elsewhere in the repository are not staged.
 
-#### Scenario: No processes
-- **WHEN** any `POST /api/repos/<id>/changes` is handled — accepted or refused
-- **THEN** no child process is spawned for the repository (neither git nor the `openspec` CLI is executed)
+That invocation is the only git command creating a change may run and the only write the dashboard makes outside the new directory. Creating a change MUST NOT commit, push, stash, reset, switch a branch, create or delete a ref, contact a remote or run a repository hook, and MUST NOT invoke the `openspec` CLI or any other external command.
+
+Staging is best-effort: the change already exists on disk, so if git is unavailable, the repository is not a git repository, its index is locked, git exits non-zero or the invocation times out, the dashboard SHALL leave the change in place and still answer `201`, reporting `staged` as false. Nothing about the change's validity, its column or its appearance on the board depends on whether it was staged. Git MUST NOT be invoked at all for a create that is refused.
+
+#### Scenario: The new change is tracked
+- **WHEN** a change `add-audit-trail` is created in a git repository
+- **THEN** `git status` reports `openspec/changes/add-audit-trail/.openspec.yaml` as an added, staged path rather than as untracked
+
+#### Scenario: Only the new directory is staged
+- **WHEN** a change is created in a repository that already has an unrelated modified file and an unrelated untracked file
+- **THEN** those two files are left exactly as they were — neither is staged — and only the new change directory's files are added to the index
+
+#### Scenario: Nothing is committed
+- **WHEN** a change is created in a git repository
+- **THEN** `HEAD`, the checked-out branch and every ref are unchanged, no commit is created and no remote is contacted
+
+#### Scenario: Not a git repository
+- **WHEN** a change is created in a repository that is not a git repository
+- **THEN** the response is `201` with `staged` false, the change directory and its files exist, and the change appears on the board
+
+#### Scenario: Staging fails
+- **WHEN** the new directory is written but the `git add` fails or times out
+- **THEN** the response is still `201`, with `staged` false, and the change directory and its files are left in place
+
+#### Scenario: A refused create runs no git
+- **WHEN** `POST /api/repos/<id>/changes` is refused for any reason
+- **THEN** no git command is run for that repository and its index is byte-for-byte unchanged

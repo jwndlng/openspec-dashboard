@@ -46,6 +46,6 @@
 - [x] 4.1 Run `bun run check` and verify lint, typecheck and the full test suite pass.
 - [x] 4.2 Run `bun run build` and verify `dist/openspec-dashboard` creates a change in a scratch git repository with
       the directory staged — the git invocation must work in the compiled binary, not only under `bun run`.
-- [ ] 4.3 Verify by hand in `bun run dev`: create a change on a repository's board, confirm it appears in `New` after
+- [x] 4.3 Verify by hand in `bun run dev`: create a change on a repository's board, confirm it appears in `New` after
       the rescan, and confirm `git status` in that repository shows the new directory staged and nothing else newly
       staged.
