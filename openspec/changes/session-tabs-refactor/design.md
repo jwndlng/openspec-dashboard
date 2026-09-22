@@ -26,9 +26,12 @@ reordering tabs, new colour tokens.
 
 1. **Tab grounds stay `--bg-section` for every tab; the difference is shape and outline, not a new colour.** A not-shown
    tab gets `--bg-section` with a `--border` outline on all four sides, rounded on all corners, and sits inset from
-   the strip's bottom edge (a small bottom margin) — a chip on the strip. A shown tab keeps rounded top corners only,
-   no bottom border, reaches the strip's bottom edge and covers the strip's bottom border (`margin-bottom: -1px`), so
-   it is joined to the panes like a classic tab. *Alternative:* `--bg-raised` or a mixed colour for not-shown tabs —
+   the strip's bottom edge (a 3px bottom margin) — a chip on the strip. A shown tab keeps rounded top corners only,
+   reaches the strip's bottom edge (the chip's margin becomes padding, so both tops line up) and has a transparent
+   bottom border showing its own ground, so it is joined to the panes like a classic tab. The strip's bottom line is
+   an inset shadow (`inset 0 -1px 0 var(--border-light)`) rather than a border, so the shown tab covers it: a
+   `margin-bottom: -1px` cannot reach into a real border, because `.session-tabs` scrolls horizontally and clips
+   anything outside its box. *Alternative:* `--bg-raised` or a mixed colour for not-shown tabs —
    rejected: in the dark theme `--bg-raised` is lighter than `--bg-section`, so idle tabs would look more prominent
    than shown ones, and any new ground would have to be added to the contrast test. Staying on `--bg-section` keeps the
    existing contrast proof valid unchanged.
@@ -39,8 +42,10 @@ reordering tabs, new colour tokens.
    `box-shadow` list so neither overrides the other and geometry does not shift. The change name becomes semibold, so
    the marking is not colour alone. `--brand` is already kept ≥12° away from every repository hue (existing test).
    *Alternative:* a thicker `border-top` — rejected because it changes the tab's height relative to its neighbours.
-4. **Strip height 36px → 44px**, tab vertical padding 5px → 7px, strip top padding kept so a shown tab's top edge has
-   air above it. `DOCK_TABS_HEIGHT` becomes 44 in the same commit, and a small test reads the `.dock-bar` height from
+4. **Strip height 36px → 44px**, tab vertical padding 5px → 7px. With the 20px badge a tab is 36px tall, so the strip
+   splits the rest as 5px top padding (air above a shown tab's top edge, was 6px) and the chip's 3px inset:
+   5 + 36 + 3 = 44. The repository name does not wrap, so a tab stays on one line at its maximum width; the change
+   name truncates as before. `DOCK_TABS_HEIGHT` becomes 44 in the same commit, and a small test reads the `.dock-bar` height from
    `styles.css` and asserts it equals the constant, so the two cannot silently drift. *Alternative:* have the dock set
    the strip height as a CSS variable from the constant — rejected as more moving parts for one number.
 5. **Markup stays as is.** `.shown` and `.active` already exist; the focused combination with a repository tint is a

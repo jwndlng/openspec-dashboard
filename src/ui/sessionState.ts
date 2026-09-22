@@ -195,7 +195,7 @@ export function searchWithShown(search: string, shown: readonly string[]): strin
 /** Dock geometry, in one place: the dock never gets too small for a terminal, the board above it never too small to use. */
 export const DOCK_MIN_HEIGHT = 160;
 export const DOCK_MIN_BOARD = 120;
-export const DOCK_TABS_HEIGHT = 36;
+export const DOCK_TABS_HEIGHT = 44;
 export const DOCK_DEFAULT_RATIO = 0.42;
 
 export function clampDockHeight(height: number, windowHeight: number): number {
