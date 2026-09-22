@@ -79,3 +79,8 @@ When agent sessions are enabled and the card's repository is tracked and not exc
 **Reason**: The card's most prominent control copied a shell command to be pasted elsewhere, crowding out the card's actual purpose — opening the change. **Show details** takes its place, and agent sessions are started from the card's session starters, which do not need a copied command.
 
 **Migration**: There is no copy action on a card any more, and the dashboard no longer offers an apply or start command anywhere. Run the command by hand: `cd <checkoutPath> && claude "/opsx:apply <changeName>"` for a change in `Ready` or later, `cd <checkoutPath> && claude "/opsx:continue <changeName>"` otherwise; the repository board header's "Copy cd" still copies `cd <repoPath>`.
+
+### Requirement: Cards open the change detail view
+**Reason**: A card is no longer one large link. Opening a change is the job of the card's **Show details** action, covered by the "Cards offer Show details" requirement, which also forbids the card as a whole and its change name from navigating.
+
+**Migration**: Activate **Show details** on the card instead of clicking the card itself; it is still a real anchor, so ⌘-click, middle-click and the keyboard work as before, and it still carries the board and its filters.
