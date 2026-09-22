@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { currentSection, navOffset, parseSection, rowScrollLeft, SECTION_IDS, serializeSection } from "../src/ui/settingsSections.ts";
+import { currentSection, parseSection, rowScrollLeft, SECTION_IDS, serializeSection } from "../src/ui/settingsSections.ts";
 import { hrefWithQuery } from "../src/ui/url.ts";
 
 test("parseSection accepts known ids only", () => {
@@ -78,22 +78,18 @@ test("rowScrollLeft aligns an entry wider than the row to its start", () => {
 });
 
 test("the navigation never scrolls the page to reveal itself", async () => {
-  // The navigation moves with the content. scrollIntoView on a navigation element would drag the page back up to it
-  // whenever the current section changes; the only legitimate use is scrolling a section to the top on a jump.
+  // scrollIntoView on a navigation element would scroll the page whenever the current section changes; the only
+  // legitimate use is scrolling a section to the top on a jump.
   const source = await Bun.file(new URL("../src/ui/settingsNav.tsx", import.meta.url)).text();
   const calls = source.match(/^.*\.scrollIntoView\(.*$/gm) ?? [];
   expect(calls).toHaveLength(1);
-  // The jump's own scroll: to the section, or on narrow screens to the row that was just placed above it.
-  expect(calls[0]).toContain("scrollTarget.scrollIntoView");
-  expect(source.indexOf("scrollTarget.scrollIntoView")).toBeLessThan(source.indexOf("// Follow manual scrolling."));
+  expect(calls[0]).toContain("target?.scrollIntoView");
+  expect(source.indexOf("target?.scrollIntoView")).toBeLessThan(source.indexOf("// Follow manual scrolling."));
 });
 
-test("navOffset puts the navigation beside the section without leaving the page", () => {
-  expect(navOffset(0, 215, 2300)).toBe(0);
-  expect(navOffset(640, 215, 2300)).toBe(640);
-  // A short last section: the navigation's bottom stops at the end of the page.
-  expect(navOffset(2200, 215, 2300)).toBe(2085);
-  // Never negative, even if the navigation were taller than the page.
-  expect(navOffset(100, 500, 300)).toBe(0);
-  expect(navOffset(-5, 215, 2300)).toBe(0);
+test("the navigation follows the content by being sticky", async () => {
+  const css = await Bun.file(new URL("../src/ui/styles.css", import.meta.url)).text();
+  expect(css).toMatch(/^\.settings-nav \{[^}]*position: sticky; top: 0;/m);
+  // Only the one scroll area: a navigation with its own overflow would stop sticking to the page.
+  expect(css).not.toMatch(/^\.settings \{[^}]*overflow/m);
 });

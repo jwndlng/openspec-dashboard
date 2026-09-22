@@ -5,11 +5,11 @@ The Settings navigation added by `add-settings-nav` is pinned: it sits beside th
 ## What Changes
 
 - The Settings page scrolls **as one page**: the navigation and the sections share a single scroll area spanning the full width below the top bar, with the scrollbar at the window edge. The mouse wheel works wherever the pointer is — over the navigation, the sections or the side margins.
-- The navigation **moves with the content**: it starts at the top-left next to the first section and scrolls out of view as the user scrolls down, instead of staying pinned. **BREAKING** relative to the `settings-page` requirement that the navigation "SHALL remain visible while the sections are scrolled".
-- **The navigation also moves with the content on a jump**: activating an entry (or opening a `?section=` link) places the navigation beside the section jumped to, so it is visible next to that section on arrival and the next jump is one click away. From there it scrolls with the content again; scrolling back to the very top returns it to its home position beside the first section. Jumping otherwise works the same (section to the top, focus, reduced motion).
-- The **narrow-screen row** follows the same rules: it scrolls away with the sections rather than staying pinned, and on a jump it is placed directly above the section jumped to.
-- The current-section marker and the `?section=` URL keep being updated while scrolling, also while the navigation is out of view, so deep links and reloads still land where the user was and the marker is right when the navigation comes back into view.
-- Updating the marker MUST NOT move the page: keeping the current entry visible inside the narrow row may only scroll that row sideways, never pull the page back up to the navigation.
+- The navigation **follows the content**: it starts at the top-left next to the first section and, as the user scrolls or jumps, stays at the top of the view beside the sections in view (sticky inside the one scroll area). It is no longer a separate, non-scrolling column. (A first version let it scroll out of view and only brought it along on a jump; in use that still felt like the navigation getting lost, so it now follows manual scrolling too.)
+- Jumping works the same (section to the top, focus, reduced motion), and the next jump is always one click away.
+- The **narrow-screen row** follows the same rule: it sticks to the top of the view, and a jump lands the section directly below it without covering it. The `<nav>` itself is the row's sideways scroller, which also fixes entries of a sideways-scrolled row not reacting to clicks in Chrome.
+- The current-section marker and the `?section=` URL keep being updated while scrolling, so deep links and reloads still land where the user was.
+- Updating the marker MUST NOT move the page: keeping the current entry visible inside the narrow row may only scroll that row sideways.
 - The save bar stays pinned at the bottom, unchanged.
 
 ## Capabilities

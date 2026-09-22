@@ -44,35 +44,6 @@ export function splitBranchLabel(name: string, tailLength = 16, nudge = 4): { he
   return { head: name.slice(0, start), tail: name.slice(start) };
 }
 
-export function applyCommand(repoPath: string, changeName: string): string {
-  return `cd ${shellQuote(repoPath)} && claude "/opsx:apply ${changeName}"`;
-}
-
-/** Columns where a card offers "apply"; earlier columns offer "start" (drafting) instead. */
-const APPLY_COLUMNS = new Set(["Ready", "Implementing", "Done", "Synced", "Archived"]);
-
-/** True when a card of this column offers the start command (`/opsx:continue`) rather than the apply command. */
-export function isStartColumn(column: string): boolean {
-  return !APPLY_COLUMNS.has(column);
-}
-
-/**
- * Continues drafting a change: extends with a pointer to `prompt.md` when the change reports one, so the agent knows
- * where to find the user's initial description.
- */
-export function startCommand(repoPath: string, changeName: string, hasPrompt: boolean): string {
-  const suffix = hasPrompt ? ` — see openspec/changes/${changeName}/prompt.md` : "";
-  return `cd ${shellQuote(repoPath)} && claude "/opsx:continue ${changeName}${suffix}"`;
-}
-
-/**
- * Card copy action: apply command for `Ready` onwards, start command otherwise (with `prompt.md` pointer when set).
- */
-export function copyCommandFor(change: { column: string; name: string; prompt?: string }, repoPath: string): { label: string; text: string } {
-  if (isStartColumn(change.column)) return { label: "Copy start", text: startCommand(repoPath, change.name, change.prompt !== undefined && change.prompt !== "") };
-  return { label: "Copy apply", text: applyCommand(repoPath, change.name) };
-}
-
 /**
  * Tooltip for a card's branch badge: where the change's data comes from, and which other checkouts hold a copy that
  * is at a different point.
