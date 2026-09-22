@@ -3,12 +3,52 @@ import { join } from "node:path";
 import { CHANGE_NAME } from "./source.ts";
 
 export type CreateChangeResult =
-  | { ok: true; name: string; dir: string; wrotePrompt: boolean }
+  | { ok: true; name: string; dir: string; wrotePrompt: boolean; staged: boolean }
   | { ok: false; reason: "invalid-name" | "invalid-prompt" | "no-openspec-dir" | "duplicate-active" | "duplicate-archived"; message: string };
 
 const SCHEMA_LINE = /^schema:\s*["']?([A-Za-z0-9._-]+)/m;
 const ARCHIVE_PREFIX = /^(\d{4}-\d{2}-\d{2})-(.+)$/;
 const DEFAULT_SCHEMA = "spec-driven";
+const GIT_TIMEOUT_MS = 10_000;
+
+/**
+ * The one writing git command creating a change may run. Deliberately not `git.ts`'s runner: that module is read-only
+ * by contract. No shell, no prompt, no stdin; a missing git, a non-zero exit or a timeout all resolve to `false` —
+ * never a throw, because by the time this runs the change already exists on disk.
+ */
+async function git(cwd: string, args: string[], timeoutMs = GIT_TIMEOUT_MS): Promise<boolean> {
+  let timedOut = false;
+  try {
+    const proc = Bun.spawn(["git", ...args], {
+      cwd,
+      stdout: "ignore",
+      stderr: "ignore",
+      stdin: "ignore",
+      env: { ...process.env, GIT_TERMINAL_PROMPT: "0", GIT_OPTIONAL_LOCKS: "0" },
+    });
+    const timer = setTimeout(() => {
+      timedOut = true;
+      proc.kill();
+    }, timeoutMs);
+    try {
+      return (await proc.exited) === 0 && !timedOut;
+    } finally {
+      clearTimeout(timer);
+    }
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Stages the new change directory — and only it — so git tracks the change from the moment it exists. The path
+ * goes after `--` and is the directory, not `.` or `-A`: whatever else the user has modified or left untracked stays
+ * out of the index. Best-effort: `false` means the change is on disk but untracked.
+ */
+export async function stageChangeDir(repoPath: string, name: string, timeoutMs = GIT_TIMEOUT_MS): Promise<boolean> {
+  if (!CHANGE_NAME.test(name)) return false;
+  return git(repoPath, ["add", "--", `openspec/changes/${name}/`], timeoutMs);
+}
 
 /** Today in the server's local time zone as `YYYY-MM-DD`; matches what `openspec new change` records. */
 function today(now: Date = new Date()): string {
@@ -54,8 +94,9 @@ async function isDirectory(path: string): Promise<boolean> {
  * Creates `openspec/changes/<name>/` in the repository, atomically (exclusive-create so two callers cannot both
  * succeed), and writes `.openspec.yaml` (and `prompt.md` when a non-whitespace prompt is given).
  *
- * Writes only inside that new directory and never invokes git or the `openspec` CLI. A failed write after `mkdir`
- * removes the just-created directory so a half-empty change never remains.
+ * Writes only inside that new directory and never invokes the `openspec` CLI. A failed write after `mkdir` removes
+ * the just-created directory so a half-empty change never remains. Once both writes have succeeded, and only then,
+ * the directory is staged with one `git add` (see `stageChangeDir`); a refused create runs no git at all.
  */
 export async function createChange(repoPath: string, name: string, prompt?: string): Promise<CreateChangeResult> {
   if (typeof name !== "string" || !CHANGE_NAME.test(name)) {
@@ -80,18 +121,20 @@ export async function createChange(repoPath: string, name: string, prompt?: stri
     throw err;
   }
 
+  let wrotePrompt = false;
   try {
     const schema = await readSchema(repoPath);
     await writeFile(join(dir, ".openspec.yaml"), `schema: ${schema}\ncreated: ${today()}\n`, "utf8");
     const trimmed = typeof prompt === "string" ? prompt.trim() : "";
-    let wrotePrompt = false;
     if (trimmed) {
       await writeFile(join(dir, "prompt.md"), `# Prompt\n\n${trimmed}\n`, "utf8");
       wrotePrompt = true;
     }
-    return { ok: true, name, dir, wrotePrompt };
   } catch (err) {
     await rm(dir, { recursive: true, force: true }).catch(() => {});
     throw err;
   }
+  // The files exist and are the user's now: whatever git does, the create has succeeded.
+  const staged = await stageChangeDir(repoPath, name);
+  return { ok: true, name, dir, wrotePrompt, staged };
 }

@@ -26,8 +26,8 @@ bun test test/scanner.test.ts   # a single test file
 
 1. **Read-only towards tracked repositories, with enumerated exceptions.** The dashboard writes to a tracked
    repository only in response to an explicit user action, only to the paths enumerated in the "never writes"
-   requirement of `openspec/specs/dashboard-api/spec.md`, never deletes or moves anything there, and never runs a git
-   command that writes (the enumerated exceptions below). Today that list has four entries: the managed sections of `openspec/config.yaml` (applying shared config profiles,
+   requirement of `openspec/specs/dashboard-api/spec.md`, never deletes or moves anything there, and runs a git
+   command that writes only where enumerated below. Today that list has five entries: the managed sections of `openspec/config.yaml` (applying shared config profiles,
    `src/server/sharedConfig.ts`); for agent sessions, off by default, a session's git worktree, created with
    `git worktree add` (directory under `~/.openspec-dashboard/worktrees/`, never inside the repository's working tree)
    and removed with a non-forcing `git worktree remove` after the user confirmed and read-only checks proved nothing
@@ -38,17 +38,21 @@ bun test test/scanner.test.ts   # a single test file
    remote or changes a main checkout); and the **create-change action** — a new `openspec/changes/<name>/` directory
    with the schema marker `.openspec.yaml` and, when the user typed one, `prompt.md`, written directly with an
    exclusive-create so two concurrent requests cannot both succeed, and never through git or the `openspec` CLI
-   (`src/server/createChange.ts`, `POST /api/repos/<id>/changes`). Those three modules are the only places that write
-   to a tracked repository. Apart
-   from the pull action the main checkout's index and files are never touched and no remote is ever contacted; the main
+   (`src/server/createChange.ts`, `POST /api/repos/<id>/changes`); and, once those files are written, **staging that
+   new directory** — a single `git add -- openspec/changes/<name>/`, the directory just created and nothing else,
+   best-effort (a non-git repository or any git failure leaves the change in place, merely untracked, reported as
+   `staged: false`), never run for a refused create, and never followed by a commit (same module and route). Those
+   four modules are the only places that write to a tracked repository. Apart from the pull action and that one
+   `git add`, the main checkout's index and files are never touched and no remote is ever contacted; the main
    checkout's branch is never changed by anything; and the pull action runs only on the user's explicit request — never
    on a timer, during a scan, on page load or as a side effect (`test/pull.test.ts` proves scans leave a recording
    remote untouched). Starting the user's
    agent in that worktree on the user's click is not a write by the dashboard: what the agent changes is decided by its
    own permission prompts. With agent sessions disabled no process that can modify a repository is ever started. Scanning, polling, discovery, previews and saving settings
    write nothing to a repository. All other writes stay under `~/.openspec-dashboard/` (or `OPENSPEC_DASHBOARD_HOME`
-   in tests). Git is invoked only with the read-only subcommands listed in that spec. Adding a path or a subcommand
-   means changing that spec first.
+   in tests). Apart from the worktree commands, the pull action's `fetch` and `merge --ff-only` and the create-change
+   `add`, git is invoked only with the read-only subcommands listed in that spec. Adding a path or a subcommand means
+   changing that spec first.
 2. **Loopback only.** The server binds `127.0.0.1`; there is no auth because nothing else can reach it.
 2a. **Mutating API routes are same-origin only.** Every non-GET `/api/` request passes `crossSiteRefusal` in
    `src/server/api.ts` (JSON content type, loopback host, own origin); the terminal WebSocket has `webSocketRefusal`. Loopback binding alone does not stop a web page

@@ -470,3 +470,10 @@ export interface PullResult {
   /** The repository has a post-merge hook; the dashboard does not run hooks. */
   hooksSkipped?: boolean;
 }
+
+/** What `POST /api/repos/<id>/changes` answers on success: the change exists on disk; `staged` says whether git tracks it already. */
+export interface CreateChangeResponse {
+  name: string;
+  /** False when the repository is not a git repository or the `git add` failed — the change is there, merely untracked. */
+  staged: boolean;
+}
