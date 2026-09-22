@@ -7,7 +7,7 @@ const isControl = (char: string) => {
 };
 
 test("the default responses and their order", () => {
-  expect(DEFAULT_QUICK_REPLIES.map((r) => r.label)).toEqual(["Yes, go ahead", "Yes, create a PR", "No, stop here"]);
+  expect(DEFAULT_QUICK_REPLIES.map((r) => r.label)).toEqual(["Yes, go ahead", "Yes, create a PR", "Resolve PR conflicts", "No, stop here"]);
   expect(new Set(DEFAULT_QUICK_REPLIES.map((r) => r.id)).size).toBe(DEFAULT_QUICK_REPLIES.length);
 });
 
