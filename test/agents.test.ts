@@ -4,7 +4,7 @@ import { agentEnv, agentFor, launchCommand, openingPrompt } from "../src/server/
 import { Scrollback, sessionBranch, worktreeName } from "../src/server/sessions/manager.ts";
 import { CLAUDE_PROFILE, FORMER_ARCHIVE_PROMPTS } from "../src/shared/agentDefaults.ts";
 import { availableActions, type Session } from "../src/shared/types.ts";
-import { agentForRepo, parseArgLines, searchWithShown, sessionBadge, sessionForChange, shownFromSearch, sessionsEnabledFor, slugId, startersFor } from "../src/ui/sessionState.ts";
+import { agentForRepo, NEEDS_YOU_AFTER_MS, parseArgLines, searchWithShown, sessionBadge, sessionForChange, shownFromSearch, sessionsEnabledFor, silenceDuration, slugId, startersFor } from "../src/ui/sessionState.ts";
 import { fakeProfile } from "./sessionHelpers.ts";
 
 const base = defaultConfig();
@@ -106,23 +106,61 @@ const session = (patch: Partial<Session>): Session => ({ id: "s", repoId: "r", c
 
 test("badges are honest about what a terminal can tell", () => {
   const now = Date.parse("2026-01-01T01:00:00Z");
-  // An agent that is up is one thing, so running and quiet share the live role; the words and the motion separate them.
-  expect(sessionBadge(session({ lastOutputAt: "2026-01-01T00:59:50Z" }), now)).toMatchObject({ icon: "●", label: "running", tone: "info", live: true });
-  expect(sessionBadge(session({ lastOutputAt: "2026-01-01T00:50:00Z" }), now)).toMatchObject({ icon: "◆", label: "quiet 10m", tone: "info" });
+  // The two running states are told apart by their words; tone and motion only reinforce them.
+  expect(sessionBadge(session({ lastOutputAt: "2026-01-01T00:59:50Z" }), now)).toMatchObject({ icon: "●", label: "working", tone: "info", live: true });
+  expect(sessionBadge(session({ lastOutputAt: "2026-01-01T00:50:00Z" }), now)).toMatchObject({ icon: "◆", label: "may need you 10m", tone: "warning" });
   expect(sessionBadge(session({ state: "exited", exitCode: 0 }), now)).toMatchObject({ label: "ended", tone: "" });
   expect(sessionBadge(session({ state: "exited", exitCode: 3 }), now)).toMatchObject({ icon: "⚠", label: "ended (3)", tone: "danger" });
   expect(sessionBadge(session({ state: "failed", error: "no such file" }), now)).toMatchObject({ tone: "danger", title: "no such file" });
 });
 
-test("only an agent that is visibly working is shown with motion", () => {
+test("only a terminal that is producing output is shown with motion", () => {
   const now = Date.parse("2026-01-01T01:00:00Z");
   const live = (patch: Partial<Session>) => sessionBadge(session(patch), now).live === true;
   expect(live({ lastOutputAt: "2026-01-01T00:59:50Z" })).toBe(true);
   expect(live({})).toBe(true); // just started, nothing printed yet
-  expect(live({ lastOutputAt: "2026-01-01T00:50:00Z" })).toBe(false); // quiet: probably waiting for the user
+  expect(live({ lastOutputAt: "2026-01-01T00:50:00Z" })).toBe(false); // silent: may need the user
   expect(live({ state: "exited", exitCode: 0 })).toBe(false);
   expect(live({ state: "exited", exitCode: 3 })).toBe(false);
   expect(live({ state: "failed" })).toBe(false);
+});
+
+test("a silent terminal says the session may need you within seconds, never that the agent waits", () => {
+  const now = Date.parse("2026-01-01T01:00:00Z");
+  const badge = (silentMs: number) => sessionBadge(session({ lastOutputAt: new Date(now - silentMs).toISOString() }), now);
+  expect(NEEDS_YOU_AFTER_MS).toBeLessThanOrEqual(30_000);
+  expect(badge(NEEDS_YOU_AFTER_MS - 1_000).label).toBe("working");
+  expect(badge(NEEDS_YOU_AFTER_MS).label).toBe("working");
+  expect(badge(NEEDS_YOU_AFTER_MS + 1_000).label).toBe(`may need you ${Math.floor((NEEDS_YOU_AFTER_MS + 1_000) / 1000)}s`);
+  expect(badge(45_000).label).toBe("may need you 45s");
+  expect(badge(3 * 60_000 + 20_000).label).toBe("may need you 3m");
+  expect(badge(10 * 60_000).label).toBe("may need you 10m");
+  // worded as a possibility: nothing claims the agent is waiting or working
+  for (const b of [badge(0), badge(45_000)]) expect(`${b.label} ${b.title}`).not.toMatch(/\bis waiting\b|\bwaits\b|\bis working\b/);
+  expect(badge(45_000).title).toContain("may be waiting");
+  // a just-started session has printed nothing yet and is not announced as needing the user
+  expect(sessionBadge(session({}), now).label).toBe("working");
+});
+
+test("the two running states differ in their words, not only in colour and motion", () => {
+  const now = Date.parse("2026-01-01T01:00:00Z");
+  const working = sessionBadge(session({ lastOutputAt: "2026-01-01T00:59:55Z" }), now);
+  const silent = sessionBadge(session({ lastOutputAt: "2026-01-01T00:59:00Z" }), now);
+  expect(working.label).not.toBe(silent.label);
+  expect(working.label).not.toContain("may need you");
+  expect(silent.label).toStartWith("may need you");
+});
+
+test("output resuming after a silent spell returns the badge to working and drops the duration", () => {
+  const now = Date.parse("2026-01-01T01:00:00Z");
+  const silent = session({ lastOutputAt: "2026-01-01T00:55:00Z" });
+  expect(sessionBadge(silent, now).label).toBe("may need you 5m");
+  const resumed = { ...silent, lastOutputAt: "2026-01-01T00:59:59Z" };
+  expect(sessionBadge(resumed, now)).toMatchObject({ label: "working", tone: "info", live: true });
+});
+
+test("a silence is stated in seconds under a minute, in minutes from there on", () => {
+  expect([0, 20_000, 59_000, 59_999, 60_000, 10 * 60_000].map(silenceDuration)).toEqual(["0s", "20s", "59s", "59s", "1m", "10m"]);
 });
 
 test("a card shows its running session, or the latest one if that ended badly", () => {

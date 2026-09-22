@@ -89,26 +89,35 @@ export function sessionForChange(sessions: Session[], repoId: string, change: st
 export interface SessionBadge {
   /** Leading glyph, kept apart from the words so it can be styled (and hidden from assistive technology) on its own. */
   icon?: string;
-  /** True only while an agent is visibly working: the one state that is shown with motion. */
+  /** True only while the terminal is producing output: the one state that is shown with motion. */
   live?: boolean;
   label: string;
   tone: "info" | "branch" | "success" | "warning" | "danger" | "";
   title: string;
 }
 
-const QUIET_AFTER_MS = 60_000;
+/** How long a running session's terminal may stay silent before the badge says the session may need the user. */
+export const NEEDS_YOU_AFTER_MS = 20_000;
+
+/** A silence as the badge states it: seconds under a minute (`45s`), whole minutes from there on (`3m`). */
+export function silenceDuration(ms: number): string {
+  return ms < 60_000 ? `${Math.floor(ms / 1000)}s` : `${Math.floor(ms / 60_000)}m`;
+}
 
 /**
- * A terminal is a byte stream, so the dashboard cannot know that an agent "waits for you". It can say that the
- * terminal has been quiet for a while, which in practice is the same hint. Status is always text plus colour.
+ * A terminal is a byte stream, so the dashboard cannot know that an agent works or waits for you. It can say whether
+ * the terminal is printing or has fallen silent — decided by the time of its last output alone — and, when silent,
+ * that the session may need you. Status is always words plus colour, so the two running states differ in their words.
  */
 export function sessionBadge(session: Session, now = Date.now()): SessionBadge {
   if (session.state === "running") {
     const last = session.lastOutputAt ? Date.parse(session.lastOutputAt) : Number.NaN;
-    const quiet = Number.isNaN(last) ? 0 : now - last;
-    // Both are the same thing — an agent that is up — so both wear the live role; the words and the motion separate them.
-    if (quiet > QUIET_AFTER_MS) return { icon: "◆", label: `quiet ${Math.floor(quiet / 60_000)}m`, tone: "info", title: "the terminal has printed nothing for a while — the agent is probably waiting for you" };
-    return { icon: "●", label: "running", live: true, tone: "info", title: `${session.agentName} is running in its terminal` };
+    const silent = Number.isNaN(last) ? 0 : now - last;
+    if (silent > NEEDS_YOU_AFTER_MS) {
+      const duration = silenceDuration(silent);
+      return { icon: "◆", label: `may need you ${duration}`, tone: "warning", title: `the terminal has printed nothing for ${duration} — ${session.agentName} may be waiting for you` };
+    }
+    return { icon: "●", label: "working", live: true, tone: "info", title: `the terminal of ${session.agentName} is producing output` };
   }
   if (session.state === "failed") return { icon: "⚠", label: "failed", tone: "danger", title: session.error ?? "the agent could not be started" };
   const code = session.exitCode;

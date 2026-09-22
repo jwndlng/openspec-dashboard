@@ -215,6 +215,10 @@ export function createDemoSessions({ now, getConfig, getSnapshot, clock }: DemoS
     }
   };
 
+  /** Seeded transcripts play on in the background while nobody watches them: unless one sits at a question, it printed just now. */
+  const printing = (s: DemoSession) => s.session.state === "running" && !s.position && !positionOf(s).waiting;
+  const listed = (s: DemoSession): Session => (printing(s) ? { ...s.session, lastOutputAt: iso(now() - 5_000) } : s.session);
+
   const worktrees = (): SessionWorktree[] => [
     ...sessions
       .filter((s) => workOf(s).state !== "missing")
@@ -226,7 +230,7 @@ export function createDemoSessions({ now, getConfig, getSnapshot, clock }: DemoS
         action: s.session.action,
         branch: s.session.branch,
         work: workOf(s),
-        lastActivityAt: iso(s.session.state === "running" && !positionOf(s).waiting && !s.position ? now() - 5_000 : s.lastActivityMs),
+        lastActivityAt: iso(printing(s) ? now() - 5_000 : s.lastActivityMs),
         sessionId: s.session.id,
       })),
     ...orphans,
@@ -243,7 +247,7 @@ export function createDemoSessions({ now, getConfig, getSnapshot, clock }: DemoS
     list() {
       const enabled = getConfig().agentSessions.enabled;
       return {
-        sessions: enabled ? sessions.map((s) => s.session) : [],
+        sessions: enabled ? sessions.map(listed) : [],
         agents: [{ id: DEMO_AGENT.id, name: DEMO_AGENT.name, available: true, path: "/home/demo/bin/demo-agent" }],
         worktrees: enabled ? worktrees() : [],
       };
