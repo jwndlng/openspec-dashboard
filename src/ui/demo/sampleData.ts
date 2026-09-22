@@ -6,7 +6,8 @@
 // same rules the scanner uses, so the sample cannot disagree with the board.
 import { defaultAgentSessions } from "../../shared/agentDefaults.ts";
 import { deriveStage } from "../../shared/columns.ts";
-import type { ArtifactStatus, ChangeSnapshot, Config, RepoConfig, RepoSnapshot, Snapshot } from "../../shared/types.ts";
+import type { ArtifactStatus, ChangeSnapshot, CheckoutStatus, Config, RepoConfig, RepoSnapshot, Snapshot, Worktree } from "../../shared/types.ts";
+import { summarizeWorkInProgress } from "../../shared/workInProgress.ts";
 
 /** Appears in the demo bundle only; test/demoBundle.test.ts uses it to tell the two bundles apart. */
 export const DEMO_MARKER = "openspec-dashboard-demo-build";
@@ -40,18 +41,53 @@ interface SampleChange {
   warnings?: string[];
 }
 
+/** The states a checkout chip can show; `detached` has no branch. */
+export type CheckoutState = "clean" | "uncommitted" | "ahead" | "never-pushed" | "behind" | "detached" | "stale" | "locked" | "unknown";
+
 interface SampleRepo {
   id: string;
   name: string;
   branch: string;
+  /** State of the main checkout; clean when omitted. */
+  main?: CheckoutState;
   /** Age of the last openspec/ update in hours. */
   updated: number;
-  worktrees?: string[];
+  /** Linked worktrees as [branch, state]. */
+  worktrees?: [string, CheckoutState][];
   error?: string;
   warnings?: string[];
   changes: SampleChange[];
   /** [name, archived days ago, task total] */
   archived: [string, number, number][];
+}
+
+const CLEAN: CheckoutStatus = { modified: 0, untracked: 0, conflicts: 0 };
+
+/** One checkout the way the scanner would have recorded it. Every sample checkout comes from here, so states stay consistent. */
+function checkout(path: string, branch: string, state: CheckoutState, isMain = false): Worktree {
+  const base: Worktree = { path, head: "9f3c2ab", ...(isMain ? { isMain } : {}) };
+  const upstream = `origin/${branch}`;
+  const tracked = (extra: Partial<CheckoutStatus> = {}, unpushed = 0): Worktree => ({ ...base, branch, status: { ...CLEAN, upstream, ahead: unpushed, behind: 0, ...extra }, unpushed });
+  switch (state) {
+    case "clean":
+      return tracked();
+    case "uncommitted":
+      return tracked({ modified: 4, untracked: 1 });
+    case "ahead":
+      return tracked({}, 2);
+    case "behind":
+      return tracked({ behind: 5 });
+    case "never-pushed":
+      return { ...base, branch, status: CLEAN, unpushed: 3 };
+    case "detached":
+      return { ...base, detached: true, status: CLEAN, unpushed: 1 };
+    case "stale":
+      return { ...base, branch, prunable: true };
+    case "locked":
+      return { ...tracked(), locked: true, lockReason: "agent session running" };
+    case "unknown":
+      return { ...base, branch, status: "unknown" };
+  }
 }
 
 /** What each artifact waits for in the spec-driven schema. */
@@ -71,7 +107,10 @@ const REPOS: SampleRepo[] = [
     name: "atlas-api",
     branch: "main",
     updated: 2,
-    worktrees: ["feat/add-rate-limiting"],
+    worktrees: [
+      ["feat/add-rate-limiting", "uncommitted"],
+      ["fix/flaky-health-check", "never-pushed"],
+    ],
     changes: [
       { name: "add-rate-limiting", tasks: [9, 14], age: 0.1, branch: "feat/add-rate-limiting" },
       { name: "paginate-list-endpoints", tasks: [3, 22], age: 2 },
@@ -97,6 +136,7 @@ const REPOS: SampleRepo[] = [
     id: "4be0d5a3",
     name: "harbor-web",
     branch: "feat/redesign-settings-page",
+    main: "uncommitted",
     updated: 5,
     changes: [
       { name: "redesign-settings-page", tasks: [17, 24], age: 0.2, branch: "feat/redesign-settings-page" },
@@ -121,6 +161,11 @@ const REPOS: SampleRepo[] = [
     id: "c9317f64",
     name: "lantern-infra",
     branch: "main",
+    worktrees: [
+      ["chore/upgrade-terraform", "clean"],
+      ["spike/bisect-slow-plan", "detached"],
+      ["feat/abandoned-dns-module", "stale"],
+    ],
     updated: 26,
     warnings: ["openspec/config.yaml: unknown key `defaults` ignored"],
     changes: [
@@ -167,7 +212,11 @@ const REPOS: SampleRepo[] = [
     name: "ember-mobile",
     branch: "release/4.2",
     updated: 9,
-    worktrees: ["feat/biometric-login", "fix/push-token-refresh"],
+    main: "behind",
+    worktrees: [
+      ["feat/biometric-login", "ahead"],
+      ["fix/push-token-refresh", "locked"],
+    ],
     changes: [
       { name: "biometric-login", tasks: [11, 19], age: 0.4, branch: "feat/biometric-login" },
       { name: "push-token-refresh", tasks: [2, 5], age: 1, branch: "fix/push-token-refresh" },
@@ -188,6 +237,7 @@ const REPOS: SampleRepo[] = [
     id: "6d44c1f8",
     name: "orbit-data",
     branch: "main",
+    worktrees: [["feat/backfill-events", "unknown"]],
     updated: 120,
     error: "openspec list failed: openspec/changes/backfill-events/.openspec.yaml: unexpected end of file",
     changes: [
@@ -261,6 +311,10 @@ export function buildSample(now: number): Sample {
         ...deriveStage(input),
       };
     });
+    const worktrees = [
+      checkout(repoPath(r.name), r.branch, r.main ?? "clean", true),
+      ...(r.worktrees ?? []).map(([branch, state]) => checkout(`${repoPath(r.name)}-worktrees/${branch.replace("/", "-")}`, branch, state)),
+    ];
     return {
       id: r.id,
       name: r.name,
@@ -271,7 +325,8 @@ export function buildSample(now: number): Sample {
       scannedAt: iso(r.error ? 3 * HOUR : 0),
       isGit: true,
       currentBranch: r.branch,
-      worktrees: (r.worktrees ?? []).map((branch) => ({ branch, path: `${repoPath(r.name)}-worktrees/${branch.replace("/", "-")}` })),
+      worktrees,
+      workInProgress: summarizeWorkInProgress(worktrees),
       lastUpdatedAt: iso(r.updated * HOUR),
       changes: [...open, ...archived],
     } satisfies RepoSnapshot;

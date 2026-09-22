@@ -334,9 +334,9 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: 
 .projects tbody tr { cursor: pointer; }
 .projects tbody tr:hover { background: var(--bg-raised); }
 .projects .repo-name { font-weight: 500; }
-.projects .repo-link { color: var(--fg-heading); }
-.projects .idle .repo-link { color: var(--fg-subtle); font-weight: 400; }
-.projects tr:hover .repo-link { color: var(--brand-fg); }
+.projects .repo-link, .tile .repo-link { color: var(--fg-heading); }
+.projects .idle .repo-link, .tile.idle .repo-link { color: var(--fg-subtle); font-weight: 400; }
+.projects tr:hover .repo-link, article.tile:hover .repo-link { color: var(--brand-fg); }
 .projects .repo-name .badge, .projects .path-hint { margin-left: var(--gap-1); }
 .projects .path-hint { color: var(--fg-subtle); font-weight: 400; font-size: 11px; }
 .projects .repo-name .badge + .badge { margin-left: 4px; }
@@ -345,6 +345,46 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: 
 .sort:hover, .sort.on { color: var(--fg-heading); }
 .sort:focus-visible { outline: 2px solid var(--brand-strong); outline-offset: 2px; border-radius: 2px; }
 .overview .hint { color: var(--fg-subtle); text-align: center; padding: var(--gap-2); }
+.projects .wip-cell { white-space: nowrap; }
+.wip.plain { color: var(--fg-subtle); font-size: 12px; }
+
+/* Tiles: the same rows in a grid that reflows to the width it gets — never a horizontal scrollbar. */
+.tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(300px, 100%), 1fr)); gap: var(--gap-1); align-items: start; }
+.tile {
+  display: flex; flex-direction: column; gap: 6px; min-width: 0; padding: 10px 12px; cursor: pointer;
+  background: var(--bg-section); border: 1px solid var(--border-light); border-radius: var(--radius);
+}
+.tile:hover { background: var(--bg-raised); border-color: var(--border); }
+.tile header { display: flex; align-items: baseline; gap: var(--gap-1); min-width: 0; }
+.tile .repo-name { flex: 1; min-width: 0; margin: 0; font-size: 14px; font-weight: 500; text-transform: none; letter-spacing: normal; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tile .path-hint { margin-left: var(--gap-1); color: var(--fg-subtle); font-weight: 400; font-size: 11px; }
+.tile .when { flex: none; color: var(--fg-subtle); font-size: 12px; }
+.tile .none { margin: 0; color: var(--fg-subtle); font-size: 12px; }
+.tile-badges, .tile .totals, .tile .checkouts { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; min-width: 0; }
+.tile-badges:empty { display: none; }
+.tile .totals { color: var(--fg-subtle); font-size: 12px; }
+.tile .totals .total { color: var(--fg-heading); font-family: var(--font-mono); }
+.tile .checkouts { padding-top: 6px; border-top: 1px solid var(--border-light); }
+.stage-strip { display: flex; gap: 2px; margin: 0; padding: 0; list-style: none; min-width: 0; }
+.stage-strip li {
+  flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; align-items: center; padding: 3px 2px;
+  background: var(--bg-raised); border: 1px solid var(--border-light); border-radius: 2px;
+}
+.stage-strip .n { font-family: var(--font-mono); font-size: 12px; color: var(--fg-heading); }
+.stage-strip .label { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 9px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--fg-subtle); }
+.stage-strip .zero { background: transparent; }
+.stage-strip .zero .n, .stage-strip .zero .label { color: var(--fg-disabled); }
+
+/* One checkout: branch, then text markers. Colour only repeats what the text already says. */
+.checkout {
+  display: inline-flex; align-items: center; gap: 5px; min-width: 0; max-width: 100%;
+  padding: 1px 6px 1px 1px; border: 1px solid var(--border-light); border-radius: var(--radius);
+  font-size: 11px; line-height: 16px; color: var(--fg-subtle);
+}
+.checkout .where { flex: none; font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em; }
+.checkout .marker { flex: none; font-family: var(--font-mono); cursor: help; }
+.checkout .marker.uncommitted, .checkout .marker.unpushed, .checkout .marker.stale { color: var(--warning); }
+.checkout .marker.behind, .checkout .marker.locked, .checkout .marker.unknown { color: var(--fg-body); }
 
 /* ---- Repository board header ---- */
 .repo-head { display: flex; flex-direction: column; gap: 6px; padding: var(--gap-1) var(--gap-2); background: var(--bg-section); border-bottom: 1px solid var(--border-light); }

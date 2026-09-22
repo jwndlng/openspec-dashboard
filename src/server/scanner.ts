@@ -1,6 +1,7 @@
 import { join, sep } from "node:path";
 import { deriveStage } from "../shared/columns.ts";
 import type { ChangeSnapshot, Config, RepoConfig, RepoSnapshot, SharedConfig, Snapshot, Worktree } from "../shared/types.ts";
+import { summarizeWorkInProgress } from "../shared/workInProgress.ts";
 import { emptySnapshot, writeSnapshot } from "./cache.ts";
 import { readChangeArtifacts } from "./openspecAdapter.ts";
 import { loadSharedConfig, repoSharedConfig } from "./sharedConfig.ts";
@@ -12,6 +13,9 @@ export const DEFAULT_CONCURRENCY = 4;
 export const DEFAULT_REPO_TIMEOUT_MS = 30_000;
 /** Only the most recent archives get a git lookup; older ones are rarely looked at. */
 export const ARCHIVED_ACTIVITY_LIMIT = 25;
+/** Linked worktrees that get a `git status` per repository; the main checkout always does. The rest are listed uninspected. */
+export const MAX_INSPECTED_WORKTREES = 12;
+const CHECKOUT_CONCURRENCY = 3;
 
 // `.openspec.yaml` and `openspec/config.yaml` are flat enough to read without a YAML parser.
 const SCHEMA_LINE = /^schema:\s*["']?([A-Za-z0-9._-]+)/m;
@@ -31,7 +35,47 @@ export function parseMarker(text: string | undefined): Marker {
 
 function findBranchMatch(name: string, branch: string | undefined, worktrees: Worktree[]): string | undefined {
   if (branch?.includes(name)) return branch;
-  return worktrees.find((w) => w.branch.includes(name))?.branch;
+  return worktrees.find((w) => w.branch?.includes(name))?.branch;
+}
+
+/**
+ * Adds the working-tree status to the checkouts `git worktree list` reported — the only paths ever used as a working
+ * directory here. Stale and bare entries are never inspected; one checkout failing leaves it "unknown" and the rest intact.
+ */
+async function inspectCheckouts(source: RepoSource, listed: Worktree[]): Promise<Worktree[]> {
+  const checkouts = listed.map((w) => ({ ...w }));
+  const targets: Worktree[] = [];
+  let linked = 0;
+  for (const w of checkouts) {
+    if (w.prunable || w.bare) continue;
+    if (w.isMain || linked++ < MAX_INSPECTED_WORKTREES) targets.push(w);
+    else w.inspected = false;
+  }
+  if (targets.length === 0) return checkouts;
+  const hasRemotes = await source.hasRemoteRefs().catch(() => undefined);
+
+  let next = 0;
+  const worker = async (): Promise<void> => {
+    while (next < targets.length) {
+      const w = targets[next++];
+      const status = await source.checkoutStatus(w.path).catch(() => undefined);
+      if (!status) {
+        w.status = "unknown";
+        continue;
+      }
+      const { modified, untracked, conflicts, upstream, ahead, behind } = status;
+      w.status = { modified, untracked, conflicts, upstream, ahead, behind };
+      if (ahead !== undefined) {
+        w.unpushed = ahead;
+      } else if (hasRemotes) {
+        // No upstream to be ahead of (never pushed, or detached): count what no remote-tracking ref has.
+        const localOnly = await source.localOnlyCommits(w.path).catch(() => undefined);
+        if (localOnly !== undefined) w.unpushed = localOnly;
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(CHECKOUT_CONCURRENCY, targets.length) }, worker));
+  return checkouts;
 }
 
 /** Latest of several instants. Compared as instants because commit dates carry an offset and mtimes are UTC. */
@@ -127,7 +171,9 @@ export async function scanRepo(repo: RepoConfig, source: RepoSource = new LocalR
     return { ...base, ok: false, error: "repository path or its openspec/ directory does not exist", isGit: false, worktrees: [], changes: [] };
   }
   const isGit = await source.isGit();
-  const [branch, worktrees] = isGit ? await Promise.all([source.branch(), source.worktrees()]) : [undefined, []];
+  const [branch, listed] = isGit ? await Promise.all([source.branch(), source.worktrees()]) : [undefined, []];
+  const worktrees = await inspectCheckouts(source, listed);
+  const workInProgress = isGit ? summarizeWorkInProgress(worktrees) : undefined;
   const configYaml = await source.readText(join(repo.path, "openspec", "config.yaml"));
   const projectSchema = parseMarker(configYaml).schema;
   const sharedConfig = shared && shared.profiles.length > 0 ? repoSharedConfig(configYaml, shared) : undefined;
@@ -143,7 +189,7 @@ export async function scanRepo(repo: RepoConfig, source: RepoSource = new LocalR
   for (const entry of listing.active) changes.push(await scanChange(ctx, entry, true));
   for (const [i, entry] of listing.archived.entries()) changes.push(await scanChange(ctx, entry, i < ARCHIVED_ACTIVITY_LIMIT));
 
-  return { ...base, ok: true, warnings: listing.warnings.length ? listing.warnings : undefined, isGit, currentBranch: branch, worktrees, lastUpdatedAt, sharedConfig, changes };
+  return { ...base, ok: true, warnings: listing.warnings.length ? listing.warnings : undefined, isGit, currentBranch: branch, worktrees, workInProgress, lastUpdatedAt, sharedConfig, changes };
 }
 
 function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
@@ -232,6 +278,7 @@ export class Scanner {
             isGit: prev?.isGit ?? false,
             currentBranch: prev?.currentBranch,
             worktrees: prev?.worktrees ?? [],
+            workInProgress: prev?.workInProgress,
             lastUpdatedAt: prev?.lastUpdatedAt,
             sharedConfig: shared && shared.profiles.length > 0 ? prev?.sharedConfig : undefined,
             changes: prev?.changes ?? [],

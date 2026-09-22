@@ -1,6 +1,6 @@
 // Projects overview: URL state, row derivation and sorting. Pure, shared by the view and its tests.
 import { isComplete } from "../shared/columns.ts";
-import type { Config, RepoSharedConfig, RepoSnapshot, Snapshot } from "../shared/types.ts";
+import type { Config, RepoSharedConfig, RepoSnapshot, Snapshot, WorkInProgress, Worktree } from "../shared/types.ts";
 
 /**
  * The snapshot restricted to repositories enabled in the config. Saving Settings triggers a rescan without waiting
@@ -12,23 +12,27 @@ export function enabledOnly(snapshot: Snapshot | null, config: Config | null): S
   return { ...snapshot, repos: snapshot.repos.filter((r) => enabled.has(r.id)) };
 }
 
-export type SortKey = "updated" | "name" | "open" | "archive";
+export type SortKey = "updated" | "name" | "open" | "archive" | "wip";
 export type SortDir = "asc" | "desc";
+export type OverviewLayout = "table" | "tiles";
 
 export interface OverviewState {
   sort: SortKey;
   dir: SortDir;
   q: string;
+  /** Only repositories with checkouts needing attention. */
+  wip: boolean;
+  view: OverviewLayout;
 }
 
-const SORT_KEYS: SortKey[] = ["updated", "name", "open", "archive"];
+export const SORT_KEYS: SortKey[] = ["updated", "name", "open", "archive", "wip"];
 
 /** Newest / biggest first, except names. */
 export function naturalDir(sort: SortKey): SortDir {
   return sort === "name" ? "asc" : "desc";
 }
 
-export const DEFAULT_OVERVIEW_STATE: OverviewState = { sort: "updated", dir: "desc", q: "" };
+export const DEFAULT_OVERVIEW_STATE: OverviewState = { sort: "updated", dir: "desc", q: "", wip: false, view: "table" };
 
 export function parseOverviewState(search: string): OverviewState {
   const p = new URLSearchParams(search);
@@ -36,7 +40,8 @@ export function parseOverviewState(search: string): OverviewState {
   const sort = rawSort && SORT_KEYS.includes(rawSort) ? rawSort : "updated";
   const rawDir = p.get("dir");
   const dir = rawDir === "asc" || rawDir === "desc" ? rawDir : naturalDir(sort);
-  return { sort, dir, q: p.get("q") ?? "" };
+  // Anything but `tiles` is the table, so an unknown layout falls back to the default.
+  return { sort, dir, q: p.get("q") ?? "", wip: p.get("wip") === "1", view: p.get("view") === "tiles" ? "tiles" : "table" };
 }
 
 /** Defaults are omitted so a plain `/` stays a plain `/`. */
@@ -45,6 +50,8 @@ export function serializeOverviewState(s: OverviewState): string {
   if (s.sort !== "updated") p.set("sort", s.sort);
   if (s.dir !== naturalDir(s.sort)) p.set("dir", s.dir);
   if (s.q) p.set("q", s.q);
+  if (s.wip) p.set("wip", "1");
+  if (s.view !== "table") p.set("view", s.view);
   const out = p.toString();
   return out ? `?${out}` : "";
 }
@@ -70,6 +77,36 @@ export interface OverviewRow {
   archived: number;
   lastUpdatedAt?: string;
   sharedConfig?: RepoSharedConfig;
+  /** Absent for non-git repositories and until the first scan after an upgrade. */
+  workInProgress?: WorkInProgress;
+  /** Every checkout of the repository, the main one included. */
+  worktrees: Worktree[];
+}
+
+/** Checkouts needing attention: uncommitted plus unpushed plus stale. 0 without a summary. */
+export function attentionCount(row: Pick<OverviewRow, "workInProgress">): number {
+  const s = row.workInProgress;
+  return s ? s.uncommitted + s.unpushed + s.stale : 0;
+}
+
+export interface WipIndicator {
+  /** Non-zero parts in the order worktrees, uncommitted, unpushed, stale. */
+  parts: string[];
+  text: string;
+  /** Something is uncommitted, unpushed or stale; otherwise there are only clean worktrees. */
+  warn: boolean;
+}
+
+/** The overview's work-in-progress indicator, or undefined when there is nothing to say (clean repository, or no summary). */
+export function wipIndicator(summary: WorkInProgress | undefined): WipIndicator | undefined {
+  if (!summary) return undefined;
+  const parts: string[] = [];
+  if (summary.worktrees > 0) parts.push(`${summary.worktrees} ${summary.worktrees === 1 ? "worktree" : "worktrees"}`);
+  if (summary.uncommitted > 0) parts.push(`${summary.uncommitted} uncommitted`);
+  if (summary.unpushed > 0) parts.push(`${summary.unpushed} unpushed`);
+  if (summary.stale > 0) parts.push(`${summary.stale} stale`);
+  if (parts.length === 0) return undefined;
+  return { parts, text: parts.join(" · "), warn: summary.uncommitted + summary.unpushed + summary.stale > 0 };
 }
 
 function newestActivity(repo: RepoSnapshot): string | undefined {
@@ -133,6 +170,8 @@ export function overviewRows(snapshot: Snapshot): OverviewRow[] {
       // Snapshots cached by older versions, and repos that never scanned cleanly, have no repo-level date.
       lastUpdatedAt: repo.lastUpdatedAt ?? newestActivity(repo),
       sharedConfig: repo.sharedConfig,
+      workInProgress: repo.workInProgress,
+      worktrees: repo.worktrees,
     };
   });
   addHints(rows);
@@ -152,12 +191,13 @@ export function sortRows(rows: OverviewRow[], sort: SortKey, dir: SortDir): Over
       if (Number.isNaN(ta) || Number.isNaN(tb)) return Number.isNaN(ta) === Number.isNaN(tb) ? byName(a, b) : Number.isNaN(ta) ? 1 : -1;
       return sign * (ta - tb) || byName(a, b);
     }
-    const value = (r: OverviewRow) => (sort === "open" ? r.open : r.toArchive);
+    const value = (r: OverviewRow) => (sort === "open" ? r.open : sort === "archive" ? r.toArchive : attentionCount(r));
     return sign * (value(a) - value(b)) || byName(a, b);
   });
 }
 
-export function filterRows(rows: OverviewRow[], q: string): OverviewRow[] {
+/** Search and the work-in-progress filter combine. */
+export function filterRows(rows: OverviewRow[], q: string, wip = false): OverviewRow[] {
   const needle = q.trim().toLowerCase();
-  return needle ? rows.filter((r) => r.name.toLowerCase().includes(needle) || r.hint?.toLowerCase().includes(needle)) : rows;
+  return rows.filter((r) => (!wip || attentionCount(r) > 0) && (!needle || r.name.toLowerCase().includes(needle) || r.hint?.toLowerCase().includes(needle)));
 }

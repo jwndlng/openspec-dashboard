@@ -1,7 +1,10 @@
 // Guards for the demo's sample data: it must be obviously fictional, showcase every board feature, and stay fresh.
 import { expect, test } from "bun:test";
 import { boardColumns } from "../src/shared/columns.ts";
+import { summarizeWorkInProgress } from "../src/shared/workInProgress.ts";
+import { checkoutMarkers } from "../src/ui/checkoutMarkers.ts";
 import { buildSample, DEMO_ROOT } from "../src/ui/demo/sampleData.ts";
+import { wipIndicator } from "../src/ui/overviewState.ts";
 import { looksLikeRealHome } from "./helpers.ts";
 
 const NOW = Date.parse("2026-06-01T12:00:00.000Z");
@@ -65,4 +68,29 @@ test("dates move with now, so ages never grow", () => {
   const age = (s: typeof sample, now: number) => now - Date.parse(s.snapshot.repos[0].changes[1].lastActivityAt ?? "");
   expect(age(later, NOW + 180 * 24 * 3_600_000)).toBe(age(sample, NOW));
   expect(later.snapshot.generatedAt).not.toBe(sample.snapshot.generatedAt);
+});
+
+test("every roll-up equals what the scanner's roll-up computes from the repository's checkouts", () => {
+  for (const repo of sample.snapshot.repos) {
+    expect(repo.workInProgress).toEqual(summarizeWorkInProgress(repo.worktrees));
+    expect(repo.worktrees.filter((w) => w.isMain).map((w) => [w.path, w.branch])).toEqual([[repo.path, repo.currentBranch]]);
+  }
+});
+
+test("the sample showcases every checkout state", () => {
+  const checkouts = sample.snapshot.repos.flatMap((r) => r.worktrees);
+  const linked = checkouts.filter((w) => !w.isMain);
+  expect(linked.length).toBeGreaterThanOrEqual(8);
+  const kinds = new Set(checkouts.flatMap((w) => checkoutMarkers(w).map((m) => m.kind)));
+  expect([...kinds].sort()).toEqual(["behind", "locked", "stale", "uncommitted", "unknown", "unpushed"]);
+  expect(linked.some((w) => checkoutMarkers(w).length === 0)).toBe(true); // clean
+  expect(checkouts.some((w) => w.detached && !w.branch)).toBe(true);
+  // Unpushed both ways: ahead of an upstream, and never pushed.
+  const unpushed = checkouts.filter((w) => (w.unpushed ?? 0) > 0 && typeof w.status === "object");
+  expect(unpushed.some((w) => typeof w.status === "object" && w.status.upstream)).toBe(true);
+  expect(unpushed.some((w) => typeof w.status === "object" && !w.status.upstream && w.branch)).toBe(true);
+  // The overview shows a warning, a plain indicator's absence (clean repository) and a dirty main checkout without worktrees.
+  const indicators = sample.snapshot.repos.map((r) => wipIndicator(r.workInProgress)?.text);
+  expect(indicators).toContain(undefined);
+  expect(indicators).toContain("1 uncommitted");
 });

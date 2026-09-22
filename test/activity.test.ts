@@ -1,11 +1,11 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { mkdir, readFile, rm, utimes, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, readdir, readFile, realpath, rm, utimes, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { defaultConfig, newRepoConfig } from "../src/server/config.ts";
 import { parseStatusPaths } from "../src/server/git.ts";
 import { latestIso, Scanner, scanRepo } from "../src/server/scanner.ts";
 import { type DirtyFile, LocalRepoSource } from "../src/server/source.ts";
-import { tempDir, useTempHome } from "./helpers.ts";
+import { gitIn, tempDir, useTempHome } from "./helpers.ts";
 
 const COMMIT_DATE = "2026-03-01T10:00:00+01:00";
 const at = (iso: string) => Date.parse(iso);
@@ -84,6 +84,49 @@ test("scanning never rewrites .git/index, even when its stat data is stale", asy
   const before = await readFile(join(root, ".git", "index"));
   await scan();
   expect(Buffer.compare(before, await readFile(join(root, ".git", "index")))).toBe(0);
+});
+
+/** Every file under `dir` (the `.git` entry aside) with its content, to prove a scan changed nothing. */
+async function fingerprint(dir: string): Promise<Record<string, string>> {
+  const result: Record<string, string> = {};
+  for (const entry of await readdir(dir, { recursive: true, withFileTypes: true })) {
+    const path = join(entry.parentPath, entry.name);
+    if (entry.isFile() && !path.startsWith(join(dir, ".git"))) result[path] = (await readFile(path)).toString("base64");
+  }
+  return result;
+}
+
+test("scanning a repository with a dirty linked worktree touches no index and no file, and records no file name", async () => {
+  const base = await realpath(await tempDir("osd-readonly-"));
+  const repo = join(base, "alpha-infra");
+  const linked = join(base, "wt", "report");
+  await mkdir(join(repo, "openspec"), { recursive: true });
+  await writeFile(join(repo, "openspec", "config.yaml"), "schema: spec-driven\n");
+  await writeFile(join(repo, "secret-plan.md"), "v1\n");
+  await gitIn(repo, "init", "-q");
+  await gitIn(repo, "add", "-A");
+  await gitIn(repo, "commit", "-q", "-m", "init");
+  await gitIn(repo, "worktree", "add", "-q", linked, "-b", "feat/report");
+  await appendFile(join(linked, "secret-plan.md"), "v2\n");
+  await writeFile(join(linked, "untracked-idea.md"), "x\n");
+  await appendFile(join(repo, "secret-plan.md"), "main edit\n");
+  // Stale stat data is what makes a plain `git status` want to refresh an index.
+  await touch(join(linked, "secret-plan.md"), "2026-09-03T00:00:00Z");
+  await touch(join(repo, "openspec", "config.yaml"), "2026-09-03T00:00:00Z");
+
+  const indexes = [join(repo, ".git", "index"), join(repo, ".git", "worktrees", "report", "index")];
+  const before = { indexes: await Promise.all(indexes.map((p) => readFile(p))), main: await fingerprint(repo), linked: await fingerprint(linked) };
+  const snap = await scanRepo(newRepoConfig(repo, true));
+  const after = await Promise.all(indexes.map((p) => readFile(p)));
+
+  expect(snap.worktrees.map((w) => w.status)).toMatchObject([{ modified: 1, untracked: 0 }, { modified: 1, untracked: 1 }]);
+  for (const [i, index] of before.indexes.entries()) expect(Buffer.compare(index, after[i])).toBe(0);
+  expect(await fingerprint(repo)).toEqual(before.main);
+  expect(await fingerprint(linked)).toEqual(before.linked);
+  const serialised = JSON.stringify(snap);
+  expect(serialised).not.toContain("secret-plan");
+  expect(serialised).not.toContain("untracked-idea");
+  await rm(base, { recursive: true, force: true });
 });
 
 test("an uncommitted edit to a committed change counts", async () => {

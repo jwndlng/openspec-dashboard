@@ -1,8 +1,12 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { join } from "node:path";
+import { mkdir, writeFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
 import { type AppState, createFetchHandler, crossSiteRefusal } from "../src/server/api.ts";
+import { readSnapshot } from "../src/server/cache.ts";
 import { defaultConfig, newRepoConfig } from "../src/server/config.ts";
+import { cachePath } from "../src/server/paths.ts";
 import { Scanner } from "../src/server/scanner.ts";
+import { overviewRows, wipIndicator } from "../src/ui/overviewState.ts";
 import { FIXTURES, useTempHome } from "./helpers.ts";
 
 let cleanup: () => Promise<void>;
@@ -129,4 +133,40 @@ test("a request addressed to a non-loopback host name is refused (DNS rebinding)
   expect(crossSiteRefusal(req("http://evil.example:4711/api/scan", { origin: "http://evil.example:4711" }))).toContain("loopback");
   expect(crossSiteRefusal(req("http://127.0.0.1:4711/api/scan", { origin: "http://127.0.0.1:4711" }))).toBeUndefined();
   expect(crossSiteRefusal(req("http://localhost:4711/api/scan", {}))).toBeUndefined();
+});
+
+test("a snapshot cached before working-tree status existed is served on startup", async () => {
+  // What an older version wrote: worktrees as path/branch pairs, the main checkout among them, and no summary.
+  const old = {
+    generatedAt: "2026-09-01T00:00:00Z",
+    repos: [
+      {
+        id: "abc123",
+        name: "alpha-infra",
+        path: "/w/acme/alpha-infra",
+        ok: true,
+        scannedAt: "2026-09-01T00:00:00Z",
+        isGit: true,
+        currentBranch: "main",
+        worktrees: [
+          { path: "/w/acme/alpha-infra", branch: "main" },
+          { path: "/w/acme/wt/report", branch: "feat/report" },
+        ],
+        changes: [],
+      },
+    ],
+  };
+  await mkdir(dirname(cachePath()), { recursive: true });
+  await writeFile(cachePath(), JSON.stringify(old));
+  const cached = await readSnapshot();
+  const app: AppState = { config: defaultConfig(), scanner: new Scanner(() => defaultConfig(), { persist: false }, cached ?? undefined) };
+  const res = await createFetchHandler({ state: app, indexHtml: "" })(new Request("http://127.0.0.1:4711/api/state"));
+  expect(res.status).toBe(200);
+  const served = await res.json();
+  expect(served).toEqual(old);
+  expect(served.repos[0].workInProgress).toBeUndefined();
+  // …and the overview derives rows from it, without an indicator until the first scan.
+  const [row] = overviewRows(served);
+  expect(row.workInProgress).toBeUndefined();
+  expect(wipIndicator(row.workInProgress)).toBeUndefined();
 });

@@ -4,7 +4,7 @@ import type { Dirent } from "node:fs";
 import { readdir, readFile, stat } from "node:fs/promises";
 import { dirname, join, relative } from "node:path";
 import type { Worktree } from "../shared/types.ts";
-import { currentBranch, isGitRepo, lastCommitDate, statusPaths, worktrees } from "./git.ts";
+import { checkoutStatus, currentBranch, hasRemoteRefs, isGitRepo, lastCommitDate, localOnlyCommits, type ParsedStatus, statusPaths, worktrees } from "./git.ts";
 
 export const CHANGE_NAME = /^[A-Za-z0-9._-]+$/;
 const ARCHIVE_PREFIX = /^(\d{4}-\d{2}-\d{2})-(.+)$/;
@@ -43,6 +43,12 @@ export interface RepoSource {
   isGit(): Promise<boolean>;
   branch(): Promise<string | undefined>;
   worktrees(): Promise<Worktree[]>;
+  /** Working-tree status of one checkout; `path` must come from `worktrees()`. Undefined when it cannot be determined. */
+  checkoutStatus(path: string): Promise<ParsedStatus | undefined>;
+  /** Whether the repository has any remote-tracking ref. */
+  hasRemoteRefs(): Promise<boolean | undefined>;
+  /** Commits of the checkout at `path` that are on no remote-tracking ref (capped). */
+  localOnlyCommits(path: string): Promise<number | undefined>;
   /** Committer date of the last commit touching `absPath` inside the repo. */
   lastActivity(absPath: string): Promise<string | undefined>;
   /** Modified and untracked files under `openspec/`, per git. Empty for non-git repositories or on failure. */
@@ -148,6 +154,18 @@ export class LocalRepoSource implements RepoSource {
 
   worktrees(): Promise<Worktree[]> {
     return worktrees(this.path);
+  }
+
+  checkoutStatus(path: string): Promise<ParsedStatus | undefined> {
+    return checkoutStatus(path);
+  }
+
+  hasRemoteRefs(): Promise<boolean | undefined> {
+    return hasRemoteRefs(this.path);
+  }
+
+  localOnlyCommits(path: string): Promise<number | undefined> {
+    return localOnlyCommits(path);
   }
 
   lastActivity(absPath: string): Promise<string | undefined> {

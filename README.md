@@ -44,10 +44,26 @@ what it found under **Discovered**; click **Enable** on the repos to track, then
   are complete but not archived, scan errors, and when the repository was last updated. Sorted newest-updated first;
   click a column header to sort by name, open or to-archive (again to reverse), search by name — kept in the URL.
   Click a repository to drill down to **its own board** (`/repo/<id>`): the same Kanban scoped to that repository, with
-  columns from its own schema and a header showing path (with "Copy cd"), branch, worktrees and warnings.
+  columns from its own schema and a header showing path (with "Copy cd"), one chip per checkout (see below) and warnings.
   Only enabled repositories are listed — disabling one in Settings removes it immediately, without waiting for the next
   scan. Repositories that share a display name stay separate rows and show the part of their parent path that tells
   them apart (`chat-groups acme/` vs `chat-groups repos/`).
+- **Work in progress** — where the *work* stands, not just the changes. For the main checkout and every linked git
+  worktree of a repository the scanner runs one read-only `git status` and records **counts only** — never file names,
+  paths or diffs. Each repository on Projects shows an indicator such as `2 worktrees · 1 uncommitted · 1 unpushed`
+  (only the non-zero parts; nothing for a clean repository without worktrees; the main checkout is not a worktree).
+  Sort by it, or switch on the **Work in progress** filter to list only repositories with uncommitted, unpushed or
+  stale work — both kept in the URL (`sort=wip`, `wip=1`). A checkout chip shows the branch (or `detached @ <commit>`;
+  the main checkout is labelled) and, only when they apply, text markers with a tooltip each:
+  `●N` uncommitted items (modified + untracked; an untracked directory counts once), `↑N` unpushed commits — ahead of
+  the upstream, or for a branch that was never pushed the commits on no remote at all (`99+` at the cap) — `↓N` commits
+  behind the upstream, `stale` (the worktree's directory is gone), `locked`, and `?` (status failed or timed out, or the
+  worktree is beyond the 12 per repository that get inspected). **Ahead, behind and unpushed reflect your last
+  `git fetch`**: the dashboard never fetches or contacts a remote. Without any remote-tracking ref, unpushed is not
+  reported at all. There are no actions here — nothing is committed, pushed or pruned from the dashboard.
+- **Table / Tiles** — the Projects overview has two layouts of the same repositories (`view=tiles` in the URL; the
+  table is the default). A tile shows what a row shows, plus the room a row lacks: one chip per checkout. Search, sort
+  (a sort control replaces the column headers), the filter and drill-down work the same in both.
 - **Last updated** means *any file under the repository's `openspec/` folder changed*: the latest commit touching it, or
   the mtime of a file there that git reports as modified or untracked — so uncommitted work counts, while a fresh clone
   or checkout (which rewrites the mtimes of unchanged files) does not. Cards use the same rule per change.

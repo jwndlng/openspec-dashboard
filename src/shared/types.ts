@@ -42,9 +42,57 @@ export interface ChangeSnapshot {
   warnings?: string[];
 }
 
+/** Working-tree state of one checkout. Counts only — never the names of changed files. */
+export interface CheckoutStatus {
+  /** Tracked files that differ from `HEAD`, staged or not, including renamed and unmerged ones. */
+  modified: number;
+  /** Untracked items; an untracked directory counts once. */
+  untracked: number;
+  /** Unmerged files; they are also part of `modified`. */
+  conflicts: number;
+  upstream?: string;
+  /** Relative to the last fetch, and only present with an upstream. */
+  ahead?: number;
+  behind?: number;
+}
+
+/**
+ * One checkout of a repository as `git worktree list` reports it: the main checkout (`isMain`) or a linked worktree.
+ * Everything but `path` is optional so snapshots cached by older versions still load.
+ */
 export interface Worktree {
   path: string;
-  branch: string;
+  /** Absent when HEAD is detached. */
+  branch?: string;
+  /** Abbreviated commit, for naming a detached checkout. */
+  head?: string;
+  /** The main checkout is not a worktree: every worktree count excludes it. */
+  isMain?: boolean;
+  detached?: boolean;
+  bare?: boolean;
+  locked?: boolean;
+  lockReason?: string;
+  /** The directory is gone ("stale"); such a worktree is never inspected. */
+  prunable?: boolean;
+  /** `false` when the per-repository cap left this worktree without a status. */
+  inspected?: boolean;
+  /**
+   * Commits not pushed as of the last fetch: `ahead` with an upstream, otherwise the commits on no remote-tracking ref
+   * (capped at 100). Absent when the repository has no remote-tracking refs.
+   */
+  unpushed?: number;
+  status?: CheckoutStatus | "unknown";
+}
+
+/** Roll-up of a repository's checkouts, derived solely from `worktrees` (`summarizeWorkInProgress`). */
+export interface WorkInProgress {
+  /** Linked worktrees; the main checkout is not one. */
+  worktrees: number;
+  /** Checkouts, main included, with modified or untracked items. */
+  uncommitted: number;
+  unpushed: number;
+  stale: number;
+  unknown: number;
 }
 
 export interface RepoSnapshot {
@@ -57,7 +105,10 @@ export interface RepoSnapshot {
   scannedAt: string;
   isGit: boolean;
   currentBranch?: string;
+  /** Every checkout, the main one included. */
   worktrees: Worktree[];
+  /** Absent for non-git repositories and in snapshots cached by older versions. */
+  workInProgress?: WorkInProgress;
   /**
    * Latest change to anything under `openspec/`: the last commit touching it, or the mtime of a file
    * git reports as modified/untracked there, whichever is newer. Absent in snapshots cached by older versions.
