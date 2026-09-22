@@ -72,6 +72,26 @@ published from `main` by `.github/workflows/pages.yml`; nothing generated is com
   both rendered from it. Its `id` becomes part of the `?section=` deep-link contract (`src/ui/settingsSections.ts`).
 - A new board feature is worth a sample change that shows it — the demo is the first thing a newcomer sees.
 
+## Releasing
+
+Releases are drafted from pull request titles; publishing the draft is the only manual step.
+
+- **Labels come from titles.** The `label` job in `.github/workflows/pr-title.yml` labels every pull request with its
+  Conventional Commit type (`feat`, `fix`, `docs`, `chore`, …), using the rules in `.github/release-drafter.yml`. A
+  retitled pull request gains the new type's label; remove a stale one by hand if it matters for the notes.
+- **The draft follows `main`.** Every merge updates one draft release (`.github/workflows/draft-release.yml`): the
+  merged pull requests under Features, Bug Fixes, Maintenance and Documentation, and pull requests without one of
+  those labels listed uncategorised.
+- **The version comes from the labels**, counted from the last published release: any `feat` bumps the minor version,
+  anything else the patch version. For a breaking change add the `major` label to its pull request by hand. Tags are
+  `v<major>.<minor>.<patch>`; `package.json`'s `version` is not updated.
+- **Publishing builds the binaries.** Review and tidy the draft, then publish it. `.github/workflows/release.yml` builds
+  `openspec-dashboard` from the new tag on macOS (arm64, x64) and Linux (x64, arm64), checks that each binary runs and
+  that its `--version` is the tag, and only if all four pass attaches them as `openspec-dashboard-<tag>-<platform>`
+  with `SHA256SUMS`, build-provenance attestations and a Download section appended to the notes. If a platform fails,
+  nothing is attached: fix it and re-run the workflow.
+- A local `bun run build` reports `dev`; set `OPENSPEC_DASHBOARD_VERSION=v1.2.3` to build as a given version.
+
 ## Toolchain
 
 Bun is pinned in `.bun-version` (and `packageManager`). Upgrading Bun is a deliberate commit of its own — the compiled

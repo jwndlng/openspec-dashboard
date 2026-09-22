@@ -14,12 +14,18 @@ It reads your repositories and shows where each change stands. It ships as a sin
 
 ## Run
 
-Building needs [Bun](https://bun.sh) ≥ 1.4. The compiled binary needs nothing else.
+Download a binary for macOS (arm64, x64) or Linux (x64, arm64) from the
+[releases page](https://github.com/jwndlng/openspec-dashboard/releases). It needs nothing else. Check it with
+`shasum -a 256 -c --ignore-missing SHA256SUMS` and `gh attestation verify <file> --repo jwndlng/openspec-dashboard`,
+then `chmod +x` it. The macOS binaries are not notarised: if macOS refuses to open one, run
+`xattr -d com.apple.quarantine <file>`.
+
+Building from source needs [Bun](https://bun.sh) ≥ 1.4. The compiled binary needs nothing else.
 
 ```sh
 bun install
 bun run build                  # → dist/openspec-dashboard
-./dist/openspec-dashboard      # opens the browser; options: --port N, --no-open
+./dist/openspec-dashboard      # opens the browser; options: --port N, --no-open, --version
 bun run dev                    # or run from source on http://127.0.0.1:4711
 ```
 

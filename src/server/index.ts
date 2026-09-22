@@ -1,4 +1,4 @@
-// CLI entry point: `openspec-dashboard [--port N] [--no-open]`.
+// CLI entry point: `openspec-dashboard [--port N] [--no-open] [--version]`.
 import indexHtmlAsset from "../../dist/ui/index.html" with { type: "text" };
 import { createFetchHandler, createWebSocketHandlers, type AppState, type TerminalSocketData } from "./api.ts";
 import { diffSnapshots, sessionEvent } from "./activity/events.ts";
@@ -7,6 +7,7 @@ import { readSnapshot } from "./cache.ts";
 import { loadConfig } from "./config.ts";
 import { Scanner } from "./scanner.ts";
 import { SessionManager } from "./sessions/manager.ts";
+import { VERSION } from "./version.ts";
 
 // With `type: "text"` Bun hands us the file contents; bun-types only knows the HTMLBundle shape.
 const indexHtml = indexHtmlAsset as unknown as string;
@@ -24,7 +25,10 @@ function parseArgs(argv: string[]): CliArgs {
     else if (arg === "--port") args.port = Number(argv[++i]);
     else if (arg.startsWith("--port=")) args.port = Number(arg.slice("--port=".length));
     else if (arg === "-h" || arg === "--help") {
-      console.log("usage: openspec-dashboard [--port N] [--no-open]");
+      console.log(`openspec-dashboard ${VERSION}\nusage: openspec-dashboard [--port N] [--no-open] [--version]`);
+      process.exit(0);
+    } else if (arg === "--version") {
+      console.log(VERSION);
       process.exit(0);
     } else {
       console.error(`unknown argument: ${arg}`);

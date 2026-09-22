@@ -9,7 +9,7 @@ See `README.md` for what it does and `CONTRIBUTING.md` for the branch, commit an
 bun install
 bun run dev        # build the UI, serve http://127.0.0.1:4711 from source
 bun run check      # lint + typecheck + tests — run before every push; CI runs exactly this
-bun run build      # dist/openspec-dashboard (UI and fonts embedded)
+bun run build      # dist/openspec-dashboard (UI and fonts embedded); --version prints dev, or $OPENSPEC_DASHBOARD_VERSION
 bun test test/scanner.test.ts   # a single test file
 ```
 
