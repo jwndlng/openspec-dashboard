@@ -57,7 +57,7 @@ When two or more listed repositories have the same display name (compared case-i
 - **THEN** its row shows no path hint
 
 ### Requirement: Overview sorting and search
-The overview SHALL be sorted by last updated, newest first, by default. The user SHALL be able to sort by repository name, open count, to-archive count and last updated by activating the column header, and activating the active header again SHALL reverse the direction. Ties SHALL be broken by repository name, and repositories without a last-updated value SHALL sort after all others. The overview SHALL provide a free-text search over repository names. Sort key, direction and search SHALL apply instantly on the client and persist in the URL query string, with default values omitted.
+The overview SHALL be sorted by last updated, newest first, by default. The user SHALL be able to sort by repository name, open count, to-archive count, work in progress and last updated by activating the column header, and activating the active header again SHALL reverse the direction. Sorting by work in progress SHALL order repositories by their number of checkouts needing attention — uncommitted plus unpushed plus stale — highest first by default, and repositories without a work-in-progress summary SHALL count as zero. Ties SHALL be broken by repository name, and repositories without a last-updated value SHALL sort after all others. The overview SHALL provide a free-text search over repository names, and a "work in progress" filter that, when enabled, lists only repositories whose number of checkouts needing attention is greater than zero. Search and the filter SHALL combine. Sort key, direction, search and the filter SHALL apply instantly on the client and persist in the URL query string, with default values omitted. In the tiles layout, where there are no column headers, the same sort keys and the direction SHALL be selectable through a sort control.
 
 #### Scenario: Default order
 - **WHEN** repositories were last updated 2 minutes, 1 day and 5 months ago
@@ -79,6 +79,26 @@ The overview SHALL be sorted by last updated, newest first, by default. The user
 - **WHEN** the user types `ops` in the search field
 - **THEN** only repositories whose name contains `ops` are listed
 
+#### Scenario: Sort by work in progress
+- **WHEN** `alpha-infra` has 3 checkouts needing attention, `beta-soc` has 1, `demo-ops` and `gamma-lab` have none, and the user sorts by work in progress
+- **THEN** the order is `alpha-infra`, `beta-soc`, `demo-ops`, `gamma-lab` and the URL contains `sort=wip`
+
+#### Scenario: Work-in-progress filter
+- **WHEN** the user enables the work-in-progress filter with the same repositories
+- **THEN** only `alpha-infra` and `beta-soc` are listed and the URL contains `wip=1`
+
+#### Scenario: Clean worktrees do not match the filter
+- **WHEN** a repository has two linked worktrees that are clean and fully pushed, and the filter is enabled
+- **THEN** that repository is not listed
+
+#### Scenario: Filter survives reload and combines with search
+- **WHEN** the user opens `/?wip=1&q=alpha`
+- **THEN** the filter is enabled, the search field reads `alpha`, and only repositories matching both are listed
+
+#### Scenario: Sorting in tiles layout
+- **WHEN** the tiles layout is shown and the user picks "Open" in the sort control
+- **THEN** the tiles are ordered by open count, highest first, and the URL contains `sort=open`
+
 ### Requirement: Drill down to a repository board
 Activating a repository row SHALL navigate to `/repo/<repoId>` without a page reload, and the repository name SHALL be a real link so it can be opened in a new tab. The repository board SHALL show only that repository's changes, SHALL derive its columns from that repository's changes alone, and SHALL NOT show the repository filter. The search, stale and hide-archived filters SHALL remain available and persist in the URL. The archived column, card actions and refresh behaviour SHALL be the same as on the combined board. Opening `/repo/<repoId>` directly SHALL work.
 
@@ -99,11 +119,31 @@ Activating a repository row SHALL navigate to `/repo/<repoId>` without a page re
 - **THEN** a "repository not found" message with a link back to the overview is shown
 
 ### Requirement: Repository board header
-The repository board SHALL show a header with a breadcrumb linking back to the overview, the repository name, its path in monospace, an action that copies `cd <path>` (shell-quoted) to the clipboard, the current branch when known, the number of worktrees, the relative age of the repository's last update, any repository warnings or scan error, and a **New change** action that opens the create-change form for that repository (as specified in the `change-creation` capability). The New change action SHALL be shown only when the repository is enabled and its last scan succeeded and it has an `openspec/` directory to create into; otherwise the action SHALL be absent. The dashboard MUST NOT execute the copied command.
+The repository board SHALL show a header with a breadcrumb linking back to the overview, the repository name, its path in monospace, an action that copies `cd <path>` (shell-quoted) to the clipboard, one status chip per checkout of the repository — the main checkout, labelled as such, and each linked worktree — the relative age of the repository's last update, any repository warnings or scan error, and a **New change** action that opens the create-change form for that repository (as specified in the `change-creation` capability). The New change action SHALL be shown only when the repository is enabled and its last scan succeeded and it has an `openspec/` directory to create into; otherwise the action SHALL be absent. A checkout chip SHALL show the checkout's branch, or that it is detached, and, only when they apply, text markers for: the number of uncommitted items, the number of unpushed commits, the number of commits behind the upstream, stale, locked, and status unknown or not inspected. A clean, fully pushed checkout SHALL show its branch alone. Every marker SHALL be conveyed with text or a symbol plus a tooltip that spells it out, never by colour alone; the tooltips for unpushed and behind SHALL state that the numbers reflect the last fetch, and the unpushed tooltip SHALL distinguish commits ahead of a named upstream from commits on a branch that was never pushed. When the snapshot carries no checkout information for the repository, the header SHALL fall back to the current branch when known. The header MUST NOT offer any action on a checkout. The dashboard MUST NOT execute the copied command.
 
 #### Scenario: Header content
-- **WHEN** repository `alpha-infra` at `/Users/x/Workspace/acme/alpha-infra` is on branch `main` with 3 worktrees and was last updated 1 day ago
-- **THEN** the header shows `Projects / alpha-infra`, the path, `main`, `3 worktrees`, `updated 1d ago`, and a `New change` action
+- **WHEN** repository `alpha-infra` at `/Users/x/Workspace/acme/alpha-infra` has a clean main checkout on `main` and two linked worktrees on `feat/report` and `fix/parser`, and was last updated 1 day ago
+- **THEN** the header shows `Projects / alpha-infra`, the path, three chips — `main` labelled as the main checkout, `feat/report` and `fix/parser` — `updated 1d ago`, and a `New change` action
+
+#### Scenario: Worktree with uncommitted and unpushed work
+- **WHEN** the worktree on `feat/report` has 4 uncommitted items and is 2 commits ahead of `origin/feat/report`
+- **THEN** its chip shows `feat/report` with an uncommitted marker `4` and an unpushed marker `2`, and the unpushed tooltip names `origin/feat/report` and says it reflects the last fetch
+
+#### Scenario: Branch never pushed
+- **WHEN** a worktree's branch has no upstream and 3 commits on no remote
+- **THEN** its chip shows an unpushed marker `3` whose tooltip says the commits are not on any remote
+
+#### Scenario: Detached and stale worktrees
+- **WHEN** one worktree has a detached HEAD and another is prunable
+- **THEN** the first chip reads detached instead of a branch name and the second carries the text `stale`
+
+#### Scenario: Dirty main checkout
+- **WHEN** the main checkout has 2 uncommitted items and the repository has no linked worktrees
+- **THEN** the header shows one chip for the main checkout with an uncommitted marker `2`
+
+#### Scenario: Snapshot without checkout information
+- **WHEN** the repository's snapshot predates working-tree status and reports only the current branch `main`
+- **THEN** the header shows `main` and no status markers
 
 #### Scenario: Back to overview
 - **WHEN** the user activates `Projects` in the breadcrumb
@@ -139,3 +179,73 @@ When a repository reports that its main checkout is not on its default branch, t
 #### Scenario: Data is still shown
 - **WHEN** the notice is shown for a repository
 - **THEN** its changes, counts and last-updated time are displayed exactly as they would be without the notice
+
+### Requirement: Overview shows work in progress per repository
+Each repository on the overview SHALL show a work-in-progress indicator built from the repository's work-in-progress summary, listing only its non-zero parts in the order worktrees, uncommitted, unpushed, stale — for example `2 worktrees · 1 uncommitted · 1 unpushed`. The indicator SHALL be emphasised as a warning when anything is uncommitted, unpushed or stale, and SHALL be plain, de-emphasised text when the repository only has clean worktrees. A repository with no linked worktrees and nothing uncommitted, unpushed or stale, and a repository without a summary, SHALL show no indicator. The state SHALL be conveyed with text, never by colour alone, and the indicator SHALL expose a tooltip stating that unpushed counts reflect the last fetch. The overview MUST NOT offer any action on a checkout.
+
+#### Scenario: Mixed states
+- **WHEN** a repository's summary is `worktrees: 2`, `uncommitted: 1`, `unpushed: 1`, `stale: 0`
+- **THEN** its indicator reads `2 worktrees · 1 uncommitted · 1 unpushed` and is emphasised as a warning
+
+#### Scenario: Only clean worktrees
+- **WHEN** a repository's summary is `worktrees: 3` with everything else zero
+- **THEN** its indicator reads `3 worktrees` in plain, de-emphasised text
+
+#### Scenario: Singular
+- **WHEN** a repository has exactly one linked worktree
+- **THEN** the indicator reads `1 worktree`
+
+#### Scenario: Dirty main checkout only
+- **WHEN** a repository's summary is `worktrees: 0`, `uncommitted: 1`
+- **THEN** its indicator reads `1 uncommitted`
+
+#### Scenario: Clean repository
+- **WHEN** a repository has no linked worktrees and a clean, fully pushed main checkout
+- **THEN** no indicator is shown for it
+
+#### Scenario: Failed repository keeps its indicator
+- **WHEN** a repository's last scan failed and its retained summary has `uncommitted: 2`
+- **THEN** its indicator still reads `2 uncommitted` next to the scan warning
+
+### Requirement: Overview offers a table and a tiles layout
+The overview SHALL offer two layouts of the same repositories, `Table` and `Tiles`, selectable with a toggle that marks the active layout. The table SHALL be the default. The chosen layout SHALL persist in the URL query string as `view=tiles`, omitted for the table, and SHALL survive a reload. Switching the layout MUST NOT change the sort, the search, the work-in-progress filter, or which repositories are listed and in which order. A tile SHALL show everything a row shows — the repository name with its path hint and full-path tooltip when names collide, the scan-failure warning, the per-stage counts in the same column order with zero counts de-emphasised, the open and to-archive totals with the to-archive count conveyed with text, "no open changes" de-emphasis, the last-updated age, the carried shared-config profiles when any exist, and the work-in-progress indicator — and in addition one checkout chip per checkout of the repository, identical to the chips of the repository board header. In a tile the repository name SHALL be a real link, and activating the tile SHALL navigate to the repository board without a page reload, exactly as activating a row does. The tiles SHALL reflow to the available width without horizontal scrolling. The empty state and the "no repository matches" state SHALL be the same in both layouts.
+
+#### Scenario: Switching to tiles
+- **WHEN** the user activates `Tiles` on `/?sort=open&q=ops`
+- **THEN** the same repositories are shown as tiles in the same order and the URL becomes `/?sort=open&q=ops&view=tiles`
+
+#### Scenario: Table is the default
+- **WHEN** the user opens `/`
+- **THEN** the table is shown, `Table` is marked active, and the URL has no `view` parameter
+
+#### Scenario: Layout survives reload
+- **WHEN** the user reloads `/?view=tiles`
+- **THEN** the tiles layout is shown
+
+#### Scenario: Switching back
+- **WHEN** the user activates `Table` on `/?view=tiles`
+- **THEN** the table is shown and `view` is removed from the URL
+
+#### Scenario: Unknown view value
+- **WHEN** the user opens `/?view=galaxy`
+- **THEN** the table is shown
+
+#### Scenario: Tile content
+- **WHEN** repository `alpha-infra` has 1 change in `Specs`, 9 in `Implementing`, 2 in `Done`, was last updated 1 day ago, and has a clean main checkout on `main` plus a worktree on `feat/report` with 4 uncommitted items
+- **THEN** its tile shows those stage counts, an open total of `12`, a to-archive count of `2`, `1d ago`, the indicator `1 worktree · 1 uncommitted`, and two chips: `main` labelled as the main checkout, and `feat/report` with an uncommitted marker `4`
+
+#### Scenario: Drill down from a tile
+- **WHEN** the user clicks the tile for `beta-soc`
+- **THEN** the URL becomes `/repo/<id of beta-soc>` without a page reload
+
+#### Scenario: Open a tile in a new tab
+- **WHEN** the user opens the repository name of a tile in a new tab
+- **THEN** that repository's board loads in the new tab
+
+#### Scenario: Same-named repositories in tiles
+- **WHEN** `/w/acme/chat-groups` and `/w/ops/repo-mirror/repos/chat-groups` are both listed in the tiles layout
+- **THEN** their tiles show the hints `acme` and `repos`
+
+#### Scenario: Nothing matches
+- **WHEN** the tiles layout is shown and the search matches no repository
+- **THEN** the same "no repository matches" message as in the table is shown
