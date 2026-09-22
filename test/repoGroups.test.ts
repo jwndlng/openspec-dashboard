@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { assignRepoHues, groupByRepo, recentArchived, REPO_HUES, repoTint } from "../src/ui/repoGroups.ts";
+import { assignRepoHues, groupByRepo, newChangeTargets, recentArchived, REPO_HUES, repoTint } from "../src/ui/repoGroups.ts";
 
 const ids = (n: number) => Array.from({ length: n }, (_, i) => `repo-${i.toString(16).padStart(4, "0")}`);
 
@@ -88,4 +88,39 @@ test("repoTint leaves a repository outside the snapshot untinted", () => {
   const hues = assignRepoHues(ids(3));
   expect(repoTint(hues, "not-in-the-snapshot")).toEqual({ class: "" });
   expect(repoTint(new Map(), ids(1)[0]).style).toBeUndefined();
+});
+
+const alpha = { id: "a1", name: "alpha-infra", ok: true };
+const beta = { id: "b2", name: "beta-soc", ok: true };
+const gamma = { id: "c3", name: "gamma-web", ok: false };
+
+test("newChangeTargets offers only repositories whose scan succeeded, in snapshot order", () => {
+  expect(newChangeTargets([beta, gamma, alpha], []).projects).toEqual([
+    { id: "b2", name: "beta-soc" },
+    { id: "a1", name: "alpha-infra" },
+  ]);
+});
+
+test("newChangeTargets pre-selects nothing with several projects and no filter", () => {
+  expect(newChangeTargets([alpha, beta, gamma], []).preselected).toBeUndefined();
+});
+
+test("newChangeTargets pre-selects the one eligible repository the filter selects", () => {
+  expect(newChangeTargets([alpha, beta, gamma], ["b2"]).preselected).toBe("b2");
+  expect(newChangeTargets([alpha, beta, gamma], ["b2", "c3"]).preselected).toBe("b2");
+  expect(newChangeTargets([alpha, beta, gamma], ["a1", "b2"]).preselected).toBeUndefined();
+});
+
+test("newChangeTargets ignores a filter on a failed repository", () => {
+  expect(newChangeTargets([alpha, beta, gamma], ["c3"]).preselected).toBeUndefined();
+});
+
+test("newChangeTargets pre-selects the only eligible repository", () => {
+  expect(newChangeTargets([alpha, gamma], [])).toEqual({ projects: [{ id: "a1", name: "alpha-infra" }], preselected: "a1" });
+  expect(newChangeTargets([alpha, gamma], ["c3"]).preselected).toBe("a1");
+});
+
+test("newChangeTargets offers nothing when no repository is eligible", () => {
+  expect(newChangeTargets([gamma], [])).toEqual({ projects: [] });
+  expect(newChangeTargets([], [])).toEqual({ projects: [] });
 });

@@ -10,7 +10,7 @@ import { PullButton } from "./pull.tsx";
 import { branchNotice } from "./pullState.ts";
 import { cdCommand, checkoutHint, daysSince, pendingArchiveHint, relTime } from "./format.ts";
 import { isMinimized, loadGroupState, saveGroupState, toggleGroup, type GroupOverrides } from "./groupState.ts";
-import { assignRepoHues, groupByRepo, recentArchived } from "./repoGroups.ts";
+import { assignRepoHues, groupByRepo, newChangeTargets, recentArchived } from "./repoGroups.ts";
 import { SessionControls } from "./sessions.tsx";
 import { boardFrom, changePath, repoPath, serializeDetailQuery } from "./routes.ts";
 import { currentQuery, followInApp, href, navigate, replaceQuery } from "./url.ts";
@@ -256,7 +256,7 @@ function RepoHeader({ repo, now, onCreated }: { repo: RepoSnapshot; now: number;
           {w}
         </div>
       ))}
-      {creating && <NewChangeForm repoId={repo.id} repoName={repo.name} onClose={() => setCreating(false)} onCreated={() => { setCreating(false); onCreated(); }} />}
+      {creating && <NewChangeForm target={{ repoId: repo.id, repoName: repo.name }} onClose={() => setCreating(false)} onCreated={() => { setCreating(false); onCreated(); }} />}
     </div>
   );
 }
@@ -336,6 +336,10 @@ export function Kanban({ snapshot, config, repoId, query, onReload }: { snapshot
   // A single-repository board follows that repository's own schemas, not the majority across all repos.
   const columns = useMemo(() => (snapshot ? boardColumns({ ...snapshot, repos }) : []), [snapshot, repos]);
 
+  // The combined board's "New change": the project list follows every snapshot, the pre-selection is taken when it opens.
+  const targets = useMemo(() => newChangeTargets(single ? [] : repos, filters.repos), [single, repos, filters.repos]);
+  const [creating, setCreating] = useState<{ preselected?: string } | null>(null);
+
   if (snapshot && snapshot.repos.length === 0) return <NoRepos config={config} />;
   if (snapshot && single && repos.length === 0) return <RepoNotFound />;
 
@@ -387,7 +391,22 @@ export function Kanban({ snapshot, config, repoId, query, onReload }: { snapshot
         ) : null}
         <span class="spacer" style={{ flex: 1 }} />
         <span class="badge mono">{visible.filter((c) => !c.archived).length} open · {cards.filter((c) => isComplete(c.stage)).length} to archive</span>
+        {!single && targets.projects.length > 0 && (
+          <button type="button" class="btn sm" onClick={() => setCreating({ preselected: targets.preselected })}>
+            New change
+          </button>
+        )}
       </div>
+      {!single && creating && (
+        <NewChangeForm
+          target={{ projects: targets.projects, preselected: creating.preselected }}
+          onClose={() => setCreating(null)}
+          onCreated={() => {
+            setCreating(null);
+            onReload?.();
+          }}
+        />
+      )}
       <div class="board">
         {columns.map((label) => {
           const inColumn = visible.filter((c) => c.column === label);

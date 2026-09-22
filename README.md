@@ -46,7 +46,8 @@ track.
   by hand or through an agent session. ([change-detail](openspec/specs/change-detail/spec.md))
 - **Activity**: a feed of changes created, moved, archived and tasks ticked, including what happened while the
   dashboard was not running. ([activity-feed](openspec/specs/activity-feed/spec.md))
-- **New change**: create and stage `openspec/changes/<name>/` from a repository's board, optionally with a prompt.
+- **New change**: create and stage `openspec/changes/<name>/` from a repository's board, or from the combined
+  board with a project dropdown, optionally with a prompt.
   Nothing is committed.
   ([change-creation](openspec/specs/change-creation/spec.md))
 - **Pull**: fetch and fast-forward a repository's main checkout. Never merges, rebases, stashes or switches branches.
