@@ -3,11 +3,15 @@
 ## MODIFIED Requirements
 
 ### Requirement: Branch and worktree matching
-The scanner SHALL record the repository's current branch and every checkout that `git worktree list --porcelain` reports: the main checkout, flagged as such, and each linked worktree. For each checkout it SHALL record the path, the branch when one is checked out, whether HEAD is detached, whether the worktree is locked, and whether it is prunable (its directory no longer exists). A detached worktree MUST NOT be omitted. The main checkout MUST NOT be counted as a worktree: every worktree count the scanner reports SHALL count linked worktrees only. A change SHALL get `branchMatch` set to the first branch or worktree branch whose name contains the change name; checkouts without a branch SHALL NOT take part in the matching.
+The scanner SHALL record the repository's current branch and every checkout that `git worktree list --porcelain` reports: the main checkout, flagged as such, and each linked worktree. For each checkout it SHALL record the path, the branch when one is checked out, whether HEAD is detached, whether the worktree is locked, and whether it is prunable (its directory no longer exists). A detached worktree MUST NOT be omitted. The main checkout MUST NOT be counted as a worktree: every worktree count the scanner reports SHALL count linked worktrees only. A change whose leading copy was found in a linked worktree SHALL get `branchMatch` set to that worktree's branch. Any other change SHALL get `branchMatch` set to the first branch or worktree branch whose name contains the change name; checkouts without a branch SHALL NOT take part in the matching.
 
 #### Scenario: Feature branch checked out in a worktree
 - **WHEN** a worktree is on branch `feat/structured-report-format` and a change `structured-report-format` exists
 - **THEN** the change has `branchMatch: feat/structured-report-format`
+
+#### Scenario: Branch name does not contain the change name
+- **WHEN** change `audit-trail` exists only in a worktree on branch `wip/compliance`
+- **THEN** the change has `branchMatch: wip/compliance`
 
 #### Scenario: Main checkout is not a worktree
 - **WHEN** a repository has its main checkout and two linked worktrees
