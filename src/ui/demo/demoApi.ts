@@ -1,5 +1,6 @@
 // In-memory stand-in for the dashboard server. Nothing is read from or written to anywhere: a reload starts over.
 import { pageEvents } from "../../shared/activity.ts";
+import { summarizeWorkInProgress } from "../../shared/workInProgress.ts";
 import type { ChangeSnapshot, Config, PullResult, RepoSharedConfig, RepoSnapshot, SharedConfigApplyResult, SharedConfigPreview, SharedProfile, Snapshot } from "../../shared/types.ts";
 import { ApiError, type Api } from "../api.ts";
 import { createDemoSessions } from "./demoSessions.ts";
@@ -116,7 +117,10 @@ export function createDemoApi({ now = Date.now, latencyMs = 150, clock }: DemoAp
         const known = sample.snapshot.repos.find((s) => s.id === r.id);
         const repo = known ? { ...known, name: r.name } : emptyRepo(r.id, r.name, r.path);
         // A session's worktree is a worktree of its repository, so `git worktree list` — the snapshot — has it too.
-        const withSessions = config.agentSessions.enabled ? { ...repo, worktrees: [...repo.worktrees, ...demoSessions.gitWorktrees(r.id)] } : repo;
+        const sessionWorktrees = config.agentSessions.enabled ? demoSessions.gitWorktrees(r.id) : [];
+        const worktrees = [...repo.worktrees, ...sessionWorktrees];
+        // The roll-up is derived from the checkouts, so it has to follow them.
+        const withSessions = sessionWorktrees.length > 0 ? { ...repo, worktrees, workInProgress: summarizeWorkInProgress(worktrees) } : repo;
         return profiles.length > 0 ? { ...withSessions, sharedConfig: sharedState(r.id) } : withSessions;
       }),
   });

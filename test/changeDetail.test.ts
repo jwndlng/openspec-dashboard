@@ -8,7 +8,10 @@ import {
   absoluteFilePath,
   artifactLabel,
   ChangeNotFound,
+  closeOnEscape,
   DetailHeader,
+  DetailOverlay,
+  detailClose,
   FileContent,
   FileList,
   type FileState,
@@ -18,7 +21,7 @@ import {
   resolveSelection,
   taskProgress,
 } from "../src/ui/changeDetail.tsx";
-import { type Card, ChangeCard, CopyButton, cardLink, Meter } from "../src/ui/kanban.tsx";
+import { type Card, ChangeCard, CopyButton, cardLink, initialFilters } from "../src/ui/kanban.tsx";
 import { renderMarkdown } from "../src/ui/markdown.tsx";
 import { backTarget, parseDetailQuery, routeFromPath } from "../src/ui/routes.ts";
 import { FIXTURES } from "./helpers.ts";
@@ -51,43 +54,88 @@ const artifacts: ChangeArtifactEntry[] = [
 const copyTexts = (node: Parameters<typeof elements>[0]) => Object.fromEntries(byComponent(node, CopyButton).map((b) => [b.props.label as string, b.props.text as string]));
 const classed = (node: Parameters<typeof elements>[0], cls: string) => elements(node).filter((el) => String(el.props.class ?? "").split(" ").includes(cls));
 
-test("header: name, repository link, column, progress, age, dates, branch, warnings", () => {
-  const header = DetailHeader({ repo, change, selectedFilePath: undefined, now: NOW });
+const noop = () => {};
+
+test("header: repository link, change name, close control and warnings — no status labels", () => {
+  const header = DetailHeader({ repo, change, onClose: noop });
   expect(textOf(classed(header, "change-name")[0])).toBe("multi-tenant-sync");
   const links = byTag(header, "a");
-  expect(links.map((a) => [textOf(a).trim(), a.props.href])).toEqual([["← Back to board", "/repo/r1"], ["forum-admin", "/repo/r1"]]);
+  expect(links.map((a) => [textOf(a).trim(), a.props.href])).toEqual([["forum-admin", "/repo/r1"]]);
+  expect(classed(header, "detail-close").map((b) => b.props["aria-label"])).toEqual(["Close"]);
   const text = textOf(header);
-  expect(text).toContain("Implementing");
-  expect(text).toContain("4/12");
-  expect(text).toContain("3d ago");
-  expect(text).toContain("created 2026-03-02");
-  expect(text).not.toContain("archived");
   expect(text).toContain("could not read artifacts: unknown schema 'custom'");
-  expect(byComponent(header, Meter).length + classed(header, "meter").length).toBeGreaterThan(0);
-  expect(elements(header).some((el) => el.props["aria-label"] === "branch feat/multi-tenant-sync")).toBe(true);
+  for (const label of ["Implementing", "4/12", "3d ago", "created", "2026-03-02", "spec-driven", "feat/multi-tenant-sync"]) expect(text).not.toContain(label);
+  expect(classed(header, "meter")).toEqual([]);
+  expect(elements(header).some((el) => String(el.props["aria-label"] ?? "").startsWith("branch"))).toBe(false);
+  // no copy actions in the header any more
+  expect(byComponent(header, CopyButton)).toEqual([]);
 
-  const archived = DetailHeader({ repo, change: { ...change, archived: "2026-03-09", column: "Archived", tasks: null, branchMatch: undefined, warnings: undefined }, now: NOW });
-  expect(textOf(archived)).toContain("archived 2026-03-09");
-  expect(classed(archived, "meter")).toEqual([]);
+  const archived = DetailHeader({ repo, change: { ...change, archived: "2026-03-09", column: "Archived", tasks: null, warnings: undefined }, onClose: noop });
+  expect(textOf(archived)).not.toContain("2026-03-09");
+  expect(classed(archived, "notice")).toEqual([]);
 });
 
-test("copy actions: exact clipboard text for apply, cd and the selected file", () => {
-  const filePath = absoluteFilePath(DIR, "specs/kanban-board/spec.md");
-  expect(filePath).toBe("/w/acme/forum-admin/openspec/changes/multi-tenant-sync/specs/kanban-board/spec.md");
-  expect(copyTexts(DetailHeader({ repo, change, selectedFilePath: filePath, now: NOW }))).toEqual({
-    "Copy apply command": 'cd /w/acme/forum-admin && claude "/opsx:apply multi-tenant-sync"',
-    "Copy cd command": "cd /w/acme/forum-admin",
-    "Copy file path": filePath,
-  });
-  // nothing selected: no file action; archived: nothing to apply
-  expect(Object.keys(copyTexts(DetailHeader({ repo, change: { ...change, archived: "2026-03-09" }, now: NOW })))).toEqual(["Copy cd command"]);
+test("the repository link keeps the filters of that repository's board when the view came from it", () => {
+  const repoHref = (from?: string) => byTag(DetailHeader({ repo, change, from, onClose: noop }), "a")[0].props.href;
+  expect(repoHref("/repo/r1?q=sync")).toBe("/repo/r1?q=sync");
+  expect(repoHref("/board?q=sync")).toBe("/repo/r1");
+  expect(repoHref("https://example.com/")).toBe("/repo/r1");
+  expect(repoHref(undefined)).toBe("/repo/r1");
 });
 
-test("back link follows a board `from`, ignores anything else", () => {
-  const back = (from?: string) => byTag(DetailHeader({ repo, change, from, now: NOW }), "a")[0].props.href;
-  expect(back("/board?q=sync")).toBe("/board?q=sync");
-  expect(back("https://example.com/")).toBe("/repo/r1");
-  expect(back(undefined)).toBe("/repo/r1");
+test("the overlay is a modal dialog named after the change, on a backdrop", () => {
+  const view = DetailOverlay({ label: "Change multi-tenant-sync", onClose: noop, children: DetailHeader({ repo, change, onClose: noop }) });
+  expect(String(view.props.class)).toContain("detail-overlay");
+  const dialogs = elements(view).filter((el) => el.props.role === "dialog");
+  expect(dialogs.length).toBe(1);
+  expect(dialogs[0].props["aria-modal"]).toBe("true");
+  expect(dialogs[0].props["aria-label"]).toContain("multi-tenant-sync");
+  expect(dialogs[0].props.tabIndex).toBe(-1); // focusable, so the focus can move into it on open
+});
+
+test("close control, backdrop and Escape all lead to the same board", () => {
+  for (const [from, expected] of [
+    ["/board?q=sync", { path: "/board", query: "?q=sync" }],
+    ["/repo/r1?stale=5", { path: "/repo/r1", query: "?stale=5" }],
+    ["https://example.com/", { path: "/repo/r1", query: "" }],
+    [undefined, { path: "/repo/r1", query: "" }],
+  ] as const) {
+    const went: { path: string; query: string }[] = [];
+    const close = detailClose(from, "r1", (path, query) => went.push({ path, query }));
+    const overlay = DetailOverlay({ label: "x", onClose: close, children: DetailHeader({ repo, change, from, onClose: close }) });
+
+    // the close control
+    (classed(overlay, "detail-close")[0].props.onClick as () => void)();
+    // the backdrop: a press and a click on the backdrop itself
+    const backdrop = {};
+    (overlay.props.onMouseDown as (e: unknown) => void)({ target: backdrop, currentTarget: backdrop });
+    (overlay.props.onClick as (e: unknown) => void)({ target: backdrop, currentTarget: backdrop });
+    // Escape
+    closeOnEscape(close)({ key: "Escape", defaultPrevented: false, preventDefault: noop } as unknown as KeyboardEvent);
+
+    expect(went).toEqual([expected, expected, expected]);
+    expect(backTarget(from, "r1")).toEqual(expected);
+  }
+});
+
+test("only a press and click on the backdrop itself close, and only Escape among keys", () => {
+  let closed = 0;
+  const overlay = DetailOverlay({ label: "x", onClose: () => closed++, children: null });
+  const down = overlay.props.onMouseDown as (e: unknown) => void;
+  const click = overlay.props.onClick as (e: unknown) => void;
+  const backdrop = {};
+  const panel = {};
+  // a click inside the panel bubbles up with another target
+  down({ target: panel, currentTarget: backdrop });
+  click({ target: panel, currentTarget: backdrop });
+  // a text selection dragged out of the panel: pressed inside, released on the backdrop
+  click({ target: backdrop, currentTarget: backdrop });
+  expect(closed).toBe(0);
+
+  const onKey = closeOnEscape(() => closed++);
+  onKey({ key: "Enter", defaultPrevented: false, preventDefault: noop } as unknown as KeyboardEvent);
+  onKey({ key: "Escape", defaultPrevented: true, preventDefault: noop } as unknown as KeyboardEvent); // someone else handled it
+  expect(closed).toBe(0);
 });
 
 test("not found names what was asked for and links to the overview", () => {
@@ -161,7 +209,8 @@ test("raw shows the source verbatim instead of the rendering", () => {
 test("error and oversize states stay inside the content area", () => {
   const tooLarge = fileFailure("huge.md", new ApiError(413, "file is larger than 1048576 bytes"));
   expect(tooLarge.status).toBe("too-large");
-  const big = FileContent({ state: tooLarge, raw: false, isTasks: false, rendered: null, filePath: `${DIR}/huge.md` });
+  expect(absoluteFilePath(`${DIR}/`, "specs/a/spec.md")).toBe(`${DIR}/specs/a/spec.md`);
+  const big = FileContent({ state: tooLarge, raw: false, isTasks: false, rendered: null, filePath: absoluteFilePath(DIR, "huge.md") });
   expect(textOf(big)).toContain("too large to display");
   expect(copyTexts(big)).toEqual({ "Copy file path": `${DIR}/huge.md` });
 
@@ -191,7 +240,7 @@ test("an unchanged poll keeps the very same state objects, a changed one replace
 
 const card: Card = { ...change, repoName: "forum-admin", repoPath: "/w/acme/forum-admin", hue: 120 };
 
-test("a card is a real link to its change, carrying the board and its filters", () => {
+test("Show details is a card's only link, carrying the board and its filters", () => {
   const link = cardLink(card, "/board?q=sync&archived=0");
   expect(link.path).toBe("/repo/r1/change/multi-tenant-sync");
   expect(routeFromPath(link.path)).toEqual({ view: "change", repoId: "r1", changeName: "multi-tenant-sync" });
@@ -201,30 +250,31 @@ test("a card is a real link to its change, carrying the board and its filters", 
     const view = ChangeCard({ card, now: NOW, showRepo, from: "/board?q=sync" });
     const anchors = byTag(view, "a");
     expect(anchors.map((a) => a.props.href)).toEqual(["/repo/r1/change/multi-tenant-sync?from=%2Fboard%3Fq%3Dsync"]);
-    expect(textOf(anchors[0])).toBe("multi-tenant-sync");
+    expect(textOf(anchors[0]).trim()).toBe("Show details");
+    expect(anchors[0].props["aria-label"]).toBe("Show details of multi-tenant-sync");
+    // the change name is plain text, and the card has no copy action any more
+    expect(textOf(classed(view, "name")[0])).toBe("multi-tenant-sync");
+    expect(byComponent(view, CopyButton)).toEqual([]);
   }
   const archived = ChangeCard({ card: { ...card, archived: "2026-03-09" }, now: NOW, showRepo: true, from: "/board" });
-  expect(byTag(archived, "a").length).toBe(1);
+  expect(byTag(archived, "a").map((a) => textOf(a).trim())).toEqual(["Show details"]);
 });
 
-test("controls on a card are outside its link, and the card's content is unchanged", () => {
+test("the card's content is unchanged, and a prompt still shows its badge", () => {
   const view = ChangeCard({ card, now: NOW, showRepo: true, from: "/board" });
-  const anchor = byTag(view, "a")[0];
-  expect(elements(anchor.props.children)).toEqual([]); // just the name: no button, no session starter inside the anchor
-  expect(copyTexts(view)).toEqual({ "Copy apply": 'cd /w/acme/forum-admin && claude "/opsx:apply multi-tenant-sync"' });
+  expect(elements(byTag(view, "a")[0].props.children)).toEqual([]); // no button or session starter inside the link
   const text = textOf(view);
   for (const part of ["forum-admin", "multi-tenant-sync", "4/12", "3d ago"]) expect(text).toContain(part);
+
+  const drafting: Card = { ...card, column: "Proposal", stage: "artifact", prompt: "Log every mutation" };
+  expect(textOf(ChangeCard({ card: drafting, now: NOW, showRepo: true, from: "/board" }))).toContain("prompt");
+  expect(textOf(ChangeCard({ card: { ...drafting, prompt: undefined }, now: NOW, showRepo: true, from: "/board" }))).not.toContain("prompt");
 });
 
-test("cards in earlier columns copy a start command and show a prompt badge when set", () => {
-  const drafting: Card = { ...card, column: "Proposal", stage: "artifact", prompt: "Log every mutation" };
-  const view = ChangeCard({ card: drafting, now: NOW, showRepo: true, from: "/board" });
-  expect(copyTexts(view)).toEqual({ "Copy start": 'cd /w/acme/forum-admin && claude "/opsx:continue multi-tenant-sync — see openspec/changes/multi-tenant-sync/prompt.md"' });
-  expect(textOf(view)).toContain("prompt");
-
-  const noPrompt = ChangeCard({ card: { ...drafting, prompt: undefined }, now: NOW, showRepo: true, from: "/board" });
-  const noPromptButtons = Object.entries(copyTexts(noPrompt));
-  expect(noPromptButtons[0]?.[0]).toBe("Copy start");
-  expect(noPromptButtons[0]?.[1]).not.toContain("prompt.md");
-  expect(textOf(noPrompt)).not.toContain("prompt");
+test("a board behind the detail view takes its filters from the query it is given", () => {
+  expect(initialFilters("?q=sync", undefined).q).toBe("sync");
+  // a repository board drops a stray repo filter
+  expect(initialFilters("?q=sync&repos=r2", "r1")).toMatchObject({ q: "sync", repos: [] });
+  // the detail view's own query carries no filter
+  expect(initialFilters("?artifact=specs&from=%2Fboard%3Fq%3Dsync", undefined).q).toBe("");
 });

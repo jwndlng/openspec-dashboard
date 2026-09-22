@@ -68,11 +68,19 @@ Added after first use: with D1 alone, a jump left the navigation behind at the t
 
 *Alternative — `position: sticky`*: always visible, but that is the pinned behaviour the maintainer asked to get rid of; re-anchoring keeps "scrolls away with the page" for manual scrolling and only brings the nav along when the *navigation itself* caused the move. *Alternative — move the nav in the component tree (render it before the target section)*: no CSS tricks, but remounting loses the row's scroll position and focus, and cannot express "beside" on wide screens.
 
+### D7. Sticky inside the one scroll area (supersedes D6)
+
+Added after further use: with D6 the navigation came along on a jump, but manual scrolling still left it behind — "the navigation is still not following the content if I am scrolling". What the maintainer wants is a navigation that stays beside whatever is in view. The complaints behind this change were the inner scroll area, the dead mouse wheel over the navigation and the margins, and the fixed column; none of them came from the navigation staying visible. So:
+
+- **Wide:** `.settings-nav { position: sticky; top: 0 }` inside the full-width `.settings-scroll` from D1. The page still scrolls as one and the wheel works everywhere; the nav sticks to the top of the view beside the sections and is held inside the layout's grid area, so it never runs past the end of the page. Its top padding equals the sections' `scroll-margin-top`, so it is level with a section jumped to.
+- **Narrow:** the row is sticky at the top with the page background under it. `useSectionNav` publishes the row's height as `--settings-nav-height` (a `ResizeObserver` on the nav), and sections use it in `scroll-margin-top`, so a jump lands the section just below the row.
+- **The `<nav>` is the row's horizontal scroller, not the `<ul>`.** In Chrome, once the `<ul>` (`overflow-x: auto`) inside the nav had been scrolled sideways, clicks on its entries hit the `<ul>` and not the links (measured with `elementFromPoint` and real mouse events over CDP; it happened on `main` too, stuck or not). With the nav as the scroller every visible entry is clickable. The entries' offsetParent is the (sticky, so positioned) nav, which keeps `rowScrollLeft` in the row's own coordinates.
+- **Removed:** `navOffset`, `--nav-offset`, `--nav-order`, `--section-order`, the flattened narrow grid (`display: contents`) and the "return home at `scrollTop = 0`" logic; sticky does all of that. Kept: the jump pin, and re-scrolling to the section jumped to when the layout above it grows before the user scrolls (late discovery results).
+
 ## Risks / Trade-offs
 
-- [After a jump the navigation was gone until the user scrolled back up] → resolved by D6.
-- [On narrow screens the visual order (row above the target section) differs from the DOM order (row first)] → focus order stays logical (navigation, then sections); the row is a landmark (`nav`) reachable by assistive technology regardless of its visual position.
-- [After scrolling up from a jumped-to section the navigation is not at the top of the page until the very top is reached] → it snaps home at `scrollTop = 0`; verified over CDP.
+- [After a jump the navigation was gone until the user scrolled back up] → resolved by D6, then by D7 for manual scrolling too.
+- [The narrow sticky row takes about 56px of the view] → accepted: it is one line, and jumps land below it.
 - [A lurking `scrollIntoView` on nav elements would make the page jump while scrolling] → D4 removes the only one; a test asserts `settingsNav.tsx` contains `scrollIntoView` only for the section target.
 - [The scroll listener moves to a different element; if the ref is attached to the wrong node the marker silently stops updating] → verified with real wheel events over CDP (the same script used to measure today's behaviour): marker and `?section=` must change while the nav's position changes with the scroll.
 - [`settings-page` is not in `openspec/specs/` until `add-settings-nav` is archived] → archive that change first; this change's deltas are MODIFIED-only and would otherwise have nothing to modify.

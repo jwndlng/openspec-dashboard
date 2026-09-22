@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { parseWorktrees } from "../src/server/git.ts";
+import { parseStatusV2, parseWorktrees } from "../src/server/git.ts";
 import { parseTaskProgress } from "../src/server/tasksParser.ts";
 import { artifactLabel, boardColumns, deriveStage, displayOrder, isComplete } from "../src/shared/columns.ts";
 import type { ArtifactStatus, Snapshot } from "../src/shared/types.ts";
@@ -21,29 +21,80 @@ test("worktree porcelain parsing: main first, detached kept, flags read", () => 
     "branch refs/heads/feat/structured-report-format",
     "",
     "worktree /repo/.worktrees/detached",
-    "HEAD 123",
+    "HEAD 1234567890abcdef",
     "detached",
     "",
-    "worktree /elsewhere/gone",
+    "worktree /repo/.worktrees/held",
     "HEAD 456",
+    "branch refs/heads/fix/held",
+    "locked",
+    "",
+    "worktree /repo/.worktrees/held with reason",
+    "HEAD 789",
+    "branch refs/heads/fix/held-2",
+    "locked agent session still running",
+    "",
+    "worktree /repo/.worktrees/gone",
+    "HEAD 0ab",
     "branch refs/heads/feat/gone",
     "prunable gitdir file points to non-existent location",
     "",
-    "worktree /elsewhere/locked",
-    "HEAD 789",
-    "branch refs/heads/feat/locked",
-    "locked in use",
-    "",
   ].join("\n");
   expect(parseWorktrees(porcelain)).toEqual([
-    { path: "/repo", branch: "main", isMain: true },
-    { path: "/repo/.worktrees/feat", branch: "feat/structured-report-format" },
-    { path: "/repo/.worktrees/detached", detached: true },
-    { path: "/elsewhere/gone", branch: "feat/gone", prunable: true },
-    { path: "/elsewhere/locked", branch: "feat/locked" },
+    { path: "/repo", head: "abc", branch: "main", isMain: true },
+    { path: "/repo/.worktrees/feat", head: "def", branch: "feat/structured-report-format" },
+    { path: "/repo/.worktrees/detached", head: "1234567", detached: true },
+    { path: "/repo/.worktrees/held", head: "456", branch: "fix/held", locked: true },
+    { path: "/repo/.worktrees/held with reason", head: "789", branch: "fix/held-2", locked: true, lockReason: "agent session still running" },
+    { path: "/repo/.worktrees/gone", head: "0ab", branch: "feat/gone", prunable: true },
   ]);
-  expect(parseWorktrees("worktree /bare.git\nbare\n\nworktree /wt\nHEAD a\nbranch refs/heads/x\n")).toEqual([{ path: "/bare.git", bare: true, isMain: true }, { path: "/wt", branch: "x" }]);
   expect(parseWorktrees("")).toEqual([]);
+});
+
+test("a bare main record is flagged and is still the main entry", () => {
+  const porcelain = ["worktree /srv/repo.git", "bare", "", "worktree /w/feat", "HEAD abc", "branch refs/heads/feat/x", ""].join("\n");
+  expect(parseWorktrees(porcelain)).toEqual([
+    { path: "/srv/repo.git", bare: true, isMain: true },
+    { path: "/w/feat", head: "abc", branch: "feat/x" },
+  ]);
+});
+
+const OID = "1f0e9d8c7b6a5f4e3d2c1b0a9f8e7d6c5b4a3f2e";
+const statusV2 = (...lines: string[]) => parseStatusV2([...lines, ""].join("\n"));
+const CLEAN = { detached: false, unborn: false, modified: 0, untracked: 0, conflicts: 0 };
+
+test("status v2: clean with upstream, ahead and behind", () => {
+  const branch = [`# branch.oid ${OID}`, "# branch.head feat/report", "# branch.upstream origin/feat/report"];
+  expect(statusV2(...branch, "# branch.ab +0 -0")).toEqual({ ...CLEAN, head: "feat/report", upstream: "origin/feat/report", ahead: 0, behind: 0 });
+  expect(statusV2(...branch, "# branch.ab +2 -5")).toMatchObject({ ahead: 2, behind: 5 });
+});
+
+test("status v2: modified, staged, renamed, unmerged and untracked entries are counted, never named", () => {
+  const parsed = statusV2(
+    `# branch.oid ${OID}`,
+    "# branch.head main",
+    `1 .M N... 100644 100644 100644 ${OID} ${OID} src/edited.ts`,
+    `1 A. N... 000000 100644 100644 ${OID} ${OID} src/staged new.ts`,
+    `2 R. N... 100644 100644 100644 ${OID} ${OID} R100 src/new-name.ts\tsrc/old-name.ts`,
+    `u UU N... 100644 100644 100644 100644 ${OID} ${OID} ${OID} src/conflict.ts`,
+    "? scratch/",
+    "? notes.md",
+    "! ignored.log",
+  );
+  expect(parsed).toEqual({ ...CLEAN, head: "main", modified: 4, conflicts: 1, untracked: 2 });
+  expect(JSON.stringify(parsed)).not.toContain("src/");
+});
+
+test("status v2: no upstream, detached and unborn", () => {
+  const noUpstream = statusV2(`# branch.oid ${OID}`, "# branch.head feat/never-pushed");
+  expect(noUpstream).toEqual({ ...CLEAN, head: "feat/never-pushed" });
+  expect(noUpstream.upstream).toBeUndefined();
+  expect(noUpstream.ahead).toBeUndefined();
+  // An upstream that is configured but gone has no ahead/behind line.
+  expect(statusV2(`# branch.oid ${OID}`, "# branch.head x", "# branch.upstream origin/x")).toEqual({ ...CLEAN, head: "x", upstream: "origin/x" });
+  expect(statusV2(`# branch.oid ${OID}`, "# branch.head (detached)")).toEqual({ ...CLEAN, detached: true });
+  expect(statusV2("# branch.oid (initial)", "# branch.head main", "? a.md", "? b.md")).toEqual({ ...CLEAN, head: "main", unborn: true, untracked: 2 });
+  expect(parseStatusV2("")).toEqual(CLEAN);
 });
 
 const A = (...pairs: [string, ArtifactStatus["status"]][]): ArtifactStatus[] => pairs.map(([id, status]) => ({ id, status }));
