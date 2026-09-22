@@ -1,6 +1,7 @@
 import { join, sep } from "node:path";
 import { deriveStage } from "../shared/columns.ts";
 import type { ChangeSnapshot, Config, RepoConfig, RepoSnapshot, SharedConfig, Snapshot, Worktree } from "../shared/types.ts";
+import { summarizeWorkInProgress } from "../shared/workInProgress.ts";
 import { emptySnapshot, writeSnapshot } from "./cache.ts";
 import { type ChangeCopy, mergeChanges } from "./mergeChanges.ts";
 import { readChangeArtifacts } from "./openspecAdapter.ts";
@@ -13,6 +14,9 @@ export const DEFAULT_CONCURRENCY = 4;
 export const DEFAULT_REPO_TIMEOUT_MS = 30_000;
 /** Only the most recent archives get a git lookup; older ones are rarely looked at. */
 export const ARCHIVED_ACTIVITY_LIMIT = 25;
+/** Linked worktrees that get a `git status` per repository; the main checkout always does. The rest are listed uninspected. */
+export const MAX_INSPECTED_WORKTREES = 12;
+const CHECKOUT_CONCURRENCY = 3;
 /** Cap the size of a change's `prompt.md` in the snapshot; a tooltip does not need more. */
 export const PROMPT_LIMIT_BYTES = 8 * 1024;
 
@@ -35,6 +39,46 @@ export function parseMarker(text: string | undefined): Marker {
 function findBranchMatch(name: string, branch: string | undefined, worktrees: Worktree[]): string | undefined {
   if (branch?.includes(name)) return branch;
   return worktrees.find((w) => w.branch?.includes(name))?.branch;
+}
+
+/**
+ * Adds the working-tree status to the checkouts `git worktree list` reported — the only paths ever used as a working
+ * directory here. Stale and bare entries are never inspected; one checkout failing leaves it "unknown" and the rest intact.
+ */
+async function inspectCheckouts(source: RepoSource, listed: Worktree[]): Promise<Worktree[]> {
+  const checkouts = listed.map((w) => ({ ...w }));
+  const targets: Worktree[] = [];
+  let linked = 0;
+  for (const w of checkouts) {
+    if (w.prunable || w.bare) continue;
+    if (w.isMain || linked++ < MAX_INSPECTED_WORKTREES) targets.push(w);
+    else w.inspected = false;
+  }
+  if (targets.length === 0) return checkouts;
+  const hasRemotes = await source.hasRemoteRefs().catch(() => undefined);
+
+  let next = 0;
+  const worker = async (): Promise<void> => {
+    while (next < targets.length) {
+      const w = targets[next++];
+      const status = await source.checkoutStatus(w.path).catch(() => undefined);
+      if (!status) {
+        w.status = "unknown";
+        continue;
+      }
+      const { modified, untracked, conflicts, upstream, ahead, behind } = status;
+      w.status = { modified, untracked, conflicts, upstream, ahead, behind };
+      if (ahead !== undefined) {
+        w.unpushed = ahead;
+      } else if (hasRemotes) {
+        // No upstream to be ahead of (never pushed, or detached): count what no remote-tracking ref has.
+        const localOnly = await source.localOnlyCommits(w.path).catch(() => undefined);
+        if (localOnly !== undefined) w.unpushed = localOnly;
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(CHECKOUT_CONCURRENCY, targets.length) }, worker));
+  return checkouts;
 }
 
 /** Latest of several instants. Compared as instants because commit dates carry an offset and mtimes are UTC. */
@@ -159,7 +203,9 @@ export async function scanRepo(repo: RepoConfig, source: RepoSource = new LocalR
     return { ...base, ok: false, error: "repository path or its openspec/ directory does not exist", isGit: false, worktrees: [], changes: [] };
   }
   const isGit = await source.isGit();
-  const [branch, worktrees] = isGit ? await Promise.all([source.branch(), source.worktrees()]) : [undefined, []];
+  const [branch, listed] = isGit ? await Promise.all([source.branch(), source.worktrees()]) : [undefined, []];
+  const worktrees = await inspectCheckouts(source, listed);
+  const workInProgress = isGit ? summarizeWorkInProgress(worktrees) : undefined;
   // Archives, specs and progress come from the main checkout; off its default branch they may be outdated.
   const mainBranch = isGit ? await source.defaultBranch().catch(() => undefined) : undefined;
   const onDefaultBranch = mainBranch === undefined ? undefined : branch === mainBranch;
@@ -202,6 +248,7 @@ export async function scanRepo(repo: RepoConfig, source: RepoSource = new LocalR
     defaultBranch: mainBranch,
     onDefaultBranch,
     worktrees,
+    workInProgress,
     // A repository whose only activity is in a worktree is still an active repository.
     lastUpdatedAt: latestIso(lastUpdatedAt, ...active.map((c) => c.lastActivityAt)),
     sharedConfig,
@@ -360,6 +407,7 @@ export class Scanner {
             defaultBranch: prev?.defaultBranch,
             onDefaultBranch: prev?.onDefaultBranch,
             worktrees: prev?.worktrees ?? [],
+            workInProgress: prev?.workInProgress,
             lastUpdatedAt: prev?.lastUpdatedAt,
             sharedConfig: shared && shared.profiles.length > 0 ? prev?.sharedConfig : undefined,
             changes: prev?.changes ?? [],

@@ -3,10 +3,12 @@ import { boardColumns, isComplete } from "../shared/columns.ts";
 import type { ChangeSnapshot, Config, RepoSnapshot, Snapshot } from "../shared/types.ts";
 import { NoRepos } from "./empty.tsx";
 import { EMPTY_FILTERS, parseFilters, serializeFilters, type Filters } from "./filters.ts";
+import { BranchBadge, CheckoutChips } from "./checkout.tsx";
+import { hasCheckoutInfo } from "./checkoutMarkers.ts";
 import { NewChangeForm } from "./newChangeForm.tsx";
 import { PullButton } from "./pull.tsx";
 import { branchNotice } from "./pullState.ts";
-import { cdCommand, checkoutHint, daysSince, pendingArchiveHint, relTime, splitBranchLabel } from "./format.ts";
+import { cdCommand, checkoutHint, daysSince, pendingArchiveHint, relTime } from "./format.ts";
 import { isMinimized, loadGroupState, saveGroupState, toggleGroup, type GroupOverrides } from "./groupState.ts";
 import { assignRepoHues, groupByRepo, recentArchived } from "./repoGroups.ts";
 import { SessionControls } from "./sessions.tsx";
@@ -42,23 +44,6 @@ export function CopyButton({ text, label }: { text: string; label: string }) {
     >
       {done ? "Copied" : label}
     </button>
-  );
-}
-
-/**
- * Branch name that never outgrows its container: the head is clipped with an ellipsis, the tail always
- * shows. All characters stay in the DOM (copyable); the full name is the tooltip and accessible name.
- */
-export function BranchBadge({ branch, hint }: { branch: string; hint: string }) {
-  const { head, tail } = splitBranchLabel(branch);
-  return (
-    <span class="badge branch mono truncate" title={`${branch} — ${hint}`} role="img" aria-label={`branch ${branch}`}>
-      <span aria-hidden="true">⎇</span>
-      <span class="text" aria-hidden="true">
-        <span class="head">{head}</span>
-        {tail && <span class="tail">{tail}</span>}
-      </span>
-    </span>
   );
 }
 
@@ -231,17 +216,13 @@ function RepoHeader({ repo, now, onCreated }: { repo: RepoSnapshot; now: number;
           <span class="sep">/</span>
           {repo.name}
         </h1>
-        {repo.currentBranch && <BranchBadge branch={repo.currentBranch} hint="current branch" />}
+        {/* Snapshots cached by older versions know no checkouts: fall back to the current branch. */}
+        {hasCheckoutInfo(repo.worktrees) ? <CheckoutChips checkouts={repo.worktrees} /> : repo.currentBranch && <BranchBadge branch={repo.currentBranch} hint="current branch" />}
         {repo.isGit && repo.ok && <PullButton repoId={repo.id} />}
         {repo.ok && (
           <button type="button" class="btn sm" onClick={() => setCreating(true)}>
             New change
           </button>
-        )}
-        {repo.worktrees.length > 0 && (
-          <span class="badge" title={repo.worktrees.map((w) => `${w.branch ?? "detached"} — ${w.path}`).join("\n")}>
-            {repo.worktrees.length} {repo.worktrees.length === 1 ? "worktree" : "worktrees"}
-          </span>
         )}
         {repo.sharedConfig?.unreadable && (
           <span class="badge danger" title="openspec/config.yaml is missing, not valid YAML, or has malformed shared-config markers">

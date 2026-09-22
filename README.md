@@ -28,8 +28,15 @@ track.
 
 ## Features
 
-- **Projects**: one row per repository, showing open changes per stage, changes ready to archive, and when it was last
-  updated. Click a row to open that repository's board.
+- **Projects**: one row per repository, showing open changes per stage, changes ready to archive, work in progress
+  and when it was last updated, as a table or as tiles (`view=tiles`). Click a row or tile to open that repository's
+  board. ([project-overview](openspec/specs/project-overview/spec.md))
+- **Work in progress**: for the main checkout and every git worktree of a repository, whether it holds uncommitted
+  changes or unpushed commits, or is stale, e.g. `2 worktrees · 1 uncommitted · 1 unpushed`. Sort by it or filter to
+  it. Chips on tiles and on a repository's header show each checkout's branch with `●N` uncommitted items, `↑N`
+  unpushed commits (ahead of the upstream, or never pushed), `↓N` behind, `stale`, `locked` or `?` (unknown), each with
+  a tooltip. Ahead, behind and unpushed reflect your last `git fetch`: the dashboard never fetches. Only counts are
+  recorded, never file names. ([change-scanner](openspec/specs/change-scanner/spec.md))
 - **Boards**: one board per repository, plus one across all of them. Columns follow the lifecycle: New → one column
   per artifact → Ready → Implementing → Done → Synced → Archived. Changes in git worktrees are included, so work shows
   up before it is merged. ([kanban-board](openspec/specs/kanban-board/spec.md),

@@ -4,7 +4,7 @@ import type { Dirent } from "node:fs";
 import { readdir, readFile, realpath, stat } from "node:fs/promises";
 import { dirname, join, relative } from "node:path";
 import { CHANGE_NAME_PATTERN, type Worktree } from "../shared/types.ts";
-import { currentBranch, defaultBranch, isGitRepo, lastCommitDate, statusPaths, subdirectory, worktrees } from "./git.ts";
+import { checkoutStatus, currentBranch, defaultBranch, hasRemoteRefs, isGitRepo, lastCommitDate, localOnlyCommits, type ParsedStatus, statusPaths, subdirectory, worktrees } from "./git.ts";
 
 export const CHANGE_NAME = CHANGE_NAME_PATTERN;
 const ARCHIVE_PREFIX = /^(\d{4}-\d{2}-\d{2})-(.+)$/;
@@ -61,6 +61,12 @@ export interface RepoSource {
   /** The default branch as known locally (no remote is asked); undefined when it cannot be told. */
   defaultBranch(): Promise<string | undefined>;
   worktrees(): Promise<Worktree[]>;
+  /** Working-tree status of one checkout; `path` must come from `worktrees()`. Undefined when it cannot be determined. */
+  checkoutStatus(path: string): Promise<ParsedStatus | undefined>;
+  /** Whether the repository has any remote-tracking ref. */
+  hasRemoteRefs(): Promise<boolean | undefined>;
+  /** Commits of the checkout at `path` that are on no remote-tracking ref (capped). */
+  localOnlyCommits(path: string): Promise<number | undefined>;
   /** The project's directory below the git top level; empty when the project is the repository. */
   subdirectory(): Promise<string>;
   /** Committer date of the last commit touching `absPath` inside the repo. */
@@ -194,6 +200,18 @@ export class LocalRepoSource implements RepoSource {
 
   worktrees(): Promise<Worktree[]> {
     return worktrees(this.path);
+  }
+
+  checkoutStatus(path: string): Promise<ParsedStatus | undefined> {
+    return checkoutStatus(path);
+  }
+
+  hasRemoteRefs(): Promise<boolean | undefined> {
+    return hasRemoteRefs(this.path);
+  }
+
+  localOnlyCommits(path: string): Promise<number | undefined> {
+    return localOnlyCommits(path);
   }
 
   subdirectory(): Promise<string> {
