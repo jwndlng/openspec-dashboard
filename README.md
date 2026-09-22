@@ -41,8 +41,9 @@ track.
   per artifact → Ready → Implementing → Done → Synced → Archived. Changes in git worktrees are included, so work shows
   up before it is merged. ([kanban-board](openspec/specs/kanban-board/spec.md),
   [change-scanner](openspec/specs/change-scanner/spec.md))
-- **Change details**: read a change's proposal, design, specs and tasks without leaving the board.
-  ([change-detail](openspec/specs/change-detail/spec.md))
+- **Change details**: **Show details** on a card opens the change's proposal, design, specs and tasks in an overlay
+  over the board; close it with `Escape` to get back to the board as you left it. Apply and start commands are run
+  by hand or through an agent session. ([change-detail](openspec/specs/change-detail/spec.md))
 - **Activity**: a feed of changes created, moved, archived and tasks ticked, including what happened while the
   dashboard was not running. ([activity-feed](openspec/specs/activity-feed/spec.md))
 - **New change**: create and stage `openspec/changes/<name>/` from a repository's board, optionally with a prompt.

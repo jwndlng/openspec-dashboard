@@ -1,15 +1,14 @@
-// One change with its artifacts. The header comes from the snapshot the boards use; file lists and file text are
-// fetched on demand from the read-only artifact endpoints. Nothing here writes anywhere.
-import type { ComponentChildren } from "preact";
-import { useEffect, useMemo, useState } from "preact/hooks";
+// One change with its artifacts, as an overlay over the board it belongs to. The header comes from the snapshot the
+// boards use; file lists and file text are fetched on demand from the read-only artifact endpoints. Nothing here
+// writes anywhere.
+import type { ComponentChildren, RefObject } from "preact";
+import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import type { ChangeArtifactEntry, ChangeArtifacts, ChangeSnapshot, RepoSnapshot, Snapshot, TaskProgress } from "../shared/types.ts";
 import { ApiError, api } from "./api.ts";
-import { applyCommand, cdCommand, relTime } from "./format.ts";
-import { BranchBadge } from "./checkout.tsx";
 import { CopyButton, Meter } from "./kanban.tsx";
 import { renderMarkdown } from "./markdown.tsx";
 import { backTarget, type DetailQuery, parseDetailQuery, repoPath, serializeDetailQuery } from "./routes.ts";
-import { currentQuery, followInApp, href, replaceQuery } from "./url.ts";
+import { currentQuery, followInApp, href, navigate, replaceQuery } from "./url.ts";
 
 export function artifactLabel(id: string): string {
   return id.replace(/[-_]+/g, " ").replace(/^./, (c) => c.toUpperCase());
@@ -92,44 +91,83 @@ export function ChangeNotFound({ repo, repoId, changeName }: { repo?: RepoSnapsh
   );
 }
 
-export function DetailHeader({ repo, change, from, selectedFilePath, now }: { repo: RepoSnapshot; change: ChangeSnapshot; from?: string; selectedFilePath?: string; now: number }) {
+/**
+ * Closing the overlay is a navigation to the board it belongs to — never the browser's Back, which leaves the app when
+ * the view was opened from a pasted URL or in a new tab. One function for the close control, the backdrop and Escape.
+ */
+export function detailClose(from: string | undefined, repoId: string, go: (path: string, query: string) => void = navigate): () => void {
+  return () => {
+    const back = backTarget(from, repoId);
+    go(back.path, back.query);
+  };
+}
+
+/** A `keydown` listener that closes on Escape. */
+export function closeOnEscape(onClose: () => void): (e: KeyboardEvent) => void {
+  return (e) => {
+    if (e.key !== "Escape" || e.defaultPrevented) return;
+    e.preventDefault();
+    onClose();
+  };
+}
+
+// Backdrops a press started on. A click is dispatched to the common ancestor of press and release, so a text selection
+// dragged out of the panel would otherwise land on the backdrop and close the overlay.
+const pressedBackdrops = new WeakSet<EventTarget>();
+
+/**
+ * The modal shell: a dimmed backdrop over the board and a bounded panel on it. The board behind is made inert by
+ * `App`, so the panel needs no focus trap of its own.
+ */
+export function DetailOverlay({ label, onClose, panelRef, children }: { label: string; onClose: () => void; panelRef?: RefObject<HTMLDivElement>; children: ComponentChildren }) {
+  return (
+    // biome-ignore lint/a11y/useKeyWithClickEvents lint/a11y/noStaticElementInteractions: the backdrop is a pointer shortcut; Escape and the close control are its keyboard equivalents
+    <div
+      class="overlay detail-overlay"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) pressedBackdrops.add(e.currentTarget);
+        else pressedBackdrops.delete(e.currentTarget);
+      }}
+      onClick={(e) => {
+        if (e.target !== e.currentTarget || !pressedBackdrops.has(e.currentTarget)) return;
+        pressedBackdrops.delete(e.currentTarget);
+        onClose();
+      }}
+    >
+      <div class="detail" role="dialog" aria-modal="true" aria-label={label} tabIndex={-1} ref={panelRef}>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+export function CloseButton({ onClose }: { onClose: () => void }) {
+  return (
+    <button type="button" class="btn sm ghost detail-close" onClick={onClose} title="Close (Esc)" aria-label="Close">
+      ✕
+    </button>
+  );
+}
+
+/**
+ * Identity only: where the change lives, its name, and a way out. The status labels stay on the board's card; warnings
+ * are the exception, because they say something is broken.
+ */
+export function DetailHeader({ repo, change, from, onClose }: { repo: RepoSnapshot; change: ChangeSnapshot; from?: string; onClose: () => void }) {
+  // The repository's board, with its filters when that is the board the view was opened from.
   const back = backTarget(from, repo.id);
+  const repoLink = back.path === repoPath(repo.id) ? back : { path: repoPath(repo.id), query: "" };
   return (
     <div class="repo-head detail-head">
       <div class="row">
-        <AppLink class="crumb-link back" path={back.path} query={back.query}>
-          ← Back to board
-        </AppLink>
-      </div>
-      <div class="row">
         <h1 class="crumbs">
-          <AppLink class="crumb-link" path={repoPath(repo.id)}>
+          <AppLink class="crumb-link" path={repoLink.path} query={repoLink.query}>
             {repo.name}
           </AppLink>
           <span class="sep">/</span>
           <span class="mono change-name">{change.name}</span>
         </h1>
-        <span class="badge">{change.column}</span>
-        {change.branchMatch && <BranchBadge branch={change.branchMatch} hint="a branch or worktree matches this change" />}
-      </div>
-      <div class="row">
-        {change.tasks && change.tasks.total > 0 && (
-          <div class="detail-meter">
-            <Meter done={change.tasks.done} total={change.tasks.total} />
-          </div>
-        )}
-        <span class="badge" title={change.lastActivityAt ? `last activity ${change.lastActivityAt}` : "no activity date"}>
-          {relTime(change.lastActivityAt, now)} ago
-        </span>
-        {change.created && <span class="badge">created {change.created}</span>}
-        {change.archived && <span class="badge">archived {change.archived}</span>}
-        <span class="badge mono">{change.schema}</span>
-      </div>
-      <div class="row detail-actions">
-        {/* Like the card: apply where the change lives, which for a change in a worktree is the worktree. */}
-        {!change.archived && <CopyButton text={applyCommand(change.checkout?.path ?? repo.path, change.name)} label="Copy apply command" />}
-        <CopyButton text={cdCommand(repo.path)} label="Copy cd command" />
-        {selectedFilePath && <CopyButton text={selectedFilePath} label="Copy file path" />}
+        <CloseButton onClose={onClose} />
       </div>
       {change.warnings?.map((w) => (
         <div key={w} class="notice warn">
@@ -215,6 +253,7 @@ export function ChangeDetail({ snapshot, repoId, changeName }: { snapshot: Snaps
   const [listing, setListing] = useState<ChangeArtifacts | null>(null);
   const [listError, setListError] = useState<string | null>(null);
   const [fileState, setFileState] = useState<FileState | null>(null);
+  const panel = useRef<HTMLDivElement>(null);
 
   const setQuery = (patch: Partial<DetailQuery>) => {
     const next = { ...query, ...patch };
@@ -261,16 +300,49 @@ export function ChangeDetail({ snapshot, repoId, changeName }: { snapshot: Snaps
   const text = fileState?.status === "ok" ? fileState.text : undefined;
   const rendered = useMemo(() => (text === undefined ? null : renderMarkdown(text)), [text]);
 
-  if (!snapshot) return <div class="empty">Loading…</div>;
-  if (!repo || !change) return <ChangeNotFound repo={repo} repoId={repoId} changeName={changeName} />;
+  // `from` never changes while the view is open: selecting a tab, a file or raw keeps it in the query.
+  const close = useMemo(() => detailClose(query.from, repoId), [query.from, repoId]);
+  useEffect(() => {
+    const onKey = closeOnEscape(close);
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [close]);
+
+  // Focus into the panel on open, back to wherever it was (the card's Show details) on close. The opener is read during
+  // the first render: once this render commits, the page behind turns inert and the browser drops its focus. Giving it
+  // back waits a tick, because the overlay unmounts before the page behind stops being inert.
+  const [opener] = useState(() => document.activeElement);
+  useEffect(() => {
+    panel.current?.focus();
+    return () => {
+      setTimeout(() => {
+        if (opener instanceof HTMLElement && opener.isConnected && !opener.closest("[inert]")) opener.focus();
+      }, 0);
+    };
+  }, [opener]);
+
+  const label = `Change ${changeName}`;
+  if (!snapshot || !repo || !change) {
+    return (
+      <DetailOverlay label={label} onClose={close} panelRef={panel}>
+        <div class="repo-head detail-head">
+          <div class="row">
+            <span class="spacer" />
+            <CloseButton onClose={close} />
+          </div>
+        </div>
+        {!snapshot ? <div class="empty">Loading…</div> : <ChangeNotFound repo={repo} repoId={repoId} changeName={changeName} />}
+      </DetailOverlay>
+    );
+  }
 
   const artifact = listing?.artifacts.find((a) => a.id === selection.artifactId);
   const filePath = listing && file ? absoluteFilePath(listing.change.dir, file) : undefined;
   const current = fileState && fileState.path === file ? fileState : null;
 
   return (
-    <div class="detail">
-      <DetailHeader repo={repo} change={change} from={query.from} selectedFilePath={filePath} now={Date.now()} />
+    <DetailOverlay label={label} onClose={close} panelRef={panel}>
+      <DetailHeader repo={repo} change={change} from={query.from} onClose={close} />
       {listing && <ArtifactTabs artifacts={listing.artifacts} selected={selection.artifactId} onSelect={(id) => setQuery({ artifact: id, file: undefined })} />}
       <div class="detail-body">
         {artifact && <FileList artifact={artifact} selected={file} onSelect={(path) => setQuery({ artifact: artifact.id, file: path })} />}
@@ -297,6 +369,6 @@ export function ChangeDetail({ snapshot, repoId, changeName }: { snapshot: Snaps
           )}
         </section>
       </div>
-    </div>
+    </DetailOverlay>
   );
 }

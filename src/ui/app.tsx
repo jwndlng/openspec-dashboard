@@ -10,12 +10,12 @@ import { Kanban } from "./kanban.tsx";
 import { Overview } from "./overview.tsx";
 import { PullProvider } from "./pull.tsx";
 import { enabledOnly } from "./overviewState.ts";
-import { type Route, routeFromPath } from "./routes.ts";
+import { backTarget, parseDetailQuery, repoPath, type Route, routeFromPath } from "./routes.ts";
 import { EndSessionDialog } from "./endSessionDialog.tsx";
 import { SessionDock } from "./sessionPanel.tsx";
 import { OpenWork, SessionProvider } from "./sessions.tsx";
 import { Settings } from "./settings.tsx";
-import { currentPath, href, navigate, onRouteChange } from "./url.ts";
+import { currentPath, currentQuery, href, navigate, onRouteChange } from "./url.ts";
 import { applyTheme, loadPreference, nextPreference, resolveTheme, savePreference, type ThemePreference } from "./theme.ts";
 
 const THEME_LABEL: Record<ThemePreference, string> = { system: "System", light: "Light", dark: "Dark" };
@@ -125,6 +125,12 @@ export function App() {
     for (const ms of [1500, 5000]) setTimeout(() => void loadState(), ms);
   };
 
+  // The board on screen: the route's own, or — for a change — the board its detail overlay belongs to, which is also
+  // where closing the overlay goes. The detail view keeps `from` in the query, so this stays put while it is open.
+  const back = route.view === "change" ? backTarget(parseDetailQuery(currentQuery()).from, route.repoId) : undefined;
+  const boardRoute: Route = back ? routeFromPath(back.path) : route;
+  const detailOpen = route.view === "change";
+
   const link = (path: string, label: ComponentChildren, active: boolean) => (
     <a
       href={href(path)}
@@ -140,7 +146,8 @@ export function App() {
 
   return (
     <PullProvider onPulled={reloadSoon}>
-    <div class="app">
+    {/* Everything but the detail overlay: inert while it is open, so the board behind it takes no focus and no clicks. */}
+    <div class="app" inert={detailOpen} aria-hidden={detailOpen ? "true" : undefined}>
       <SessionProvider config={config} snapshot={shown}>
       <header class="topbar">
         <div class="brand">
@@ -148,8 +155,8 @@ export function App() {
           <h1>OpenSpec Dashboard</h1>
         </div>
         <nav>
-          {link("/", "Projects", route.view === "overview" || route.view === "repo" || route.view === "change")}
-          {link("/board", "All changes", route.view === "board")}
+          {link("/", "Projects", route.view === "overview" || boardRoute.view === "repo")}
+          {link("/board", "All changes", boardRoute.view === "board")}
           {link(
             "/activity",
             <>
@@ -189,18 +196,28 @@ export function App() {
           <Activity snapshot={shown} onSeen={markSeen} />
         ) : route.view === "overview" ? (
           <Overview snapshot={shown} config={config} />
-        ) : route.view === "change" ? (
-          // Keyed so selection and content start over when moving between changes.
-          <ChangeDetail key={`${route.repoId}/${route.changeName}`} snapshot={shown} repoId={route.repoId} changeName={route.changeName} />
         ) : (
-          // Keyed so filters re-read the URL when moving between boards.
-          <Kanban key={route.view === "repo" ? route.repoId : "all"} snapshot={shown} config={config} repoId={route.view === "repo" ? route.repoId : undefined} onReload={reloadSoon} />
+          // One board for the board, repository and change routes, keyed by its path: opening and closing a change keeps
+          // this very instance — its filters, minimized groups and scroll position — while moving between boards starts
+          // a new one that reads its filters again.
+          <Kanban
+            key={boardRoute.view === "repo" ? repoPath(boardRoute.repoId) : "/board"}
+            snapshot={shown}
+            config={config}
+            repoId={boardRoute.view === "repo" ? boardRoute.repoId : undefined}
+            query={back?.query}
+            onReload={reloadSoon}
+          />
         )}
       </main>
       <SessionDock />
       <EndSessionDialog />
       </SessionProvider>
     </div>
+    {route.view === "change" && (
+      // Keyed so selection and content start over when moving between changes.
+      <ChangeDetail key={`${route.repoId}/${route.changeName}`} snapshot={shown} repoId={route.repoId} changeName={route.changeName} />
+    )}
     </PullProvider>
   );
 }

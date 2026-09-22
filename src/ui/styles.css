@@ -286,8 +286,10 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: 
 .card .repo { font-size: 11px; color: var(--fg-subtle); text-transform: uppercase; letter-spacing: 0.06em; display: flex; justify-content: space-between; align-items: center; }
 .card.repo-tint .repo { color: var(--repo-color); }
 .card .name { font-family: var(--font-mono); font-size: 12px; color: var(--fg-heading); word-break: break-word; text-transform: none; letter-spacing: 0; }
-.card .copy { opacity: 0; transition: opacity 120ms; }
-.card:hover .copy, .card .copy.done { opacity: 1; }
+.card .show-details { flex: none; font-size: 11px; text-transform: none; letter-spacing: 0; color: var(--fg-subtle); padding: 1px 6px; border: 1px solid transparent; border-radius: var(--radius); }
+.card:hover .show-details { color: var(--brand-fg); border-color: var(--border-light); }
+.card .show-details:hover { color: var(--brand); background: var(--brand-softer); border-color: var(--brand-soft); }
+.card .show-details:focus-visible { outline: 2px solid var(--brand); outline-offset: 1px; color: var(--brand-fg); }
 .card .meta { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
 .card .meta > * { min-width: 0; }
 .card .warn-text { color: var(--warning); font-size: 11px; }
@@ -637,23 +639,25 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: 
   .activity-entry .what { grid-column: 1 / -1; }
 }
 
-/* Card → change detail: the change name is the link, stretched over the card; controls sit above it. */
-.card { position: relative; }
-.card-link { color: inherit; }
-.card-link::after { content: ""; position: absolute; inset: 0; border-radius: inherit; }
-.card-link:hover { color: var(--brand-fg); }
-.card-link:focus-visible { outline: none; }
-.card-link:focus-visible::after { outline: 2px solid var(--brand); outline-offset: 1px; }
-.card button, .card summary, .card .badge[title], .card .meter { position: relative; z-index: 1; }
-
-/* Change detail */
-.detail { flex: 1; min-height: 0; display: flex; flex-direction: column; }
-.detail-head .back { font-size: 12px; }
+/* Change detail: an overlay over the board it belongs to. Above the topbar menu and the session dock, below the
+   end-session dialog. The page behind is inert (set by App); the CSS here is the fallback where `inert` is ignored. */
+.app[inert] { pointer-events: none; user-select: none; overflow: hidden; }
+body:has(.detail-overlay) { overflow: hidden; }
+.detail-overlay { z-index: 25; padding: clamp(8px, 4vh, 40px) clamp(8px, 4vw, 48px); }
+.detail {
+  display: flex; flex-direction: column; overflow: hidden;
+  width: min(1120px, 100%); height: 100%; max-height: 960px;
+  background: var(--bg-base); border: 1px solid var(--border-strong); border-radius: var(--radius);
+  box-shadow: 0 12px 40px #0000004d;
+}
+.detail:focus { outline: none; }
+.detail > .empty { flex: none; align-self: center; }
 .detail-head .change-name { font-size: 14px; color: var(--fg-heading); word-break: break-word; }
-.detail-head .row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
-.detail-meter { width: 220px; max-width: 100%; }
-.detail-meter.wide { width: 320px; margin-bottom: var(--gap-1); }
-.detail-actions .copy { border-color: var(--border-light); }
+.detail-head .row { display: flex; align-items: center; gap: 6px; }
+.detail-head .crumbs { flex: 1; min-width: 0; flex-wrap: wrap; }
+.detail-head .spacer { flex: 1; }
+.detail-close { flex: none; font-size: 14px; line-height: 1; padding: 4px 8px; }
+.detail-meter.wide { width: 320px; max-width: 100%; margin-bottom: var(--gap-1); }
 .detail-tabs { display: flex; flex-wrap: wrap; gap: 2px; padding: 0 var(--gap-2); background: var(--bg-section); border-bottom: 1px solid var(--border-light); }
 .detail-tab {
   display: inline-flex; align-items: center; gap: 6px; padding: 8px 12px; font: inherit; font-size: 13px; cursor: pointer;
