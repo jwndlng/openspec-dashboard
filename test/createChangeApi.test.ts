@@ -1,10 +1,12 @@
 import { afterEach, expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { type AppState, createFetchHandler } from "../src/server/api.ts";
 import { defaultConfig, newRepoConfig } from "../src/server/config.ts";
 import { Scanner } from "../src/server/scanner.ts";
 import { tempDir, treeFingerprint, useTempHome } from "./helpers.ts";
+import { git } from "./sessionHelpers.ts";
 
 interface Harness {
   base: string;
@@ -15,8 +17,17 @@ interface Harness {
   repoId: string;
 }
 
-async function harness(options: { withOpenspecDir?: boolean; withArchive?: boolean; enabled?: boolean; schema?: string } = {}): Promise<Harness> {
-  const { withOpenspecDir = true, withArchive = false, enabled = true, schema = "spec-driven" } = options;
+/** `git status --porcelain --untracked-files=all`, lines sorted and untrimmed: the leading column is the index state. */
+function porcelain(repo: string): string[] {
+  const out = Bun.spawnSync(["git", "status", "--porcelain", "--untracked-files=all"], { cwd: repo, stdout: "pipe", stderr: "pipe" }).stdout.toString();
+  return out.split("\n").filter((line) => line !== "").sort();
+}
+
+/** `.git/index` and the tree together: equal before and after means neither a file nor an index entry changed. */
+const indexAndTree = async (repoRoot: string) => `${readFileSync(join(repoRoot, ".git", "index")).toString("hex")}\n${await treeFingerprint(repoRoot)}`;
+
+async function harness(options: { withOpenspecDir?: boolean; withArchive?: boolean; enabled?: boolean; schema?: string; git?: boolean } = {}): Promise<Harness> {
+  const { withOpenspecDir = true, withArchive = false, enabled = true, schema = "spec-driven", git: asGit = false } = options;
   const { cleanup } = await useTempHome();
   const repoRoot = await tempDir("osd-repo-");
   if (withOpenspecDir) {
@@ -26,6 +37,15 @@ async function harness(options: { withOpenspecDir?: boolean; withArchive?: boole
   if (withArchive) {
     await mkdir(join(repoRoot, "openspec", "changes", "archive", "2026-06-18-old-thing"), { recursive: true });
     await writeFile(join(repoRoot, "openspec", "changes", "archive", "2026-06-18-old-thing", ".openspec.yaml"), "schema: spec-driven\ncreated: 2026-06-18\n");
+  }
+  if (asGit) {
+    // A real repository with one commit, so that staging has an index to write and refs to leave alone.
+    git(repoRoot, "init", "-q", "-b", "main");
+    git(repoRoot, "config", "user.email", "t@example.invalid");
+    git(repoRoot, "config", "user.name", "t");
+    await writeFile(join(repoRoot, "README.md"), "# demo-ops\n");
+    git(repoRoot, "add", "-A");
+    git(repoRoot, "commit", "-q", "-m", "init");
   }
   const repo = newRepoConfig(repoRoot, enabled);
   const state: AppState = { config: { ...defaultConfig(), repos: [repo] }, scanner: undefined as unknown as Scanner };
@@ -50,13 +70,47 @@ const post = (base: string, path: string, body?: unknown, headers: Record<string
 let h: Harness;
 afterEach(() => h?.home());
 
-test("POST /api/repos/:id/changes creates the directory and returns 201", async () => {
+test("POST /api/repos/:id/changes creates the directory and returns 201 (staged false outside git)", async () => {
   h = await harness();
   const res = await post(h.base, `/api/repos/${h.repoId}/changes`, { name: "add-audit-trail" });
   expect(res.status).toBe(201);
-  expect(await res.json()).toEqual({ name: "add-audit-trail" });
+  expect(await res.json()).toEqual({ name: "add-audit-trail", staged: false });
   const marker = await Bun.file(join(h.repoRoot, "openspec", "changes", "add-audit-trail", ".openspec.yaml")).text();
   expect(marker).toContain("schema: spec-driven");
+});
+
+test("in a git repository the new directory is staged and the 201 body says so", async () => {
+  h = await harness({ git: true });
+  const head = git(h.repoRoot, "rev-parse", "HEAD");
+  const refs = git(h.repoRoot, "for-each-ref");
+  const res = await post(h.base, `/api/repos/${h.repoId}/changes`, { name: "add-audit-trail", prompt: "Log every mutation" });
+  expect(res.status).toBe(201);
+  expect(await res.json()).toEqual({ name: "add-audit-trail", staged: true });
+  expect(porcelain(h.repoRoot)).toEqual([
+    "A  openspec/changes/add-audit-trail/.openspec.yaml",
+    "A  openspec/changes/add-audit-trail/prompt.md",
+  ]);
+  // Staged, not committed: HEAD, the branch and every ref are what they were.
+  expect(git(h.repoRoot, "rev-parse", "HEAD")).toBe(head);
+  expect(git(h.repoRoot, "symbolic-ref", "HEAD")).toBe("refs/heads/main");
+  expect(git(h.repoRoot, "for-each-ref")).toBe(refs);
+
+  await h.state.scanner.trigger().done;
+  const snap = await (await fetch(`${h.base}/api/state`)).json();
+  const change = snap.repos[0].changes.find((c: { name: string }) => c.name === "add-audit-trail");
+  expect(change?.column).toBe("New");
+});
+
+test("in a git repository with unrelated dirty and untracked files, only the new directory is staged", async () => {
+  h = await harness({ git: true });
+  await writeFile(join(h.repoRoot, "README.md"), "# demo-ops\n\nedited locally, not staged\n");
+  await writeFile(join(h.repoRoot, "scratch.txt"), "untracked and staying that way\n");
+  expect(porcelain(h.repoRoot)).toEqual([" M README.md", "?? scratch.txt"]);
+
+  const res = await post(h.base, `/api/repos/${h.repoId}/changes`, { name: "add-audit-trail" });
+  expect(res.status).toBe(201);
+  expect(porcelain(h.repoRoot)).toEqual([" M README.md", "?? scratch.txt", "A  openspec/changes/add-audit-trail/.openspec.yaml"]);
+  expect(git(h.repoRoot, "diff", "--cached", "--name-only")).toBe("openspec/changes/add-audit-trail/.openspec.yaml");
 });
 
 test("a successful create writes only the new change directory (nothing else moves)", async () => {
@@ -171,4 +225,55 @@ test("400 for a malformed JSON body", async () => {
   h = await harness();
   const res = await fetch(`${h.base}/api/repos/${h.repoId}/changes`, { method: "POST", body: "{not json", headers: { "content-type": "application/json" } });
   expect(res.status).toBe(400);
+});
+
+// --- Refusals in a git repository run no git: the index is byte-for-byte unchanged, as is the tree ---
+
+test("400 (invalid name) in a git repository leaves the index and tree untouched", async () => {
+  h = await harness({ git: true });
+  const before = await indexAndTree(h.repoRoot);
+  const res = await post(h.base, `/api/repos/${h.repoId}/changes`, { name: "foo/bar" });
+  expect(res.status).toBe(400);
+  expect(await indexAndTree(h.repoRoot)).toBe(before);
+});
+
+test("404 (unknown repository) leaves a git repository's index and tree untouched", async () => {
+  h = await harness({ git: true });
+  const before = await indexAndTree(h.repoRoot);
+  const res = await post(h.base, `/api/repos/does-not-exist/changes`, { name: "add-audit-trail" });
+  expect(res.status).toBe(404);
+  expect(await indexAndTree(h.repoRoot)).toBe(before);
+});
+
+test("409 (duplicate active name) in a git repository leaves the index and tree untouched", async () => {
+  h = await harness({ git: true });
+  await mkdir(join(h.repoRoot, "openspec", "changes", "add-audit-trail"), { recursive: true });
+  const before = await indexAndTree(h.repoRoot);
+  const res = await post(h.base, `/api/repos/${h.repoId}/changes`, { name: "add-audit-trail" });
+  expect(res.status).toBe(409);
+  expect(await indexAndTree(h.repoRoot)).toBe(before);
+});
+
+test("409 (duplicate archived name) in a git repository leaves the index and tree untouched", async () => {
+  h = await harness({ git: true, withArchive: true });
+  const before = await indexAndTree(h.repoRoot);
+  const res = await post(h.base, `/api/repos/${h.repoId}/changes`, { name: "old-thing" });
+  expect(res.status).toBe(409);
+  expect(await indexAndTree(h.repoRoot)).toBe(before);
+});
+
+test("409 (no openspec/ directory) in a git repository leaves the index and tree untouched", async () => {
+  h = await harness({ git: true, withOpenspecDir: false });
+  const before = await indexAndTree(h.repoRoot);
+  const res = await post(h.base, `/api/repos/${h.repoId}/changes`, { name: "add-audit-trail" });
+  expect(res.status).toBe(409);
+  expect(await indexAndTree(h.repoRoot)).toBe(before);
+});
+
+test("403 (foreign origin) in a git repository leaves the index and tree untouched", async () => {
+  h = await harness({ git: true });
+  const before = await indexAndTree(h.repoRoot);
+  const res = await post(h.base, `/api/repos/${h.repoId}/changes`, { name: "add-audit-trail" }, { origin: "https://example.com" });
+  expect(res.status).toBe(403);
+  expect(await indexAndTree(h.repoRoot)).toBe(before);
 });

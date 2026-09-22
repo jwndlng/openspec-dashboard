@@ -325,8 +325,9 @@ async function artifactRoutes(state: AppState, url: URL, match: RegExpExecArray)
 
 /**
  * The one API route that writes into a tracked repository outside `openspec/config.yaml`: creates
- * `openspec/changes/<name>/` with its schema marker and, if given, `prompt.md`. Refused for any reason means nothing
- * was written; the create itself is atomic (exclusive-create), so two concurrent requests cannot both succeed.
+ * `openspec/changes/<name>/` with its schema marker and, if given, `prompt.md`, then stages that directory. Refused
+ * for any reason means nothing was written and no git was run; the create itself is atomic (exclusive-create), so
+ * two concurrent requests cannot both succeed. A staging failure is reported (`staged: false`), never a failure.
  */
 async function postCreateChange(state: AppState, req: Request, repoId: string): Promise<Response> {
   const repo = state.config.repos.find((r) => r.id === repoId);
@@ -351,7 +352,7 @@ async function postCreateChange(state: AppState, req: Request, repoId: string): 
     return json({ error: result.message }, status);
   }
   state.scanner.trigger();
-  return json({ name: result.name }, 201);
+  return json({ name: result.name, staged: result.staged }, 201);
 }
 
 /**

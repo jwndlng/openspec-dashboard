@@ -1,5 +1,5 @@
 import type { ActivityQuery } from "../shared/activity.ts";
-import type { ActivityPage, PromptResult, PullResult, ShipResult, WorkStatus } from "../shared/types.ts";
+import type { ActivityPage, CreateChangeResponse, PromptResult, PullResult, ShipResult, WorkStatus } from "../shared/types.ts";
 import type { AgentAvailability, ArtifactFileContent, ChangeArtifacts, Config, DiscoverResult, ScanTriggerResult, Session, SessionAction, SessionWorktree, SharedConfig, SharedConfigApplyResult, SharedConfigAssignment, SharedConfigPreview, Snapshot } from "../shared/types.ts";
 import { socketOrigin } from "./url.ts";
 
@@ -44,7 +44,7 @@ export interface Api {
    * Creates a new change directory in the repository: `openspec/changes/<name>/` with the schema marker and, when a
    * non-empty prompt is given, `prompt.md`. Atomic; a duplicate name is refused with `409`.
    */
-  createChange(repoId: string, name: string, prompt?: string): Promise<{ name: string }>;
+  createChange(repoId: string, name: string, prompt?: string): Promise<CreateChangeResponse>;
   /**
    * Fetches the repository's remote and fast-forwards its main checkout when that is safe. The only operation that
    * makes the dashboard contact a remote; it never runs unless the user asks.
@@ -126,7 +126,7 @@ export const httpApi: Api = {
     call<DiscoverResult>("/api/discover", { method: "POST", body: scanRoots || ignorePaths ? JSON.stringify({ scanRoots, ignorePaths }) : undefined }),
   scan: () => call<ScanTriggerResult>("/api/scan", { method: "POST" }),
   createChange: (repoId, name, prompt) =>
-    call<{ name: string }>(`/api/repos/${encodeURIComponent(repoId)}/changes`, { method: "POST", body: JSON.stringify(prompt !== undefined && prompt !== "" ? { name, prompt } : { name }) }),
+    call<CreateChangeResponse>(`/api/repos/${encodeURIComponent(repoId)}/changes`, { method: "POST", body: JSON.stringify(prompt !== undefined && prompt !== "" ? { name, prompt } : { name }) }),
   pullRepo: (repoId) => call<PullResult>(`/api/repos/${encodeURIComponent(repoId)}/pull`, { method: "POST" }),
   pullAll: () => call<{ results: PullResult[] }>("/api/pull", { method: "POST" }),
   sharedConfig: () => call<SharedConfig>("/api/shared-config"),
