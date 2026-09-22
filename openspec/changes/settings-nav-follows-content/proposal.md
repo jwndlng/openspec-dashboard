@@ -5,9 +5,9 @@ The Settings navigation added by `add-settings-nav` is pinned: it sits beside th
 ## What Changes
 
 - The Settings page scrolls **as one page**: the navigation and the sections share a single scroll area spanning the full width below the top bar, with the scrollbar at the window edge. The mouse wheel works wherever the pointer is — over the navigation, the sections or the side margins.
-- The navigation **follows the content**: it starts at the top-left next to the first section and, as the user scrolls or jumps, stays at the top of the view beside the sections in view (sticky inside the one scroll area). It is no longer a separate, non-scrolling column. (A first version let it scroll out of view and only brought it along on a jump; in use that still felt like the navigation getting lost, so it now follows manual scrolling too.)
+- The navigation **moves with the content**: it starts at the top-left next to the first section and scrolls together with the sections, out of view as the user scrolls down and back into view at the top. It is not pinned, sticky or moved along on a jump. It is no longer a separate, non-scrolling column. (Intermediate versions brought it along on a jump and then made it sticky; in use the sticky navigation still read as "staying at the top", which is what this change set out to remove.)
 - Jumping works the same (section to the top, focus, reduced motion), and the next jump is always one click away.
-- The **narrow-screen row** follows the same rule: it sticks to the top of the view, and a jump lands the section directly below it without covering it. The `<nav>` itself is the row's sideways scroller, which also fixes entries of a sideways-scrolled row not reacting to clicks in Chrome.
+- The **narrow-screen row** follows the same rule: it sits above the sections and scrolls away with them. The `<nav>` itself is the row's sideways scroller, which also fixes entries of a sideways-scrolled row not reacting to clicks in Chrome.
 - The current-section marker and the `?section=` URL keep being updated while scrolling, so deep links and reloads still land where the user was.
 - Updating the marker MUST NOT move the page: keeping the current entry visible inside the narrow row may only scroll that row sideways.
 - The save bar stays pinned at the bottom, unchanged.

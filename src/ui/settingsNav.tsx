@@ -27,7 +27,7 @@ function prefersReducedMotion(): boolean {
  * Tracks the section at the top of `scroller`, jumps to sections, and keeps ?section= in step. A jump pins its target
  * as current until the user scrolls again, so the marker neither flickers through the sections passing by nor snaps
  * to a neighbour when the target is too short to reach the top. Pass no ids until the sections are rendered.
- * The navigation itself is sticky (styles.css): it follows the content by itself, on a jump and while scrolling.
+ * The navigation is part of the page and scrolls away with the content (styles.css); it is not moved along.
  */
 export function useSectionNav(scroller: RefObject<HTMLElement>, ids: string[]) {
   const [current, setCurrent] = useState<string | undefined>(ids[0]);
@@ -35,7 +35,7 @@ export function useSectionNav(scroller: RefObject<HTMLElement>, ids: string[]) {
   const pendingDeepLink = useRef<string | undefined>(new URLSearchParams(currentQuery()).get("section") ?? undefined);
   const key = ids.join(" ");
 
-  // Bring a section to the top of the view (below the sticky row on narrow screens, see scroll-margin-top).
+  // Bring a section to the top of the view (scroll-margin-top keeps it level with where the nav starts).
   const scrollToSection = (id: string, smooth: boolean) => {
     const target = document.getElementById(sectionElementId(id));
     target?.scrollIntoView({ block: "start", behavior: smooth && !prefersReducedMotion() ? "smooth" : "auto" });
@@ -90,17 +90,10 @@ export function useSectionNav(scroller: RefObject<HTMLElement>, ids: string[]) {
       }
     });
     if (layout) relayout.observe(layout);
-    // The narrow-screen row sticks over the top of the sections, so a jump has to land below it (scroll-margin-top).
-    const navEl = el.querySelector<HTMLElement>(".settings-nav");
-    const navSize = new ResizeObserver(() => {
-      if (navEl) el.style.setProperty("--settings-nav-height", `${navEl.offsetHeight}px`);
-    });
-    if (navEl) navSize.observe(navEl);
     el.addEventListener("scroll", onScroll, { passive: true });
     return () => {
       el.removeEventListener("scroll", onScroll);
       relayout.disconnect();
-      navSize.disconnect();
       if (frame) cancelAnimationFrame(frame);
     };
   }, [key]);
@@ -144,7 +137,7 @@ export function SettingsNav({ sections, current, onJump }: { sections: SettingsS
     if (!row) return;
     const reveal = () => {
       const entry = row.querySelector<HTMLElement>('[aria-current="true"]')?.parentElement;
-      // The row is its entries' offsetParent (sticky, so positioned), so offsetLeft is in the row's own scroll
+      // The row is its entries' offsetParent (positioned, see styles.css), so offsetLeft is in the row's own scroll
       // coordinates and does not change as the row scrolls.
       if (entry) row.scrollLeft = rowScrollLeft(row, entry);
     };

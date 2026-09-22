@@ -77,6 +77,14 @@ Added after further use: with D6 the navigation came along on a jump, but manual
 - **The `<nav>` is the row's horizontal scroller, not the `<ul>`.** In Chrome, once the `<ul>` (`overflow-x: auto`) inside the nav had been scrolled sideways, clicks on its entries hit the `<ul>` and not the links (measured with `elementFromPoint` and real mouse events over CDP; it happened on `main` too, stuck or not). With the nav as the scroller every visible entry is clickable. The entries' offsetParent is the (sticky, so positioned) nav, which keeps `rowScrollLeft` in the row's own coordinates.
 - **Removed:** `navOffset`, `--nav-offset`, `--nav-order`, `--section-order`, the flattened narrow grid (`display: contents`) and the "return home at `scrollTop = 0`" logic; sticky does all of that. Kept: the jump pin, and re-scrolling to the section jumped to when the layout above it grows before the user scrolls (late discovery results).
 
+### D8. Plain page content, no sticky (supersedes D6 and D7)
+
+Added after further use of D7: "If I scroll on the settings page the navigation stays at the top. It should move with the content while scrolling." Asked to choose between scrolling away, scrolling away but coming along on a jump, and staying level with the current section, the maintainer chose the first: the navigation is simply part of the page.
+
+- **Wide and narrow:** `.settings-nav` is not sticky and gets no offset; it scrolls with `.settings-scroll` like the sections. It keeps `position: relative` only so it stays its entries' offsetParent (`rowScrollLeft` measures in the row's own coordinates).
+- **Removed:** the narrow row's page background and `z-index`, `--settings-nav-height` and its `ResizeObserver`; sections go back to `scroll-margin-top: var(--gap-2)` everywhere.
+- **Kept:** the one full-width scroll area (D1), the horizontal-only row reveal (D4), the `<nav>` as the row's sideways scroller (D7), the jump pin and the re-scroll when the layout grows before the user scrolls.
+
 ## Risks / Trade-offs
 
 - [After a jump the navigation was gone until the user scrolled back up] → resolved by D6, then by D7 for manual scrolling too.
