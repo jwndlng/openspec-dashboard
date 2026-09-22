@@ -1,0 +1,25 @@
+name: draft-release
+
+# Keeps one draft GitHub release current: merged pull requests grouped by their labels, the next version resolved from
+# them (.github/release-drafter.yml). Never publishes, tags or builds; publishing the draft runs release.yml.
+on:
+  push:
+    branches: [main]
+
+# Two merges in a row must not race on the same draft.
+concurrency:
+  group: draft-release
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  update-draft:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+      pull-requests: read
+    steps:
+      - uses: release-drafter/release-drafter@34d80673e067bdc0c24568d3af899c216adcfaa9 # v7.7.0

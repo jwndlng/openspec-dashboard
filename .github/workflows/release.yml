@@ -1,0 +1,136 @@
+name: release
+
+# Publishing the draft release (draft-release.yml) builds the single binary from its tag on each platform, verifies it
+# and attaches it with SHA256SUMS and build-provenance attestations. A draft, or a tag that does not start with `v`,
+# builds nothing. The build jobs are read-only; only the publish job, which checks out nothing, holds write scopes.
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    if: ${{ !github.event.release.draft && startsWith(github.event.release.tag_name, 'v') }}
+    name: build (${{ matrix.platform }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
+    strategy:
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            platform: linux-x64
+          - runner: ubuntu-24.04-arm
+            platform: linux-arm64
+          - runner: macos-latest
+            platform: darwin-arm64
+          # GitHub's last Intel macOS image. When it is retired, build this one on macos-latest with
+          # `--target=bun-darwin-x64` and run the smoke test under Rosetta.
+          - runner: macos-15-intel
+            platform: darwin-x64
+    env:
+      TAG: ${{ github.event.release.tag_name }}
+      PLATFORM: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.release.tag_name }}
+          persist-credentials: false
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: .bun-version
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build single binary
+        run: OPENSPEC_DASHBOARD_VERSION="$TAG" bun run build
+
+      # Every binary is executed before anything is attached; the version must be exactly the tag.
+      - name: Smoke test binary
+        run: |
+          ./dist/openspec-dashboard --help
+          version="$(./dist/openspec-dashboard --version)"
+          if [ "$version" != "$TAG" ]; then
+            echo "::error::--version printed '$version', expected '$TAG'"
+            exit 1
+          fi
+
+      - name: Name the binary
+        run: mv dist/openspec-dashboard "dist/openspec-dashboard-$TAG-$PLATFORM"
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: openspec-dashboard-${{ matrix.platform }}
+          path: dist/openspec-dashboard-${{ github.event.release.tag_name }}-${{ matrix.platform }}
+          if-no-files-found: error
+          retention-days: 7
+
+  # Runs only when every platform built and verified, so a failure attaches nothing.
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    env:
+      TAG: ${{ github.event.release.tag_name }}
+      REPO: ${{ github.repository }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: openspec-dashboard-*
+          path: release
+          merge-multiple: true
+
+      - name: Write SHA256SUMS
+        working-directory: release
+        run: |
+          test "$(ls openspec-dashboard-* | wc -l)" -eq 4
+          sha256sum openspec-dashboard-* > SHA256SUMS
+          cat SHA256SUMS
+
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: release/openspec-dashboard-*
+
+      - name: Attach to the release
+        run: gh release upload "$TAG" release/openspec-dashboard-* release/SHA256SUMS --repo "$REPO" --clobber
+
+      # Skipped when the notes already have the section, so re-running the job does not add it twice.
+      - name: Append download instructions to the release notes
+        run: |
+          gh release view "$TAG" --repo "$REPO" --json body --jq .body > notes.md
+          if grep -q '^## Download' notes.md; then
+            echo "release notes already have a Download section"
+            exit 0
+          fi
+          cat >> notes.md <<'NOTES'
+
+          ## Download
+
+          Single binaries, no Bun needed:
+
+          - `openspec-dashboard-__TAG__-darwin-arm64` (macOS, Apple silicon)
+          - `openspec-dashboard-__TAG__-darwin-x64` (macOS, Intel)
+          - `openspec-dashboard-__TAG__-linux-x64`
+          - `openspec-dashboard-__TAG__-linux-arm64`
+
+          Verify a download, then make it executable:
+
+          ```sh
+          shasum -a 256 -c --ignore-missing SHA256SUMS
+          gh attestation verify openspec-dashboard-__TAG__-<platform> --repo __REPO__
+          chmod +x openspec-dashboard-__TAG__-<platform>
+          ```
+
+          The macOS binaries are not notarised. If macOS refuses to open one, remove the quarantine flag:
+          `xattr -d com.apple.quarantine openspec-dashboard-__TAG__-<platform>`
+          NOTES
+          sed -i -e "s|__TAG__|$TAG|g" -e "s|__REPO__|$REPO|g" notes.md
+          gh release edit "$TAG" --repo "$REPO" --notes-file notes.md

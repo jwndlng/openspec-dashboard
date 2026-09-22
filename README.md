@@ -18,13 +18,20 @@ free-text `prompt.md`.
 
 ## Run
 
-Requires [Bun](https://bun.sh) ≥ 1.4 to build; the compiled binary needs nothing else.
+**Download a binary** for macOS (arm64, x64) or Linux (x64, arm64) from the
+[releases page](https://github.com/jwndlng/openspec-dashboard/releases) — it needs nothing else. Each release lists
+its files with `SHA256SUMS` and build-provenance attestations; check a download with
+`shasum -a 256 -c --ignore-missing SHA256SUMS` and `gh attestation verify <file> --repo jwndlng/openspec-dashboard`,
+then `chmod +x` it. The macOS binaries are not notarised: if macOS refuses to open one, run
+`xattr -d com.apple.quarantine <file>`. `--version` prints the release it was built from.
+
+**From source**, [Bun](https://bun.sh) ≥ 1.4 is needed to build; the compiled binary needs nothing else.
 
 ```sh
 bun install
 bun run dev                     # builds the UI, serves http://127.0.0.1:4711 from source
 bun run build                   # dist/openspec-dashboard (single binary, UI + fonts embedded)
-./dist/openspec-dashboard       # opens the browser; --port N and --no-open are available
+./dist/openspec-dashboard       # opens the browser; --port N, --no-open and --version are available
 bun test                        # unit + API tests against the fixture repos in test/fixtures
 bun run check                   # lint + typecheck + tests — what CI runs
 bun run build:demo              # dist/demo/index.html — the demo: same UI, in-memory API, sample data (open it from disk)

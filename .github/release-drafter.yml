@@ -1,0 +1,50 @@
+# Read by release-drafter (draft-release.yml) and by its autolabeler (pr-title.yml).
+# Pull requests are labelled from their Conventional Commit title; the labels pick the release notes category and the
+# next version. A `major` label, added by hand, forces a major bump.
+name-template: "v$RESOLVED_VERSION"
+tag-template: "v$RESOLVED_VERSION"
+change-template: "- $TITLE @$AUTHOR (#$NUMBER)"
+# Keep titles literal: `<`, `*`, `_` and `&` would otherwise be read as markdown or HTML, `@` and `#` as mentions.
+change-title-escapes: '\<*_&@#'
+categories:
+  - title: "Features"
+    labels: [feat]
+  - title: "Bug Fixes"
+    labels: [fix]
+  - title: "Maintenance"
+    labels: [chore, refactor, style, perf, test, ci, build]
+  - title: "Documentation"
+    labels: [docs]
+version-resolver:
+  major:
+    labels: [major]
+  minor:
+    labels: [feat]
+  default: patch
+template: |
+  ## Changes
+
+  $CHANGES
+
+# One rule per Conventional Commit type, with an optional scope and `!`: `feat(board)!: …` is labelled `feat`.
+autolabeler:
+  - label: feat
+    title: ['/^feat(\(.+\))?!?:/i']
+  - label: fix
+    title: ['/^fix(\(.+\))?!?:/i']
+  - label: docs
+    title: ['/^docs(\(.+\))?!?:/i']
+  - label: chore
+    title: ['/^chore(\(.+\))?!?:/i']
+  - label: refactor
+    title: ['/^refactor(\(.+\))?!?:/i']
+  - label: test
+    title: ['/^test(\(.+\))?!?:/i']
+  - label: style
+    title: ['/^style(\(.+\))?!?:/i']
+  - label: ci
+    title: ['/^ci(\(.+\))?!?:/i']
+  - label: build
+    title: ['/^build(\(.+\))?!?:/i']
+  - label: perf
+    title: ['/^perf(\(.+\))?!?:/i']

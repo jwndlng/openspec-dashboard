@@ -14,7 +14,7 @@
     "build:ui": "bun run scripts/build-ui.ts",
     "build:demo": "bun run scripts/build-ui.ts demo",
     "screenshots": "bun run scripts/screenshots.ts",
-    "build": "bun run scripts/build-ui.ts && bun build --compile src/server/index.ts --outfile dist/openspec-dashboard && rm -f .*.bun-build",
+    "build": "bun run scripts/build-ui.ts && bun run scripts/build.ts",
     "test": "bun test",
     "typecheck": "tsc --noEmit",
     "lint": "biome lint .",

@@ -50,7 +50,9 @@ jobs:
         run: bun run build
 
       - name: Smoke test binary
-        run: ./dist/openspec-dashboard --help
+        run: |
+          ./dist/openspec-dashboard --help
+          ./dist/openspec-dashboard --version
 
       # Published to GitHub Pages from main (pages.yml); building it here makes a broken demo block the pull request.
       - name: Build demo
