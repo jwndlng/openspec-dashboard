@@ -400,15 +400,14 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: 
 
 /* ---- Settings ---- */
 /* One scroll area for the whole page, full width so the scrollbar is at the window edge and the margins scroll too.
-   The navigation is in the flow and moves with the sections. */
+   The navigation is sticky, so it stays beside the section in view while the page scrolls. */
 .settings-scroll { flex: 1; min-height: 0; overflow: auto; }
 .settings-layout {
   width: 100%; max-width: 1320px; margin: 0 auto;
   display: grid; grid-template-columns: minmax(168px, 200px) minmax(0, 1fr); align-items: start;
 }
-/* --nav-offset: set on a jump, so the navigation lands beside the section jumped to (see useSectionNav). */
-.settings-nav { padding: var(--gap-2) 0 var(--gap-2) var(--gap-2); position: relative; top: var(--nav-offset, 0px); }
-.settings-nav ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; position: relative; }
+.settings-nav { padding: var(--gap-2) 0 var(--gap-2) var(--gap-2); position: sticky; top: 0; }
+.settings-nav ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
 .settings-link {
   display: flex; align-items: center; justify-content: space-between; gap: var(--gap-1);
   padding: 5px 8px; border-radius: var(--radius); color: var(--fg-body);
@@ -438,13 +437,11 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: 
 .savebar { position: sticky; bottom: 0; display: flex; gap: var(--gap-1); align-items: center; padding: var(--gap-1) var(--gap-2); background: var(--bg-section); border-top: 1px solid var(--border-light); }
 
 @media (max-width: 720px) {
-  /* One flat column: the row and the sections are items of the same grid, so `order` can put the row directly above
-     the section jumped to without covering anything. */
-  .settings-layout { grid-template-columns: minmax(0, 1fr); gap: var(--gap-2); padding: var(--gap-2); }
-  .settings { display: contents; }
-  .settings-section { order: var(--section-order); }
-  .settings-nav { order: var(--nav-order, 0); top: 0; padding: 0 0 var(--gap-1); border-bottom: 1px solid var(--border-light); }
-  .settings-nav ul { flex-direction: row; overflow-x: auto; gap: 4px; }
+  /* The row sticks to the top above the sections; a jump lands below it (--settings-nav-height, see useSectionNav). */
+  .settings-layout { grid-template-columns: minmax(0, 1fr); }
+  .settings-nav { z-index: 1; overflow-x: auto; padding: var(--gap-2) var(--gap-2) var(--gap-1); background: var(--bg-base); border-bottom: 1px solid var(--border-light); }
+  .settings-section { scroll-margin-top: calc(var(--settings-nav-height, 0px) + var(--gap-2)); }
+  .settings-nav ul { flex-direction: row; gap: 4px; }
   .settings-nav li { flex: none; }
   .settings-link { border-left: 0; border-bottom: 2px solid transparent; }
   .settings-link[aria-current="true"] { border-bottom-color: var(--brand); }
@@ -489,6 +486,7 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: 
   flex: none; display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
   padding: 6px 8px; background: var(--bg-section); border-top: 1px solid var(--border-light);
 }
+.session-replies-label { flex: none; }
 .session-terminal-note { position: absolute; right: 12px; bottom: 8px; font-size: 11px; color: var(--fg-subtle); background: var(--bg-section); padding: 2px 6px; border-radius: var(--radius); }
 .agent-fields { border: 0; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--gap-1); min-width: 0; }
 .agent-fields:disabled { opacity: 0.5; }

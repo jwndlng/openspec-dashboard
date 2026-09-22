@@ -29,10 +29,10 @@
 
 ## 3. Board card chip
 
-- [ ] 3.1 Check the chip in `src/ui/sessions.tsx` renders the longer `may need you 45s` label without truncating or
+- [x] 3.1 Check the chip in `src/ui/sessions.tsx` renders the longer `may need you 45s` label without truncating or
       wrapping the card; verify in `bun run dev` with a session left idle past the threshold, and narrow the board to
       its smallest column width.
-- [ ] 3.2 Ensure `tone-warning` exists for a session chip in `src/ui/styles.css` and reads as attention, not error,
+- [x] 3.2 Ensure `tone-warning` exists for a session chip in `src/ui/styles.css` and reads as attention, not error,
       in both themes; reuse the existing status-label token rather than adding a colour, and rebase onto
       `agent-session-coloring` first if it has landed in `styles.css`; verify by eye in both themes.
 
@@ -49,5 +49,5 @@
 
 - [x] 5.1 Run `bun run check` (lint + typecheck + tests) and confirm it passes.
 - [x] 5.2 Run `openspec validate status-of-agent-session` and confirm the change is valid.
-- [ ] 5.3 In `bun run dev`, start a session, watch the chip read `working` while the agent prints, then flip to
+- [x] 5.3 In `bun run dev`, start a session, watch the chip read `working` while the agent prints, then flip to
       `may need you <duration>` within one 3s poll after it falls silent, and flip back when output resumes.
