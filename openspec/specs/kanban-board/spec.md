@@ -87,7 +87,7 @@ The branch badge MUST NOT extend beyond the card's content area at any column wi
 
 #### Scenario: Card on a repository board
 - **WHEN** the same change is shown on the board for repository `demo-ops`
-- **THEN** the card shows `cloud-deployment`, the progress bar, `12d ago` and the copy action, but not the repository name
+- **THEN** the card shows `cloud-deployment`, the progress bar, `12d ago` and **Show details**, but not the repository name
 
 #### Scenario: Short branch name is shown in full
 - **WHEN** a card has `branchMatch: feat/add-login`
@@ -160,34 +160,6 @@ A card SHALL show a `prompt` badge — text plus colour — when the change has 
 #### Scenario: Change without prompt
 - **WHEN** a change has no `prompt.md`
 - **THEN** the card shows no prompt badge
-
-### Requirement: Copy apply command
-Each card SHALL offer a copy action. For a change whose column is `Ready`, `Implementing`, `Done`, `Synced` or `Archived`, the action SHALL copy `cd <checkoutPath> && claude "/opsx:apply <changeName>"` to the clipboard. For a change in any earlier column (`New`, or any artifact column such as `Proposal`, `Design`, `Specs`, `Brief`, `Plan` — anything that is not yet `Ready`), the action SHALL instead copy a **start command** that continues drafting the change:
-
-- Base: `cd <checkoutPath> && claude "/opsx:continue <changeName>"`.
-- When the change has a `prompt.md`, the command SHALL be extended to point the agent at it: the start command SHALL be `cd <checkoutPath> && claude "/opsx:continue <changeName> — see openspec/changes/<changeName>/prompt.md"`.
-
-`<checkoutPath>` is the path of the checkout the change's data comes from — the linked worktree of its leading copy, or the repository path when that is the main checkout. The action's label SHALL make clear which command it copies (an apply command or a start command). The dashboard MUST NOT execute the copied command.
-
-#### Scenario: Copy
-- **WHEN** the user clicks "Copy apply command" on change `multi-tenant-sync` in `/Users/x/Workspace/acme/forum-admin`, which lives in the main checkout and is in `Ready`
-- **THEN** the clipboard contains `cd /Users/x/Workspace/acme/forum-admin && claude "/opsx:apply multi-tenant-sync"`
-
-#### Scenario: Change lives in a worktree
-- **WHEN** the user clicks "Copy apply command" on change `audit-trail` in `Ready` whose leading copy is in the worktree `/Users/x/Workspace/acme/forum-admin/.claude/worktrees/audit-trail`
-- **THEN** the clipboard contains `cd /Users/x/Workspace/acme/forum-admin/.claude/worktrees/audit-trail && claude "/opsx:apply audit-trail"`
-
-#### Scenario: Copy start command for a new change
-- **WHEN** the user activates the copy action on change `add-audit-trail` in `New` in repository `/Users/x/Workspace/acme/forum-admin`, and the change has no `prompt.md`
-- **THEN** the clipboard contains `cd /Users/x/Workspace/acme/forum-admin && claude "/opsx:continue add-audit-trail"`
-
-#### Scenario: Start command points at prompt.md
-- **WHEN** the same change also has a `prompt.md`
-- **THEN** the clipboard contains `cd /Users/x/Workspace/acme/forum-admin && claude "/opsx:continue add-audit-trail — see openspec/changes/add-audit-trail/prompt.md"`
-
-#### Scenario: Artifact column before Ready copies the start command
-- **WHEN** the user activates the copy action on a change in `Proposal` (any column that is not `Ready` or later)
-- **THEN** the clipboard contains a start command, not an apply command
 
 ### Requirement: Visual design follows the dashboard token set
 The UI SHALL define its colours as two token sets sharing the same token names: the dark set defined in design.md (neutral grey backgrounds `#141619`…`#3b3e41`, teal brand `#71c7c5`) and a light set (backgrounds `#f6f8fb`…`#d3dbe6`, teal brand `#1f8a88`). The dark theme's background, text and border tokens SHALL be near-neutral greys with at most a slight cool tint; in the dark theme teal SHALL be used only as an accent (focus, active state, primary actions, progress) and MUST NOT be the colour of panel or card borders, nor the colour of any status label. Both themes SHALL share Space Grotesk for text, JetBrains Mono for identifiers and a 4px radius, with fonts bundled locally. Component styles MUST reference colour tokens only and MUST NOT contain literal colour values. In both themes, text and status colours SHALL have a contrast ratio of at least 4.5:1 against the backgrounds they are rendered on. The token set SHALL keep the status roles, the brand accent and the repository colours in three disjoint colour ranges, so that no status label can be mistaken for a repository accent and no repository can be shown in a colour that means a status. The UI MUST render correctly without network access.
@@ -412,7 +384,7 @@ Minimizing MUST NOT change which cards match the active filters or any count: th
 - **THEN** the board shows the default states, toggling still works for the current page, and no error is shown
 
 ### Requirement: Cards offer session starters and show session state
-When agent sessions are enabled and the card's repository is tracked and not excluded, a card SHALL offer the session starters available for its change — **Draft artifacts** while an artifact is not done, **Implement** in `Ready` or `Implementing`, **Archive** in `Done`, none for archived changes — limited to the starters the repository's agent has a prompt for, and disabled with an explanation when that agent's executable is not found. A card whose change has a running session SHALL instead show a badge — `running`, or `quiet <duration>` when the terminal has been silent for more than a minute — and a card whose latest session failed to start or ended with an error SHALL show that; activating the badge SHALL open the session panel. Status MUST be conveyed by text as well as colour. The existing copy actions remain available. When agent sessions are disabled or the repository is excluded, cards MUST look and behave exactly as before.
+When agent sessions are enabled and the card's repository is tracked and not excluded, a card SHALL offer the session starters available for its change — **Draft artifacts** while an artifact is not done, **Implement** in `Ready` or `Implementing`, **Archive** in `Done`, none for archived changes — limited to the starters the repository's agent has a prompt for, and disabled with an explanation when that agent's executable is not found. A card whose change has a running session SHALL instead show a badge — `running`, or `quiet <duration>` when the terminal has been silent for more than a minute — and a card whose latest session failed to start or ended with an error SHALL show that; activating the badge SHALL open the session panel. Status MUST be conveyed by text as well as colour. **Show details** remains available. When agent sessions are disabled or the repository is excluded, cards MUST look and behave exactly as before.
 
 #### Scenario: Done change offers Archive
 - **WHEN** a change is in `Done` and agent sessions are enabled
@@ -420,7 +392,7 @@ When agent sessions are enabled and the card's repository is tracked and not exc
 
 #### Scenario: Ready change
 - **WHEN** a change is in `Ready`, agent sessions are enabled and its repository is not excluded
-- **THEN** the card offers **Implement** and still offers the copy action
+- **THEN** the card offers **Implement** and still offers **Show details**
 
 #### Scenario: Running session
 - **WHEN** a change has a running session
@@ -590,27 +562,23 @@ The session panel SHALL show a tab strip with every running session across repos
 - **WHEN** the session shown ends
 - **THEN** its tab stays until the user selects another or hides the panel
 
-### Requirement: Cards open the change detail view
-Every card on the combined board and on a repository board SHALL be a link to its change's detail view (`change-detail`), including cards in the `Archived` column. The link SHALL be a real anchor with an `href`, so it can be opened in a new tab, copied and focused with the keyboard, and it SHALL carry the board the card was clicked on together with its active filters, so the detail view can return to it.
+### Requirement: Cards offer Show details
+Each card SHALL offer a **Show details** action that opens its change's detail view, carrying the board it sits on and that board's filters so the detail view can lead back to them. The action SHALL be a link: opening it in a new tab or window SHALL land on the same detail view, and activating it with the keyboard SHALL open the detail view in the current tab.
 
-Activating a control inside a card — the copy action and any session starter — MUST NOT navigate to the detail view. The card's content, layout, grouping, colouring and counts SHALL be unchanged by being a link.
+**Show details** SHALL be the only part of a card that navigates to the detail view. The card as a whole MUST NOT be a link, and the change name MUST NOT be one; clicking a card's background, its badges or its progress bar MUST NOT navigate anywhere. The session starters, the session badge and the work-status badge keep their own behaviour.
 
-#### Scenario: Click a card
-- **WHEN** the user clicks a card for change `cloud-deployment` of repository `demo-ops`
-- **THEN** the detail view for that change is shown
+#### Scenario: Opening a change
+- **WHEN** the user activates **Show details** on the card of change `multi-tenant-sync`
+- **THEN** the detail view of `multi-tenant-sync` is shown
 
-#### Scenario: Open in a new tab
-- **WHEN** the user ⌘-clicks or middle-clicks a card
-- **THEN** the detail view opens in a new tab and the board in the current tab is unchanged
+#### Scenario: Card background does not navigate
+- **WHEN** the user clicks the card's background, its change name, its progress bar or its age badge
+- **THEN** nothing is opened and the board stays as it is
 
-#### Scenario: Copy action does not navigate
-- **WHEN** the user clicks "Copy apply command" on a card
-- **THEN** the command is copied and the board stays on screen
+#### Scenario: New tab
+- **WHEN** the user middle-clicks or ⌘-clicks **Show details**
+- **THEN** a new tab opens on that change's detail view
 
-#### Scenario: Archived cards link too
-- **WHEN** the user clicks a card in the `Archived` column
-- **THEN** the detail view for that archived change is shown
-
-#### Scenario: Keyboard
-- **WHEN** the user tabs to a card and presses Enter
-- **THEN** the detail view for that change is shown
+#### Scenario: Board and filters are carried
+- **WHEN** the combined board is filtered to a text search and the user activates **Show details** on a card
+- **THEN** the detail view knows that board and that search, so its way back returns to them
