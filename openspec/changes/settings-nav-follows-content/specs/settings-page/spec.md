@@ -66,6 +66,6 @@ On viewports of 720px width or less, the navigation SHALL be shown as a single h
 - **WHEN** the navigation is out of view and the user keeps scrolling down through three sections
 - **THEN** the page position changes only by the user's scrolling, the URL's `section` parameter follows the section in view, and the page is never pulled back towards the navigation
 
-#### Scenario: Current entry is visible when the row comes back
+#### Scenario: Current entry stays visible in the row
 - **WHEN** the user has scrolled to the last section on a narrow viewport and scrolls back up until the row is visible
 - **THEN** the row shows the entry that is now current without the user having to scroll the row sideways
