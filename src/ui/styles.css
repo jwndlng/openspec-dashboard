@@ -286,8 +286,10 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: 
 .card .repo { font-size: 11px; color: var(--fg-subtle); text-transform: uppercase; letter-spacing: 0.06em; display: flex; justify-content: space-between; align-items: center; }
 .card.repo-tint .repo { color: var(--repo-color); }
 .card .name { font-family: var(--font-mono); font-size: 12px; color: var(--fg-heading); word-break: break-word; text-transform: none; letter-spacing: 0; }
-.card .copy { opacity: 0; transition: opacity 120ms; }
-.card:hover .copy, .card .copy.done { opacity: 1; }
+.card .show-details { flex: none; font-size: 11px; text-transform: none; letter-spacing: 0; color: var(--fg-subtle); padding: 1px 6px; border: 1px solid transparent; border-radius: var(--radius); }
+.card:hover .show-details { color: var(--brand-fg); border-color: var(--border-light); }
+.card .show-details:hover { color: var(--brand); background: var(--brand-softer); border-color: var(--brand-soft); }
+.card .show-details:focus-visible { outline: 2px solid var(--brand); outline-offset: 1px; color: var(--brand-fg); }
 .card .meta { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
 .card .meta > * { min-width: 0; }
 .card .warn-text { color: var(--warning); font-size: 11px; }
@@ -355,9 +357,9 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: 
 .projects tbody tr { cursor: pointer; }
 .projects tbody tr:hover { background: var(--bg-raised); }
 .projects .repo-name { font-weight: 500; }
-.projects .repo-link { color: var(--fg-heading); }
-.projects .idle .repo-link { color: var(--fg-subtle); font-weight: 400; }
-.projects tr:hover .repo-link { color: var(--brand-fg); }
+.projects .repo-link, .tile .repo-link { color: var(--fg-heading); }
+.projects .idle .repo-link, .tile.idle .repo-link { color: var(--fg-subtle); font-weight: 400; }
+.projects tr:hover .repo-link, article.tile:hover .repo-link { color: var(--brand-fg); }
 .projects .repo-name .badge, .projects .path-hint { margin-left: var(--gap-1); }
 .projects .path-hint { color: var(--fg-subtle); font-weight: 400; font-size: 11px; }
 .projects .repo-name .badge + .badge { margin-left: 4px; }
@@ -366,6 +368,46 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: 
 .sort:hover, .sort.on { color: var(--fg-heading); }
 .sort:focus-visible { outline: 2px solid var(--brand-strong); outline-offset: 2px; border-radius: 2px; }
 .overview .hint { color: var(--fg-subtle); text-align: center; padding: var(--gap-2); }
+.projects .wip-cell { white-space: nowrap; }
+.wip.plain { color: var(--fg-subtle); font-size: 12px; }
+
+/* Tiles: the same rows in a grid that reflows to the width it gets — never a horizontal scrollbar. */
+.tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(300px, 100%), 1fr)); gap: var(--gap-1); align-items: start; }
+.tile {
+  display: flex; flex-direction: column; gap: 6px; min-width: 0; padding: 10px 12px; cursor: pointer;
+  background: var(--bg-section); border: 1px solid var(--border-light); border-radius: var(--radius);
+}
+.tile:hover { background: var(--bg-raised); border-color: var(--border); }
+.tile header { display: flex; align-items: baseline; gap: var(--gap-1); min-width: 0; }
+.tile .repo-name { flex: 1; min-width: 0; margin: 0; font-size: 14px; font-weight: 500; text-transform: none; letter-spacing: normal; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tile .path-hint { margin-left: var(--gap-1); color: var(--fg-subtle); font-weight: 400; font-size: 11px; }
+.tile .when { flex: none; color: var(--fg-subtle); font-size: 12px; }
+.tile .none { margin: 0; color: var(--fg-subtle); font-size: 12px; }
+.tile-badges, .tile .totals, .tile .checkouts { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; min-width: 0; }
+.tile-badges:empty { display: none; }
+.tile .totals { color: var(--fg-subtle); font-size: 12px; }
+.tile .totals .total { color: var(--fg-heading); font-family: var(--font-mono); }
+.tile .checkouts { padding-top: 6px; border-top: 1px solid var(--border-light); }
+.stage-strip { display: flex; gap: 2px; margin: 0; padding: 0; list-style: none; min-width: 0; }
+.stage-strip li {
+  flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; align-items: center; padding: 3px 2px;
+  background: var(--bg-raised); border: 1px solid var(--border-light); border-radius: 2px;
+}
+.stage-strip .n { font-family: var(--font-mono); font-size: 12px; color: var(--fg-heading); }
+.stage-strip .label { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 9px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--fg-subtle); }
+.stage-strip .zero { background: transparent; }
+.stage-strip .zero .n, .stage-strip .zero .label { color: var(--fg-disabled); }
+
+/* One checkout: branch, then text markers. Colour only repeats what the text already says. */
+.checkout {
+  display: inline-flex; align-items: center; gap: 5px; min-width: 0; max-width: 100%;
+  padding: 1px 6px 1px 1px; border: 1px solid var(--border-light); border-radius: var(--radius);
+  font-size: 11px; line-height: 16px; color: var(--fg-subtle);
+}
+.checkout .where { flex: none; font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em; }
+.checkout .marker { flex: none; font-family: var(--font-mono); cursor: help; }
+.checkout .marker.uncommitted, .checkout .marker.unpushed, .checkout .marker.stale { color: var(--warning); }
+.checkout .marker.behind, .checkout .marker.locked, .checkout .marker.unknown { color: var(--fg-body); }
 
 /* ---- Repository board header ---- */
 .repo-head { display: flex; flex-direction: column; gap: 6px; padding: var(--gap-1) var(--gap-2); background: var(--bg-section); border-bottom: 1px solid var(--border-light); }
@@ -400,15 +442,14 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: 
 
 /* ---- Settings ---- */
 /* One scroll area for the whole page, full width so the scrollbar is at the window edge and the margins scroll too.
-   The navigation is in the flow and moves with the sections. */
+   The navigation is sticky, so it stays beside the section in view while the page scrolls. */
 .settings-scroll { flex: 1; min-height: 0; overflow: auto; }
 .settings-layout {
   width: 100%; max-width: 1320px; margin: 0 auto;
   display: grid; grid-template-columns: minmax(168px, 200px) minmax(0, 1fr); align-items: start;
 }
-/* --nav-offset: set on a jump, so the navigation lands beside the section jumped to (see useSectionNav). */
-.settings-nav { padding: var(--gap-2) 0 var(--gap-2) var(--gap-2); position: relative; top: var(--nav-offset, 0px); }
-.settings-nav ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; position: relative; }
+.settings-nav { padding: var(--gap-2) 0 var(--gap-2) var(--gap-2); position: sticky; top: 0; }
+.settings-nav ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
 .settings-link {
   display: flex; align-items: center; justify-content: space-between; gap: var(--gap-1);
   padding: 5px 8px; border-radius: var(--radius); color: var(--fg-body);
@@ -438,13 +479,11 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: 
 .savebar { position: sticky; bottom: 0; display: flex; gap: var(--gap-1); align-items: center; padding: var(--gap-1) var(--gap-2); background: var(--bg-section); border-top: 1px solid var(--border-light); }
 
 @media (max-width: 720px) {
-  /* One flat column: the row and the sections are items of the same grid, so `order` can put the row directly above
-     the section jumped to without covering anything. */
-  .settings-layout { grid-template-columns: minmax(0, 1fr); gap: var(--gap-2); padding: var(--gap-2); }
-  .settings { display: contents; }
-  .settings-section { order: var(--section-order); }
-  .settings-nav { order: var(--nav-order, 0); top: 0; padding: 0 0 var(--gap-1); border-bottom: 1px solid var(--border-light); }
-  .settings-nav ul { flex-direction: row; overflow-x: auto; gap: 4px; }
+  /* The row sticks to the top above the sections; a jump lands below it (--settings-nav-height, see useSectionNav). */
+  .settings-layout { grid-template-columns: minmax(0, 1fr); }
+  .settings-nav { z-index: 1; overflow-x: auto; padding: var(--gap-2) var(--gap-2) var(--gap-1); background: var(--bg-base); border-bottom: 1px solid var(--border-light); }
+  .settings-section { scroll-margin-top: calc(var(--settings-nav-height, 0px) + var(--gap-2)); }
+  .settings-nav ul { flex-direction: row; gap: 4px; }
   .settings-nav li { flex: none; }
   .settings-link { border-left: 0; border-bottom: 2px solid transparent; }
   .settings-link[aria-current="true"] { border-bottom-color: var(--brand); }
@@ -489,6 +528,7 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: 
   flex: none; display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
   padding: 6px 8px; background: var(--bg-section); border-top: 1px solid var(--border-light);
 }
+.session-replies-label { flex: none; }
 .session-terminal-note { position: absolute; right: 12px; bottom: 8px; font-size: 11px; color: var(--fg-subtle); background: var(--bg-section); padding: 2px 6px; border-radius: var(--radius); }
 .agent-fields { border: 0; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--gap-1); min-width: 0; }
 .agent-fields:disabled { opacity: 0.5; }
@@ -599,23 +639,25 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: 
   .activity-entry .what { grid-column: 1 / -1; }
 }
 
-/* Card → change detail: the change name is the link, stretched over the card; controls sit above it. */
-.card { position: relative; }
-.card-link { color: inherit; }
-.card-link::after { content: ""; position: absolute; inset: 0; border-radius: inherit; }
-.card-link:hover { color: var(--brand-fg); }
-.card-link:focus-visible { outline: none; }
-.card-link:focus-visible::after { outline: 2px solid var(--brand); outline-offset: 1px; }
-.card button, .card summary, .card .badge[title], .card .meter { position: relative; z-index: 1; }
-
-/* Change detail */
-.detail { flex: 1; min-height: 0; display: flex; flex-direction: column; }
-.detail-head .back { font-size: 12px; }
+/* Change detail: an overlay over the board it belongs to. Above the topbar menu and the session dock, below the
+   end-session dialog. The page behind is inert (set by App); the CSS here is the fallback where `inert` is ignored. */
+.app[inert] { pointer-events: none; user-select: none; overflow: hidden; }
+body:has(.detail-overlay) { overflow: hidden; }
+.detail-overlay { z-index: 25; padding: clamp(8px, 4vh, 40px) clamp(8px, 4vw, 48px); }
+.detail {
+  display: flex; flex-direction: column; overflow: hidden;
+  width: min(1120px, 100%); height: 100%; max-height: 960px;
+  background: var(--bg-base); border: 1px solid var(--border-strong); border-radius: var(--radius);
+  box-shadow: 0 12px 40px #0000004d;
+}
+.detail:focus { outline: none; }
+.detail > .empty { flex: none; align-self: center; }
 .detail-head .change-name { font-size: 14px; color: var(--fg-heading); word-break: break-word; }
-.detail-head .row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
-.detail-meter { width: 220px; max-width: 100%; }
-.detail-meter.wide { width: 320px; margin-bottom: var(--gap-1); }
-.detail-actions .copy { border-color: var(--border-light); }
+.detail-head .row { display: flex; align-items: center; gap: 6px; }
+.detail-head .crumbs { flex: 1; min-width: 0; flex-wrap: wrap; }
+.detail-head .spacer { flex: 1; }
+.detail-close { flex: none; font-size: 14px; line-height: 1; padding: 4px 8px; }
+.detail-meter.wide { width: 320px; max-width: 100%; margin-bottom: var(--gap-1); }
 .detail-tabs { display: flex; flex-wrap: wrap; gap: 2px; padding: 0 var(--gap-2); background: var(--bg-section); border-bottom: 1px solid var(--border-light); }
 .detail-tab {
   display: inline-flex; align-items: center; gap: 6px; padding: 8px 12px; font: inherit; font-size: 13px; cursor: pointer;

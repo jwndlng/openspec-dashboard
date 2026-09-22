@@ -3,10 +3,12 @@ import { boardColumns, isComplete } from "../shared/columns.ts";
 import type { ChangeSnapshot, Config, RepoSnapshot, Snapshot } from "../shared/types.ts";
 import { NoRepos } from "./empty.tsx";
 import { EMPTY_FILTERS, parseFilters, serializeFilters, type Filters } from "./filters.ts";
+import { BranchBadge, CheckoutChips } from "./checkout.tsx";
+import { hasCheckoutInfo } from "./checkoutMarkers.ts";
 import { NewChangeForm } from "./newChangeForm.tsx";
 import { PullButton } from "./pull.tsx";
 import { branchNotice } from "./pullState.ts";
-import { cdCommand, checkoutHint, copyCommandFor, daysSince, pendingArchiveHint, relTime, splitBranchLabel } from "./format.ts";
+import { cdCommand, checkoutHint, daysSince, pendingArchiveHint, relTime } from "./format.ts";
 import { isMinimized, loadGroupState, saveGroupState, toggleGroup, type GroupOverrides } from "./groupState.ts";
 import { assignRepoHues, groupByRepo, recentArchived } from "./repoGroups.ts";
 import { SessionControls } from "./sessions.tsx";
@@ -27,7 +29,7 @@ function repoHue(hue: number) {
   return { "--repo-hue": hue };
 }
 
-export function CopyButton({ text, label = "Copy apply" }: { text: string; label?: string }) {
+export function CopyButton({ text, label }: { text: string; label: string }) {
   const [done, setDone] = useState(false);
   useEffect(() => {
     if (!done) return;
@@ -42,23 +44,6 @@ export function CopyButton({ text, label = "Copy apply" }: { text: string; label
     >
       {done ? "Copied" : label}
     </button>
-  );
-}
-
-/**
- * Branch name that never outgrows its container: the head is clipped with an ellipsis, the tail always
- * shows. All characters stay in the DOM (copyable); the full name is the tooltip and accessible name.
- */
-export function BranchBadge({ branch, hint }: { branch: string; hint: string }) {
-  const { head, tail } = splitBranchLabel(branch);
-  return (
-    <span class="badge branch mono truncate" title={`${branch} — ${hint}`} role="img" aria-label={`branch ${branch}`}>
-      <span aria-hidden="true">⎇</span>
-      <span class="text" aria-hidden="true">
-        <span class="head">{head}</span>
-        {tail && <span class="tail">{tail}</span>}
-      </span>
-    </span>
   );
 }
 
@@ -83,29 +68,23 @@ export function cardLink(card: Pick<Card, "repoId" | "name">, from: string): { p
 }
 
 /**
- * The change name is the card's link, stretched over the whole card in CSS. The copy button and the session
- * starters are siblings of the anchor, not descendants, so activating them can never navigate.
+ * Only **Show details** navigates: the card itself and its change name are plain content, so clicking anywhere else on
+ * a card does nothing. It is an anchor, so ⌘/middle-click opens the detail view in a new tab.
  */
 export function ChangeCard({ card, now, showRepo, from }: { card: Card; now: number; showRepo: boolean; from: string }) {
   const age = daysSince(card.lastActivityAt, now);
   const noTasks = card.warnings?.includes("tasks file has no tasks");
   const link = cardLink(card, from);
-  const name = (
-    <a class="card-link" href={href(link.path, undefined, link.query)} onClick={(e) => followInApp(e, link.path, link.query)}>
-      {card.name}
-    </a>
-  );
+  const name = card.name;
   const pending = pendingArchiveHint(card);
   return (
     <article class="card repo-tint" style={repoHue(card.hue)}>
       {/* On a single-repository board the header already names the repo, so the change name takes the top row. */}
       <div class="repo">
         {showRepo ? <span>{card.repoName}</span> : <span class="name">{name}</span>}
-        {/* Apply where the change lives: for a change in a worktree that is the worktree, never the main checkout. */}
-        {!card.archived && (() => {
-          const cmd = copyCommandFor(card, card.checkout?.path ?? card.repoPath);
-          return <CopyButton text={cmd.text} label={cmd.label} />;
-        })()}
+        <a class="show-details" href={href(link.path, undefined, link.query)} onClick={(e) => followInApp(e, link.path, link.query)} aria-label={`Show details of ${card.name}`}>
+          Show details
+        </a>
       </div>
       {showRepo && <div class="name">{name}</div>}
       {card.tasks && card.tasks.total > 0 && <Meter done={card.tasks.done} total={card.tasks.total} />}
@@ -237,17 +216,13 @@ function RepoHeader({ repo, now, onCreated }: { repo: RepoSnapshot; now: number;
           <span class="sep">/</span>
           {repo.name}
         </h1>
-        {repo.currentBranch && <BranchBadge branch={repo.currentBranch} hint="current branch" />}
+        {/* Snapshots cached by older versions know no checkouts: fall back to the current branch. */}
+        {hasCheckoutInfo(repo.worktrees) ? <CheckoutChips checkouts={repo.worktrees} /> : repo.currentBranch && <BranchBadge branch={repo.currentBranch} hint="current branch" />}
         {repo.isGit && repo.ok && <PullButton repoId={repo.id} />}
         {repo.ok && (
           <button type="button" class="btn sm" onClick={() => setCreating(true)}>
             New change
           </button>
-        )}
-        {repo.worktrees.length > 0 && (
-          <span class="badge" title={repo.worktrees.map((w) => `${w.branch ?? "detached"} — ${w.path}`).join("\n")}>
-            {repo.worktrees.length} {repo.worktrees.length === 1 ? "worktree" : "worktrees"}
-          </span>
         )}
         {repo.sharedConfig?.unreadable && (
           <span class="badge danger" title="openspec/config.yaml is missing, not valid YAML, or has malformed shared-config markers">
@@ -305,10 +280,17 @@ function RepoNotFound() {
   );
 }
 
-/** The combined board, or one repository's board when `repoId` is set. */
-export function Kanban({ snapshot, config, repoId, onReload }: { snapshot: Snapshot | null; config: Config | null; repoId?: string; onReload?: () => void }) {
-  // A repository board has no repo filter, so a stray `repos` key in the URL is dropped.
-  const [filters, setFiltersState] = useState<Filters>(() => ({ ...parseFilters(currentQuery()), ...(repoId === undefined ? {} : { repos: [] }) }));
+/** Initial filters of a board: from `query`, read once at mount. A repository board has no repo filter, so a stray `repos` key is dropped. */
+export function initialFilters(query: string, repoId: string | undefined): Filters {
+  return { ...parseFilters(query), ...(repoId === undefined ? {} : { repos: [] }) };
+}
+
+/**
+ * The combined board, or one repository's board when `repoId` is set. Its filters come from `query` when given — the
+ * board behind an open detail view, where the URL holds the detail view's query — and from the URL otherwise.
+ */
+export function Kanban({ snapshot, config, repoId, query, onReload }: { snapshot: Snapshot | null; config: Config | null; repoId?: string; query?: string; onReload?: () => void }) {
+  const [filters, setFiltersState] = useState<Filters>(() => initialFilters(query ?? currentQuery(), repoId));
   const now = Date.now();
 
   const setFilters = (patch: Partial<Filters>) => {

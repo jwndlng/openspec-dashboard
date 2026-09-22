@@ -179,7 +179,10 @@ function TerminalView({ sessionId, running, onExit }: { sessionId: string; runni
       )}
       {running && status === "open" && (
         // biome-ignore lint/a11y/useSemanticElements: a fieldset would bring legend/border styling the response row does not want
-        <div class="session-replies" role="group" aria-label="Default responses">
+        <div class="session-replies" role="group" aria-labelledby={`replies-${sessionId}`}>
+          <span id={`replies-${sessionId}`} class="hint session-replies-label">
+            Shortcuts:
+          </span>
           {DEFAULT_QUICK_REPLIES.map((r) => (
             <button key={r.id} type="button" class="btn sm" title={replyHint(r)} disabled={guarded.includes(r.id)} onClick={() => reply(r)}>
               {r.label}

@@ -29,6 +29,18 @@ export function looksLikeRealHome(text: string): boolean {
   return /\/Users\/[^/\s"']+/.test(text) || /\/home\/(?!demo(?:\/|\b))[^/\s"']+/.test(text) || /[A-Za-z]:\\+Users\\+[^\\\s"']+/.test(text);
 }
 
+/** Runs git for test setup with a fixed identity and date; throws with git's message on failure. */
+export async function gitIn(cwd: string, ...args: string[]): Promise<void> {
+  const date = "2026-03-01T10:00:00+01:00";
+  const proc = Bun.spawn(["git", "-c", "user.name=t", "-c", "user.email=t@example.invalid", "-c", "commit.gpgsign=false", "-c", "init.defaultBranch=main", ...args], {
+    cwd,
+    stdout: "ignore",
+    stderr: "pipe",
+    env: { ...process.env, GIT_AUTHOR_DATE: date, GIT_COMMITTER_DATE: date },
+  });
+  if ((await proc.exited) !== 0) throw new Error(`git ${args.join(" ")}: ${await new Response(proc.stderr).text()}`);
+}
+
 /** Every file and directory under `root` with size, mtime and content hash — equal before and after means nothing was created, modified or deleted. */
 export async function treeFingerprint(root: string): Promise<string> {
   const lines: string[] = [];

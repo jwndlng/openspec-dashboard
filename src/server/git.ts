@@ -1,7 +1,7 @@
 // Read-only git helpers. Every call sets `cwd` to the repository and passes
 // paths after `--`; nothing here ever mutates a repository.
 import { join } from "node:path";
-import type { Worktree } from "../shared/types.ts";
+import type { CheckoutStatus, Worktree } from "../shared/types.ts";
 
 const DEFAULT_TIMEOUT_MS = 10_000;
 
@@ -68,7 +68,8 @@ export async function defaultBranch(cwd: string): Promise<string | undefined> {
 
 /**
  * Parses `git worktree list --porcelain`: one entry per record, in git's order — the main working tree first, then the
- * linked worktrees. Detached worktrees have no branch.
+ * linked worktrees. Detached worktrees have no branch; locked, prunable and bare records are kept and flagged. Flags are
+ * only set when they apply.
  */
 export function parseWorktrees(porcelain: string): Worktree[] {
   const result: Worktree[] = [];
@@ -80,12 +81,17 @@ export function parseWorktrees(porcelain: string): Worktree[] {
       result.push(current);
     } else if (!current) {
       // stray line before the first record
+    } else if (line.startsWith("HEAD ")) {
+      current.head = line.slice("HEAD ".length, "HEAD ".length + 7);
     } else if (line.startsWith("branch ")) {
       current.branch = line.slice("branch ".length).replace(/^refs\/heads\//, "");
     } else if (line === "detached") {
       current.detached = true;
     } else if (line === "bare") {
       current.bare = true;
+    } else if (line === "locked" || line.startsWith("locked ")) {
+      current.locked = true;
+      if (line.length > "locked ".length) current.lockReason = line.slice("locked ".length);
     } else if (line === "prunable" || line.startsWith("prunable ")) {
       current.prunable = true;
     } else if (line === "") {
@@ -144,4 +150,70 @@ export async function statusPaths(cwd: string, relPath: string): Promise<{ path:
   const top = join(cwd, cdup);
   const out = await git(cwd, ["status", "--porcelain=v1", "-z", "--untracked-files=all", "--", relPath]);
   return out ? parseStatusPaths(out).map((p) => ({ path: join(top, p.path), deleted: p.deleted })) : [];
+}
+
+/** What one `git status --porcelain=v2 --branch` says about a checkout. Counts only: entry paths are never kept. */
+export interface ParsedStatus extends CheckoutStatus {
+  /** Branch name; absent when detached. */
+  head?: string;
+  detached: boolean;
+  /** The branch has no commits yet. */
+  unborn: boolean;
+}
+
+/**
+ * Parses `git status --porcelain=v2 --branch`. `1` (changed), `2` (renamed/copied) and `u` (unmerged) entries count as
+ * modified, `?` entries as untracked (git collapses an untracked directory into one entry). `branch.upstream` and
+ * `branch.ab` only appear when an upstream is configured.
+ */
+export function parseStatusV2(text: string): ParsedStatus {
+  const result: ParsedStatus = { detached: false, unborn: false, modified: 0, untracked: 0, conflicts: 0 };
+  for (const line of text.split("\n")) {
+    if (line.startsWith("# branch.head ")) {
+      const head = line.slice("# branch.head ".length);
+      if (head === "(detached)") result.detached = true;
+      else result.head = head;
+    } else if (line.startsWith("# branch.oid ")) {
+      result.unborn = line.slice("# branch.oid ".length) === "(initial)";
+    } else if (line.startsWith("# branch.upstream ")) {
+      result.upstream = line.slice("# branch.upstream ".length);
+    } else if (line.startsWith("# branch.ab ")) {
+      const ab = /^\+(\d+) -(\d+)$/.exec(line.slice("# branch.ab ".length));
+      if (ab) {
+        result.ahead = Number(ab[1]);
+        result.behind = Number(ab[2]);
+      }
+    } else if (line.startsWith("1 ") || line.startsWith("2 ")) {
+      result.modified++;
+    } else if (line.startsWith("u ")) {
+      result.modified++;
+      result.conflicts++;
+    } else if (line.startsWith("? ")) {
+      result.untracked++;
+    }
+  }
+  return result;
+}
+
+/** Working-tree status of the checkout at `path` (the main checkout or a linked worktree). Undefined when it cannot be determined. */
+export async function checkoutStatus(path: string): Promise<ParsedStatus | undefined> {
+  const out = await git(path, ["status", "--porcelain=v2", "--branch"]);
+  return out === undefined ? undefined : parseStatusV2(out);
+}
+
+/** Whether the repository has any remote-tracking ref; without one "unpushed" means nothing. */
+export async function hasRemoteRefs(cwd: string): Promise<boolean | undefined> {
+  const out = await git(cwd, ["rev-parse", "--symbolic", "--remotes"]);
+  return out === undefined ? undefined : out.trim() !== "";
+}
+
+export const LOCAL_ONLY_LIMIT = 100;
+
+/** Commits reachable from `HEAD` but from no remote-tracking ref, capped at `LOCAL_ONLY_LIMIT`. 0 for a branch without commits. */
+export async function localOnlyCommits(path: string): Promise<number | undefined> {
+  const out = await git(path, ["log", "--format=%H", "-n", String(LOCAL_ONLY_LIMIT), "HEAD", "--not", "--remotes"]);
+  if (out !== undefined) return out.split("\n").filter(Boolean).length;
+  // `log` fails on an unborn branch: a work tree whose HEAD does not resolve has no commits to push.
+  const inside = (await git(path, ["rev-parse", "--is-inside-work-tree"]))?.trim() === "true";
+  return inside && (await git(path, ["rev-parse", "--verify", "--quiet", "HEAD"])) === undefined ? 0 : undefined;
 }
