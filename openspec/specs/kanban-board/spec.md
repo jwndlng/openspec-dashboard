@@ -190,7 +190,7 @@ Each card SHALL offer a copy action. For a change whose column is `Ready`, `Impl
 - **THEN** the clipboard contains a start command, not an apply command
 
 ### Requirement: Visual design follows the dashboard token set
-The UI SHALL define its colours as two token sets sharing the same token names: the dark set defined in design.md (neutral grey backgrounds `#0b0d10`…`#313437`, teal brand `#71c7c5`) and a light set (backgrounds `#f6f8fb`…`#d3dbe6`, teal brand `#1f8a88`). The dark theme's background, text and border tokens SHALL be near-neutral greys with at most a slight cool tint; in the dark theme teal SHALL be used only as an accent (focus, active state, primary actions, progress) and MUST NOT be the colour of panel or card borders, nor the colour of any status label. Both themes SHALL share Space Grotesk for text, JetBrains Mono for identifiers and a 4px radius, with fonts bundled locally. Component styles MUST reference colour tokens only and MUST NOT contain literal colour values. In both themes, text and status colours SHALL have a contrast ratio of at least 4.5:1 against the backgrounds they are rendered on. The token set SHALL keep the status roles, the brand accent and the repository colours in three disjoint colour ranges, so that no status label can be mistaken for a repository accent and no repository can be shown in a colour that means a status. The UI MUST render correctly without network access.
+The UI SHALL define its colours as two token sets sharing the same token names: the dark set defined in design.md (neutral grey backgrounds `#141619`…`#3b3e41`, teal brand `#71c7c5`) and a light set (backgrounds `#f6f8fb`…`#d3dbe6`, teal brand `#1f8a88`). The dark theme's background, text and border tokens SHALL be near-neutral greys with at most a slight cool tint; in the dark theme teal SHALL be used only as an accent (focus, active state, primary actions, progress) and MUST NOT be the colour of panel or card borders, nor the colour of any status label. Both themes SHALL share Space Grotesk for text, JetBrains Mono for identifiers and a 4px radius, with fonts bundled locally. Component styles MUST reference colour tokens only and MUST NOT contain literal colour values. In both themes, text and status colours SHALL have a contrast ratio of at least 4.5:1 against the backgrounds they are rendered on. The token set SHALL keep the status roles, the brand accent and the repository colours in three disjoint colour ranges, so that no status label can be mistaken for a repository accent and no repository can be shown in a colour that means a status. The UI MUST render correctly without network access.
 
 #### Scenario: Offline rendering
 - **WHEN** the dashboard is opened with no network connectivity
@@ -211,6 +211,10 @@ The UI SHALL define its colours as two token sets sharing the same token names: 
 #### Scenario: Subtle text readable on dark cards
 - **WHEN** the dark theme is active and a card shows heading, body and subtle text
 - **THEN** each has a contrast ratio of at least 4.5:1 against the card background
+
+#### Scenario: Status text readable on dark cards
+- **WHEN** the dark theme is active and a card shows success, warning and danger badges
+- **THEN** each badge's text has a contrast ratio of at least 4.5:1 against the card background
 
 #### Scenario: Status, brand and repository colours do not overlap
 - **WHEN** the colours a repository can be assigned are compared with the status roles and the brand accent
