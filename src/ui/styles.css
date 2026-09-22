@@ -468,8 +468,10 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: 
 }
 .dock-handle { position: absolute; top: -4px; left: 0; right: 0; height: 8px; cursor: ns-resize; touch-action: none; z-index: 1; }
 .dock-handle:hover, .dock-handle:focus-visible { background: var(--brand-soft); outline: none; }
-.dock-bar { flex: none; display: flex; align-items: flex-end; gap: 6px; height: 36px; padding: 0 var(--gap-1) 0 0; border-bottom: 1px solid var(--border-light); background: var(--bg-base); }
-.session-dock.collapsed .dock-bar { border-bottom: 0; }
+/* The height equals DOCK_TABS_HEIGHT (sessionState.ts; test/dockGeometry.test.ts). The bottom line is an inset shadow,
+   not a border, so a shown tab standing on the strip's bottom edge covers it and joins the pane below. */
+.dock-bar { flex: none; display: flex; align-items: flex-end; gap: 6px; height: 44px; padding: 0 var(--gap-1) 0 0; box-shadow: inset 0 -1px 0 var(--border-light); background: var(--bg-base); }
+.session-dock.collapsed .dock-bar { box-shadow: none; }
 .dock-bar .btn { align-self: center; flex: none; }
 .dock-panes { flex: 1; min-height: 0; display: grid; grid-template-columns: repeat(var(--panes, 1), minmax(0, 1fr)); }
 .session-pane { display: flex; flex-direction: column; min-width: 0; min-height: 0; border-top: 2px solid transparent; }
@@ -536,22 +538,32 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: 
 }
 
 /* ---- Several sessions: tabs in the panel, a close control on the running badge, the end-session dialog ---- */
-.session-tabs { flex: 1; min-width: 0; display: flex; gap: 2px; padding: 6px var(--gap-2) 0; overflow-x: auto; }
+.session-tabs { flex: 1; min-width: 0; display: flex; gap: 4px; padding: 5px var(--gap-2) 0; overflow-x: auto; }
 .session-tab .tab-mark { font-size: 10px; color: var(--fg-subtle); }
 .session-tab.shown .tab-mark { color: var(--brand); }
+/* Every tab is a surface of its own: a chip standing just above the strip's bottom line. */
 .session-tab {
-  display: inline-flex; align-items: center; gap: 6px; flex: none; max-width: 320px; padding: 5px 10px 5px 12px; cursor: pointer;
-  font: inherit; font-size: 12px; color: var(--fg-body); background: transparent;
-  border: 1px solid transparent; border-bottom: 0; border-radius: var(--radius) var(--radius) 0 0;
+  display: inline-flex; align-items: center; gap: 6px; flex: none; max-width: 320px; margin-bottom: 3px; padding: 7px 10px 7px 12px; cursor: pointer;
+  font: inherit; font-size: 12px; color: var(--fg-body); background: var(--bg-section);
+  border: 1px solid var(--border); border-radius: var(--radius);
 }
 .session-tab .mono { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.session-tab .hint { font-size: 11px; color: var(--fg-subtle); }
-.session-tab:hover { color: var(--fg-heading); }
-.session-tab.shown { color: var(--fg-heading); background: var(--bg-section); border-color: var(--border-light); }
-.session-tab.active { border-top-color: var(--brand); }
+.session-tab .hint { font-size: 11px; color: var(--fg-subtle); white-space: nowrap; }
+.session-tab:hover { color: var(--fg-heading); border-color: var(--border-strong); }
+/* A shown tab is attached: it reaches the strip's bottom edge (the chip's inset becomes padding, so both tops line up)
+   and its bottom border takes the tab's own ground, which covers the strip's line and joins the pane below. */
+.session-tab.shown {
+  margin-bottom: 0; padding-bottom: 10px; color: var(--fg-heading);
+  border-bottom-color: transparent; border-radius: var(--radius) var(--radius) 0 0;
+}
+/* The focused tab matches the focused pane: a 2px brand bar on top, and a semibold change name so it is not colour
+   alone. Inset shadows, so no tab changes height. */
+.session-tab.active { box-shadow: inset 0 2px 0 var(--brand); }
+.session-tab.active .mono { font-weight: 600; }
 /* The repository's colour on a tab: the 3px leading accent its cards have, and its name in the same colour. An inset
-   bar rather than a border, because .shown sets the border-color shorthand and the tab's geometry must not shift. */
+   bar rather than a border, because the tab's geometry must not shift; focused and tinted list both bars. */
 .session-tab.repo-tint { box-shadow: inset 3px 0 0 var(--repo-color); }
+.session-tab.repo-tint.active { box-shadow: inset 3px 0 0 var(--repo-color), inset 0 2px 0 var(--brand); }
 .session-tab.repo-tint .repo-name { color: var(--repo-color); }
 /* Three terminals a few hundred pixels wide help nobody: on narrow windows only the focused pane is shown. */
 @media (max-width: 900px) {
