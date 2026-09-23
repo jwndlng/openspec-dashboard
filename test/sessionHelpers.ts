@@ -31,6 +31,10 @@ export async function tempGitRepo(): Promise<string> {
   git(dir, "init", "-q", "-b", "main");
   git(dir, "config", "user.email", "t@example.invalid");
   git(dir, "config", "user.name", "t");
+  // No background maintenance in a test repository. Otherwise git may repack or write `.git/objects/maintenance.lock`
+  // while a test is reading the tree, which looks like the repository changing under a test that asserts it did not.
+  git(dir, "config", "gc.auto", "0");
+  git(dir, "config", "maintenance.auto", "false");
   git(dir, "add", "-A");
   git(dir, "commit", "-q", "-m", "init");
   return dir;
