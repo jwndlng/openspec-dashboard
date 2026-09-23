@@ -43,9 +43,29 @@ export function nextStepFor(sessions: Session[], repoId: string, change: string,
   return { promptSessionId: running.find((s) => s.action !== "archive")?.id };
 }
 
-/** Dock tabs: every running session, oldest first so tabs do not jump, plus shown ones that have ended. */
-export function sessionTabs(sessions: Session[], shown: readonly string[]): Session[] {
-  return sessions.filter((s) => s.state === "running" || shown.includes(s.id)).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+/** When a session was last doing something: what it printed, else what happened to the record. */
+const activityAt = (s: Session) => s.lastOutputAt ?? s.updatedAt ?? s.createdAt;
+
+/**
+ * Every session of one change, most recently active first: what the detail view's Console tab lists. Ended sessions
+ * stay listed — their output is still readable and their worktree may still hold work.
+ */
+export function consoleSessions(sessions: Session[], repoId: string, change: string): Session[] {
+  return sessions.filter((s) => s.repoId === repoId && s.change === change).sort((a, b) => activityAt(b).localeCompare(activityAt(a)));
+}
+
+/** The session the Console tab shows: the one the URL names while it is one of the change's, else the most recent. */
+export function consoleSession(sessions: Session[], wanted: string | undefined): Session | undefined {
+  return sessions.find((s) => s.id === wanted) ?? sessions[0];
+}
+
+/**
+ * Whether a change gets a Console tab at all. A worktree counts even without a session record, and outlives the change
+ * itself — which is why a change the snapshot no longer carries is shown rather than reported as not found.
+ */
+export function consoleAvailable(config: Config | null, sessions: Session[], worktrees: SessionWorktree[], repoId: string, change: string): boolean {
+  if (!sessionsEnabledFor(config, repoId)) return false;
+  return sessions.some((s) => s.repoId === repoId && s.change === change) || worktrees.some((w) => w.repoId === repoId && w.change === change);
 }
 
 export type EndSeverity = "plain" | "notice" | "danger";
@@ -163,67 +183,20 @@ export function worktreeForChange(worktrees: SessionWorktree[], repoId: string, 
   return mine.find((w) => SHIPPABLE_WORK.includes(w.work.state)) ?? mine.find((w) => w.work.state === "merged");
 }
 
-/** The Open work list: everything unshipped plus merged worktrees still lying around; stale first, then oldest first. */
-export function openWork(worktrees: SessionWorktree[], sessions: Session[], now = Date.now()): { items: SessionWorktree[]; unshipped: number } {
-  const items = worktrees.filter((w) => SHIPPABLE_WORK.includes(w.work.state) || w.work.state === "merged");
-  const rank = (w: SessionWorktree) => (staleAge(w, sessions, now) ? 0 : w.work.state === "merged" ? 2 : 1);
-  items.sort((a, b) => rank(a) - rank(b) || (a.lastActivityAt ?? "").localeCompare(b.lastActivityAt ?? ""));
-  return { items, unshipped: items.filter((w) => w.work.state !== "merged").length };
-}
-
-const PARAM = "session";
-
-/** The dock shows at most this many sessions side by side; the tab strip can hold more. */
-export const MAX_SHOWN = 3;
-
-/** `?session=a,b,c` in pane order: the first three distinct ids. A single id — the format of older links — is one pane. */
-export function shownFromSearch(search: string): string[] {
-  const ids = (new URLSearchParams(search).get(PARAM) ?? "").split(",").map((id) => id.trim()).filter(Boolean);
-  return [...new Set(ids)].slice(0, MAX_SHOWN);
-}
-
-/** Sets or clears `?session=` and keeps every other query parameter (board filters live there too). */
-export function searchWithShown(search: string, shown: readonly string[]): string {
-  const params = new URLSearchParams(search);
-  if (shown.length > 0) params.set(PARAM, shown.join(","));
-  else params.delete(PARAM);
-  // Ids are UUIDs; a readable comma keeps deep links legible.
-  const out = params.toString().replaceAll("%2C", ",");
-  return out ? `?${out}` : "";
-}
-
-/** Dock geometry, in one place: the dock never gets too small for a terminal, the board above it never too small to use. */
-export const DOCK_MIN_HEIGHT = 160;
-export const DOCK_MIN_BOARD = 120;
-export const DOCK_TABS_HEIGHT = 44;
-export const DOCK_DEFAULT_RATIO = 0.42;
-
-export function clampDockHeight(height: number, windowHeight: number): number {
-  return Math.round(Math.min(Math.max(height, DOCK_MIN_HEIGHT), Math.max(DOCK_MIN_HEIGHT, windowHeight - DOCK_MIN_BOARD)));
-}
-
-export interface Shown {
-  shown: string[];
-  focusedId?: string;
-}
-
 /**
- * "Show this session": focus it if it has a pane already, give it a new pane while there is room, otherwise replace the
- * pane the user is in (the one they are looking at when asking for another session) — the last one if none has focus.
+ * The Open work list — the only view of agent activity that spans repositories now that terminals live in each
+ * change's detail view. It holds every running session's worktree (whatever its work status, so a running agent is
+ * always findable), everything unshipped, and merged worktrees still lying around. Running first, then stale, then the
+ * rest, then merged; oldest first within each rank.
  */
-export function showSession({ shown, focusedId }: Shown, id: string): Shown {
-  if (shown.includes(id)) return { shown, focusedId: id };
-  if (shown.length < MAX_SHOWN) return { shown: [...shown, id], focusedId: id };
-  const at = focusedId !== undefined && shown.includes(focusedId) ? shown.indexOf(focusedId) : shown.length - 1;
-  return { shown: shown.map((other, i) => (i === at ? id : other)), focusedId: id };
-}
-
-/** Removes a pane (never a session); the keyboard moves to the pane that takes its place, else the one before. */
-export function hideSession({ shown, focusedId }: Shown, id: string): Shown {
-  const at = shown.indexOf(id);
-  if (at < 0) return { shown, focusedId };
-  const rest = shown.filter((other) => other !== id);
-  return { shown: rest, focusedId: focusedId === id ? (rest[at] ?? rest[at - 1]) : focusedId };
+export function openWork(worktrees: SessionWorktree[], sessions: Session[], now = Date.now()): { items: SessionWorktree[]; unshipped: number; running: number } {
+  const runningIds = new Set(sessions.filter((s) => s.state === "running").map((s) => s.id));
+  const isRunning = (w: SessionWorktree) => w.sessionId !== undefined && runningIds.has(w.sessionId);
+  const items = worktrees.filter((w) => isRunning(w) || SHIPPABLE_WORK.includes(w.work.state) || w.work.state === "merged");
+  const rank = (w: SessionWorktree) => (isRunning(w) ? 0 : staleAge(w, sessions, now) ? 1 : w.work.state === "merged" ? 3 : 2);
+  items.sort((a, b) => rank(a) - rank(b) || (a.lastActivityAt ?? "").localeCompare(b.lastActivityAt ?? ""));
+  // A running session's own worktree is counted as running, never a second time as unshipped: the count matches the rows.
+  return { items, unshipped: items.filter((w) => !isRunning(w) && w.work.state !== "merged").length, running: items.filter(isRunning).length };
 }
 
 /** One argument per line; blank lines are dropped. A command is an argument list, never a shell string. */

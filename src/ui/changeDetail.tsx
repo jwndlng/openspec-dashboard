@@ -7,7 +7,10 @@ import type { ChangeArtifactEntry, ChangeArtifacts, ChangeSnapshot, RepoSnapshot
 import { ApiError, api } from "./api.ts";
 import { CopyButton, Meter } from "./kanban.tsx";
 import { renderMarkdown } from "./markdown.tsx";
-import { backTarget, type DetailQuery, parseDetailQuery, repoPath, serializeDetailQuery } from "./routes.ts";
+import { backTarget, CONSOLE_TAB, type DetailQuery, parseDetailQuery, repoPath, serializeDetailQuery } from "./routes.ts";
+import { ConsolePanel, ConsoleSessionList } from "./sessionPanel.tsx";
+import { consoleAvailable, consoleSession, consoleSessions } from "./sessionState.ts";
+import { useSessionUi } from "./sessions.tsx";
 import { currentQuery, followInApp, href, navigate, replaceQuery } from "./url.ts";
 
 export function artifactLabel(id: string): string {
@@ -20,10 +23,12 @@ export interface Selection {
 }
 
 /**
- * What is on screen for a URL: the named artifact and file when they exist, otherwise the first artifact that has
- * content and its first file. A stale link therefore never produces an error.
+ * What is on screen for a URL: the console when the URL names it and the change has one, else the named artifact and
+ * file when they exist, else the first artifact that has content and its first file. A stale link — a missing
+ * artifact, a missing file, or the console for a change without a session — therefore never produces an error.
  */
-export function resolveSelection(artifacts: ChangeArtifactEntry[], query: Pick<DetailQuery, "artifact" | "file">): Selection {
+export function resolveSelection(artifacts: ChangeArtifactEntry[], query: Pick<DetailQuery, "artifact" | "file">, hasConsole = false): Selection {
+  if (query.artifact === CONSOLE_TAB && hasConsole) return { artifactId: CONSOLE_TAB };
   const withContent = artifacts.filter((a) => a.files.length > 0);
   const artifact = withContent.find((a) => a.id === query.artifact) ?? withContent[0];
   if (!artifact) return {};
@@ -102,10 +107,19 @@ export function detailClose(from: string | undefined, repoId: string, go: (path:
   };
 }
 
-/** A `keydown` listener that closes on Escape. */
+/** The console's terminal box (`ConsolePanel` renders it), where Escape belongs to the agent rather than the overlay. */
+export const TERMINAL_SELECTOR = ".session-terminal";
+
+/**
+ * A `keydown` listener that closes on Escape — except while the keyboard is in a terminal, where Escape belongs to the
+ * agent. The close control and the backdrop stay, so there is always a way out that a terminal cannot swallow.
+ */
 export function closeOnEscape(onClose: () => void): (e: KeyboardEvent) => void {
   return (e) => {
     if (e.key !== "Escape" || e.defaultPrevented) return;
+    // Duck-typed rather than `instanceof Element`, so this stays a pure function testable without a DOM.
+    const target = e.target as { closest?: (selector: string) => unknown } | null;
+    if (typeof target?.closest === "function" && target.closest(TERMINAL_SELECTOR)) return;
     e.preventDefault();
     onClose();
   };
@@ -153,7 +167,8 @@ export function CloseButton({ onClose }: { onClose: () => void }) {
  * Identity only: where the change lives, its name, and a way out. The status labels stay on the board's card; warnings
  * are the exception, because they say something is broken.
  */
-export function DetailHeader({ repo, change, from, onClose }: { repo: RepoSnapshot; change: ChangeSnapshot; from?: string; onClose: () => void }) {
+// The change is a full snapshot entry in the ordinary case, and just a name for a worktree whose change is gone.
+export function DetailHeader({ repo, change, from, onClose }: { repo: RepoSnapshot; change: ChangeSnapshot | Pick<ChangeSnapshot, "name" | "warnings">; from?: string; onClose: () => void }) {
   // The repository's board, with its filters when that is the board the view was opened from.
   const back = backTarget(from, repo.id);
   const repoLink = back.path === repoPath(repo.id) ? back : { path: repoPath(repo.id), query: "" };
@@ -178,7 +193,12 @@ export function DetailHeader({ repo, change, from, onClose }: { repo: RepoSnapsh
   );
 }
 
-export function ArtifactTabs({ artifacts, selected, onSelect }: { artifacts: ChangeArtifactEntry[]; selected?: string; onSelect: (id: string) => void }) {
+/**
+ * One tab per artifact of the change's schema, and — when the change has a session or a session worktree — the Console
+ * tab after them. The Console tab is not an artifact: it carries no state label and is always selectable, so a change
+ * whose artifacts are all unwritten can still be watched.
+ */
+export function ArtifactTabs({ artifacts, selected, onSelect, console: hasConsole = false }: { artifacts: ChangeArtifactEntry[]; selected?: string; onSelect: (id: string) => void; console?: boolean }) {
   return (
     <div class="detail-tabs" role="tablist" aria-label="Artifacts">
       {artifacts.map((a) => {
@@ -199,6 +219,18 @@ export function ArtifactTabs({ artifacts, selected, onSelect }: { artifacts: Cha
           </button>
         );
       })}
+      {hasConsole && (
+        <button
+          type="button"
+          role="tab"
+          class={`detail-tab console ${selected === CONSOLE_TAB ? "on" : ""}`}
+          aria-selected={selected === CONSOLE_TAB}
+          title="The agent's terminal for this change"
+          onClick={() => onSelect(CONSOLE_TAB)}
+        >
+          Console
+        </button>
+      )}
     </div>
   );
 }
@@ -249,6 +281,7 @@ export function FileContent({ state, raw, isTasks, rendered, filePath }: { state
 }
 
 export function ChangeDetail({ snapshot, repoId, changeName }: { snapshot: Snapshot | null; repoId: string; changeName: string }) {
+  const ui = useSessionUi();
   const [query, setQueryState] = useState<DetailQuery>(() => parseDetailQuery(currentQuery()));
   const [listing, setListing] = useState<ChangeArtifacts | null>(null);
   const [listError, setListError] = useState<string | null>(null);
@@ -264,6 +297,14 @@ export function ChangeDetail({ snapshot, repoId, changeName }: { snapshot: Snaps
   const repo = snapshot?.repos.find((r) => r.id === repoId);
   const change = repo?.changes.find((c) => c.name === changeName);
   const known = change !== undefined;
+
+  // The console's own inputs. A worktree outlives its change, so a change the snapshot no longer carries can still
+  // have one — that is what keeps an interrupted archive session reachable once its change is gone from the board.
+  const sessions = useMemo(() => consoleSessions(ui.sessions, repoId, changeName), [ui.sessions, repoId, changeName]);
+  const worktrees = useMemo(() => ui.worktrees.filter((w) => w.repoId === repoId && w.change === changeName), [ui.worktrees, repoId, changeName]);
+  const hasConsole = consoleAvailable(ui.config, ui.sessions, ui.worktrees, repoId, changeName);
+  const shownSession = consoleSession(sessions, query.session);
+  const shownWorktree = worktrees.find((w) => w.path === shownSession?.worktreePath) ?? (shownSession ? undefined : worktrees[0]);
 
   // `snapshot` is a new object after every poll and every manual refresh, so both fetches follow the regular refresh.
   useEffect(() => {
@@ -282,7 +323,8 @@ export function ChangeDetail({ snapshot, repoId, changeName }: { snapshot: Snaps
     };
   }, [repoId, changeName, known, snapshot]);
 
-  const selection = useMemo(() => resolveSelection(listing?.artifacts ?? [], query), [listing, query]);
+  const selection = useMemo(() => resolveSelection(listing?.artifacts ?? [], query, hasConsole), [listing, query, hasConsole]);
+  const onConsole = selection.artifactId === CONSOLE_TAB;
   const file = selection.file;
 
   useEffect(() => {
@@ -322,6 +364,25 @@ export function ChangeDetail({ snapshot, repoId, changeName }: { snapshot: Snaps
   }, [opener]);
 
   const label = `Change ${changeName}`;
+
+  // The change is gone from the snapshot but its worktree is not: show the frame with a working Console tab rather
+  // than "not found", so the work left in that worktree stays reachable.
+  if (snapshot && repo && !change && hasConsole) {
+    return (
+      <DetailOverlay label={label} onClose={close} panelRef={panel}>
+        <DetailHeader repo={repo} change={{ name: changeName }} from={query.from} onClose={close} />
+        <ArtifactTabs artifacts={[]} selected={CONSOLE_TAB} onSelect={() => {}} console />
+        <div class="detail-body">
+          <ConsoleSessionList sessions={sessions} selected={shownSession?.id} onSelect={(id) => setQuery({ artifact: CONSOLE_TAB, session: id })} />
+          <section class="detail-content">
+            <p class="detail-hint">This change is no longer in the repository, so it has no artifacts to read. Its worktree is still here.</p>
+            <ConsolePanel session={shownSession} worktree={shownWorktree} />
+          </section>
+        </div>
+      </DetailOverlay>
+    );
+  }
+
   if (!snapshot || !repo || !change) {
     return (
       <DetailOverlay label={label} onClose={close} panelRef={panel}>
@@ -343,10 +404,20 @@ export function ChangeDetail({ snapshot, repoId, changeName }: { snapshot: Snaps
   return (
     <DetailOverlay label={label} onClose={close} panelRef={panel}>
       <DetailHeader repo={repo} change={change} from={query.from} onClose={close} />
-      {listing && <ArtifactTabs artifacts={listing.artifacts} selected={selection.artifactId} onSelect={(id) => setQuery({ artifact: id, file: undefined })} />}
+      {(listing || hasConsole) && (
+        <ArtifactTabs artifacts={listing?.artifacts ?? []} selected={selection.artifactId} onSelect={(id) => setQuery({ artifact: id, file: undefined })} console={hasConsole} />
+      )}
       <div class="detail-body">
-        {artifact && <FileList artifact={artifact} selected={file} onSelect={(path) => setQuery({ artifact: artifact.id, file: path })} />}
+        {onConsole ? (
+          <ConsoleSessionList sessions={sessions} selected={shownSession?.id} onSelect={(id) => setQuery({ artifact: CONSOLE_TAB, session: id })} />
+        ) : (
+          artifact && <FileList artifact={artifact} selected={file} onSelect={(path) => setQuery({ artifact: artifact.id, file: path })} />
+        )}
         <section class="detail-content">
+          {onConsole ? (
+            <ConsolePanel session={shownSession} worktree={shownWorktree} />
+          ) : (
+            <>
           {file && (
             <div class="detail-toolbar">
               <code class="path">{file}</code>
@@ -366,6 +437,8 @@ export function ChangeDetail({ snapshot, repoId, changeName }: { snapshot: Snaps
             <p class="detail-hint">Loading…</p>
           ) : (
             <FileContent state={current} raw={query.raw} isTasks={selection.artifactId === "tasks"} rendered={rendered} filePath={filePath} />
+          )}
+            </>
           )}
         </section>
       </div>

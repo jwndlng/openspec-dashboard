@@ -20,10 +20,11 @@ import {
   nextListing,
   resolveSelection,
   taskProgress,
+  TERMINAL_SELECTOR,
 } from "../src/ui/changeDetail.tsx";
 import { type Card, ChangeCard, CopyButton, cardLink, initialFilters } from "../src/ui/kanban.tsx";
 import { renderMarkdown } from "../src/ui/markdown.tsx";
-import { backTarget, parseDetailQuery, routeFromPath } from "../src/ui/routes.ts";
+import { backTarget, CONSOLE_TAB, parseDetailQuery, routeFromPath, serializeDetailQuery } from "../src/ui/routes.ts";
 import { FIXTURES } from "./helpers.ts";
 import { byComponent, byTag, elements, textOf } from "./vnode.ts";
 
@@ -277,4 +278,74 @@ test("a board behind the detail view takes its filters from the query it is give
   expect(initialFilters("?q=sync&repos=r2", "r1")).toMatchObject({ q: "sync", repos: [] });
   // the detail view's own query carries no filter
   expect(initialFilters("?artifact=specs&from=%2Fboard%3Fq%3Dsync", undefined).q).toBe("");
+});
+
+test("the Console tab comes after the artifacts, carries no state, and stays selectable when they are all empty", () => {
+  const picked: string[] = [];
+  const tabs = byTag(ArtifactTabs({ artifacts, selected: CONSOLE_TAB, onSelect: (id) => picked.push(id), console: true }), "button");
+  expect(tabs.map((t) => textOf(t))).toEqual(["Proposaldone", "Specsdone", "Designready", "Tasksblocked", "Console"]);
+  // Not an artifact: no state pill, never disabled, and it is the selected one here.
+  expect(tabs[4].props.disabled).toBeFalsy();
+  expect(tabs.map((t) => t.props["aria-selected"])).toEqual([false, false, false, false, true]);
+  (tabs[4].props.onClick as () => void)();
+  expect(picked).toEqual([CONSOLE_TAB]);
+
+  // A change whose artifacts are all unwritten can still be watched.
+  const empty = byTag(ArtifactTabs({ artifacts: artifacts.map((a) => ({ ...a, files: [] })), selected: CONSOLE_TAB, onSelect: () => {}, console: true }), "button");
+  expect(empty.every((t, i) => (i < 4 ? t.props.disabled === true : t.props.disabled !== true))).toBe(true);
+
+  // Without a session there is no Console tab at all.
+  expect(byTag(ArtifactTabs({ artifacts, selected: "proposal", onSelect: () => {} }), "button")).toHaveLength(4);
+});
+
+test("selection: the console wins when the change has one, and falls back to an artifact when it does not", () => {
+  expect(resolveSelection(artifacts, { artifact: CONSOLE_TAB }, true)).toEqual({ artifactId: CONSOLE_TAB });
+  // A change with no session: a console link is stale like any other, so it falls back without an error.
+  expect(resolveSelection(artifacts, { artifact: CONSOLE_TAB }, false)).toEqual({ artifactId: "proposal", file: "proposal.md" });
+  // The console is selectable even when nothing has been written yet.
+  expect(resolveSelection([], { artifact: CONSOLE_TAB }, true)).toEqual({ artifactId: CONSOLE_TAB });
+  expect(resolveSelection([], { artifact: CONSOLE_TAB }, false)).toEqual({});
+  // A file in the query is ignored on the console; it belongs to an artifact.
+  expect(resolveSelection(artifacts, { artifact: CONSOLE_TAB, file: "proposal.md" }, true)).toEqual({ artifactId: CONSOLE_TAB });
+});
+
+test("the selected tab and session survive the URL in both directions", () => {
+  const q = { raw: false, artifact: CONSOLE_TAB, session: "s-1", from: "/board?q=sync" };
+  const round = parseDetailQuery(serializeDetailQuery(q));
+  expect(round.artifact).toBe(CONSOLE_TAB);
+  expect(round.session).toBe("s-1");
+  expect(round.from).toBe("/board?q=sync");
+  // Nothing extra when there is no console to point at.
+  expect(serializeDetailQuery({ raw: false })).toBe("");
+  expect(parseDetailQuery("?artifact=console").session).toBeUndefined();
+});
+
+test("Escape reaches the agent while the keyboard is in the terminal, and closes from anywhere else", () => {
+  let closed = 0;
+  const onKey = closeOnEscape(() => closed++);
+  const esc = (target: unknown) => onKey({ key: "Escape", defaultPrevented: false, preventDefault: noop, target } as unknown as KeyboardEvent);
+
+  // Inside the terminal: the agent gets it, the overlay stays.
+  esc({ closest: (sel: string) => (sel === TERMINAL_SELECTOR ? {} : null) });
+  expect(closed).toBe(0);
+
+  // On the tab strip, or on anything with no DOM ancestry at all: the overlay closes.
+  esc({ closest: () => null });
+  esc(undefined);
+  expect(closed).toBe(2);
+});
+
+test("a poll changes neither the selected tab nor the selected session", () => {
+  // The selection lives in the URL, and an unchanged re-fetch keeps the previous listing object, so the memo that
+  // resolves it does not even recompute: the console cannot be swapped out underneath the user by a refresh.
+  const query = { raw: false, artifact: CONSOLE_TAB, session: "s-2", from: "/board" };
+  const listing = { change: { name: "c", dir: "/w/c" }, artifacts } as never;
+  const refetched = JSON.parse(JSON.stringify(listing));
+  expect(nextListing(listing, refetched)).toBe(listing);
+
+  const before = resolveSelection(artifacts, query, true);
+  const after = resolveSelection(artifacts, parseDetailQuery(serializeDetailQuery(query)), true);
+  expect(after).toEqual(before);
+  expect(after).toEqual({ artifactId: CONSOLE_TAB });
+  expect(parseDetailQuery(serializeDetailQuery(query)).session).toBe("s-2");
 });

@@ -1,26 +1,14 @@
-// The session panel: the agent's own terminal, streamed from the dashboard server. The dashboard adds nothing to what
-// the agent shows and interprets none of it; keystrokes go straight to the agent, exactly as in a terminal window.
+// The console: the agent's own terminal, streamed from the dashboard server, shown in the Console tab of its change's
+// detail view. The dashboard adds nothing to what the agent shows and interprets none of it; keystrokes go straight to
+// the agent, exactly as in a terminal window.
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
-import { useEffect, useMemo, useRef, useState } from "preact/hooks";
-import { SHIPPABLE_WORK, type SessionAction } from "../shared/types.ts";
+import { useEffect, useRef, useState } from "preact/hooks";
+import { SHIPPABLE_WORK, type Session, type SessionAction, type SessionWorktree } from "../shared/types.ts";
 import { api, type TerminalMessage } from "./api.ts";
 import { cdCommand } from "./format.ts";
 import { DEFAULT_QUICK_REPLIES, NOT_SUBMITTED_NOTICE, replyHint, replyMessage, type QuickReply } from "./quickReplies.ts";
-import { assignRepoHues, repoTint } from "./repoGroups.ts";
-import {
-  clampDockHeight,
-  DOCK_DEFAULT_RATIO,
-  DOCK_MIN_BOARD,
-  DOCK_MIN_HEIGHT,
-  DOCK_TABS_HEIGHT,
-  MAX_SHOWN,
-  nextStepFor,
-  sessionBadge,
-  sessionTabs,
-  startersFor,
-  workBadge,
-} from "./sessionState.ts";
+import { nextStepFor, sessionBadge, startersFor, workBadge } from "./sessionState.ts";
 import { SessionBadgeView, useSessionUi } from "./sessions.tsx";
 
 function Copy({ text, label }: { text: string; label: string }) {
@@ -74,9 +62,7 @@ function TerminalView({ sessionId, running, onExit }: { sessionId: string; runni
   // The server answers this socket with `submitted`; until then the clicked response stays inert.
   const pending = useRef<string[]>([]);
   // Text went into this terminal on the user's behalf (a next step): put the keyboard back where the agent is.
-  const { focusTick, panelId, unsentId, reportUnsent } = useSessionUi();
-  const wantsFocus = useRef(panelId === sessionId);
-  wantsFocus.current = panelId === sessionId;
+  const { focusTick, unsentId, reportUnsent } = useSessionUi();
   useEffect(() => {
     if (focusTick.tick > 0 && focusTick.id === sessionId) live.current?.focus();
   }, [focusTick, sessionId]);
@@ -135,7 +121,8 @@ function TerminalView({ sessionId, running, onExit }: { sessionId: string; runni
       onOpen: () => {
         setStatus("open");
         sendSize();
-        if (wantsFocus.current) term.focus(); // with several panes, only the one the user is in takes the keyboard
+        // One terminal per view, and the user selected the Console tab to get here: give it the keyboard.
+        term.focus();
       },
       onData: (bytes) => term.write(bytes),
       onExit,
@@ -196,157 +183,44 @@ function TerminalView({ sessionId, running, onExit }: { sessionId: string; runni
 
 const STEP_LABEL: Record<SessionAction, string> = { draft: "Draft artifacts", implement: "Implement", archive: "Archive" };
 
-/** One tab per running session — there can be more tabs than panes. A marked tab has a pane in the dock. */
-function SessionTabs() {
-  const ui = useSessionUi();
-  const tabs = sessionTabs(ui.sessions, ui.shown);
-  // The same colours as the board: derived from every repository in the snapshot, never from the filtered ones.
-  const hues = useMemo(() => assignRepoHues((ui.snapshot?.repos ?? []).map((r) => r.id)), [ui.snapshot]);
-  const select = (index: number) => ui.openPanel(tabs[(index + tabs.length) % tabs.length].id);
+/**
+ * The change's sessions, in the slot the delta specs use for their file list. Omitted for a single session: there is
+ * nothing to choose. A change can legitimately have two — its own and its archive worktree's.
+ */
+export function ConsoleSessionList({ sessions, selected, onSelect }: { sessions: Session[]; selected?: string; onSelect: (id: string) => void }) {
+  if (sessions.length < 2) return null;
   return (
-    <div class="session-tabs" role="tablist" aria-label="Agent sessions">
-      {tabs.map((tab, index) => {
-        const badge = sessionBadge(tab);
-        const shown = ui.shown.includes(tab.id);
-        const focused = tab.id === ui.panelId;
-        const repoName = ui.config?.repos.find((r) => r.id === tab.repoId)?.name ?? tab.repoId;
-        const tint = repoTint(hues, tab.repoId);
+    <nav class="detail-files console-sessions" aria-label="Sessions of this change">
+      {sessions.map((s) => {
+        const badge = sessionBadge(s);
         return (
           <button
+            key={s.id}
             type="button"
-            role="tab"
-            key={tab.id}
-            aria-selected={shown}
-            tabIndex={focused || (ui.panelId === undefined && index === 0) ? 0 : -1}
-            class={`session-tab${shown ? " shown" : ""}${focused ? " active" : ""}${tint.class ? ` ${tint.class}` : ""}`}
-            style={tint.style}
-            title={`${repoName} · ${tab.change} · ${badge.title}${shown ? " · shown in the dock" : ui.shown.length >= MAX_SHOWN ? " · replaces the pane you are in" : ""}`}
-            onClick={() => ui.openPanel(tab.id)}
-            onKeyDown={(e) => {
-              if (e.key === "ArrowRight") select(index + 1);
-              else if (e.key === "ArrowLeft") select(index - 1);
-            }}
+            class={`detail-file console-session ${s.id === selected ? "on" : ""}`}
+            aria-current={s.id === selected ? "true" : undefined}
+            title={`${STEP_LABEL[s.action]} · ${s.branch} · ${badge.title}`}
+            onClick={() => onSelect(s.id)}
           >
-            <span class="tab-mark" aria-hidden="true">
-              {shown ? "▣" : "▢"}
-            </span>
-            <span class="hint repo-name">{repoName}</span>
-            <span class="mono">{tab.change}</span>
+            <span class="console-session-what">{STEP_LABEL[s.action]}</span>
+            <span class="hint mono">{s.branch}</span>
             <SessionBadgeView badge={badge} />
           </button>
         );
       })}
-    </div>
+    </nav>
   );
-}
-
-const HEIGHT_KEY = "osd.dockHeight";
-
-function storedHeight(): number | undefined {
-  try {
-    const value = Number(localStorage.getItem(HEIGHT_KEY));
-    return Number.isFinite(value) && value > 0 ? value : undefined;
-  } catch {
-    return undefined; // storage can be unavailable; the default height is fine then
-  }
 }
 
 /**
- * Agent terminals live in a dock across the bottom of the window: wide and short, the shape terminal output has, with
- * the board usable above it. Up to three sessions sit side by side; the tab strip holds every running one.
+ * The console itself: one session's terminal with the facts and actions that belong to it. Shown in the Console tab of
+ * the change's detail view — the only place the dashboard renders a terminal.
+ *
+ * A worktree without a session record still gets a panel: its path, its work status and a way to copy a `cd` for it.
+ * There is nothing to attach a terminal to, and the dashboard will not start one behind the user's back.
  */
-export function SessionDock() {
+export function ConsolePanel({ session, worktree }: { session?: Session; worktree?: SessionWorktree }) {
   const ui = useSessionUi();
-  const [height, setHeight] = useState(() => clampDockHeight(storedHeight() ?? window.innerHeight * DOCK_DEFAULT_RATIO, window.innerHeight));
-  const [maximised, setMaximised] = useState(false);
-  const dragging = useRef(false);
-  const tabs = sessionTabs(ui.sessions, ui.shown);
-  const exists = ui.shown.length > 0 || tabs.length > 0;
-  const open = ui.shown.length > 0;
-
-  // The page reserves the dock's height below its content, so nothing of the board hides behind it.
-  const reserved = !exists ? "0px" : !open ? `${DOCK_TABS_HEIGHT}px` : maximised ? "calc(100vh - 56px)" : `min(${height}px, calc(100vh - ${DOCK_MIN_BOARD}px))`;
-  useEffect(() => {
-    document.documentElement.style.setProperty("--dock-h", reserved);
-    return () => void document.documentElement.style.setProperty("--dock-h", "0px");
-  }, [reserved]);
-
-  const resize = (next: number, persist: boolean) => {
-    const clamped = clampDockHeight(next, window.innerHeight);
-    setHeight(clamped);
-    setMaximised(false);
-    if (!persist) return;
-    try {
-      localStorage.setItem(HEIGHT_KEY, String(clamped));
-    } catch {
-      // not remembered, nothing else lost
-    }
-  };
-
-  if (!exists) return null;
-  return (
-    <aside class={`session-dock${open ? "" : " collapsed"}`} aria-label="Agent sessions">
-      {open && (
-        // biome-ignore lint/a11y/useSemanticElements: an <hr> cannot be dragged; this is the ARIA window-splitter pattern
-        <div
-          class="dock-handle"
-          role="separator"
-          aria-orientation="horizontal"
-          aria-label="Resize the session dock"
-          aria-valuenow={height}
-          aria-valuemin={DOCK_MIN_HEIGHT}
-          aria-valuemax={Math.max(DOCK_MIN_HEIGHT, window.innerHeight - DOCK_MIN_BOARD)}
-          tabIndex={0}
-          title="Drag to resize; arrow keys work too"
-          onPointerDown={(e) => {
-            dragging.current = true;
-            e.currentTarget.setPointerCapture(e.pointerId);
-          }}
-          onPointerMove={(e) => dragging.current && resize(window.innerHeight - e.clientY, false)}
-          onPointerUp={(e) => {
-            if (!dragging.current) return;
-            dragging.current = false;
-            resize(window.innerHeight - e.clientY, true);
-          }}
-          onKeyDown={(e) => {
-            if (e.key === "ArrowUp") resize(height + 24, true);
-            else if (e.key === "ArrowDown") resize(height - 24, true);
-          }}
-        />
-      )}
-      <div class="dock-bar">
-        <SessionTabs />
-        {open && (
-          <>
-            <button
-              type="button"
-              class="btn sm ghost"
-              aria-pressed={maximised}
-              title={maximised ? "Back to the chosen height" : "Use the whole window"}
-              onClick={() => setMaximised(!maximised)}
-            >
-              {maximised ? "▾ Restore" : "▴ Maximise"}
-            </button>
-            <button type="button" class="btn sm ghost" title="Collapse to the tabs; every session keeps running" onClick={() => ui.openPanel(undefined)}>
-              ▁ Collapse
-            </button>
-          </>
-        )}
-      </div>
-      {open && (
-        <div class="dock-panes" style={{ "--panes": ui.shown.length }}>
-          {ui.shown.map((id) => (
-            <SessionPane key={id} id={id} />
-          ))}
-        </div>
-      )}
-    </aside>
-  );
-}
-
-function SessionPane({ id }: { id: string }) {
-  const ui = useSessionUi();
-  const session = ui.sessions.find((s) => s.id === id);
   const [error, setError] = useState<string>();
   // An agent that was started again (Resume, Ship — from here or from the end-session dialog) gets a fresh terminal view.
   const [generation, setGeneration] = useState(0);
@@ -357,26 +231,12 @@ function SessionPane({ id }: { id: string }) {
     seen.current = { id: session?.id, running: session ? runningNow : undefined };
   }, [session?.id, runningNow, session]);
 
-  // Whichever pane the user clicks or tabs into is the one a fourth session would replace.
-  const root = useRef<HTMLElement>(null);
-  useEffect(() => {
-    const el = root.current;
-    if (!el) return;
-    const focus = () => ui.focusPane(id);
-    el.addEventListener("focusin", focus);
-    el.addEventListener("pointerdown", focus);
-    return () => {
-      el.removeEventListener("focusin", focus);
-      el.removeEventListener("pointerdown", focus);
-    };
-  }, [id, ui.focusPane]);
-
   const badge = session ? sessionBadge(session) : undefined;
   const repo = ui.config?.repos.find((r) => r.id === session?.repoId);
-  const worktree = session && ui.worktrees.find((w) => w.path === session.worktreePath);
-  const work = worktree && workBadge(worktree, ui.sessions);
-  const shippable = worktree !== undefined && SHIPPABLE_WORK.includes(worktree.work.state);
-  const merged = worktree?.work.state === "merged";
+  const tree = worktree ?? (session && ui.worktrees.find((w) => w.path === session.worktreePath));
+  const work = tree && workBadge(tree, ui.sessions);
+  const shippable = session !== undefined && tree !== undefined && SHIPPABLE_WORK.includes(tree.work.state);
+  const merged = tree?.work.state === "merged";
   // The change's next step, offered here only when it would go into this very terminal.
   const card = session && ui.snapshot?.repos.find((r) => r.id === session.repoId)?.changes.find((c) => c.name === session.change && !c.archived);
   const nextSteps =
@@ -394,74 +254,61 @@ function SessionPane({ id }: { id: string }) {
     }
   };
 
+  const path = session?.worktreePath ?? tree?.path;
   return (
-    <section ref={root} class={`session-pane${ui.panelId === id ? " focused" : ""}`} aria-label={`Agent session ${session?.change ?? ""}`}>
+    <section class="session-pane console-pane" aria-label={`Agent console ${session?.change ?? tree?.change ?? ""}`}>
       <header class="session-head">
-        <div class="pane-title">
-          <div class="row">
-            <strong class="mono" title={session ? `worktree ${session.worktreePath}\nbranch ${session.branch}` : undefined}>
-              {session?.change ?? "session"}
-            </strong>
-            {repo && <span class="hint">{repo.name}</span>}
-            {session && <span class="hint">· {session.agentName}</span>}
-            {session && <span class="hint mono pane-branch">{session.branch}</span>}
-            {badge && <SessionBadgeView badge={badge} />}
-            {work && (
-              <span class={`badge ${work.tone}`} title={merged && session?.state !== "running" ? `${work.title}: use Clean up.` : work.title}>
-                {work.label}
-              </span>
-            )}
-            {session?.adopted && (
-              <span
-                class="badge"
-                title="This branch was already checked out in a worktree created outside the dashboard, so the agent works there. The dashboard will not remove it."
-              >
-                adopted worktree
-              </span>
-            )}
-          </div>
-          <button
-            type="button"
-            class="btn sm ghost"
-            aria-label="Close this pane"
-            title="Close this pane; the session keeps running and stays in the tabs"
-            onClick={() => ui.hidePane(id)}
-          >
-            ✕
-          </button>
+        <div class="row">
+          {session && <span class="hint">{session.agentName}</span>}
+          {repo && <span class="hint">· {repo.name}</span>}
+          {(session?.branch ?? tree?.branch) && <span class="hint mono pane-branch">{session?.branch ?? tree?.branch}</span>}
+          {badge && <SessionBadgeView badge={badge} />}
+          {work && (
+            <span class={`badge ${work.tone}`} title={merged && session?.state !== "running" ? `${work.title}: use Clean up.` : work.title}>
+              {work.label}
+            </span>
+          )}
+          {session?.adopted && (
+            <span
+              class="badge"
+              title="This branch was already checked out in a worktree created outside the dashboard, so the agent works there. The dashboard will not remove it."
+            >
+              adopted worktree
+            </span>
+          )}
         </div>
-        {session && (
-          <div class="row">
-            {shippable && (
-              <button
-                type="button"
-                class="btn sm primary"
-                title={
-                  session.state === "running"
-                    ? `Sends ${session.agentName} a prompt asking it to commit, push and open a pull request`
-                    : `Starts ${session.agentName} in this worktree with a prompt to commit, push and open a pull request`
-                }
-                onClick={() =>
-                  act(async () => {
-                    const result = await api.shipSession(session.id);
-                    ui.reportUnsent(result.submitted ? undefined : session.id);
-                  })
-                }
-              >
-                ⇪ Ship
-              </button>
-            )}
-            {session.state !== "running" && session.resumable && (
-              <button
-                type="button"
-                class="btn sm"
-                title="Start the agent again in the same worktree, continuing its latest conversation"
-                onClick={() => act(() => api.resumeSession(session.id))}
-              >
-                ▶ Resume
-              </button>
-            )}
-            {nextSteps.map((action) => (
+        <div class="row">
+          {shippable && session && (
+            <button
+              type="button"
+              class="btn sm primary"
+              title={
+                session.state === "running"
+                  ? `Sends ${session.agentName} a prompt asking it to commit, push and open a pull request`
+                  : `Starts ${session.agentName} in this worktree with a prompt to commit, push and open a pull request`
+              }
+              onClick={() =>
+                act(async () => {
+                  const result = await api.shipSession(session.id);
+                  ui.reportUnsent(result.submitted ? undefined : session.id);
+                })
+              }
+            >
+              ⇪ Ship
+            </button>
+          )}
+          {session && session.state !== "running" && session.resumable && (
+            <button
+              type="button"
+              class="btn sm"
+              title="Start the agent again in the same worktree, continuing its latest conversation"
+              onClick={() => act(() => api.resumeSession(session.id))}
+            >
+              ▶ Resume
+            </button>
+          )}
+          {session &&
+            nextSteps.map((action) => (
               <button
                 type="button"
                 class="btn sm session-start"
@@ -472,33 +319,30 @@ function SessionPane({ id }: { id: string }) {
                 ↳ {STEP_LABEL[action]}
               </button>
             ))}
+          {session && (
             <button type="button" class="btn sm" onClick={() => ui.requestEnd(session.id)}>
               {session.state === "running" ? "End session" : "Clean up"}
             </button>
-            {session.state !== "running" && (
-              <button
-                type="button"
-                class="btn sm ghost"
-                title="Delete this session's record and stored output"
-                onClick={() =>
-                  act(async () => {
-                    await api.deleteSession(session.id);
-                    ui.hidePane(session.id);
-                  })
-                }
-              >
-                Delete record
-              </button>
-            )}
-            <Copy text={cdCommand(session.worktreePath)} label="Copy cd" />
-          </div>
-        )}
+          )}
+          {session && session.state !== "running" && (
+            <button type="button" class="btn sm ghost" title="Delete this session's record and stored output" onClick={() => act(() => api.deleteSession(session.id))}>
+              Delete record
+            </button>
+          )}
+          {path && <Copy text={cdCommand(path)} label="Copy cd" />}
+        </div>
         {(error ?? session?.error) && <div class="notice danger">{error ?? session?.error}</div>}
       </header>
       {session ? (
         <TerminalView key={`${session.id}:${generation}`} sessionId={session.id} running={session.state === "running"} onExit={ui.refresh} />
       ) : (
-        <div class="hint session-terminal-note">Loading session…</div>
+        <div class="console-empty">
+          <p class="detail-hint">
+            No session is recorded for this worktree, so there is no terminal to show. Its work is still here — copy a <code>cd</code> for it, or remove it from Open work
+            when that is safe.
+          </p>
+          {path && <p class="hint mono">{path}</p>}
+        </div>
       )}
     </section>
   );
