@@ -4,8 +4,8 @@ import { createContext, type ComponentChildren } from "preact";
 import { useCallback, useContext, useEffect, useMemo, useState } from "preact/hooks";
 import type { AgentAvailability, ChangeSnapshot, Config, Session, SessionAction, SessionWorktree, Snapshot } from "../shared/types.ts";
 import { api } from "./api.ts";
-import { cdCommand, relTime } from "./format.ts";
-import { agentForRepo, openWork, type SessionBadge, hideSession, nextStepFor, searchWithShown, sessionBadge, sessionsForChange, showSession, shownFromSearch, type Shown, sessionsEnabledFor, startersFor, workBadge, worktreeForChange } from "./sessionState.ts";
+import { relTime } from "./format.ts";
+import { agentForRepo, openSessions, type SessionBadge, hideSession, nextStepFor, searchWithShown, sessionBadge, sessionsForChange, showSession, shownFromSearch, type Shown, sessionsEnabledFor, startersFor, workBadge, worktreeForChange } from "./sessionState.ts";
 import { currentQuery, replaceQuery } from "./url.ts";
 
 const POLL_MS = 3000;
@@ -169,7 +169,7 @@ export function WorkBadge({ worktree }: { worktree: SessionWorktree }) {
   const id = worktree.sessionId;
   if (!id)
     return (
-      <span class={`badge ${badge.tone}`} title={`${badge.title} · no session record is left; see Open work`}>
+      <span class={`badge ${badge.tone}`} title={`${badge.title} · no session record is left`}>
         {badge.label}
       </span>
     );
@@ -180,79 +180,48 @@ export function WorkBadge({ worktree }: { worktree: SessionWorktree }) {
   );
 }
 
-function OrphanActions({ worktree }: { worktree: SessionWorktree }) {
-  const ui = useSessionUi();
-  const [confirming, setConfirming] = useState(false);
-  const [note, setNote] = useState<string>();
-  const remove = async () => {
-    try {
-      const result = await api.removeWorktree(worktree.repoId, worktree.name);
-      setNote(result.removable ? undefined : `kept: ${result.reason ?? "not safe to remove"}`);
-      await ui.refresh();
-    } catch (err) {
-      setNote(err instanceof Error ? err.message : String(err));
-    }
-    setConfirming(false);
-  };
-  return (
-    <>
-      <button type="button" class="btn sm ghost" title={worktree.path} onClick={() => void navigator.clipboard.writeText(cdCommand(worktree.path))}>
-        Copy cd
-      </button>
-      {confirming ? (
-        <button type="button" class="btn sm primary" title="Removed only if it is clean and its work is merged or exists elsewhere; the branch stays" onClick={() => void remove()}>
-          Confirm remove
-        </button>
-      ) : (
-        <button type="button" class="btn sm ghost" onClick={() => setConfirming(true)}>
-          Remove…
-        </button>
-      )}
-      {note && <span class="hint">{note}</span>}
-    </>
-  );
-}
-
-/** Top-bar control: every worktree whose work is not shipped yet, or is merged and still lying around. */
+/** Top-bar control: the agent sessions running right now, across all repositories. Ended ones are left to their cards. */
 export function OpenWork() {
   const ui = useSessionUi();
   const [open, setOpen] = useState(false);
-  const { items, unshipped } = useMemo(() => openWork(ui.worktrees, ui.sessions), [ui.worktrees, ui.sessions]);
-  if (!ui.config?.agentSessions.enabled || items.length === 0) return null;
+  const running = useMemo(() => openSessions(ui.sessions), [ui.sessions]);
+  if (!ui.config?.agentSessions.enabled || running.length === 0) return null;
   const repoName = (id: string) => ui.config?.repos.find((r) => r.id === id)?.name ?? id;
   return (
     <div class="open-work">
-      <button type="button" class={`btn sm ${unshipped > 0 ? "attention" : "ghost"}`} aria-expanded={open} title="Work in agent worktrees that has not ended in a merged pull request" onClick={() => setOpen(!open)}>
-        Open work {unshipped > 0 ? unshipped : "✓"}
+      <button type="button" class="btn sm ghost" aria-expanded={open} title="Agent sessions whose terminal is open right now" onClick={() => setOpen(!open)}>
+        Open work {running.length}
       </button>
       {open && (
         <div class="open-work-list" role="dialog" aria-label="Open work">
-          <div class="hint">Read from local git only — “pushed” and “merged” are as of your last fetch.</div>
-          {items.map((w) => (
-            <div class="open-work-row" key={w.path}>
-              <div class="open-work-what">
-                <span class="hint">{repoName(w.repoId)}</span>
-                <strong class="mono">{w.change}</strong>
-                {w.branch && <span class="hint mono">{w.branch}</span>}
-              </div>
-              <WorkBadge worktree={w} />
-              <span class="hint">{w.lastActivityAt ? `${relTime(w.lastActivityAt)} ago` : ""}</span>
-              {w.sessionId ? (
+          {running.map((s) => {
+            const worktree = ui.worktrees.find((w) => w.path === s.worktreePath);
+            const age = relTime(s.createdAt);
+            return (
+              <div class="open-work-row" key={s.id}>
+                <div class="open-work-what">
+                  <span class="hint">
+                    {repoName(s.repoId)} · {s.action} · {s.agentName}
+                  </span>
+                  <strong class="mono">{s.change}</strong>
+                  <span class="hint mono">{s.branch}</span>
+                </div>
+                <SessionBadgeView badge={sessionBadge(s)} />
+                {worktree && <WorkBadge worktree={worktree} />}
+                <span class="hint">{age === "just now" ? "started just now" : `started ${age} ago`}</span>
                 <button
                   type="button"
                   class="btn sm"
                   onClick={() => {
                     setOpen(false);
-                    ui.openPanel(w.sessionId);
+                    ui.openPanel(s.id);
                   }}
                 >
                   Open
                 </button>
-              ) : (
-                <OrphanActions worktree={w} />
-              )}
-            </div>
-          ))}
+              </div>
+            );
+          })}
         </div>
       )}
     </div>

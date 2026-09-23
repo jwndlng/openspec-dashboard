@@ -2,7 +2,9 @@
 
 ## Purpose
 Defines the repository's housekeeping rules: which files are never tracked, how text, binary and vendored files are declared, shared editor defaults, the pinned toolchain version, the single verification command, the CI gates on pull requests, and the documented contribution and agent conventions.
+
 ## Requirements
+
 ### Requirement: Generated and local-only files are never tracked
 The repository SHALL ignore dependencies (`node_modules/`), build output (`dist/`, `*.bun-build`, `*.tsbuildinfo`), logs, coverage output, environment files (`.env` and `.env.*` except `.env.example`), OS and editor metadata, and local agent settings (`.claude/settings.local.json`). The ignore rules MUST NOT match the lockfile (`bun.lock`), anything under `test/fixtures/`, `openspec/`, `.claude/commands/` or `.claude/skills/`.
 
@@ -63,7 +65,13 @@ The repository SHALL pin the Bun version in `.bun-version` and in `package.json`
 - **THEN** no file under `test/fixtures/` or `openspec/` is modified
 
 ### Requirement: Continuous integration gates every pull request
-A CI workflow SHALL run on pull requests and on pushes to `main`, on Linux and macOS, executing `bun run check`, the single-binary build, the demo build and a smoke invocation of the built binary. A separate workflow SHALL verify that pull request titles follow Conventional Commits. Workflows MUST request only read permissions, with one exception: the job that deploys the demo site to GitHub Pages MAY request `pages: write` and `id-token: write`, and those scopes MUST be granted to that job only, in a workflow that runs only for pushes to `main` or manual dispatch and never for pull requests. Workflows MUST pin third-party actions to a full commit SHA, and automated updates SHALL be configured for the actions. Automated package updates SHALL be added once the update service can read the lockfile format written by the pinned Bun version; until then package updates are manual.
+A CI workflow SHALL run on pull requests and on pushes to `main`, on Linux and macOS, executing `bun run check`, the single-binary build, the demo build and a smoke invocation of the built binary. A separate workflow SHALL verify that pull request titles follow Conventional Commits. Workflows MUST request only read permissions, with these exceptions, each granted to that job only and to no other job in its workflow:
+- the job that deploys the demo site to GitHub Pages MAY request `pages: write` and `id-token: write`, in a workflow that runs only for pushes to `main` or manual dispatch and never for pull requests;
+- the job that updates the draft release MAY request `contents: write`, in a workflow that runs only for pushes to `main`;
+- the job that labels a pull request from its title MAY request `pull-requests: write`, and MUST NOT check out or execute any code from the pull request;
+- the job that attaches binaries to a published release MAY request `contents: write`, `id-token: write` and `attestations: write`, in a workflow that runs only when a release is published; the jobs that build those binaries MUST stay read-only.
+
+Workflows MUST pin third-party actions to a full commit SHA, and automated updates SHALL be configured for the actions. Automated package updates SHALL be added once the update service can read the lockfile format written by the pinned Bun version; until then package updates are manual.
 
 #### Scenario: Broken build blocks the pull request
 - **WHEN** a pull request makes `bun run build` fail
@@ -75,7 +83,7 @@ A CI workflow SHALL run on pull requests and on pushes to `main`, on Linux and m
 
 #### Scenario: Binary smoke test
 - **WHEN** the CI build step succeeds
-- **THEN** the job runs `./dist/openspec-dashboard --help` and fails if it exits non-zero
+- **THEN** the job runs `./dist/openspec-dashboard --help` and `./dist/openspec-dashboard --version` and fails if either exits non-zero
 
 #### Scenario: Non-conventional title is rejected
 - **WHEN** a pull request is titled `update stuff`
@@ -87,7 +95,11 @@ A CI workflow SHALL run on pull requests and on pushes to `main`, on Linux and m
 
 #### Scenario: Write scopes are confined to the deploy job
 - **WHEN** the workflows are inspected
-- **THEN** only the Pages deploy job declares write permissions, its workflow has no `pull_request` trigger, and every other job and workflow is read-only
+- **THEN** workflow-level permissions are read-only everywhere, the only jobs declaring a write scope are the Pages deploy, the draft-release update, the pull request labeller and the release upload, each declares only the scopes listed for it, and none of them has a checkout of pull request code
+
+#### Scenario: A pull request cannot reach the release scopes
+- **WHEN** a pull request is opened, from this repository or from a fork
+- **THEN** no job holding `contents: write`, `id-token: write`, `attestations: write` or `pages: write` runs for it
 
 ### Requirement: Contribution and agent conventions are documented
 The repository SHALL contain `CONTRIBUTING.md` describing branch naming (`feat/<openspec-change-name>`, `fix/…`, `chore/…`), Conventional Commits including the `openspec` scope for proposals and archives, one OpenSpec change per pull request, and running `bun run check` before pushing. It SHALL contain `CLAUDE.md` stating the project commands and the invariants agents must preserve — read-only behaviour towards tracked repositories with the read-only git allow-list, loopback-only binding, access to `@fission-ai/openspec` internals only through `src/server/openspecAdapter.ts`, a self-contained UI without runtime network access, state confined to `~/.openspec-dashboard/`, and staying within a change's declared Impact when sessions run in parallel — and an `AGENTS.md` that points to `CLAUDE.md`.

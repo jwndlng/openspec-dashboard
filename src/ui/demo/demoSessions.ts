@@ -377,7 +377,7 @@ export function createDemoSessions({ now, getConfig, getSnapshot, clock }: DemoS
       const s = find(id);
       if (s.session.state === "running") throw new ApiError(409, "close the session first");
       sessions.splice(sessions.indexOf(s), 1);
-      // the record is gone, the worktree is not: it stays in the Open work list on its own
+      // the record is gone, the worktree is not: it is still reported, and its card keeps the work badge
       const work = workOf(s);
       if (work.state !== "missing" && !s.session.adopted) {
         orphans.push({ repoId: s.session.repoId, name: s.name, path: s.session.worktreePath, change: s.session.change, action: s.session.action, branch: s.session.branch, work, lastActivityAt: iso(s.lastActivityMs) });
