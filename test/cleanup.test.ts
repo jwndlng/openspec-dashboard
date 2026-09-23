@@ -167,13 +167,22 @@ test("preview: the main checkout's branch is kept, and without a default branch 
   expect(branchOf(p, "side")).toMatchObject({ removable: false, reason: "the default branch is unknown" });
 });
 
-/** Every file below `dir` with its bytes, so "nothing changed" can be asserted exactly. */
+/**
+ * Every file below `dir` with its bytes, so "nothing changed" can be asserted exactly. A file listed a moment ago can
+ * be gone by the time it is read — git's own background maintenance writes and deletes locks under `.git/objects/` —
+ * so a vanished file is left out of the snapshot rather than throwing. Test repositories switch that maintenance off
+ * (`tempGitRepo`), which is what keeps this from hiding a real deletion: both snapshots see the same set either way.
+ */
 async function snapshotTree(dir: string): Promise<Map<string, string>> {
   const out = new Map<string, string>();
   for (const entry of await readdir(dir, { recursive: true, withFileTypes: true })) {
     if (!entry.isFile()) continue;
     const path = join(entry.parentPath, entry.name);
-    out.set(path, (await readFile(path)).toString("base64"));
+    const bytes = await readFile(path).catch((err: NodeJS.ErrnoException) => {
+      if (err.code === "ENOENT") return undefined;
+      throw err;
+    });
+    if (bytes) out.set(path, bytes.toString("base64"));
   }
   return out;
 }
