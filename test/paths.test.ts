@@ -3,7 +3,7 @@ import { existsSync, realpathSync } from "node:fs";
 import { mkdir, rm, symlink } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { canonicalPath } from "../src/server/paths.ts";
+import { canonicalPath, consoleDir } from "../src/server/paths.ts";
 import { tempDir } from "./helpers.ts";
 
 let root: string;
@@ -47,4 +47,15 @@ test("a path that does not exist is returned normalised", () => {
   expect(canonicalPath(join(root, "gone", ".", "repo/"))).toBe(join(root, "gone", "repo"));
   expect(canonicalPath("relative/./dir")).toBe("relative/dir");
   expect(canonicalPath("src")).toBe("src"); // exists below the working directory, still not resolved
+});
+
+test("the console's default folder lives in the dashboard home and follows OPENSPEC_DASHBOARD_HOME", () => {
+  const previous = process.env.OPENSPEC_DASHBOARD_HOME;
+  process.env.OPENSPEC_DASHBOARD_HOME = "/w/acme/.dash";
+  try {
+    expect(consoleDir()).toBe("/w/acme/.dash/console");
+  } finally {
+    if (previous === undefined) delete process.env.OPENSPEC_DASHBOARD_HOME;
+    else process.env.OPENSPEC_DASHBOARD_HOME = previous;
+  }
 });

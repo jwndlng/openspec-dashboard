@@ -119,7 +119,8 @@ export function AgentSettings({ draft, update }: Props) {
     });
   };
   const tracked = draft.repos.filter((r) => r.enabled);
-  const worktrees = sessions.filter((s) => s.worktreePath);
+  // The main console runs in its folder, not in a worktree.
+  const worktrees = sessions.filter((s) => !s.console && s.worktreePath);
 
   return (
     <section class="panel">
@@ -162,6 +163,21 @@ export function AgentSettings({ draft, update }: Props) {
             </button>
           )}
         </div>
+
+        <h2>Console</h2>
+        <label class="agent-tools">
+          <span class="hint">
+            Console folder (optional): the console button in the top bar opens your default agent here, outside every change and without a prompt. Empty uses{" "}
+            <code>~/.openspec-dashboard/console/</code>. A folder above your repositories lets it reach them; a folder inside a tracked repository is refused, so it never runs
+            in a main checkout. What the agent does there is up to its own permission prompts.
+          </span>
+          <input
+            class="input mono"
+            placeholder="~/.openspec-dashboard/console"
+            value={settings.consoleDir ?? ""}
+            onInput={(e) => set({ consoleDir: e.currentTarget.value.trim() || undefined })}
+          />
+        </label>
 
         <h2>Repositories</h2>
         <div class="list">

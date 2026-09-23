@@ -53,7 +53,9 @@ bun test test/scanner.test.ts   # a single test file
    on a timer, during a scan, on page load or as a side effect (`test/pull.test.ts` proves scans leave a recording
    remote untouched). Starting the user's
    agent in that worktree on the user's click is not a write by the dashboard: what the agent changes is decided by its
-   own permission prompts. With agent sessions disabled no process that can modify a repository is ever started. Scanning, polling, discovery, previews and saving settings
+   own permission prompts. The same holds for the **main console** (`openConsole`, `src/server/sessions/consoleFolder.ts`):
+   the default agent in the console folder — `~/.openspec-dashboard/console/` or a folder the user configured, which is
+   refused when it is, or lies inside, a tracked repository — with no worktree, no branch and no git command. With agent sessions disabled no process that can modify a repository is ever started. Scanning, polling, discovery, previews and saving settings
    write nothing to a repository. All other writes stay under `~/.openspec-dashboard/` (or `OPENSPEC_DASHBOARD_HOME`
    in tests). Apart from the worktree commands, the pull action's `fetch` and `merge --ff-only`, the create-change
    `add` and the cleanup's `branch -D`, git is invoked only with the read-only subcommands listed in that spec. Adding a path or a subcommand means

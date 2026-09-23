@@ -64,6 +64,8 @@ const agentSessionsSchema = z
     enabled: z.boolean().default(false),
     agents: z.array(agentProfileSchema).min(1).default(() => defaultAgentSessions().agents),
     defaultAgent: z.string().default(() => defaultAgentSessions().defaultAgent),
+    // Shape only: a config whose console folder was deleted since must still load. Saving checks the folder itself.
+    consoleDir: absolutePath.optional(),
   })
   .default({})
   .superRefine((cfg, ctx) => {

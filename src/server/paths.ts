@@ -21,6 +21,11 @@ export function worktreesDir(): string {
   return join(dashboardHome(), "worktrees");
 }
 
+/** The main console's default working directory: dashboard-owned, so the console never starts inside a repository. */
+export function consoleDir(): string {
+  return join(dashboardHome(), "console");
+}
+
 export function sharedConfigPath(): string {
   return join(dashboardHome(), "shared-config.json");
 }

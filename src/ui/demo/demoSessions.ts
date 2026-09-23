@@ -3,7 +3,7 @@
 //
 // All of it is invented, like the rest of the sample (see sampleData.ts): every repository, change, branch and path
 // comes from the sample, and terminal output comes from the hand-written transcripts.
-import { availableActions, type Config, type Session, type SessionAction, type PromptResult, type SessionWorktree, type ShipResult, SHIPPABLE_WORK, type Snapshot, type WorkStatus, type Worktree } from "../../shared/types.ts";
+import { availableActions, isConsole, type Config, type ConsoleSession, type Session, type SessionAction, type PromptResult, type SessionWorktree, type ShipResult, SHIPPABLE_WORK, type Snapshot, type WorkStatus, type Worktree } from "../../shared/types.ts";
 import { ApiError, type TerminalConnection, type TerminalHandlers } from "../api.ts";
 import { DEMO_AGENT, DEMO_ROOT } from "./sampleData.ts";
 import { type Clock, type Playback, type Position, playTranscript, positionAfter, TRANSCRIPTS, type TranscriptName, workAfter } from "./transcripts.ts";
@@ -16,6 +16,9 @@ const DAY = 24 * HOUR;
 const worktreeName = (action: SessionAction, change: string) => (action === "archive" ? `archive-${change}` : change);
 const sessionBranch = (action: SessionAction, change: string) => (action === "archive" ? `chore/archive-${change}` : `feat/${change}`);
 export const sessionWorktreePath = (repoId: string, name: string) => `${DEMO_ROOT.replace(/\/[^/]+$/, "")}/.openspec-dashboard/worktrees/${repoId}/${name}`;
+/** The main console's default folder, as the dashboard would place it under the demo's home. */
+export const DEMO_CONSOLE_DIR = `${DEMO_ROOT.replace(/\/[^/]+$/, "")}/.openspec-dashboard/console`;
+const NOT_A_CHANGE = "this is the main console, which belongs to no change";
 
 interface Seed {
   repo: string;
@@ -179,7 +182,7 @@ export function createDemoSessions({ now, getConfig, getSnapshot, clock }: DemoS
       from: s.session.state === "running" ? positionOf(s) : { index: TRANSCRIPTS[s.transcript].length, waiting: false },
       continuing,
       clock,
-      values: { change: s.session.change, branch: s.session.branch ?? "", path: s.session.worktreePath },
+      values: { change: s.session.change ?? "", branch: s.session.branch ?? "", path: s.session.worktreePath },
       handlers: {
         ...handlers,
         onExit: () => {
@@ -221,7 +224,7 @@ export function createDemoSessions({ now, getConfig, getSnapshot, clock }: DemoS
 
   const worktrees = (): SessionWorktree[] => [
     ...sessions
-      .filter((s) => workOf(s).state !== "missing")
+      .filter((s): s is DemoSession & { session: Exclude<Session, ConsoleSession> } => !isConsole(s.session) && workOf(s).state !== "missing")
       .map((s) => ({
         repoId: s.session.repoId,
         name: s.name,
@@ -299,6 +302,28 @@ export function createDemoSessions({ now, getConfig, getSnapshot, clock }: DemoS
       return created.session;
     },
 
+    /** The main console: one at a time, in the demo's console folder, playing the console recording. */
+    openConsole(): ConsoleSession {
+      requireEnabled();
+      const running = sessions.find((s) => isConsole(s.session) && s.session.state === "running")?.session;
+      if (running && isConsole(running)) return running;
+      const at = now();
+      const session: ConsoleSession = {
+        id: `demo-${++counter}`,
+        console: true,
+        agentId: DEMO_AGENT.id,
+        agentName: DEMO_AGENT.name,
+        state: "running",
+        worktreePath: DEMO_CONSOLE_DIR,
+        createdAt: iso(at),
+        updatedAt: iso(at),
+        lastOutputAt: iso(at),
+        resumable: true,
+      };
+      sessions.unshift({ name: "console", transcript: "console", startedAtMs: at, position: { index: 0, waiting: false }, work: { state: "missing" }, workFrom: 0, lastActivityMs: at, session });
+      return session;
+    },
+
     terminal(id: string, handlers: TerminalHandlers): TerminalConnection {
       const s = find(id);
       const playback = play(s, handlers, false);
@@ -321,6 +346,7 @@ export function createDemoSessions({ now, getConfig, getSnapshot, clock }: DemoS
 
     ship(id: string): ShipResult {
       const s = find(id);
+      if (isConsole(s.session)) throw new ApiError(409, NOT_A_CHANGE);
       const work = workOf(s);
       if (!SHIPPABLE_WORK.includes(work.state)) throw new ApiError(409, `there is nothing to ship (${work.state})`);
       run(s, "ship");
@@ -330,6 +356,7 @@ export function createDemoSessions({ now, getConfig, getSnapshot, clock }: DemoS
     prompt(id: string, action: SessionAction): PromptResult {
       requireEnabled();
       const s = find(id);
+      if (isConsole(s.session)) throw new ApiError(409, NOT_A_CHANGE);
       if (action === "archive" || s.session.action === "archive") throw new ApiError(400, "archiving runs in its own session");
       if (s.session.state !== "running") throw new ApiError(409, "the session is not running");
       // Sent with one activation, as in the dashboard: the recording's agent takes the prompt up straight away.
@@ -340,6 +367,7 @@ export function createDemoSessions({ now, getConfig, getSnapshot, clock }: DemoS
 
     status(id: string) {
       const s = find(id);
+      if (isConsole(s.session)) throw new ApiError(409, NOT_A_CHANGE);
       const work = workOf(s);
       return { ...removable(work, s.session.adopted), work };
     },
@@ -354,7 +382,7 @@ export function createDemoSessions({ now, getConfig, getSnapshot, clock }: DemoS
         open?.handlers.onClose();
         playing.delete(id);
       }
-      if (!removeWorktree) return { session: s.session };
+      if (!removeWorktree || isConsole(s.session)) return { session: s.session };
       const worktree = removable(workOf(s), s.session.adopted);
       if (worktree.removable) s.removed = true;
       return { session: s.session, worktree };
@@ -379,7 +407,7 @@ export function createDemoSessions({ now, getConfig, getSnapshot, clock }: DemoS
       sessions.splice(sessions.indexOf(s), 1);
       // the record is gone, the worktree is not: it is still reported, and its card keeps the work badge
       const work = workOf(s);
-      if (work.state !== "missing" && !s.session.adopted) {
+      if (!isConsole(s.session) && work.state !== "missing" && !s.session.adopted) {
         orphans.push({ repoId: s.session.repoId, name: s.name, path: s.session.worktreePath, change: s.session.change, action: s.session.action, branch: s.session.branch, work, lastActivityAt: iso(s.lastActivityMs) });
       }
       return { deleted: true };

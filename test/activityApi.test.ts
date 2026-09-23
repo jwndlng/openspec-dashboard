@@ -7,7 +7,7 @@ import { type AppState, createFetchHandler } from "../src/server/api.ts";
 import { defaultConfig, newRepoConfig } from "../src/server/config.ts";
 import { activityLogPath } from "../src/server/paths.ts";
 import { Scanner } from "../src/server/scanner.ts";
-import type { ActivityEvent, ActivityPage, Session, Snapshot } from "../src/shared/types.ts";
+import type { ActivityEvent, ActivityPage, ChangeSession, Snapshot } from "../src/shared/types.ts";
 import { useTempHome } from "./helpers.ts";
 import { git, harness, tempGitRepo, waitFor } from "./sessionHelpers.ts";
 
@@ -102,7 +102,7 @@ test("paging, filters and validation", async () => {
 });
 
 test("the session manager reports started, shipped and ended — and nothing decides anything from it", async () => {
-  const reported: { session: Session; what: SessionActivity }[] = [];
+  const reported: { session: ChangeSession; what: SessionActivity }[] = [];
   const h = await harness();
   const manager = h.newManager({ onActivity: (session, what) => reported.push({ session, what }), submitTimings: { echoTimeoutMs: 600, settleMs: 20 } });
   try {

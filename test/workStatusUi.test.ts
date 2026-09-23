@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import type { Session, SessionWorktree, WorkStatus } from "../src/shared/types.ts";
+import type { ChangeSession, Session, SessionWorktree, WorkStatus } from "../src/shared/types.ts";
 import { consoleAvailable, consoleSession, consoleSessions, endSeverity, pullOffer, endWarning, nextStepFor, openWork, sessionsForChange, staleAge, workBadge, worktreeForChange, worktreeOfSession, worktreeRemovalPossible } from "../src/ui/sessionState.ts";
 
 const NOW = Date.parse("2026-09-21T12:00:00Z");
@@ -50,7 +50,7 @@ test("a card shows its change's open work first, its merged worktree otherwise, 
   expect(worktreeForChange(list, "elsewhere", "add-x")).toBeUndefined();
 });
 
-const sess = (id: string, patch: Partial<Session> = {}): Session => ({ id, repoId: "r", change: "add-x", action: "implement", agentId: "a", agentName: "A", state: "running", worktreePath: `/w/${id}`, branch: "feat/add-x", createdAt: `2026-09-21T10:0${id.length}:00Z`, updatedAt: "", resumable: true, ...patch });
+const sess = (id: string, patch: Partial<ChangeSession> = {}): ChangeSession => ({ id, repoId: "r", change: "add-x", action: "implement", agentId: "a", agentName: "A", state: "running", worktreePath: `/w/${id}`, branch: "feat/add-x", createdAt: `2026-09-21T10:0${id.length}:00Z`, updatedAt: "", resumable: true, ...patch });
 
 test("the open work list holds the running sessions, oldest first", () => {
   const list = [sess("newer", { createdAt: "2026-09-21T11:00:00Z" }), sess("ended", { state: "exited", exitCode: 0 }), sess("broke", { state: "failed" }), sess("older", { createdAt: "2026-09-21T09:00:00Z" })];
