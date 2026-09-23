@@ -22,7 +22,7 @@ import {
   taskProgress,
   TERMINAL_SELECTOR,
 } from "../src/ui/changeDetail.tsx";
-import { type Card, ChangeCard, CopyButton, cardLink, initialFilters } from "../src/ui/kanban.tsx";
+import { type Card, ChangeCard, CopyButton, cardLink, consoleTarget, initialFilters } from "../src/ui/kanban.tsx";
 import { renderMarkdown } from "../src/ui/markdown.tsx";
 import { backTarget, CONSOLE_TAB, parseDetailQuery, routeFromPath, serializeDetailQuery } from "../src/ui/routes.ts";
 import { FIXTURES } from "./helpers.ts";
@@ -57,7 +57,7 @@ const classed = (node: Parameters<typeof elements>[0], cls: string) => elements(
 
 const noop = () => {};
 
-test("header: repository link, change name, close control and warnings — no status labels", () => {
+test("header: repository link, change name, close control, warnings — and the state the card leaves out", () => {
   const header = DetailHeader({ repo, change, onClose: noop });
   expect(textOf(classed(header, "change-name")[0])).toBe("multi-tenant-sync");
   const links = byTag(header, "a");
@@ -65,15 +65,28 @@ test("header: repository link, change name, close control and warnings — no st
   expect(classed(header, "detail-close").map((b) => b.props["aria-label"])).toEqual(["Close"]);
   const text = textOf(header);
   expect(text).toContain("could not read artifacts: unknown schema 'custom'");
-  for (const label of ["Implementing", "4/12", "3d ago", "created", "2026-03-02", "spec-driven", "feat/multi-tenant-sync"]) expect(text).not.toContain(label);
-  expect(classed(header, "meter")).toEqual([]);
-  expect(elements(header).some((el) => String(el.props["aria-label"] ?? "").startsWith("branch"))).toBe(false);
+  // Column, tasks and the last update moved here from the card, and so did the branch.
+  for (const label of ["Implementing", "4/12", "updated"]) expect(text).toContain(label);
+  expect(classed(header, "meter")).toHaveLength(1);
+  expect(elements(header).some((el) => String(el.props.title ?? "").includes("a branch or worktree matches this change"))).toBe(true);
+  // Still not repeated: creation date and schema.
+  for (const label of ["created", "2026-03-02", "spec-driven"]) expect(text).not.toContain(label);
   // no copy actions in the header any more
   expect(byComponent(header, CopyButton)).toEqual([]);
 
   const archived = DetailHeader({ repo, change: { ...change, archived: "2026-03-09", column: "Archived", tasks: null, warnings: undefined }, onClose: noop });
-  expect(textOf(archived)).not.toContain("2026-03-09");
+  expect(textOf(archived)).toContain("archived 2026-03-09");
   expect(classed(archived, "notice")).toEqual([]);
+
+  // A change that is gone from the snapshot has only its name: no facts row.
+  expect(classed(DetailHeader({ repo, change: { name: "gone" }, onClose: noop }), "detail-facts")).toEqual([]);
+});
+
+test("the detail view shows the prompt as plain text, without the form's heading", () => {
+  const prompted = { ...change, prompt: "# Prompt\n\nLog every mutation <b>now</b>\n" };
+  const note = classed(DetailHeader({ repo, change: prompted, onClose: noop }), "detail-prompt")[0];
+  expect(textOf(byTag(note, "p")[0])).toBe("Log every mutation <b>now</b>");
+  expect(classed(DetailHeader({ repo, change, onClose: noop }), "detail-prompt")).toEqual([]);
 });
 
 test("the repository link keeps the filters of that repository's board when the view came from it", () => {
@@ -247,8 +260,8 @@ test("Show details is a card's only link, carrying the board and its filters", (
   expect(routeFromPath(link.path)).toEqual({ view: "change", repoId: "r1", changeName: "multi-tenant-sync" });
   expect(backTarget(parseDetailQuery(link.query).from, "r1")).toEqual({ path: "/board", query: "?q=sync&archived=0" });
 
-  for (const showRepo of [true, false]) {
-    const view = ChangeCard({ card, now: NOW, showRepo, from: "/board?q=sync" });
+  {
+    const view = ChangeCard({ card, now: NOW, from: "/board?q=sync" });
     const anchors = byTag(view, "a");
     expect(anchors.map((a) => a.props.href)).toEqual(["/repo/r1/change/multi-tenant-sync?from=%2Fboard%3Fq%3Dsync"]);
     expect(textOf(anchors[0]).trim()).toBe("Show details");
@@ -257,19 +270,39 @@ test("Show details is a card's only link, carrying the board and its filters", (
     expect(textOf(classed(view, "name")[0])).toBe("multi-tenant-sync");
     expect(byComponent(view, CopyButton)).toEqual([]);
   }
-  const archived = ChangeCard({ card: { ...card, archived: "2026-03-09" }, now: NOW, showRepo: true, from: "/board" });
+  const archived = ChangeCard({ card: { ...card, archived: "2026-03-09" }, now: NOW, from: "/board" });
   expect(byTag(archived, "a").map((a) => textOf(a).trim())).toEqual(["Show details"]);
 });
 
-test("the card's content is unchanged, and a prompt still shows its badge", () => {
-  const view = ChangeCard({ card, now: NOW, showRepo: true, from: "/board" });
-  expect(elements(byTag(view, "a")[0].props.children)).toEqual([]); // no button or session starter inside the link
+test("a card shows only what an overview needs, and leaves the rest to the detail view", () => {
+  const detailed: Card = {
+    ...card,
+    prompt: "Log every mutation",
+    artifacts: [
+      { id: "proposal", status: "done" },
+      { id: "design", status: "done" },
+    ],
+  };
+  const view = ChangeCard({ card: detailed, now: NOW, from: "/board" });
+  // no button or session starter inside the link: only its decorative chevron
+  expect(elements(byTag(view, "a")[0].props.children).map((el) => el.type)).toEqual(["svg", "path"]);
   const text = textOf(view);
-  for (const part of ["forum-admin", "multi-tenant-sync", "4/12", "3d ago"]) expect(text).toContain(part);
+  for (const part of ["multi-tenant-sync", "4/12", "3d ago", "Show details"]) expect(text).toContain(part);
+  // Repository (its group names it), branch, prompt and completed phases are not on the card.
+  for (const part of ["forum-admin", "feat/multi-tenant-sync", "prompt", "Log every mutation"]) expect(text).not.toContain(part);
+  expect(classed(view, "artifacts")).toEqual([]);
+  // The top row: the name, and under it when the change was last updated.
+  const top = classed(view, "card-top")[0];
+  expect(textOf(classed(top, "name")[0])).toBe("multi-tenant-sync");
+  expect(textOf(classed(top, "age")[0])).toBe("updated 3d ago");
+  // No coloured card edge: the card itself is not repository-tinted.
+  expect(String(elements(view)[0].props.class).split(" ")).not.toContain("repo-tint");
+});
 
-  const drafting: Card = { ...card, column: "Proposal", stage: "artifact", prompt: "Log every mutation" };
-  expect(textOf(ChangeCard({ card: drafting, now: NOW, showRepo: true, from: "/board" }))).toContain("prompt");
-  expect(textOf(ChangeCard({ card: { ...drafting, prompt: undefined }, now: NOW, showRepo: true, from: "/board" }))).not.toContain("prompt");
+test("the console quick link opens the detail view on its Console tab and keeps the board", () => {
+  const target = consoleTarget(card, "/board?q=sync");
+  expect(target.path).toBe("/repo/r1/change/multi-tenant-sync");
+  expect(parseDetailQuery(target.query)).toMatchObject({ artifact: CONSOLE_TAB, from: "/board?q=sync" });
 });
 
 test("a board behind the detail view takes its filters from the query it is given", () => {

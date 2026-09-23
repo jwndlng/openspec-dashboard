@@ -28,7 +28,9 @@ test("the demo bundle is marked, self-contained and free of real-looking paths",
   for (const name of sampleNames) expect(html).toContain(name);
   expect(html.match(/[^\n]{0,40}(?:\/Users\/|[A-Za-z]:\\+Users\\)[^\n]{0,40}/g) ?? []).toEqual([]);
   expect(looksLikeRealHome(html)).toBe(false);
-  expect(html).not.toMatch(/<script[^>]+src=|<link[^>]+href=/);
+  // Nothing is loaded from elsewhere: no script source and no linked resource, except the favicon, which is inline data.
+  expect(html).not.toMatch(/<script[^>]+src=|<link[^>]+href="(?!data:)/);
+  expect(html.match(/<link[^>]+href="data:/g) ?? []).toHaveLength(1);
 });
 
 test("the product bundle contains neither the demo marker nor the sample data", () => {

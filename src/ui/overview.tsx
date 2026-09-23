@@ -1,7 +1,6 @@
 import { useMemo, useState } from "preact/hooks";
 import { boardColumns } from "../shared/columns.ts";
 import type { Config, Snapshot, WorkInProgress } from "../shared/types.ts";
-import { CheckoutChips } from "./checkout.tsx";
 import { hasCheckoutInfo } from "./checkoutMarkers.ts";
 import { NoRepos } from "./empty.tsx";
 import { relTime } from "./format.ts";
@@ -17,9 +16,14 @@ import {
   type SortKey,
   serializeOverviewState,
   sortRows,
+  checkoutSummary,
+  monogram,
   toggleSort,
   wipIndicator,
 } from "./overviewState.ts";
+import { Stat } from "./band.tsx";
+import { IconChevronDown, IconFolderGit, IconGitBranch, IconSearch, IconX } from "./icons.tsx";
+import { assignRepoHues } from "./repoGroups.ts";
 import { PullAllButton, PullButton } from "./pull.tsx";
 import { branchNotice } from "./pullState.ts";
 import { repoPath } from "./routes.ts";
@@ -138,20 +142,52 @@ function Row({ row, stages, now }: { row: OverviewRow; stages: string[]; now: nu
   );
 }
 
-/** Everything a row shows, plus the room a row lacks: one chip per checkout. */
-function Tile({ row, stages, now }: { row: OverviewRow; stages: string[]; now: number }) {
+/** A tile's checkouts as two counts; the full list is in the tooltip and on the repository board. */
+function TileCheckouts({ row }: { row: OverviewRow }) {
+  if (!hasCheckoutInfo(row.worktrees)) {
+    return (
+      <div class="checkouts">
+        <span class="none">no checkout details</span>
+      </div>
+    );
+  }
+  const summary = checkoutSummary(row.worktrees);
+  return (
+    <div class="checkouts" title={summary.detail}>
+      <span class="checkout-count">
+        <IconFolderGit />
+        <strong>{summary.worktrees}</strong> {summary.worktrees === 1 ? "worktree" : "worktrees"}
+      </span>
+      <span class="checkout-count">
+        <IconGitBranch />
+        <strong>{summary.branches}</strong> {summary.branches === 1 ? "branch" : "branches"} active
+      </span>
+    </div>
+  );
+}
+
+/**
+ * Everything a row shows, plus the room a row lacks: one chip per checkout. Every tile has the same size and places its
+ * parts in the same spots; the badge and checkout areas scroll inside the tile instead of growing it.
+ */
+function Tile({ row, stages, now, hue }: { row: OverviewRow; stages: string[]; now: number; hue?: number }) {
   const idle = row.open === 0;
   return (
     // biome-ignore lint/a11y/useKeyWithClickEvents: the click is a pointer shortcut, as on a table row; the keyboard path is the repository link inside
     <article class={`tile ${idle ? "idle" : ""}`} title={`${row.path} · ${row.archived} archived`} onClick={openOnPlainClick(row)}>
-      <header>
-        <h2 class="repo-name">
-          <RepoLink row={row} />
-          {row.hint && <span class="path-hint mono">{row.hint}/</span>}
-        </h2>
-        <span class="when" title={row.lastUpdatedAt ?? "no activity date"}>
-          {lastUpdated(row, now)}
+      <header class="tile-head">
+        <span class={`monogram ${hue === undefined ? "" : "repo-tint"}`} style={hue === undefined ? undefined : { "--repo-hue": hue }} aria-hidden="true">
+          {monogram(row.name)}
         </span>
+        <div class="tile-title">
+          <h2 class="repo-name">
+            <RepoLink row={row} />
+            {row.hint && <span class="path-hint mono">{row.hint}/</span>}
+          </h2>
+          <span class="when" title={row.lastUpdatedAt ?? "no activity date"}>
+            updated {lastUpdated(row, now)}
+          </span>
+        </div>
         {row.isGit && row.ok && <PullButton repoId={row.id} compact />}
       </header>
       <div class="tile-badges">
@@ -159,9 +195,17 @@ function Tile({ row, stages, now }: { row: OverviewRow; stages: string[]; now: n
         <WipIndicator summary={row.workInProgress} />
       </div>
       {idle ? (
-        <p class="none">no open changes</p>
+        <p class="tile-body none">no open changes</p>
       ) : (
-        <>
+        <div class="tile-body">
+          <div class="tile-totals">
+            <span class="big">
+              <span class="n">{row.open}</span> open
+            </span>
+            <span class={`big ${row.toArchive > 0 ? "success" : "zero"}`}>
+              <span class="n">{row.toArchive}</span> to archive
+            </span>
+          </div>
           <ol class="stage-strip" aria-label="Open changes per stage">
             {stages.map((s) => (
               <li key={s} class={row.stageCounts[s] ? "" : "zero"} title={`${row.stageCounts[s] ?? 0} in ${s}`}>
@@ -170,19 +214,9 @@ function Tile({ row, stages, now }: { row: OverviewRow; stages: string[]; now: n
               </li>
             ))}
           </ol>
-          <div class="totals">
-            <span>
-              <span class="total">{row.open}</span> open
-            </span>
-            {row.toArchive > 0 && <span class="badge warning">{row.toArchive} to archive</span>}
-          </div>
-        </>
-      )}
-      {hasCheckoutInfo(row.worktrees) && (
-        <div class="checkouts">
-          <CheckoutChips checkouts={row.worktrees} />
         </div>
       )}
+      <TileCheckouts row={row} />
     </article>
   );
 }
@@ -200,8 +234,11 @@ export function Overview({ snapshot, config }: { snapshot: Snapshot | null; conf
   // Same stage columns, in the same order, as the combined board.
   const stages = useMemo(() => (snapshot ? boardColumns(snapshot).filter((c) => c !== "Archived") : []), [snapshot]);
   const visible = useMemo(() => sortRows(filterRows(rows, state.q, state.wip), state.sort, state.dir), [rows, state]);
+  // Over every repository, as on the board, so a tile's colour matches its cards and group headers.
+  const hues = useMemo(() => assignRepoHues((snapshot?.repos ?? []).map((r) => r.id)), [snapshot]);
 
   if (snapshot && rows.length === 0) return <NoRepos config={config} />;
+  const toArchive = rows.reduce((n, r) => n + r.toArchive, 0);
 
   const header = (key: SortKey, label: string, cls = "") => {
     const active = state.sort === key;
@@ -217,53 +254,84 @@ export function Overview({ snapshot, config }: { snapshot: Snapshot | null; conf
 
   return (
     <>
-      <div class="filters">
-        <div class="group">
-          <input class="input" type="search" placeholder="Search repository…" value={state.q} onInput={(e) => setState({ ...state, q: e.currentTarget.value })} />
+      <div class="band">
+        <div class="band-main">
+          <div class="row band-title">
+            <h1>
+              Projects
+              <span class="band-sub">tracked OpenSpec repositories</span>
+            </h1>
+            <span class="divider" aria-hidden="true" />
+            <span class="stats">
+              <Stat label="Tracked" value={rows.length} />
+              <Stat label="Open" value={rows.reduce((n, r) => n + r.open, 0)} />
+              <Stat label="To archive" value={toArchive} tone={toArchive > 0 ? "success" : undefined} />
+            </span>
+          </div>
+        </div>
+        <div class="band-actions">
+          <PullAllButton repoIds={rows.filter((r) => r.isGit && r.ok).map((r) => r.id)} />
+        </div>
+      </div>
+      <div class="filterbar">
+        <div class="filterbar-row">
+          <label class="search">
+            <IconSearch />
+            <input class="input" type="search" placeholder="Search repository…" aria-label="Search repository" value={state.q} onInput={(e) => setState({ ...state, q: e.currentTarget.value })} />
+            {state.q && (
+              <button type="button" class="search-clear" aria-label="Clear search" onClick={() => setState({ ...state, q: "" })}>
+                <IconX size={12} />
+              </button>
+            )}
+          </label>
           <button
             type="button"
-            class={`chip ${state.wip ? "on" : ""}`}
+            class={`control switch-control ${state.wip ? "on" : ""}`}
             aria-pressed={state.wip}
             title="Only repositories with uncommitted changes, unpushed commits or stale worktrees"
             onClick={() => setState({ ...state, wip: !state.wip })}
           >
+            <span class="switch" aria-hidden="true" />
             Work in progress
           </button>
-        </div>
-        <div class="group">
-          {(["table", "tiles"] as OverviewLayout[]).map((view) => (
-            <button key={view} type="button" class={`chip ${state.view === view ? "on" : ""}`} aria-pressed={state.view === view} onClick={() => setState({ ...state, view })}>
-              {view === "table" ? "Table" : "Tiles"}
-            </button>
-          ))}
-        </div>
-        {/* The table sorts through its column headers; tiles have none. */}
-        {state.view === "tiles" && (
-          <div class="group">
-            <label for="overview-sort">Sort</label>
-            <select id="overview-sort" class="input" value={state.sort} onChange={(e) => setState({ ...state, sort: e.currentTarget.value as SortKey, dir: naturalDir(e.currentTarget.value as SortKey) })}>
-              {SORT_KEYS.map((key) => (
-                <option key={key} value={key}>
-                  {SORT_LABEL[key]}
-                </option>
-              ))}
-            </select>
-            <button type="button" class="chip" title="Reverse the sort direction" onClick={() => setState(toggleSort(state, state.sort))}>
-              {state.dir === "asc" ? "▲ ascending" : "▼ descending"}
-            </button>
+          {/* biome-ignore lint/a11y/useSemanticElements: a fieldset would bring legend/border styling the control does not want */}
+          <div class="segmented" role="group" aria-label="Layout">
+            {(["table", "tiles"] as OverviewLayout[]).map((view) => (
+              <button key={view} type="button" class={state.view === view ? "on" : ""} aria-pressed={state.view === view} onClick={() => setState({ ...state, view })}>
+                {view === "table" ? "Table" : "Tiles"}
+              </button>
+            ))}
           </div>
-        )}
-        <span class="spacer" style={{ flex: 1 }} />
-        <PullAllButton repoIds={rows.filter((r) => r.isGit && r.ok).map((r) => r.id)} />
-        <span class="badge mono">
-          {rows.length} tracked · {rows.reduce((n, r) => n + r.open, 0)} open · {rows.reduce((n, r) => n + r.toArchive, 0)} to archive
-        </span>
+          {/* The table sorts through its column headers; tiles have none. */}
+          {state.view === "tiles" && (
+            <>
+              <label class="control select-control" for="overview-sort">
+                <span>Sort</span>
+                <select id="overview-sort" value={state.sort} onChange={(e) => setState({ ...state, sort: e.currentTarget.value as SortKey, dir: naturalDir(e.currentTarget.value as SortKey) })}>
+                  {SORT_KEYS.map((key) => (
+                    <option key={key} value={key}>
+                      {SORT_LABEL[key]}
+                    </option>
+                  ))}
+                </select>
+                <IconChevronDown size={12} />
+              </label>
+              <button type="button" class="control" title="Reverse the sort direction" onClick={() => setState(toggleSort(state, state.sort))}>
+                {state.dir === "asc" ? "▲ ascending" : "▼ descending"}
+              </button>
+            </>
+          )}
+          <span class="spacer" />
+          <span class="showing">
+            Showing <strong>{visible.length}</strong> of {rows.length}
+          </span>
+        </div>
       </div>
       <div class="overview">
         {state.view === "tiles" ? (
           <div class="tiles">
             {visible.map((row) => (
-              <Tile key={row.id} row={row} stages={stages} now={now} />
+              <Tile key={row.id} row={row} stages={stages} now={now} hue={hues.get(row.id)} />
             ))}
           </div>
         ) : (

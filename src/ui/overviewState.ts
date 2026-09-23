@@ -209,3 +209,32 @@ export function filterRows(rows: OverviewRow[], q: string, wip = false): Overvie
   const needle = q.trim().toLowerCase();
   return rows.filter((r) => (!wip || attentionCount(r) > 0) && (!needle || r.name.toLowerCase().includes(needle) || r.hint?.toLowerCase().includes(needle)));
 }
+
+/** A tile's monogram: the initials of up to two words of the repository name (`atlas-api` → `AA`, `docs` → `D`). */
+export function monogram(name: string): string {
+  const words = name.split(/[-_.\s/]+/).filter(Boolean);
+  return (words.length ? words.slice(0, 2).map((w) => w[0]) : ["?"]).join("").toUpperCase();
+}
+
+export interface CheckoutSummary {
+  /** Linked worktrees; the main checkout is not a worktree. */
+  worktrees: number;
+  /** Distinct branches checked out anywhere, main checkout included; detached and bare entries have none. */
+  branches: number;
+  text: string;
+  /** One line per checkout, for the tooltip: where the details went when the tile stopped listing them. */
+  detail: string;
+}
+
+/** A tile's checkout line: `3 worktrees · 4 branches active` instead of one chip per checkout. */
+export function checkoutSummary(worktrees: Worktree[]): CheckoutSummary {
+  const linked = worktrees.filter((w) => !w.isMain && !w.bare);
+  const branches = new Set(worktrees.filter((w) => !w.bare && !w.detached && w.branch).map((w) => w.branch as string));
+  const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+  const text = `${plural(linked.length, "worktree", "worktrees")} · ${plural(branches.size, "branch", "branches")} active`;
+  const detail = worktrees
+    .filter((w) => !w.bare)
+    .map((w) => `${w.branch ?? `detached @ ${w.head ?? "?"}`} — ${w.isMain ? "main checkout" : w.prunable ? "stale worktree" : "worktree"}`)
+    .join("\n");
+  return { worktrees: linked.length, branches: branches.size, text, detail };
+}

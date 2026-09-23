@@ -1,8 +1,10 @@
-import { useMemo, useState } from "preact/hooks";
+import { useMemo, useRef, useState } from "preact/hooks";
 import { CHANGE_NAME_PATTERN } from "../shared/types.ts";
 import { api, ApiError } from "./api.ts";
 import { focusOnce } from "./focus.ts";
 import type { NewChangeProject } from "./repoGroups.ts";
+import { IconFilePlus } from "./icons.tsx";
+import { Modal } from "./modal.tsx";
 
 /** Where the form creates: one fixed repository (the repository header), or a choice among `projects` (the combined board). */
 export type NewChangeTarget =
@@ -14,13 +16,17 @@ export type NewChangeTarget =
  * dropdown when opened from the combined board. On success the server has already triggered a rescan; `onCreated` lets
  * the parent pick up the new state without waiting for the next poll.
  */
-export function NewChangeForm({ target, onClose, onCreated }: { target: NewChangeTarget; onClose: () => void; onCreated: () => void }) {
+export function NewChangeForm({ target, onClose, onCreated, onBusy }: { target: NewChangeTarget; onClose: () => void; onCreated: () => void; onBusy?: (busy: boolean) => void }) {
   const projects = "projects" in target ? target.projects : undefined;
   const [chosen, setChosen] = useState("projects" in target ? (target.preselected ?? "") : "");
   const [name, setName] = useState("");
   const [prompt, setPrompt] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusyState] = useState(false);
+  const setBusy = (next: boolean) => {
+    setBusyState(next);
+    onBusy?.(next);
+  };
   // One stable ref for the first field to fill, focused when the form opens and never again. Which field that is — the
   // dropdown when nothing is pre-selected, else the name — is decided once, so a later choice or poll never moves it.
   const focusFirst = useMemo(focusOnce, []);
@@ -103,5 +109,35 @@ export function NewChangeForm({ target, onClose, onCreated }: { target: NewChang
         </button>
       </div>
     </form>
+  );
+}
+
+/**
+ * The form in a dialog over the page, like the change detail view. None of the ways to close it applies while the
+ * change is being created, so a request in flight is never abandoned half-way.
+ */
+export function NewChangeDialog({ target, onClose, onCreated }: { target: NewChangeTarget; onClose: () => void; onCreated: () => void }) {
+  const busy = useRef(false);
+  const where = "repoName" in target ? target.repoName : undefined;
+  return (
+    <Modal
+      label={where ? `New change in ${where}` : "New change"}
+      title="New change"
+      subtitle={<span class="mono">{where ? `${where}/` : ""}openspec/changes/&lt;name&gt;/</span>}
+      icon={<IconFilePlus size={18} />}
+      onClose={onClose}
+      canClose={() => !busy.current}
+    >
+      <NewChangeForm
+        target={target}
+        onClose={() => {
+          if (!busy.current) onClose();
+        }}
+        onCreated={onCreated}
+        onBusy={(next) => {
+          busy.current = next;
+        }}
+      />
+    </Modal>
   );
 }

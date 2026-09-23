@@ -1,6 +1,10 @@
+import { useState } from "preact/hooks";
 import type { Worktree } from "../shared/types.ts";
 import { checkoutMarkers } from "./checkoutMarkers.ts";
 import { splitBranchLabel } from "./format.ts";
+import { IconGitBranch } from "./icons.tsx";
+import { Modal } from "./modal.tsx";
+import { checkoutSummary } from "./overviewState.ts";
 
 /**
  * Branch name that never outgrows its container: the head is clipped with an ellipsis, the tail always
@@ -50,3 +54,49 @@ export function CheckoutChips({ checkouts }: { checkouts: Worktree[] }) {
     </>
   );
 }
+
+/** Checkouts with work the user should look at: uncommitted, unpushed or stale. */
+export function checkoutsNeedingAttention(checkouts: Worktree[]): number {
+  return checkouts.filter((w) => checkoutMarkers(w).some((m) => m.kind === "uncommitted" || m.kind === "unpushed" || m.kind === "stale")).length;
+}
+
+/**
+ * The repository header's checkouts, calm: the main checkout's chip, and one button — `5 branches` — that opens the
+ * full list in a dialog. When checkouts hold uncommitted, unpushed or stale work, the button says how many.
+ */
+export function CheckoutSummaryButton({ checkouts, repoName }: { checkouts: Worktree[]; repoName: string }) {
+  const [open, setOpen] = useState(false);
+  const main = checkouts.find((w) => w.isMain);
+  const summary = checkoutSummary(checkouts);
+  const attention = checkoutsNeedingAttention(checkouts);
+  return (
+    <>
+      {main && <CheckoutChip checkout={main} />}
+      <button type="button" class={`control branches-button ${attention ? "attention" : ""}`} aria-haspopup="dialog" onClick={() => setOpen(true)} title="Every checkout of this repository">
+        <IconGitBranch size={13} />
+        {summary.branches} {summary.branches === 1 ? "branch" : "branches"}
+        {attention > 0 && <span class="control-value">{attention} with work</span>}
+      </button>
+      {open && (
+        <Modal
+          label={`Branches of ${repoName}`}
+          title={`Branches of ${repoName}`}
+          subtitle={`${summary.text} — unpushed and behind counts are as of the last fetch`}
+          icon={<IconGitBranch size={18} />}
+          onClose={() => setOpen(false)}
+          wide
+        >
+          <ul class="checkout-list">
+            {checkouts.map((w) => (
+              <li key={w.path}>
+                <CheckoutChip checkout={w} />
+                <code class="checkout-path">{w.path}</code>
+              </li>
+            ))}
+          </ul>
+        </Modal>
+      )}
+    </>
+  );
+}
+

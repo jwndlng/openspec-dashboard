@@ -3,6 +3,8 @@ import type { ActivityEvent, Snapshot } from "../shared/types.ts";
 import { describe, EMPTY_ACTIVITY_FILTERS, GROUP_LABELS, GROUP_ORDER, groupByDay, kindsFor, parseActivityFilters, serializeActivityFilters, timeOfDay, tone, type ActivityFilters } from "./activityState.ts";
 import { api } from "./api.ts";
 import { assignRepoHues } from "./repoGroups.ts";
+import { FilterTagList, RepoMenu } from "./boardFilters.tsx";
+import { IconRotateCcw } from "./icons.tsx";
 import { repoPath } from "./routes.ts";
 import { currentQuery, href, navigate, replaceQuery } from "./url.ts";
 
@@ -75,44 +77,32 @@ export function Activity({ snapshot, onSeen }: { snapshot: Snapshot | null; onSe
 
   return (
     <>
-      <div class="filters">
-        {/* biome-ignore lint/a11y/useSemanticElements: a fieldset would bring legend/border styling the filter row does not want */}
-        <div class="group" role="group" aria-label="Filter by repository">
-          <span style={{ color: "var(--fg-subtle)", fontSize: "12px" }}>Repos</span>
-          {repos.map((r) => {
-            const on = filters.repos.includes(r.id);
-            return (
-              <button
-                type="button"
-                key={r.id}
-                class={`chip repo-tint ${on ? "on" : ""}`}
-                style={repoHue(hues.get(r.id) ?? 0)}
-                aria-pressed={on}
-                onClick={() => setFilters({ repos: on ? filters.repos.filter((id) => id !== r.id) : [...filters.repos, r.id] })}
-              >
-                <span class="swatch" />
-                {r.name}
-              </button>
-            );
-          })}
+      <div class="filterbar">
+        <div class="filterbar-row">
+          <RepoMenu repos={repos} hues={hues} selected={filters.repos} onChange={(ids) => setFilters({ repos: ids })} />
+          {/* biome-ignore lint/a11y/useSemanticElements: a fieldset would bring legend/border styling the control does not want */}
+          <div class="segmented" role="group" aria-label="Filter by kind of event">
+            {GROUP_ORDER.map((g) => {
+              const on = filters.groups.includes(g);
+              return (
+                <button type="button" key={g} class={on ? "on" : ""} aria-pressed={on} onClick={() => setFilters({ groups: on ? filters.groups.filter((x) => x !== g) : [...filters.groups, g] })}>
+                  {GROUP_LABELS[g]}
+                </button>
+              );
+            })}
+          </div>
+          {filtered && (
+            <button type="button" class="btn sm ghost clear-filters" onClick={() => setFilters(EMPTY_ACTIVITY_FILTERS)}>
+              <IconRotateCcw size={12} />
+              Clear filters
+            </button>
+          )}
         </div>
-        {/* biome-ignore lint/a11y/useSemanticElements: a fieldset would bring legend/border styling the filter row does not want */}
-        <div class="group" role="group" aria-label="Filter by kind of event">
-          <span style={{ color: "var(--fg-subtle)", fontSize: "12px" }}>Show</span>
-          {GROUP_ORDER.map((g) => {
-            const on = filters.groups.includes(g);
-            return (
-              <button type="button" key={g} class={`chip ${on ? "on" : ""}`} aria-pressed={on} onClick={() => setFilters({ groups: on ? filters.groups.filter((x) => x !== g) : [...filters.groups, g] })}>
-                {GROUP_LABELS[g]}
-              </button>
-            );
-          })}
-        </div>
-        {filtered && (
-          <button type="button" class="btn sm ghost" onClick={() => setFilters(EMPTY_ACTIVITY_FILTERS)}>
-            reset
-          </button>
-        )}
+        <FilterTagList
+          tags={repos.filter((r) => filters.repos.includes(r.id)).map((r) => ({ key: r.id, label: r.name, repoId: r.id }))}
+          hues={hues}
+          onRemove={(tag) => setFilters({ repos: filters.repos.filter((id) => id !== tag.repoId) })}
+        />
       </div>
       <div class="activity">
         {error && <div class="notice danger">{error}</div>}

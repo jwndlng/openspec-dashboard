@@ -13,7 +13,7 @@ const outDir = join(root, "dist", "demo", "screenshots");
 
 const SHOTS = [
   { name: "board", route: "#/board", width: 2560, height: 1300 },
-  { name: "overview", route: "#/", width: 1440, height: 440 },
+  { name: "overview", route: "#/", width: 1440, height: 760 },
 ];
 // Blink's PreferredColorScheme enum; the page follows prefers-color-scheme when nothing is stored.
 const THEMES = [

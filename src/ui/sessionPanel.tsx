@@ -35,10 +35,10 @@ function terminalTheme(el: HTMLElement) {
   const css = getComputedStyle(el);
   const token = (name: string, fallback: string) => css.getPropertyValue(name).trim() || fallback;
   return {
-    background: token("--bg-base", "#141619"),
-    foreground: token("--fg-heading", "#f3f5f7"),
-    cursor: token("--brand", "#71c7c5"),
-    selectionBackground: token("--bg-elevated", "#3b3e41"),
+    background: token("--bg-base", "#26272b"),
+    foreground: token("--fg-heading", "#f6f6f7"),
+    cursor: token("--brand", "#6366f1"),
+    selectionBackground: token("--bg-elevated", "#4b4c51"),
   };
 }
 
