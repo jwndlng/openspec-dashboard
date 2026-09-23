@@ -166,7 +166,7 @@ export function EndSessionDialog() {
           )}
           <div class="hint">
             {running && `${session.agentName} is stopped, as if you closed its terminal window. `}
-            The worktree and its branch <span class="mono">{session.branch}</span> are kept{status?.removable ? " unless you remove the worktree below" : ""}; the work shows up under Open work until it is
+            The worktree and its branch <span class="mono">{session.branch}</span> are kept{status?.removable ? " unless you remove the worktree below" : ""}; its work stays on the change's card until it is
             merged.
           </div>
           {status?.removable ? (
