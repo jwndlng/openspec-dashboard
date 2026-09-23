@@ -29,7 +29,7 @@
 
 - [x] 5.1 Add `cleanupPreview(repoId)` and `cleanup(repoId, selection)` to the `Api` interface and HTTP implementation in `src/ui/api.ts`; verify `bun run typecheck` fails until the demo implements them (task 6.1).
 - [x] 5.2 Build `src/ui/cleanup.tsx`: dialog with the three sections, removable items pre-selected, kept items in a collapsed "Kept (N)" group with reasons, worktree↔branch dependent selection, last-fetch and ignored-files notes, confirm label naming the counts and disabled when empty, "nothing to clean up" state, running state, result list with copyable restore commands; verify with a vnode test (as in `test/pullUi.test.ts`) for the confirm label, dependent selection and empty state.
-- [ ] 5.3 Add the `Clean up` button to the board header in `src/ui/kanban.tsx` next to Pull, only for `repo.isGit && repo.ok`, reloading the board after a cleanup; add dialog styles to `src/ui/styles.css`; verify in `bun run dev` that the dialog opens, cancels without changes, and removes a merged test worktree and branch in a scratch repository.
+- [x] 5.3 Add the `Clean up` button to the board header in `src/ui/kanban.tsx` next to Pull, only for `repo.isGit && repo.ok`, reloading the board after a cleanup; add dialog styles to `src/ui/styles.css`; verify in `bun run dev` that the dialog opens, cancels without changes, and removes a merged test worktree and branch in a scratch repository.
 
 ## 6. Demo
 
