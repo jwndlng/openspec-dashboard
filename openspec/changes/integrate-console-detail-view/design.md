@@ -119,6 +119,22 @@ so the console panel must give it `min-height: 0` and `flex: 1` the way `.sessio
 (`styles.css:525-528`), or the terminal will grow unbounded and push the tab strip out. The existing `ResizeObserver`
 then handles the overlay's responsive widths without further work.
 
+### The Open work list is keyed by session, not by worktree
+
+Two changes landed on `main` while this one was being written, and both bear on this list.
+
+`review-open-work-menu` replaced the worktree-keyed `openWork` with a session-keyed `openSessions` and dropped
+worktrees from the list entirely. `sessions-in-non-git-repos` then added sessions that run **in place**, which have no
+worktree at all.
+
+The merge keeps the session keying — an in-place session exists only as a session, so a worktree-keyed list cannot show
+it — and appends the worktrees that have no running session. So `openWork` returns `OpenWorkItem`s rather than
+`SessionWorktree`s: a row is a running session (with its worktree when it has one) or a leftover worktree, and each
+worktree appears at most once. The count partitions the same way, so it always equals the rows that are not merged.
+
+Alternative considered: keep both helpers and render two lists. Rejected — one control with one count is the thing a
+dockless UI needs, and two lists reintroduce the "where is it?" problem this change exists to remove.
+
 ## Risks / Trade-offs
 
 - **Watching two changes at once is no longer possible in one window** → Accepted; it is the crowding the change
@@ -137,6 +153,8 @@ then handles the overlay's responsive widths without further work.
   console is never absent from the app.
 - **`test/dockGeometry.test.ts` asserts a CSS rule that will not exist** → It is removed with the dock; its intent (the
   reserved space equals the strip height) has no successor because nothing is reserved any more.
+- **Reversing `review-open-work-menu`'s exclusion of worktrees** → Only the exclusion is reversed, not its session
+  rows, and the requirement says why. Its delta has to archive first; noted in the proposal's Impact.
 - **`demo-site` mentions "the session panel opens with a terminal"** → Placement-neutral wording that the Console tab
   satisfies, so that spec needs no delta. Worth re-reading when the demo's scripted flow is updated.
 

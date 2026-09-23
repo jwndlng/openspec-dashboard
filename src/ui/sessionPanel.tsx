@@ -8,7 +8,7 @@ import { SHIPPABLE_WORK, type Session, type SessionAction, type SessionWorktree 
 import { api, type TerminalMessage } from "./api.ts";
 import { cdCommand } from "./format.ts";
 import { DEFAULT_QUICK_REPLIES, NOT_SUBMITTED_NOTICE, replyHint, replyMessage, type QuickReply } from "./quickReplies.ts";
-import { nextStepFor, sessionBadge, startersFor, workBadge } from "./sessionState.ts";
+import { nextStepFor, sessionBadge, startersFor, workBadge, worktreeOfSession } from "./sessionState.ts";
 import { SessionBadgeView, useSessionUi } from "./sessions.tsx";
 
 function Copy({ text, label }: { text: string; label: string }) {
@@ -233,7 +233,8 @@ export function ConsolePanel({ session, worktree }: { session?: Session; worktre
 
   const badge = session ? sessionBadge(session) : undefined;
   const repo = ui.config?.repos.find((r) => r.id === session?.repoId);
-  const tree = worktree ?? (session && ui.worktrees.find((w) => w.path === session.worktreePath));
+  // An in-place session runs in the repository folder, which is not a worktree: nothing git-derived applies to it.
+  const tree = worktreeOfSession(session, ui.worktrees) ?? (session ? undefined : worktree);
   const work = tree && workBadge(tree, ui.sessions);
   const shippable = session !== undefined && tree !== undefined && SHIPPABLE_WORK.includes(tree.work.state);
   const merged = tree?.work.state === "merged";
@@ -261,7 +262,12 @@ export function ConsolePanel({ session, worktree }: { session?: Session; worktre
         <div class="row">
           {session && <span class="hint">{session.agentName}</span>}
           {repo && <span class="hint">· {repo.name}</span>}
-          {(session?.branch ?? tree?.branch) && <span class="hint mono pane-branch">{session?.branch ?? tree?.branch}</span>}
+          {!session?.inPlace && (session?.branch ?? tree?.branch) && <span class="hint mono pane-branch">{session?.branch ?? tree?.branch}</span>}
+          {session?.inPlace && (
+            <span class="badge warning" title={`${session.worktreePath} is not a git repository, so the agent works in the folder itself. There is no branch, no commit and no undo.`}>
+              in the folder — no undo
+            </span>
+          )}
           {badge && <SessionBadgeView badge={badge} />}
           {work && (
             <span class={`badge ${work.tone}`} title={merged && session?.state !== "running" ? `${work.title}: use Clean up.` : work.title}>

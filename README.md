@@ -62,8 +62,10 @@ track.
   repositories, with a diff preview first. ([shared-config](openspec/specs/shared-config/spec.md))
 - **Agent sessions** (off by default): start your agent CLI, such as Claude Code, for a change in its own git worktree.
   Its terminal is the **Console** tab of that change's detail view, next to the change's artifacts, so one change is
-  one place. **Open work** in the top bar lists every running session and every worktree that still holds something
+  one place. **Open work** in the top bar lists every running agent and every worktree that still holds something
   (uncommitted, unpushed, pushed, merged) across all repositories.
+  A tracked folder that is not a git repository works too — there the agent runs in the folder itself, so it edits your
+  files directly, with no branch and no undo, and the session says so.
   ([agent-sessions](openspec/specs/agent-sessions/spec.md))
 - Light and dark themes.
 

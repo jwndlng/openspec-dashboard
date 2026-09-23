@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import type { Session, SessionWorktree, WorkStatus } from "../src/shared/types.ts";
-import { consoleAvailable, consoleSession, consoleSessions, endSeverity, pullOffer, endWarning, nextStepFor, openWork, sessionsForChange, staleAge, workBadge, worktreeForChange } from "../src/ui/sessionState.ts";
+import { consoleAvailable, consoleSession, consoleSessions, endSeverity, pullOffer, endWarning, nextStepFor, openWork, sessionsForChange, staleAge, workBadge, worktreeForChange, worktreeOfSession, worktreeRemovalPossible } from "../src/ui/sessionState.ts";
 
 const NOW = Date.parse("2026-09-21T12:00:00Z");
 const ago = (hours: number) => new Date(NOW - hours * 3_600_000).toISOString();
@@ -50,14 +50,13 @@ test("a card shows its change's open work first, its merged worktree otherwise, 
   expect(worktreeForChange(list, "elsewhere", "add-x")).toBeUndefined();
 });
 
-test("the open work list counts what is unshipped and puts stale work first, merged last", () => {
-  const list = [wt("merged", { state: "merged" }, 500), wt("fresh", { state: "uncommitted", count: 1 }, 2), wt("clean", { state: "clean" }), wt("old", { state: "unpushed", count: 4 }, 100)];
-  const { items, unshipped } = openWork(list, [], NOW);
-  expect(items.map((w) => w.name)).toEqual(["old", "fresh", "merged"]);
-  expect(unshipped).toBe(2);
-});
-
 const sess = (id: string, patch: Partial<Session> = {}): Session => ({ id, repoId: "r", change: "add-x", action: "implement", agentId: "a", agentName: "A", state: "running", worktreePath: `/w/${id}`, branch: "feat/add-x", createdAt: `2026-09-21T10:0${id.length}:00Z`, updatedAt: "", resumable: true, ...patch });
+
+test("the open work list holds the running sessions, oldest first", () => {
+  const list = [sess("newer", { createdAt: "2026-09-21T11:00:00Z" }), sess("ended", { state: "exited", exitCode: 0 }), sess("broke", { state: "failed" }), sess("older", { createdAt: "2026-09-21T09:00:00Z" })];
+  expect(openWork([], list, NOW).items.map((i) => i.session?.id)).toEqual(["older", "newer"]);
+  expect(openWork([], [], NOW).items).toEqual([]);
+});
 
 test("a starter goes into the change's running session; archive always gets its own", () => {
   const draft = sess("d", { action: "draft" });
@@ -126,30 +125,42 @@ test("the console lists a change's sessions, most recently active first, and def
   expect(consoleSession([], "archiving")).toBeUndefined();
 });
 
-test("open work lists running sessions too, first, whatever their work status", () => {
-  const list = [
+test("open work lists running sessions first, then worktrees nobody is working on", () => {
+  const worktrees = [
     wt("merged", { state: "merged" }, 500),
-    wt("busy", { state: "clean" }, 1, { sessionId: "s1" }),
+    wt("busy", { state: "clean" }, 1, { sessionId: "s1", path: "/w/s1" }),
     wt("fresh", { state: "uncommitted", count: 1 }, 2),
     wt("idle", { state: "clean" }),
     wt("old", { state: "unpushed", count: 4 }, 100),
   ];
-  const { items, unshipped, running: live } = openWork(list, [running("s1")], NOW);
-  // A clean worktree is listed only because its session runs; an idle clean one stays out.
-  expect(items.map((w) => w.name)).toEqual(["busy", "old", "fresh", "merged"]);
+  const { items, unshipped, running: live } = openWork(worktrees, [sess("s1")], NOW);
+  // The running session leads; its own clean worktree is not listed again. An idle clean one stays out entirely.
+  expect(items.map((i) => i.change)).toEqual(["add-x", "old", "fresh", "merged"]);
+  expect(items[0].worktree?.name).toBe("busy");
   expect(live).toBe(1);
   expect(unshipped).toBe(2);
 
-  // Nothing running and nothing unshipped: the control has nothing to count.
   expect(openWork([wt("idle", { state: "clean" })], [], NOW).items).toEqual([]);
 });
 
 test("a running session's own worktree is counted once, as running rather than as unshipped", () => {
-  const list = [wt("shipping", { state: "uncommitted", count: 3 }, 1, { sessionId: "s1" })];
-  const { items, unshipped, running: live } = openWork(list, [running("s1")], NOW);
-  expect(items.map((w) => w.name)).toEqual(["shipping"]);
+  const worktrees = [wt("shipping", { state: "uncommitted", count: 3 }, 1, { sessionId: "s1", path: "/w/s1" })];
+  const { items, unshipped, running: live } = openWork(worktrees, [sess("s1")], NOW);
+  expect(items).toHaveLength(1);
   expect(live).toBe(1);
   expect(unshipped).toBe(0);
+});
+
+test("an in-place session is listed although it has no worktree at all", () => {
+  // A tracked folder that is not a git repository: the agent works in the folder, so there is nothing worktree-shaped
+  // to find it by. Listing by session is the only thing that reaches it.
+  const inPlace = sess("s1", { inPlace: true, worktreePath: "/w/plain-folder" });
+  const { items, running: live } = openWork([], [inPlace], NOW);
+  expect(items.map((i) => i.session?.id)).toEqual(["s1"]);
+  expect(items[0].worktree).toBeUndefined();
+  expect(live).toBe(1);
+  expect(worktreeOfSession(inPlace, [wt("x", { state: "clean" }, 1, { path: "/w/plain-folder" })])).toBeUndefined();
+  expect(worktreeRemovalPossible(inPlace)).toBe(false);
 });
 
 test("a change gets a console when it has a session or a worktree, and a worktree outlives its change", () => {
@@ -167,4 +178,23 @@ test("a change gets a console when it has a session or a worktree, and a worktre
   // Feature off: no console anywhere, whatever is lying around.
   expect(consoleAvailable(off, s, w, "r", "add-x")).toBe(false);
   expect(consoleAvailable(null, s, w, "r", "add-x")).toBe(false);
+});
+
+test("a session in a folder without git has no worktree, so no work status, no Ship and nothing to remove", () => {
+  const worktrees = [wt("upgrade-runtime", { state: "uncommitted", count: 2 })];
+  const inRepo = { inPlace: true, worktreePath: "/w/acme/demo-ops" } as Session;
+  const inWorktree = { worktreePath: worktrees[0].path } as Session;
+
+  // The in-place session's directory is the repository itself; it must never be matched against a worktree.
+  expect(worktreeOfSession(inWorktree, worktrees)).toBe(worktrees[0]);
+  expect(worktreeOfSession(inRepo, worktrees)).toBeUndefined();
+  expect(worktreeOfSession(undefined, worktrees)).toBeUndefined();
+
+  expect(worktreeRemovalPossible(inWorktree)).toBe(true);
+  expect(worktreeRemovalPossible(inRepo)).toBe(false);
+  expect(worktreeRemovalPossible(undefined)).toBe(false);
+
+  // Ending it offers no pull either: the pull action only runs in a git repository.
+  expect(pullOffer({ isGit: false, ok: true }, undefined)).toEqual({ offered: false, preselected: false });
+  expect(pullOffer({ isGit: true, ok: true }, { state: "merged" })).toEqual({ offered: true, preselected: true });
 });

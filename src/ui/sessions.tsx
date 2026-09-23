@@ -28,14 +28,19 @@ interface SessionUi {
   reportUnsent(id: string | undefined): void;
   /** Opens the end-session dialog; nothing is ended before the user confirms there. */
   requestEnd(id: string | undefined): void;
+  /** The polling error, if the session list could not be read. */
   error?: string;
   /** Shows a session: navigates to its change's detail view with the Console tab selected. */
   openPanel(id: string | undefined): void;
-  start(repoId: string, change: string, action: SessionAction): Promise<void>;
+  /**
+   * Starts a session, or sends the next step into the change's running one. Resolves with the reason when the request
+   * was refused and no session exists to report it — the caller shows it where the starter was activated.
+   */
+  start(repoId: string, change: string, action: SessionAction): Promise<string | undefined>;
   refresh(): Promise<void>;
 }
 
-const noop = async () => {};
+const noop = async () => undefined;
 const Context = createContext<SessionUi>({ config: null, snapshot: null, sessions: [], agents: [], worktrees: [], focusTick: { tick: 0 }, reportUnsent: () => {}, requestEnd: () => {}, openPanel: () => {}, start: noop, refresh: noop });
 
 export const useSessionUi = () => useContext(Context);
@@ -104,8 +109,11 @@ export function SessionProvider({ config, snapshot = null, children }: { config:
         await refresh();
         // By id and place, not through `openPanel`: a session just started is not in this closure's list yet.
         openConsole(repoId, change, session.id);
+        return undefined;
       } catch (err) {
-        setError(err instanceof Error ? err.message : String(err));
+        // A start that failed has no session and so no panel to report itself in: the reason goes back to the caller,
+        // which shows it next to the starter. Not the provider's `error` — the poll clears that within seconds.
+        return err instanceof Error ? err.message : String(err);
       }
     },
     [refresh, openConsole, sessions, reportUnsent],
@@ -150,7 +158,7 @@ export function WorkBadge({ worktree }: { worktree: SessionWorktree }) {
   const id = worktree.sessionId;
   if (!id)
     return (
-      <span class={`badge ${badge.tone}`} title={`${badge.title} · no session record is left; see Open work`}>
+      <span class={`badge ${badge.tone}`} title={`${badge.title} · no session record is left`}>
         {badge.label}
       </span>
     );
@@ -195,59 +203,63 @@ function OrphanActions({ worktree }: { worktree: SessionWorktree }) {
 }
 
 /**
- * Top-bar control, and the only view of agent activity that spans repositories: every running session, every worktree
- * whose work is not shipped yet, and merged ones still lying around. An entry with a session opens its change's
- * detail view on the Console tab — the one place a terminal is shown.
+ * Top-bar control, and the only view of agent activity that spans repositories now that each terminal lives in its
+ * change's detail view. It lists the sessions running right now — including in-place ones, which have no worktree —
+ * and then every worktree that still holds work with no session running, which is the only way to reach a worktree
+ * whose change has left the board. Every row with a session opens that change's Console tab.
  */
 export function OpenWork() {
   const ui = useSessionUi();
   const [open, setOpen] = useState(false);
   const { items, unshipped, running } = useMemo(() => openWork(ui.worktrees, ui.sessions), [ui.worktrees, ui.sessions]);
+  const hues = useMemo(() => assignRepoHues((ui.snapshot?.repos ?? []).map((r) => r.id)), [ui.snapshot]);
   if (!ui.config?.agentSessions.enabled || items.length === 0) return null;
   const repoName = (id: string) => ui.config?.repos.find((r) => r.id === id)?.name ?? id;
-  const count = running + unshipped;
-  const hues = assignRepoHues((ui.snapshot?.repos ?? []).map((r) => r.id));
   return (
     <div class="open-work">
       <button
         type="button"
         class={`btn sm ${unshipped > 0 ? "attention" : running > 0 ? "" : "ghost"}`}
         aria-expanded={open}
-        title="Running agents, and work in agent worktrees that has not ended in a merged pull request"
+        title="Agents running right now, and work in agent worktrees that has not ended in a merged pull request"
         onClick={() => setOpen(!open)}
       >
-        Open work {count > 0 ? count : "✓"}
+        Open work {running + unshipped > 0 ? running + unshipped : "✓"}
       </button>
       {open && (
         <div class="open-work-list" role="dialog" aria-label="Open work">
           <div class="hint">Read from local git only — “pushed” and “merged” are as of your last fetch.</div>
-          {items.map((w) => {
-            const session = ui.sessions.find((s) => s.id === w.sessionId);
-            const tint = repoTint(hues, w.repoId);
+          {items.map((item) => {
+            const { session, worktree } = item;
+            const tint = repoTint(hues, item.repoId);
+            const age = session ? relTime(session.createdAt) : worktree?.lastActivityAt ? relTime(worktree.lastActivityAt) : undefined;
             return (
-              <div class={`open-work-row${tint.class ? ` ${tint.class}` : ""}`} style={tint.style} key={w.path}>
+              <div class={`open-work-row${tint.class ? ` ${tint.class}` : ""}`} style={tint.style} key={item.key}>
                 <div class="open-work-what">
-                  <span class="hint repo-name">{repoName(w.repoId)}</span>
-                  <strong class="mono">{w.change}</strong>
-                  {w.branch && <span class="hint mono">{w.branch}</span>}
+                  <span class="hint repo-name">
+                    {repoName(item.repoId)}
+                    {session && ` · ${session.action} · ${session.agentName}`}
+                  </span>
+                  <strong class="mono">{item.change}</strong>
+                  {(session?.inPlace ? undefined : (session?.branch ?? worktree?.branch)) && <span class="hint mono">{session?.branch ?? worktree?.branch}</span>}
                 </div>
                 {session?.state === "running" && <SessionBadgeView badge={sessionBadge(session)} />}
-                <WorkBadge worktree={w} />
-                <span class="hint">{w.lastActivityAt ? `${relTime(w.lastActivityAt)} ago` : ""}</span>
-                {w.sessionId ? (
+                {worktree && <WorkBadge worktree={worktree} />}
+                <span class="hint">{age === undefined ? "" : session ? (age === "just now" ? "started just now" : `started ${age} ago`) : `${age} ago`}</span>
+                {session ? (
                   <button
                     type="button"
                     class="btn sm"
-                    title={`Opens ${w.change} in its detail view, on the Console tab`}
+                    title={`Opens ${item.change} in its detail view, on the Console tab`}
                     onClick={() => {
                       setOpen(false);
-                      ui.openPanel(w.sessionId);
+                      ui.openPanel(session.id);
                     }}
                   >
                     Open
                   </button>
                 ) : (
-                  <OrphanActions worktree={w} />
+                  worktree && <OrphanActions worktree={worktree} />
                 )}
               </div>
             );
@@ -269,6 +281,7 @@ const STARTER_HINT: Record<SessionAction, string> = {
 export function SessionControls({ card }: { card: Pick<ChangeSnapshot, "repoId" | "name" | "archived" | "artifacts" | "stage"> }) {
   const ui = useSessionUi();
   const [starting, setStarting] = useState<SessionAction>();
+  const [failure, setFailure] = useState<string>();
   if (!sessionsEnabledFor(ui.config, card.repoId)) return null;
 
   const worktree = worktreeForChange(ui.worktrees, card.repoId, card.name);
@@ -304,7 +317,8 @@ export function SessionControls({ card }: { card: Pick<ChangeSnapshot, "repoId" 
             disabled={Boolean(blockedBy) || starting !== undefined}
             onClick={async () => {
               setStarting(action);
-              await ui.start(card.repoId, card.name, action);
+              setFailure(undefined);
+              setFailure(await ui.start(card.repoId, card.name, action));
               setStarting(undefined);
             }}
           >
@@ -312,6 +326,11 @@ export function SessionControls({ card }: { card: Pick<ChangeSnapshot, "repoId" 
           </button>
         );
       })}
+      {failure && (
+        <span class="notice danger session-failure" role="status">
+          {failure}
+        </span>
+      )}
     </>
   );
 }

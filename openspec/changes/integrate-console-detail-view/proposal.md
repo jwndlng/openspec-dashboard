@@ -69,3 +69,16 @@ None. The console changes where it lives, not what a session is.
 - `README.md` — the wording and screenshots that describe the dock.
 - No server, API, config or dependency change: the terminal WebSocket, the session records and every guard stay as
   they are. The demo gets the new behaviour for free.
+
+**Changes this one overlaps, and how:**
+
+- `review-open-work-menu` **narrowed** the Open work list to running sessions only, on the reasoning that unshipped
+  worktrees were reachable from their cards and from the dock's tab strip. Removing the dock takes one of those away,
+  and a worktree whose change has left the board never had a card — so this change **widens** the list again: running
+  sessions first, exactly as that change specified them, then the worktrees it excluded. Its delta must be archived
+  before this one, so that the requirement this modifies is the one it left. Its narrowing of *sessions* is kept; only
+  its exclusion of worktrees is reversed, and the reason is stated in the requirement itself.
+- `sessions-in-non-git-repos` added sessions that run **in place**, in a tracked folder that is no git repository and
+  therefore has no worktree. That is why the Open work list is built from sessions rather than from worktrees here: a
+  worktree-keyed list would silently drop those sessions, and this list is the only place that can find them. The
+  Console tab shows an in-place session like any other, minus Ship, work status and worktree removal.

@@ -84,6 +84,20 @@ export function endWarning(work: WorkStatus | undefined): string | undefined {
   return undefined;
 }
 
+/**
+ * The worktree a session's panel and dialogs speak for. An in-place session runs in the repository folder itself,
+ * which is not a worktree: it has no work status, nothing to ship and nothing to remove, so it has none.
+ */
+export function worktreeOfSession(session: Pick<Session, "inPlace" | "worktreePath"> | undefined, worktrees: SessionWorktree[]): SessionWorktree | undefined {
+  if (!session || session.inPlace) return undefined;
+  return worktrees.find((w) => w.path === session.worktreePath);
+}
+
+/** Whether ending a session may offer to remove its worktree at all: an in-place session has none to remove. */
+export function worktreeRemovalPossible(session: Pick<Session, "inPlace"> | undefined): boolean {
+  return session !== undefined && !session.inPlace;
+}
+
 export interface PullOffer {
   /** Whether the end-session dialog offers to pull at all: only a repository the pull action can run in. */
   offered: boolean;
@@ -149,7 +163,7 @@ const HOUR = 3_600_000;
 /** Work that is not even pushed is forgotten fastest; a pushed branch may simply wait for review. */
 const STALE_AFTER_MS: Partial<Record<SessionWorktree["work"]["state"], number>> = { uncommitted: 24 * HOUR, unpushed: 24 * HOUR, pushed: 7 * 24 * HOUR };
 
-/** Open work nobody is working on: past its age limit and without a running session. */
+/** Unshipped work nobody is working on: past its age limit and without a running session. */
 export function staleAge(worktree: SessionWorktree, sessions: Session[], now = Date.now()): string | undefined {
   const limit = STALE_AFTER_MS[worktree.work.state];
   const last = worktree.lastActivityAt ? Date.parse(worktree.lastActivityAt) : Number.NaN;
@@ -183,20 +197,53 @@ export function worktreeForChange(worktrees: SessionWorktree[], repoId: string, 
   return mine.find((w) => SHIPPABLE_WORK.includes(w.work.state)) ?? mine.find((w) => w.work.state === "merged");
 }
 
+/** One row of the Open work list: a running session, or a worktree that still holds something. */
+export interface OpenWorkItem {
+  key: string;
+  repoId: string;
+  change: string;
+  /** Absent for an in-place session, which runs in the folder itself and has no worktree. */
+  worktree?: SessionWorktree;
+  session?: Session;
+  /** Running sessions come first, then stale work, then the rest, then merged. */
+  rank: number;
+}
+
 /**
  * The Open work list — the only view of agent activity that spans repositories now that terminals live in each
- * change's detail view. It holds every running session's worktree (whatever its work status, so a running agent is
- * always findable), everything unshipped, and merged worktrees still lying around. Running first, then stale, then the
- * rest, then merged; oldest first within each rank.
+ * change's detail view, so it has to carry both kinds of thing.
+ *
+ * Sessions first, by session and not by worktree: an in-place session (a tracked folder that is not a git repository)
+ * has no worktree at all, and would otherwise be missing from the one list that is supposed to find it. Then every
+ * worktree that still holds work and has no running session — including worktrees whose change is gone from the board,
+ * which no card can offer.
  */
-export function openWork(worktrees: SessionWorktree[], sessions: Session[], now = Date.now()): { items: SessionWorktree[]; unshipped: number; running: number } {
-  const runningIds = new Set(sessions.filter((s) => s.state === "running").map((s) => s.id));
-  const isRunning = (w: SessionWorktree) => w.sessionId !== undefined && runningIds.has(w.sessionId);
-  const items = worktrees.filter((w) => isRunning(w) || SHIPPABLE_WORK.includes(w.work.state) || w.work.state === "merged");
-  const rank = (w: SessionWorktree) => (isRunning(w) ? 0 : staleAge(w, sessions, now) ? 1 : w.work.state === "merged" ? 3 : 2);
-  items.sort((a, b) => rank(a) - rank(b) || (a.lastActivityAt ?? "").localeCompare(b.lastActivityAt ?? ""));
-  // A running session's own worktree is counted as running, never a second time as unshipped: the count matches the rows.
-  return { items, unshipped: items.filter((w) => !isRunning(w) && w.work.state !== "merged").length, running: items.filter(isRunning).length };
+export function openWork(worktrees: SessionWorktree[], sessions: Session[], now = Date.now()): { items: OpenWorkItem[]; unshipped: number; running: number } {
+  const live = sessions.filter((s) => s.state === "running").sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  const items: OpenWorkItem[] = live.map((session) => ({
+    key: session.id,
+    repoId: session.repoId,
+    change: session.change,
+    worktree: worktreeOfSession(session, worktrees),
+    session,
+    rank: 0,
+  }));
+
+  const taken = new Set(items.map((i) => i.worktree?.path).filter(Boolean));
+  const left = worktrees
+    .filter((w) => !taken.has(w.path) && (SHIPPABLE_WORK.includes(w.work.state) || w.work.state === "merged"))
+    .map<OpenWorkItem>((worktree) => ({
+      key: worktree.path,
+      repoId: worktree.repoId,
+      change: worktree.change,
+      worktree,
+      session: sessions.find((s) => s.id === worktree.sessionId),
+      rank: staleAge(worktree, sessions, now) ? 1 : worktree.work.state === "merged" ? 3 : 2,
+    }));
+  left.sort((a, b) => a.rank - b.rank || (a.worktree?.lastActivityAt ?? "").localeCompare(b.worktree?.lastActivityAt ?? ""));
+
+  // Each row counts once: a running session is "running", never also "unshipped", so the badge matches the rows.
+  return { items: [...items, ...left], unshipped: left.filter((i) => i.worktree?.work.state !== "merged").length, running: items.length };
 }
 
 /** One argument per line; blank lines are dropped. A command is an argument list, never a shell string. */

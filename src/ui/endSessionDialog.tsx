@@ -6,7 +6,7 @@ import type { PullResult, WorkStatus } from "../shared/types.ts";
 import { api } from "./api.ts";
 import { usePull } from "./pull.tsx";
 import { pullNeedsReport, pullOutcome } from "./pullState.ts";
-import { endSeverity, endWarning, pullOffer } from "./sessionState.ts";
+import { endSeverity, endWarning, pullOffer, worktreeRemovalPossible } from "./sessionState.ts";
 import { useSessionUi } from "./sessions.tsx";
 
 interface Status {
@@ -45,6 +45,8 @@ export function EndSessionDialog() {
     setReport(undefined);
     setError(undefined);
     if (!id) return;
+    // An in-place session has no worktree: nothing to check, nothing to remove.
+    if (!worktreeRemovalPossible(session)) return;
     let stale = false;
     api
       .worktreeStatus(id)
@@ -68,6 +70,7 @@ export function EndSessionDialog() {
   }, [id, ui.requestEnd]);
 
   if (!id || !session) return null;
+  const hasWorktree = worktreeRemovalPossible(session);
   const running = session.state === "running";
   const severity = endSeverity(status?.work);
   const warning = endWarning(status?.work);
@@ -157,25 +160,33 @@ export function EndSessionDialog() {
           <span class="mono">{session.change}</span>?
         </strong>
         <div id="end-body" class="dialog-body">
-          {!status && <div class="hint">Checking the worktree…</div>}
+          {!status && hasWorktree && <div class="hint">Checking the worktree…</div>}
           {warning && (
             <div class={`notice ${severity === "danger" ? "danger" : "warn"}`}>
               <strong>{severity === "danger" ? "⚠ Not shipped. " : "Note: "}</strong>
               {warning}
             </div>
           )}
-          <div class="hint">
-            {running && `${session.agentName} is stopped, as if you closed its terminal window. `}
-            The worktree and its branch <span class="mono">{session.branch}</span> are kept{status?.removable ? " unless you remove the worktree below" : ""}; the work shows up under Open work until it is
-            merged.
-          </div>
-          {status?.removable ? (
-            <label class="check">
-              <input type="checkbox" checked={remove} onChange={(e) => setRemove(e.currentTarget.checked)} /> also remove the worktree (clean, and its work is merged or exists elsewhere)
-            </label>
+          {!hasWorktree ? (
+            <div class="hint">
+              {running && `${session.agentName} is stopped, as if you closed its terminal window. `}
+              Whatever the agent changed stays in <span class="mono">{session.worktreePath}</span>, which is not a git repository: there is no worktree to remove and nothing to merge.
+            </div>
           ) : (
-            status?.reason && <div class="hint">The worktree cannot be removed: {status.reason}.</div>
+            <div class="hint">
+              {running && `${session.agentName} is stopped, as if you closed its terminal window. `}
+              The worktree and its branch <span class="mono">{session.branch}</span> are kept{status?.removable ? " unless you remove the worktree below" : ""}; its work stays on the change's card until
+              it is merged.
+            </div>
           )}
+          {hasWorktree &&
+            (status?.removable ? (
+              <label class="check">
+                <input type="checkbox" checked={remove} onChange={(e) => setRemove(e.currentTarget.checked)} /> also remove the worktree (clean, and its work is merged or exists elsewhere)
+              </label>
+            ) : (
+              status?.reason && <div class="hint">The worktree cannot be removed: {status.reason}.</div>
+            ))}
           {offer.offered && (
             <label class="check" title="Fetches the repository's remote and fast-forwards its main checkout. Never merges, rebases, stashes or switches branches; off the default branch it only fetches.">
               <input type="checkbox" checked={pullSelected} onChange={(e) => setPullChoice(e.currentTarget.checked)} />
