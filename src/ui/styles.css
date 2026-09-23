@@ -328,6 +328,12 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: 
 .overlay { position: fixed; inset: 0; z-index: 10; display: flex; align-items: center; justify-content: center; padding: var(--gap-2); background: var(--scrim); }
 .dialog { display: flex; flex-direction: column; gap: var(--gap-1); width: min(960px, 100%); max-height: 100%; padding: var(--gap-2); background: var(--bg-section); border: 1px solid var(--border-strong); border-radius: var(--radius); }
 .dialog-body { overflow: auto; display: flex; flex-direction: column; gap: 6px; min-height: 0; }
+.cleanup-dialog { width: min(820px, 100%); }
+.cleanup-heading { margin: var(--gap-1) 0 0; font-size: 13px; color: var(--fg-heading); }
+.cleanup-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.cleanup-list .check { align-items: flex-start; }
+.cleanup-list .mono, .cleanup-restore code { overflow-wrap: anywhere; }
+.cleanup-kept summary { font-size: 12px; }
 .dialog summary { display: flex; align-items: center; gap: var(--gap-1); padding: 4px 0; cursor: pointer; color: var(--fg-heading); }
 .diff { margin: 4px 0 8px; padding: 8px; overflow-x: auto; background: var(--bg-base); border: 1px solid var(--border-light); border-radius: var(--radius); font-family: var(--font-mono); font-size: 12px; line-height: 1.5; }
 .diff .add { color: var(--success); }

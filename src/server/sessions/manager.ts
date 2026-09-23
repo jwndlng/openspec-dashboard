@@ -2,8 +2,10 @@
 // worktree. The manager creates the worktree, starts the process, keeps a scrollback for late or returning viewers,
 // fans output out to attached terminals and takes their input. It does not interpret what the agent prints.
 import { randomUUID } from "node:crypto";
+import { realpath } from "node:fs/promises";
 import { join } from "node:path";
 import { availableActions, OPEN_SESSION_STATES, repoAgentEnabled, SESSION_ACTIONS, SHIPPABLE_WORK, type AgentAvailability, type Config, type Session, type SessionAction, type SessionWorktree, type Snapshot, type WorkStatus, type PromptResult, type ShipResult } from "../../shared/types.ts";
+import { isCleaningUp } from "../cleanup.ts";
 import { worktreesDir } from "../paths.ts";
 import { CHANGE_NAME } from "../source.ts";
 import { agentEnv, agentFor, availability, launchCommand, openingPrompt, shipPrompt } from "./agents.ts";
@@ -132,6 +134,7 @@ export class SessionManager {
     if (!repoAgentEnabled(repo)) throw new SessionError(403, "agent sessions are switched off for this repository");
     const scanned = this.deps.getSnapshot().repos.find((r) => r.id === repo.id);
     if (!scanned?.ok) throw new SessionError(409, "the repository's last scan failed");
+    if (isCleaningUp(repo.id)) throw new SessionError(409, "a cleanup of this repository is running");
     const snapshot = scanned.changes.find((c) => c.name === change && !c.archived);
     if (!snapshot) throw new SessionError(404, "unknown change");
     if (!availableActions(snapshot).includes(action)) throw new SessionError(400, `"${action}" is not available for this change in its current stage`);
@@ -203,7 +206,13 @@ export class SessionManager {
     return list;
   }
 
-  private forgetWorktrees(): void {
+  /** Real paths (as git lists worktrees) of the worktrees a session is running in; repository cleanup keeps those. */
+  async runningWorktreePaths(): Promise<Set<string>> {
+    const paths = this.list().filter((s) => s.state === "running").map((s) => realpath(s.worktreePath).catch(() => s.worktreePath));
+    return new Set(await Promise.all(paths));
+  }
+
+  forgetWorktrees(): void {
     this.worktreeCache = undefined;
   }
 
@@ -217,6 +226,7 @@ export class SessionManager {
     if (running) throw new SessionError(409, "another session is running in this worktree");
     const repo = config.repos.find((r) => r.id === session.repoId);
     if (!repo) throw new SessionError(409, "the repository is no longer configured");
+    if (isCleaningUp(repo.id)) throw new SessionError(409, "a cleanup of this repository is running");
     return { agent, repo };
   }
 

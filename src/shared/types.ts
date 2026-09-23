@@ -520,3 +520,65 @@ export interface CreateChangeResponse {
   /** False when the repository is not a git repository or the `git add` failed — the change is there, merely untracked. */
   staged: boolean;
 }
+
+/**
+ * Repository cleanup (openspec/specs/repository-cleanup). Every item is either `removable` or kept with a `reason`;
+ * the preview is read-only and the server re-checks every item when a selection is applied.
+ */
+export interface CleanupWorktree {
+  path: string;
+  /** Absent when HEAD is detached. */
+  branch?: string;
+  work: WorkStatus;
+  lastCommitAt?: string;
+  /** The dashboard created it (it lives under `~/.openspec-dashboard/worktrees/`). */
+  managed: boolean;
+  locked?: boolean;
+  removable: boolean;
+  reason?: string;
+}
+
+export interface CleanupBranch {
+  name: string;
+  /** Full commit the branch points to; a branch is deleted only if it still points here. */
+  commit: string;
+  lastCommitAt?: string;
+  upstream?: string;
+  /** How the branch's work was found in the base: its commits are in it, or its changed files' content is. */
+  mergedBy?: "ancestry" | "content";
+  /** The linked worktree the branch is checked out in; the branch can only go together with that worktree. */
+  worktreePath?: string;
+  removable: boolean;
+  reason?: string;
+}
+
+export interface CleanupPreview {
+  repoId: string;
+  /** What "merged" was judged against, e.g. `origin/main`; absent when the default branch is unknown. */
+  base?: string;
+  worktrees: CleanupWorktree[];
+  /** Worktree records whose directory is gone; removed together by `git worktree prune`. */
+  prunable: { path: string }[];
+  branches: CleanupBranch[];
+}
+
+export interface CleanupSelection {
+  worktrees: string[];
+  prune: boolean;
+  branches: { name: string; commit: string }[];
+}
+
+export interface CleanupItemResult {
+  kind: "worktree" | "prune" | "branch";
+  /** The worktree path, the pruned record's path, or the branch name. */
+  id: string;
+  outcome: "removed" | "pruned" | "deleted" | "kept";
+  reason?: string;
+  /** For a deleted branch: the commit it pointed to, to restore it with `git branch <name> <commit>`. */
+  commit?: string;
+}
+
+export interface CleanupResult {
+  repoId: string;
+  items: CleanupItemResult[];
+}

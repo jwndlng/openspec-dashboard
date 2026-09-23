@@ -36,14 +36,17 @@ export async function baseRef(repoPath: string): Promise<string | undefined> {
   return head.ok && head.out ? head.out : undefined;
 }
 
-/** Squash and rebase merges leave the branch's commits unreachable from the base, so content is compared instead. */
-async function contentIsInBase(worktreePath: string, base: string): Promise<boolean> {
-  const changed = await git(worktreePath, ["diff", "--name-only", "-z", `${base}...HEAD`]);
+/**
+ * Squash and rebase merges leave the branch's commits unreachable from the base, so content is compared instead: every
+ * file `ref` changed since it forked from `base` has the same content in `base`. `cwd` is a worktree or the repository.
+ */
+export async function contentIsInBase(cwd: string, base: string, ref = "HEAD"): Promise<boolean> {
+  const changed = await git(cwd, ["diff", "--name-only", "-z", `${base}...${ref}`]);
   if (!changed.ok) return false;
   const files = changed.out.split("\0").filter(Boolean);
   if (files.length > MAX_COMPARED_FILES) return false;
   if (files.length === 0) return true;
-  return (await git(worktreePath, ["diff", "--quiet", base, "HEAD", "--", ...files])).ok;
+  return (await git(cwd, ["diff", "--quiet", base, ref, "--", ...files])).ok;
 }
 
 export async function readWorkStatus(repoPath: string, worktreePath: string): Promise<{ work: WorkStatus; branch?: string; lastCommitAt?: string }> {

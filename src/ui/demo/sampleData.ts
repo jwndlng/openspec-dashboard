@@ -121,6 +121,15 @@ export const DEMO_PROFILES: SharedProfile[] = [
   { id: "security", name: "Security", context: "Threat-model every new endpoint and state the data classification.", rules: { design: ["List trust boundaries"] } },
 ];
 /** Repository name → profiles it carries; `stale` marks a profile applied before its last edit (shown as outdated). */
+/**
+ * Local branches for the cleanup dialog, per sample repository: which branches' work is in `main` (a worktree's branch
+ * or one without a worktree), and branches with commits `main` lacks. Worktree branches not listed count as unmerged.
+ */
+export const DEMO_BRANCHES: Record<string, { merged: string[]; unmerged: [string, number][] }> = {
+  "lantern-infra": { merged: ["chore/upgrade-terraform", "fix/state-lock-timeout", "chore/archive-pin-terraform-providers"], unmerged: [["experiment/plan-cache", 4]] },
+  "harbor-web": { merged: ["fix/focus-ring-contrast"], unmerged: [] },
+};
+
 export const DEMO_CARRIED: Record<string, { id: string; stale?: boolean }[]> = {
   "atlas-api": [{ id: "base" }, { id: "security" }],
   "harbor-web": [{ id: "base", stale: true }],

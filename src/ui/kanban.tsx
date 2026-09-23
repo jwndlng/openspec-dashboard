@@ -5,6 +5,7 @@ import { NoRepos } from "./empty.tsx";
 import { EMPTY_FILTERS, parseFilters, serializeFilters, type Filters } from "./filters.ts";
 import { BranchBadge, CheckoutChips } from "./checkout.tsx";
 import { hasCheckoutInfo } from "./checkoutMarkers.ts";
+import { CleanupButton } from "./cleanup.tsx";
 import { NewChangeForm } from "./newChangeForm.tsx";
 import { PullButton } from "./pull.tsx";
 import { branchNotice } from "./pullState.ts";
@@ -219,6 +220,7 @@ function RepoHeader({ repo, now, onCreated }: { repo: RepoSnapshot; now: number;
         {/* Snapshots cached by older versions know no checkouts: fall back to the current branch. */}
         {hasCheckoutInfo(repo.worktrees) ? <CheckoutChips checkouts={repo.worktrees} /> : repo.currentBranch && <BranchBadge branch={repo.currentBranch} hint="current branch" />}
         {repo.isGit && repo.ok && <PullButton repoId={repo.id} />}
+        {repo.isGit && repo.ok && <CleanupButton repoId={repo.id} repoName={repo.name} onDone={onCreated} />}
         {repo.ok && (
           <button type="button" class="btn sm" onClick={() => setCreating(true)}>
             New change

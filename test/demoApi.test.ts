@@ -153,3 +153,38 @@ test("change artifacts in the demo: files follow the sample's state, tasks.md ag
   expect(await status(api.artifactFile(repo.id, inProgress.name, "../secrets.md"))).toBe(400);
   expect(await status(api.artifactFile(repo.id, "a/b", "proposal.md"))).toBe(400);
 });
+
+test("cleanup is simulated: a merged worktree and its branch go, kept items say why, and a reload brings them back", async () => {
+  const { api } = demo();
+  const repo = (await api.state()).repos.find((r) => r.name === "lantern-infra")!;
+  const preview = await api.cleanupPreview(repo.id);
+  const worktree = preview.worktrees.find((w) => w.branch === "chore/upgrade-terraform")!;
+  expect(worktree).toMatchObject({ removable: true, work: { state: "merged" } });
+  expect(preview.worktrees.some((w) => !w.removable && w.reason)).toBe(true);
+  expect(preview.branches.find((b) => b.name === "experiment/plan-cache")).toMatchObject({ removable: false, reason: "4 commit(s) not in origin/main" });
+  expect(preview.prunable.length).toBe(1);
+  const branch = preview.branches.find((b) => b.name === "chore/upgrade-terraform")!;
+  expect(branch).toMatchObject({ removable: true, worktreePath: worktree.path });
+
+  const result = await api.cleanup(repo.id, { worktrees: [worktree.path], prune: true, branches: [{ name: branch.name, commit: branch.commit }] });
+  expect(result.items.map((i) => [i.kind, i.outcome])).toEqual([
+    ["worktree", "removed"],
+    ["prune", "pruned"],
+    ["branch", "deleted"],
+  ]);
+  expect(result.items[2].commit).toBe(branch.commit);
+  const after = (await api.state()).repos.find((r) => r.id === repo.id)!;
+  expect(after.worktrees.some((w) => w.path === worktree.path || w.prunable)).toBe(false);
+  expect((await api.cleanupPreview(repo.id)).branches.map((b) => b.name)).not.toContain("chore/upgrade-terraform");
+
+  const fresh = demo().api;
+  expect((await fresh.state()).repos.find((r) => r.id === repo.id)!.worktrees.some((w) => w.path === worktree.path)).toBe(true);
+});
+
+test("the main checkout's branch is never offered in the demo either", async () => {
+  const { api } = demo();
+  const repo = (await api.state()).repos.find((r) => r.name === "harbor-web")!;
+  const preview = await api.cleanupPreview(repo.id);
+  expect(preview.branches.find((b) => b.name === repo.currentBranch)).toMatchObject({ removable: false, reason: "it is checked out in the main checkout" });
+  expect(preview.branches.find((b) => b.name === "fix/focus-ring-contrast")).toMatchObject({ removable: true });
+});

@@ -69,6 +69,16 @@ test("worktree removal: refused when dirty or holding commits that exist nowhere
   expect(existsSync(wt)).toBe(false);
 });
 
+test("worktree removal without unlocking leaves a locked worktree alone", async () => {
+  const repo = await tempGitRepo();
+  const wt = join(await realpath(await tempDir("osd-wt-")), "held");
+  await ensureWorktree(repo, wt, "feat/held");
+  git(repo, "worktree", "lock", "--reason", "in use", wt);
+  expect((await removeWorktree(repo, wt, true, false)).removable).toBe(false);
+  expect(existsSync(wt)).toBe(true);
+  expect(git(repo, "worktree", "list", "--porcelain")).toContain("locked in use");
+});
+
 test("a session is the agent in a terminal, in its own worktree: start, type, exit", async () => {
   const h = track(await harness());
   process.env.ANTHROPIC_API_KEY = "must-not-reach-the-agent";
