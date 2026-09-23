@@ -692,8 +692,11 @@ body:has(.detail-overlay) { overflow: hidden; }
 .detail-tab.console { color: var(--info); }
 .detail-tab.console:hover:not(:disabled) { color: var(--info); }
 .detail-tab.console.on { color: var(--info); border-bottom-color: var(--info); }
-/* The panel's own frame and header carry the accent, so the whole console area is marked, not just its tab. */
-.console-pane { border-top: 2px solid var(--info); border-left: 1px solid var(--info-border); }
+/* The panel's own frame and header carry the accent, so the whole console area is marked, not just its tab.
+   The column layout is what gives the terminal its height: `.session-terminal` claims the space the header leaves with
+   `flex: 1`, which only resolves if this pane is a flex container. Without it the terminal collapses to its own content
+   — and its host is absolutely positioned, so that is nothing — leaving a few pixels of blue frame. */
+.console-pane { display: flex; flex-direction: column; min-width: 0; min-height: 0; border-top: 2px solid var(--info); border-left: 1px solid var(--info-border); }
 .console-pane > .session-head { border-bottom-color: var(--info-border); background: var(--bg-section); }
 /* The terminal is the part that scrolls, so it needs a bounded box: the detail content column does not scroll here. */
 .detail-content:has(.console-pane) { display: flex; flex-direction: column; overflow: hidden; padding: 0; }

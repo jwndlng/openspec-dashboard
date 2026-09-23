@@ -38,8 +38,12 @@ Order matters: the console tab is built and proven first (groups 1–4), the doc
   one on the tab strip
 - [x] 3.2 Keep the backdrop and the close control closing the overlay, and assert closing does not end the session —
   verify with a test that the session stays running and its card keeps the badge after a close
-- [ ] 3.3 Give the console panel a `min-height: 0` / `flex: 1` box in `src/ui/styles.css` so `FitAddon` measures a
-  bounded host — verify the terminal fills the overlay without pushing the tab strip out, at desktop and at 400px width
+- [x] 3.3 Give the console panel a `min-height: 0` / `flex: 1` box in `src/ui/styles.css` so `FitAddon` measures a
+  bounded host — verify the terminal fills the overlay without pushing the tab strip out, at desktop and at 400px width.
+  The outer box was already bounded; what was missing is that `.console-pane` must itself be a column flex container,
+  or the `flex: 1` on `.session-terminal` resolves against nothing. Measured in headless Chrome against the real
+  stylesheet: the terminal was 0px and is now 658px in a 700px panel, at 1400px and at 400px width alike.
+  `test/consoleLayout.test.ts` asserts the chain so it cannot silently break again.
 - [x] 3.4 Ensure the poll does not remount or reset the terminal — verify with a test that a snapshot refresh keeps the
   selected tab, the selected session and the terminal's connection
 

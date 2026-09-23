@@ -257,7 +257,7 @@ export function ConsolePanel({ session, worktree }: { session?: Session; worktre
 
   const path = session?.worktreePath ?? tree?.path;
   return (
-    <section class="session-pane console-pane" aria-label={`Agent console ${session?.change ?? tree?.change ?? ""}`}>
+    <section class="console-pane" aria-label={`Agent console ${session?.change ?? tree?.change ?? ""}`}>
       <header class="session-head">
         <div class="row">
           {session && <span class="hint">{session.agentName}</span>}
