@@ -16,8 +16,11 @@ import { OpenWork, SessionProvider } from "./sessions.tsx";
 import { Settings } from "./settings.tsx";
 import { currentPath, currentQuery, href, navigate, onRouteChange } from "./url.ts";
 import { applyTheme, loadPreference, nextPreference, resolveTheme, savePreference, type ThemePreference } from "./theme.ts";
+import { IconActivity, IconKanban, IconLayoutGrid, IconMonitor, IconMoon, IconRefresh, IconSettings, IconSun } from "./icons.tsx";
+import { LogoMark } from "./logo.tsx";
 
 const THEME_LABEL: Record<ThemePreference, string> = { system: "System", light: "Light", dark: "Dark" };
+const THEME_ICON: Record<ThemePreference, typeof IconSun> = { system: IconMonitor, light: IconSun, dark: IconMoon };
 
 export function App() {
   const [route, setRoute] = useState<Route>(() => routeFromPath(currentPath()));
@@ -130,6 +133,7 @@ export function App() {
   const boardRoute: Route = back ? routeFromPath(back.path) : route;
   const detailOpen = route.view === "change";
 
+  const ThemeIcon = THEME_ICON[themePref];
   const link = (path: string, label: ComponentChildren, active: boolean) => (
     <a
       href={href(path)}
@@ -150,17 +154,60 @@ export function App() {
     <SessionProvider config={config} snapshot={shown}>
     {/* Everything but the detail overlay: inert while it is open, so the board behind it takes no focus and no clicks. */}
     <div class="app" inert={detailOpen} aria-hidden={detailOpen ? "true" : undefined}>
-      <header class="topbar">
-        <div class="brand">
-          <span class="dot" />
-          <h1>OpenSpec Dashboard</h1>
+      {/* The hero: the product's name, big, over a soft accent glow; below it the navigation, and — continuing the same
+          ground — the current view's own header band and filter bar. The status and actions keep their corner. */}
+      <header class="topbar hero">
+        <div class="hero-brand">
+          <LogoMark size={60} />
+          <div class="hero-copy">
+            <h1 class="hero-title">
+              OpenSpec <span class="hero-accent">Dashboard</span>
+            </h1>
+            <p class="hero-tagline">Central management for OpenSpec across all your repositories — never miss a change.</p>
+          </div>
+          {/* Status and actions: the hero's top corner. */}
+          <div class="topbar-end">
+            <OpenWork />
+            {failing.map((r) => (
+              <span class="badge danger" title={r.error}>
+                ⚠ {r.name}
+              </span>
+            ))}
+            {error && <span class="badge danger">API: {error}</span>}
+            <button type="button" class="btn sm ghost" onClick={cycleTheme} title="Cycle theme: System → Light → Dark">
+              <ThemeIcon />
+              Theme: {THEME_LABEL[themePref]}
+            </button>
+            <span class="status">
+              <span>updated {snapshot ? relTime(snapshot.generatedAt) : "…"}</span>
+              <button type="button" class="btn sm" onClick={refresh} disabled={refreshing}>
+                <IconRefresh size={13} />
+                {refreshing ? "Scanning…" : "Refresh"}
+              </button>
+            </span>
+          </div>
         </div>
-        <nav>
-          {link("/", "Projects", route.view === "overview" || boardRoute.view === "repo")}
-          {link("/board", "All changes", boardRoute.view === "board")}
+        <nav aria-label="Main">
+          {link(
+            "/",
+            <>
+              <IconLayoutGrid />
+              Projects
+            </>,
+            route.view === "overview" || boardRoute.view === "repo",
+          )}
+          {link(
+            "/board",
+            <>
+              <IconKanban />
+              All changes
+            </>,
+            boardRoute.view === "board",
+          )}
           {link(
             "/activity",
             <>
+              <IconActivity />
               Activity
               {route.view !== "activity" && unseenLabel(unseen) && (
                 <span class="nav-count" title={`${unseen} new since you last looked`}>
@@ -170,25 +217,15 @@ export function App() {
             </>,
             route.view === "activity",
           )}
-          {link("/settings", "Settings", route.view === "settings")}
+          {link(
+            "/settings",
+            <>
+              <IconSettings />
+              Settings
+            </>,
+            route.view === "settings",
+          )}
         </nav>
-        <div class="spacer" />
-        <OpenWork />
-        {failing.map((r) => (
-          <span class="badge danger" title={r.error}>
-            ⚠ {r.name}
-          </span>
-        ))}
-        {error && <span class="badge danger">API: {error}</span>}
-        <button type="button" class="btn sm ghost" onClick={cycleTheme} title="Cycle theme: System → Light → Dark">
-          Theme: {THEME_LABEL[themePref]}
-        </button>
-        <span class="status">
-          <span>updated {snapshot ? relTime(snapshot.generatedAt) : "…"}</span>
-          <button type="button" class="btn sm" onClick={refresh} disabled={refreshing}>
-            {refreshing ? "Scanning…" : "Refresh"}
-          </button>
-        </span>
       </header>
       <main class="main">
         {route.view === "settings" ? (

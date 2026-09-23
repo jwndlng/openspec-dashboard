@@ -3,7 +3,8 @@ import type { ChangeSnapshot, Config, RepoSnapshot, Snapshot, WorkInProgress } f
 import { defaultAgentSessions } from "../src/server/config.ts";
 import { checkoutMarkers, hasCheckoutInfo } from "../src/ui/checkoutMarkers.ts";
 import { cdCommand } from "../src/ui/format.ts";
-import { attentionCount, enabledOnly, filterRows, overviewRows, parseOverviewState, serializeOverviewState, sortRows, toggleSort, wipIndicator } from "../src/ui/overviewState.ts";
+import { checkoutsNeedingAttention } from "../src/ui/checkout.tsx";
+import { attentionCount, checkoutSummary, enabledOnly, filterRows, monogram, overviewRows, parseOverviewState, serializeOverviewState, sortRows, toggleSort, wipIndicator } from "../src/ui/overviewState.ts";
 import { repoPath, routeFromPath } from "../src/ui/routes.ts";
 
 function change(repoId: string, name: string, column: string, extra: Partial<ChangeSnapshot> = {}): ChangeSnapshot {
@@ -238,3 +239,42 @@ test("checkout markers: text for every state, tooltips that say why and mention 
   expect(hasCheckoutInfo([{ path: "/w/acme/alpha-infra", branch: "main", isMain: true }])).toBe(true);
   expect(hasCheckoutInfo([])).toBe(false);
 });
+
+test("a tile's monogram takes the initials of the first two words", () => {
+  expect(monogram("atlas-api")).toBe("AA");
+  expect(monogram("quill-docs-site")).toBe("QD");
+  expect(monogram("docs")).toBe("D");
+  expect(monogram("my_repo.v2")).toBe("MR");
+  expect(monogram("")).toBe("?");
+});
+
+test("a tile sums its checkouts up instead of listing them", () => {
+  const summary = checkoutSummary([
+    { path: "/w/acme/alpha", branch: "main", isMain: true },
+    { path: "/w/acme/alpha-report", branch: "feat/report" },
+    { path: "/w/acme/alpha-parser", branch: "fix/parser" },
+    { path: "/w/acme/alpha-old", detached: true, head: "9f3c2ab" },
+    { path: "/w/acme/alpha-dup", branch: "feat/report" },
+  ]);
+  expect(summary).toMatchObject({ worktrees: 4, branches: 3, text: "4 worktrees · 3 branches active" });
+  expect(summary.detail.split("\n")).toEqual([
+    "main — main checkout",
+    "feat/report — worktree",
+    "fix/parser — worktree",
+    "detached @ 9f3c2ab — worktree",
+    "feat/report — worktree",
+  ]);
+  expect(checkoutSummary([{ path: "/w/acme/beta", branch: "main", isMain: true }]).text).toBe("0 worktrees · 1 branch active");
+});
+
+test("the repository header counts the checkouts holding work", () => {
+  expect(
+    checkoutsNeedingAttention([
+      { path: "/w/acme/alpha", branch: "main", isMain: true, status: { modified: 0, untracked: 0, conflicts: 0 } },
+      { path: "/w/acme/alpha-a", branch: "feat/a", status: { modified: 2, untracked: 0, conflicts: 0 } },
+      { path: "/w/acme/alpha-b", branch: "feat/b", status: { modified: 0, untracked: 0, conflicts: 0 } },
+      { path: "/w/acme/alpha-c", branch: "feat/c", prunable: true },
+    ]),
+  ).toBe(2);
+});
+

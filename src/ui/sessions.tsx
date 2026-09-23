@@ -278,7 +278,12 @@ const STARTER_HINT: Record<SessionAction, string> = {
 };
 
 /** Rendered inside a card. Shows nothing at all unless the feature is on and the card's repository has not been switched off. */
-export function SessionControls({ card }: { card: Pick<ChangeSnapshot, "repoId" | "name" | "archived" | "artifacts" | "stage"> }) {
+/**
+ * A card's session controls. `part` splits them for the card's layout: `status` is the session badge (working, quiet,
+ * may need you, failed) beside the change name, `starters` the next-step buttons in its footer. Without `part`, both
+ * plus the worktree's work status. The card leaves the work status to the detail view (see `WorkStatus`).
+ */
+export function SessionControls({ card, part }: { card: Pick<ChangeSnapshot, "repoId" | "name" | "archived" | "artifacts" | "stage">; part?: "status" | "starters" }) {
   const ui = useSessionUi();
   const [starting, setStarting] = useState<SessionAction>();
   const [failure, setFailure] = useState<string>();
@@ -289,9 +294,11 @@ export function SessionControls({ card }: { card: Pick<ChangeSnapshot, "repoId" 
   const agent = agentForRepo(ui.config, card.repoId);
   const found = ui.agents.find((a) => a.id === agent?.id);
   const unavailable = found && !found.available ? `${found.name} was not found on this machine — check its command in Settings` : undefined;
+  const status = part !== "starters";
+  const starters = part !== "status";
   return (
     <>
-      {shown.map((session) => (
+      {status && shown.map((session) => (
         <span class="session-chip" key={session.id}>
           <SessionBadgeView badge={sessionBadge(session)} onClick={() => ui.openPanel(session.id)} />
           {session.state === "running" && (
@@ -301,8 +308,8 @@ export function SessionControls({ card }: { card: Pick<ChangeSnapshot, "repoId" 
           )}
         </span>
       ))}
-      {worktree && <WorkBadge worktree={worktree} />}
-      {startersFor(ui.config, card).map((action) => {
+      {part === undefined && worktree && <WorkBadge worktree={worktree} />}
+      {starters && startersFor(ui.config, card).map((action) => {
         // The change's running session is sent the next step; only archiving always starts its own.
         const step = nextStepFor(ui.sessions, card.repoId, card.name, action);
         if (step.blocked) return null;
@@ -326,11 +333,19 @@ export function SessionControls({ card }: { card: Pick<ChangeSnapshot, "repoId" 
           </button>
         );
       })}
-      {failure && (
+      {starters && failure && (
         <span class="notice danger session-failure" role="status">
           {failure}
         </span>
       )}
     </>
   );
+}
+
+/** The work status of a change's session worktree, for the detail view's header; nothing when there is none to show. */
+export function WorkStatus({ repoId, name }: { repoId: string; name: string }) {
+  const ui = useSessionUi();
+  if (!sessionsEnabledFor(ui.config, repoId)) return null;
+  const worktree = worktreeForChange(ui.worktrees, repoId, name);
+  return worktree ? <WorkBadge worktree={worktree} /> : null;
 }

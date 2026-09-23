@@ -6,6 +6,7 @@ import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { DEMO_MARKER } from "../src/ui/demo/sampleData.ts";
 import { THEME_STORAGE_KEY } from "../src/ui/theme.ts";
+import { faviconSvg } from "../src/ui/logoMark.ts";
 
 const root = join(import.meta.dir, "..");
 const ui = join(root, "src", "ui");
@@ -39,7 +40,7 @@ if (!target) {
 }
 
 const FONTS = [
-  { family: "Space Grotesk", file: "SpaceGrotesk.woff2", weight: "300 700" },
+  { family: "Inter", file: "Inter.woff2", weight: "100 900" },
   { family: "JetBrains Mono", file: "JetBrainsMono.woff2", weight: "100 800" },
 ];
 
@@ -81,6 +82,7 @@ ${target.marker ? `<!-- ${target.marker} -->\n` : ""}<html lang="en">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light dark">
 <title>${target.title}</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,${encodeURIComponent(faviconSvg())}">
 <script>${themeScript}</script>
 <style>
 ${await fontFaces()}

@@ -10,7 +10,11 @@ import { renderMarkdown } from "./markdown.tsx";
 import { backTarget, CONSOLE_TAB, type DetailQuery, parseDetailQuery, repoPath, serializeDetailQuery } from "./routes.ts";
 import { ConsolePanel, ConsoleSessionList } from "./sessionPanel.tsx";
 import { consoleAvailable, consoleSession, consoleSessions } from "./sessionState.ts";
-import { useSessionUi } from "./sessions.tsx";
+import { useSessionUi, WorkStatus } from "./sessions.tsx";
+import { isComplete } from "../shared/columns.ts";
+import { promptBody } from "./boardMarks.ts";
+import { BranchBadge } from "./checkout.tsx";
+import { checkoutHint, daysSince, pendingArchiveHint, relTime } from "./format.ts";
 import { currentQuery, followInApp, href, navigate, replaceQuery } from "./url.ts";
 
 export function artifactLabel(id: string): string {
@@ -184,12 +188,51 @@ export function DetailHeader({ repo, change, from, onClose }: { repo: RepoSnapsh
         </h1>
         <CloseButton onClose={onClose} />
       </div>
+      {"column" in change && <ChangeFacts change={change} />}
       {change.warnings?.map((w) => (
         <div key={w} class="notice warn">
           {w}
         </div>
       ))}
     </div>
+  );
+}
+
+/**
+ * What the card leaves out: where the change lives and what state it is in — column, tasks, last update, how long it
+ * has been complete, its branch and checkouts, an archive the main checkout lacks, its worktree's work status — and
+ * the prompt it was started with. The artifact tabs below say which phases are written.
+ */
+function ChangeFacts({ change, now = Date.now() }: { change: ChangeSnapshot; now?: number }) {
+  const age = daysSince(change.lastActivityAt, now);
+  const pending = pendingArchiveHint(change);
+  const prompt = promptBody(change.prompt);
+  return (
+    <>
+      <div class="row detail-facts">
+        <span class="badge" title="The column this change is in">
+          {change.column}
+        </span>
+        {change.tasks && change.tasks.total > 0 && <Meter done={change.tasks.done} total={change.tasks.total} />}
+        <span class="badge" title={change.lastActivityAt ? `last activity ${change.lastActivityAt}` : "no activity date"}>
+          {change.archived ? `archived ${change.archived}` : `updated ${relTime(change.lastActivityAt, now)} ago`}
+        </span>
+        {isComplete(change.stage) && age !== undefined && <span class="badge success">✓ complete · {age}d</span>}
+        {pending && (
+          <span class="badge warning" title={pending.title}>
+            ⑂ {pending.label}
+          </span>
+        )}
+        {change.branchMatch && <BranchBadge branch={change.branchMatch} hint={checkoutHint(change)} />}
+        <WorkStatus repoId={change.repoId} name={change.name} />
+      </div>
+      {prompt && (
+        <div class="detail-prompt" role="note" aria-label={`prompt: ${prompt}`}>
+          <span class="detail-prompt-label">✎ prompt</span>
+          <p>{prompt}</p>
+        </div>
+      )}
+    </>
   );
 }
 

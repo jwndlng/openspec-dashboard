@@ -2,18 +2,23 @@ import { useEffect, useMemo, useState } from "preact/hooks";
 import { boardColumns, isComplete } from "../shared/columns.ts";
 import type { ChangeSnapshot, Config, RepoSnapshot, Snapshot } from "../shared/types.ts";
 import { NoRepos } from "./empty.tsx";
-import { EMPTY_FILTERS, parseFilters, serializeFilters, type Filters } from "./filters.ts";
-import { BranchBadge, CheckoutChips } from "./checkout.tsx";
+import { parseFilters, resolveLayout, serializeFilters, STACK_BELOW_PX, type Filters } from "./filters.ts";
+import { FilterBar } from "./boardFilters.tsx";
+import { Stat } from "./band.tsx";
+import { BranchBadge, CheckoutSummaryButton } from "./checkout.tsx";
 import { hasCheckoutInfo } from "./checkoutMarkers.ts";
 import { CleanupButton } from "./cleanup.tsx";
-import { NewChangeForm } from "./newChangeForm.tsx";
+import { NewChangeDialog } from "./newChangeForm.tsx";
 import { PullButton } from "./pull.tsx";
 import { branchNotice } from "./pullState.ts";
-import { cdCommand, checkoutHint, daysSince, pendingArchiveHint, relTime } from "./format.ts";
+import { cdCommand, daysSince, relTime } from "./format.ts";
 import { isMinimized, loadGroupState, saveGroupState, toggleGroup, type GroupOverrides } from "./groupState.ts";
 import { assignRepoHues, groupByRepo, newChangeTargets, recentArchived } from "./repoGroups.ts";
-import { SessionControls } from "./sessions.tsx";
-import { boardFrom, changePath, repoPath, serializeDetailQuery } from "./routes.ts";
+import { columnKind } from "./boardMarks.ts";
+import { IconChevronRight, IconPlus, IconTerminal } from "./icons.tsx";
+import { SessionControls, useSessionUi } from "./sessions.tsx";
+import { consoleAvailable } from "./sessionState.ts";
+import { boardFrom, changePath, CONSOLE_TAB, repoPath, serializeDetailQuery } from "./routes.ts";
 import { currentQuery, followInApp, href, navigate, replaceQuery } from "./url.ts";
 
 const ARCHIVED_LIMIT = 25;
@@ -72,48 +77,70 @@ export function cardLink(card: Pick<Card, "repoId" | "name">, from: string): { p
  * Only **Show details** navigates: the card itself and its change name are plain content, so clicking anywhere else on
  * a card does nothing. It is an anchor, so ⌘/middle-click opens the detail view in a new tab.
  */
-export function ChangeCard({ card, now, showRepo, from }: { card: Card; now: number; showRepo: boolean; from: string }) {
-  const age = daysSince(card.lastActivityAt, now);
+export function ChangeCard({ card, now, from }: { card: Card; now: number; from: string }) {
   const noTasks = card.warnings?.includes("tasks file has no tasks");
   const link = cardLink(card, from);
-  const name = card.name;
-  const pending = pendingArchiveHint(card);
+  // Only what an overview needs: the name and its session state, task progress, the last update, the next step.
+  // Branch, worktree, work status, prompt and completed phases are in the detail view.
   return (
-    <article class="card repo-tint" style={repoHue(card.hue)}>
-      {/* On a single-repository board the header already names the repo, so the change name takes the top row. */}
-      <div class="repo">
-        {showRepo ? <span>{card.repoName}</span> : <span class="name">{name}</span>}
-        <a class="show-details" href={href(link.path, undefined, link.query)} onClick={(e) => followInApp(e, link.path, link.query)} aria-label={`Show details of ${card.name}`}>
-          Show details
-        </a>
+    <article class="card">
+      <div class="card-top">
+        <div class="card-title">
+          <span class="name">{card.name}</span>
+          <span class="age" title={card.lastActivityAt ? `last activity ${card.lastActivityAt}` : "no activity date"}>
+            {card.archived ? `archived ${card.archived}` : `updated ${relTime(card.lastActivityAt, now)} ago`}
+          </span>
+        </div>
+        <span class="card-status">
+          <SessionControls card={card} part="status" />
+          <ConsoleLink card={card} from={from} />
+        </span>
       </div>
-      {showRepo && <div class="name">{name}</div>}
       {card.tasks && card.tasks.total > 0 && <Meter done={card.tasks.done} total={card.tasks.total} />}
       <div class="meta">
-        <span class="badge" title={card.lastActivityAt ? `last activity ${card.lastActivityAt}` : "no activity date"}>
-          {card.archived ? `archived ${card.archived}` : `${relTime(card.lastActivityAt, now)} ago`}
-        </span>
-        {isComplete(card.stage) && age !== undefined && <span class="badge success">✓ complete · {age}d</span>}
-        {pending && (
-          <span class="badge warning" title={pending.title}>
-            ⑂ {pending.label}
-          </span>
-        )}
-        {card.branchMatch && <BranchBadge branch={card.branchMatch} hint={checkoutHint(card)} />}
-        {card.prompt && (
-          <span class="badge" title={card.prompt} role="img" aria-label={`prompt: ${card.prompt}`}>
-            ✎ prompt
-          </span>
-        )}
         {noTasks && <span class="badge warning">no tasks</span>}
-        <SessionControls card={card} />
         {card.warnings?.filter((w) => w !== "tasks file has no tasks").map((w) => (
           <span class="badge danger" title={w}>
             ⚠ error
           </span>
         ))}
+        <SessionControls card={card} part="starters" />
+        <a class="show-details" href={href(link.path, undefined, link.query)} onClick={(e) => followInApp(e, link.path, link.query)} aria-label={`Show details of ${card.name}`}>
+          Show details
+          <IconChevronRight size={12} />
+        </a>
       </div>
     </article>
+  );
+}
+
+/** Where the Console quick link leads: the change's detail view on its Console tab, remembering the board. */
+export function consoleTarget(card: Pick<Card, "repoId" | "name">, from: string): { path: string; query: string } {
+  return { path: changePath(card.repoId, card.name), query: serializeDetailQuery({ raw: false, from, artifact: CONSOLE_TAB }) };
+}
+
+/**
+ * A quick way into the change's agent console: its detail view opened on the Console tab. Only when the change has a
+ * session or a session worktree, which is when that tab exists.
+ */
+function ConsoleLink({ card, from }: { card: Card; from: string }) {
+  const ui = useSessionUi();
+  if (!consoleAvailable(ui.config, ui.sessions, ui.worktrees, card.repoId, card.name)) return null;
+  const { path, query } = consoleTarget(card, from);
+  return (
+    <a class="console-link" href={href(path, undefined, query)} onClick={(e) => followInApp(e, path, query)} aria-label={`Open the agent console of ${card.name}`} title="Open the agent console">
+      <IconTerminal size={14} />
+    </a>
+  );
+}
+
+/** The counts every board's band shows: open changes matching the filters, and complete changes waiting to be archived. */
+function BoardStats({ open, toArchive }: { open: number; toArchive: number }) {
+  return (
+    <span class="stats">
+      <Stat label="Open" value={open} />
+      <Stat label="To archive" value={toArchive} tone={toArchive > 0 ? "success" : undefined} />
+    </span>
   );
 }
 
@@ -133,7 +160,7 @@ function RepoGroups({ column, cards, now, showRepo, from, groups: controls }: { 
     return (
       <div class="cards">
         {cards.map((c) => (
-          <ChangeCard key={`${c.repoId}/${c.name}`} card={c} now={now} showRepo={false} from={from} />
+          <ChangeCard key={`${c.repoId}/${c.name}`} card={c} now={now} from={from} />
         ))}
       </div>
     );
@@ -162,7 +189,7 @@ function RepoGroups({ column, cards, now, showRepo, from, groups: controls }: { 
             {expanded && (
               <div class="repo-group-body" id={bodyId}>
                 {g.cards.map((c) => (
-                  <ChangeCard key={`${c.repoId}/${c.name}`} card={c} now={now} showRepo from={from} />
+                  <ChangeCard key={`${c.repoId}/${c.name}`} card={c} now={now} from={from} />
                 ))}
               </div>
             )}
@@ -183,11 +210,27 @@ const COLUMN_HINT: Record<string, string> = {
   Archived: `Archived changes; the ${ARCHIVED_LIMIT} most recent are shown`,
 };
 
+/** Whether the window is narrower than the point where `auto` stacks the columns; follows resizes. */
+function useNarrowWindow(): boolean {
+  const query = `(max-width: ${STACK_BELOW_PX - 1}px)`;
+  const [narrow, setNarrow] = useState(() => typeof matchMedia === "function" && matchMedia(query).matches);
+  useEffect(() => {
+    if (typeof matchMedia !== "function") return;
+    const media = matchMedia(query);
+    const update = () => setNarrow(media.matches);
+    update();
+    media.addEventListener("change", update);
+    return () => media.removeEventListener("change", update);
+  }, [query]);
+  return narrow;
+}
+
 // `countLabel` replaces the card count in the header when the column shows only part of its cards (Archived).
 function Column({ label, cards, now, hot, showRepo, from, countLabel, groups }: { label: string; cards: Card[]; now: number; hot?: boolean; showRepo: boolean; from: string; countLabel?: string; groups: GroupControls }) {
   return (
-    <section class="column">
+    <section class={`column ${cards.length === 0 ? "empty" : ""}`}>
       <div class="column-head">
+        <span class="stage-dot" data-kind={columnKind(label)} aria-hidden="true" />
         <h2 title={COLUMN_HINT[label]}>{label}</h2>
         <span class={`count ${hot && cards.length ? "hot" : ""}`}>{countLabel ?? cards.length}</span>
       </div>
@@ -196,69 +239,82 @@ function Column({ label, cards, now, hot, showRepo, from, countLabel, groups }: 
   );
 }
 
-function RepoHeader({ repo, now, onCreated }: { repo: RepoSnapshot; now: number; onCreated: () => void }) {
+function RepoHeader({ repo, now, stats, onCreated }: { repo: RepoSnapshot; now: number; stats: { open: number; toArchive: number }; onCreated: () => void }) {
   const updated = repo.lastUpdatedAt ? relTime(repo.lastUpdatedAt, now) : undefined;
   const notice = branchNotice(repo);
   const [creating, setCreating] = useState(false);
+  const canGit = repo.isGit && repo.ok;
   return (
-    <div class="repo-head">
-      <div class="row">
-        <h1 class="crumbs">
-          <a
-            class="crumb-link"
-            href={href("/")}
-            onClick={(e) => {
-              e.preventDefault();
-              navigate("/");
-            }}
-          >
-            Projects
-          </a>
-          <span class="sep">/</span>
-          {repo.name}
-        </h1>
-        {/* Snapshots cached by older versions know no checkouts: fall back to the current branch. */}
-        {hasCheckoutInfo(repo.worktrees) ? <CheckoutChips checkouts={repo.worktrees} /> : repo.currentBranch && <BranchBadge branch={repo.currentBranch} hint="current branch" />}
-        {repo.isGit && repo.ok && <PullButton repoId={repo.id} />}
-        {repo.isGit && repo.ok && <CleanupButton repoId={repo.id} repoName={repo.name} onDone={onCreated} />}
-        {repo.ok && (
-          <button type="button" class="btn sm" onClick={() => setCreating(true)}>
-            New change
-          </button>
-        )}
-        {repo.sharedConfig?.unreadable && (
-          <span class="badge danger" title="openspec/config.yaml is missing, not valid YAML, or has malformed shared-config markers">
-            ⚙ config unreadable
-          </span>
-        )}
-        {repo.sharedConfig?.applied.map((p) => (
-          <span key={p.id} class={`badge ${p.state === "in-sync" ? "" : "warning"}`} title="Shared OpenSpec config profile carried by openspec/config.yaml">
-            ⚙ {p.id}
-            {p.state === "in-sync" ? "" : ` · ${p.state}`}
-          </span>
-        ))}
-        {updated && (
-          <span class="badge" title={repo.lastUpdatedAt}>
-            updated {updated === "just now" ? updated : `${updated} ago`}
-          </span>
-        )}
+    <div class="band repo-head">
+      <div class="band-main">
+        <div class="row band-title">
+          <h1 class="crumbs">
+            <a
+              class="crumb-link"
+              href={href("/")}
+              onClick={(e) => {
+                e.preventDefault();
+                navigate("/");
+              }}
+            >
+              Projects
+            </a>
+            <span class="sep">/</span>
+            {repo.name}
+          </h1>
+          <span class="divider" aria-hidden="true" />
+          <BoardStats open={stats.open} toArchive={stats.toArchive} />
+        </div>
+        {/* The repository's state: its checkouts, the config it carries and its age. Its actions have their own area. */}
+        <div class="row status">
+          {/* Snapshots cached by older versions know no checkouts: fall back to the current branch. */}
+          {hasCheckoutInfo(repo.worktrees) ? <CheckoutSummaryButton checkouts={repo.worktrees} repoName={repo.name} /> : repo.currentBranch && <BranchBadge branch={repo.currentBranch} hint="current branch" />}
+          {repo.sharedConfig?.unreadable && (
+            <span class="badge danger" title="openspec/config.yaml is missing, not valid YAML, or has malformed shared-config markers">
+              ⚙ config unreadable
+            </span>
+          )}
+          {repo.sharedConfig?.applied.map((p) => (
+            <span key={p.id} class={`badge ${p.state === "in-sync" ? "" : "warning"}`} title="Shared OpenSpec config profile carried by openspec/config.yaml">
+              ⚙ {p.id}
+              {p.state === "in-sync" ? "" : ` · ${p.state}`}
+            </span>
+          ))}
+          {updated && (
+            <span class="badge" title={repo.lastUpdatedAt}>
+              updated {updated === "just now" ? updated : `${updated} ago`}
+            </span>
+          )}
+        </div>
+        <div class="row path">
+          <code>{repo.path}</code>
+          <CopyButton text={cdCommand(repo.path)} label="Copy cd" />
+        </div>
       </div>
-      <div class="row path">
-        <code>{repo.path}</code>
-        <CopyButton text={cdCommand(repo.path)} label="Copy cd" />
-      </div>
+      {(canGit || repo.ok) && (
+        <div class="band-actions">
+          {canGit && <PullButton repoId={repo.id} />}
+          {canGit && <CleanupButton repoId={repo.id} repoName={repo.name} onDone={onCreated} />}
+          {repo.ok && (
+            <button type="button" class="btn primary" onClick={() => setCreating(true)}>
+              <IconPlus size={15} />
+              New change
+            </button>
+          )}
+        </div>
+      )}
       {notice && (
-        <div class="notice warn" role="note">
+        <div class="notice warn band-note" role="note">
           ⎇ {notice.long}
         </div>
       )}
-      {!repo.ok && <div class="notice danger">Scan failed: {repo.error} — showing the last good data.</div>}
+      {!repo.ok && <div class="notice danger band-note">Scan failed: {repo.error} — showing the last good data.</div>}
       {repo.warnings?.map((w) => (
-        <div key={w} class="notice warn">
+        <div key={w} class="notice warn band-note">
           {w}
         </div>
       ))}
-      {creating && <NewChangeForm target={{ repoId: repo.id, repoName: repo.name }} onClose={() => setCreating(false)} onCreated={() => { setCreating(false); onCreated(); }} />}
+      {creating && <NewChangeDialog target={{ repoId: repo.id, repoName: repo.name }} onClose={() => setCreating(false)} onCreated={() => { setCreating(false); onCreated(); }} />}
     </div>
   );
 }
@@ -293,6 +349,7 @@ export function initialFilters(query: string, repoId: string | undefined): Filte
  */
 export function Kanban({ snapshot, config, repoId, query, onReload }: { snapshot: Snapshot | null; config: Config | null; repoId?: string; query?: string; onReload?: () => void }) {
   const [filters, setFiltersState] = useState<Filters>(() => initialFilters(query ?? currentQuery(), repoId));
+  const layout = resolveLayout(filters.layout, useNarrowWindow());
   const now = Date.now();
 
   const setFilters = (patch: Partial<Filters>) => {
@@ -342,65 +399,44 @@ export function Kanban({ snapshot, config, repoId, query, onReload }: { snapshot
   const targets = useMemo(() => newChangeTargets(single ? [] : repos, filters.repos), [single, repos, filters.repos]);
   const [creating, setCreating] = useState<{ preselected?: string } | null>(null);
 
+  const stats = { open: visible.filter((c) => !c.archived).length, toArchive: cards.filter((c) => isComplete(c.stage)).length };
+  // What the columns on screen hold: archived cards only while their column is shown, and at most its bound.
+  const archivedVisible = visible.filter((c) => c.column === "Archived").length;
+  const showing = visible.length - archivedVisible + (filters.hideArchived ? 0 : Math.min(archivedVisible, ARCHIVED_LIMIT));
+
   if (snapshot && snapshot.repos.length === 0) return <NoRepos config={config} />;
   if (snapshot && single && repos.length === 0) return <RepoNotFound />;
 
   return (
     <>
-      {single && repos[0] && <RepoHeader repo={repos[0]} now={now} onCreated={() => onReload?.()} />}
-      <div class="filters">
-        {/* biome-ignore lint/a11y/useSemanticElements: a fieldset would bring legend/border styling the filter row does not want */}
-        <div class="group" role="group" aria-label="Filter by repository" hidden={single}>
-          <span style={{ color: "var(--fg-subtle)", fontSize: "12px" }}>Repos</span>
-          {repos.map((r) => {
-            const on = filters.repos.includes(r.id);
-            return (
-              <button type="button"
-                class={`chip repo-tint ${on ? "on" : ""} ${r.ok ? "" : "error"}`}
-                style={repoHue(hues.get(r.id) ?? 0)}
-                title={r.ok ? r.path : r.error}
-                onClick={() => setFilters({ repos: on ? filters.repos.filter((id) => id !== r.id) : [...filters.repos, r.id] })}
-              >
-                <span class="swatch" />
-                {r.name}
+      {single && repos[0] && <RepoHeader repo={repos[0]} now={now} stats={stats} onCreated={() => onReload?.()} />}
+      {!single && (
+        <div class="band">
+          <div class="band-main">
+            <div class="row band-title">
+              <h1>
+                All changes
+                <span class="band-sub">
+                  {repos.length} {repos.length === 1 ? "repository" : "repositories"} · openspec/changes
+                </span>
+              </h1>
+              <span class="divider" aria-hidden="true" />
+              <BoardStats open={stats.open} toArchive={stats.toArchive} />
+            </div>
+          </div>
+          {targets.projects.length > 0 && (
+            <div class="band-actions">
+              <button type="button" class="btn primary" onClick={() => setCreating({ preselected: targets.preselected })}>
+                <IconPlus size={15} />
+                New change
               </button>
-            );
-          })}
-          {filters.repos.length > 0 && (
-            <button type="button" class="btn sm ghost" onClick={() => setFilters({ repos: [] })}>
-              clear
-            </button>
+            </div>
           )}
         </div>
-        <div class="group">
-          <input class="input" type="search" placeholder="Search change or repo…" value={filters.q} onInput={(e) => setFilters({ q: e.currentTarget.value })} />
-        </div>
-        <div class="group">
-          <label class="check">
-            Stale ≥
-            <input class="input num" type="number" min={0} value={filters.staleDays || ""} placeholder="off" onInput={(e) => setFilters({ staleDays: Number(e.currentTarget.value) || 0 })} />
-            days
-          </label>
-        </div>
-        <label class="check">
-          <input type="checkbox" checked={filters.hideArchived} onChange={(e) => setFilters({ hideArchived: e.currentTarget.checked })} />
-          hide archived
-        </label>
-        {(filters.q || filters.repos.length || filters.staleDays || filters.hideArchived) ? (
-          <button type="button" class="btn sm ghost" onClick={() => setFilters(EMPTY_FILTERS)}>
-            reset
-          </button>
-        ) : null}
-        <span class="spacer" style={{ flex: 1 }} />
-        <span class="badge mono">{visible.filter((c) => !c.archived).length} open · {cards.filter((c) => isComplete(c.stage)).length} to archive</span>
-        {!single && targets.projects.length > 0 && (
-          <button type="button" class="btn sm" onClick={() => setCreating({ preselected: targets.preselected })}>
-            New change
-          </button>
-        )}
-      </div>
+      )}
+      <FilterBar filters={filters} setFilters={setFilters} repos={repos} hues={hues} single={single} showing={showing} layout={layout} />
       {!single && creating && (
-        <NewChangeForm
+        <NewChangeDialog
           target={{ projects: targets.projects, preselected: creating.preselected }}
           onClose={() => setCreating(null)}
           onCreated={() => {
@@ -409,7 +445,7 @@ export function Kanban({ snapshot, config, repoId, query, onReload }: { snapshot
           }}
         />
       )}
-      <div class="board">
+      <div class={`board ${layout === "stack" ? "stacked" : ""}`}>
         {columns.map((label) => {
           const inColumn = visible.filter((c) => c.column === label);
           if (label !== "Archived") {

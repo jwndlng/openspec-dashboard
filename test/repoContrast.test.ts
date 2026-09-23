@@ -183,3 +183,103 @@ test("the Console tab is painted in the info role, never a literal colour", () =
     expect(rule).not.toMatch(/var\(--brand/);
   }
 });
+
+// kanban-board "Visual design follows the grey and indigo token set" and ui-theme "Light and dark themes are available
+// on a grey ground": the palette's own rules, checked against the token values.
+const DARK = ":root";
+const LIGHT = ':root[data-theme="light"]';
+const BACKGROUNDS = ["--bg-base", "--bg-section", "--bg-raised", "--bg-surface", "--bg-elevated"] as const;
+
+function tokenNames(block: string): string[] {
+  return [...block.matchAll(/^\s*(--[\w-]+):/gm)].map((m) => m[1]).sort();
+}
+
+test("both themes define the same tokens", () => {
+  // Radius, gaps and fonts are shared on :root; every colour or shadow the dark set defines, the light set overrides.
+  const shared = ["--radius-sm", "--radius", "--radius-lg", "--gap-1", "--gap-2", "--gap-3", "--gap-4", "--font-sans", "--font-mono"];
+  const dark = tokenNames(themeBlock(DARK)).filter((name) => !shared.includes(name));
+  expect(tokenNames(themeBlock(LIGHT))).toEqual(dark);
+});
+
+test("no literal colour outside the two token blocks", () => {
+  const rest = css.slice(css.indexOf("\n}", css.indexOf(`${LIGHT} {`)));
+  const literals = rest.match(/#[0-9a-fA-F]{3,8}\b/g) ?? [];
+  expect(literals).toEqual([]);
+});
+
+for (const [theme, selector] of [["dark", DARK], ["light", LIGHT]] as const) {
+  test(`a filled primary button's label keeps 4.5:1 in the ${theme} theme`, () => {
+    const block = themeBlock(selector);
+    const ratio = contrast(hexToLinear(token(block, "--on-brand")), hexToLinear(token(block, "--brand-strong")));
+    expect(ratio).toBeGreaterThanOrEqual(4.5);
+  });
+
+  test(`the info role stays at least 24° from the accent in the ${theme} theme`, () => {
+    const block = themeBlock(selector);
+    const info = linearToLch(hexToLinear(token(block, "--info"))).h;
+    for (const accent of ACCENTS) {
+      expect(hueGap(info, linearToLch(hexToLinear(token(block, accent))).h)).toBeGreaterThanOrEqual(24);
+    }
+  });
+}
+
+test("the dark ground is a neutral grey, neither near-black nor tinted, and it ascends", () => {
+  const block = themeBlock(DARK);
+  const grounds = BACKGROUNDS.map((name) => token(block, name));
+  for (const [i, hex] of grounds.entries()) {
+    // Near-neutral: the red, green and blue channels stay within 6 of 255 of each other.
+    const n = Number.parseInt(hex.slice(1, 7), 16);
+    const channels = [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+    if (Math.max(...channels) - Math.min(...channels) > 6) throw new Error(`${BACKGROUNDS[i]} ${hex} is tinted, not grey`);
+    if (i > 0) expect(luminance(hexToLinear(hex))).toBeGreaterThan(luminance(hexToLinear(grounds[i - 1])));
+  }
+  // A mid-dark grey: clearly lighter than a near-black page, still clearly a dark theme.
+  expect(luminance(hexToLinear(grounds[0]))).toBeGreaterThan(luminance(hexToLinear("#1a1b1e")));
+  expect(luminance(hexToLinear(grounds[0]))).toBeLessThan(luminance(hexToLinear("#2a2b2f")));
+});
+
+for (const [theme, selector] of [["dark", DARK], ["light", LIGHT]] as const) {
+  test(`borders are visible on the column and card grounds in the ${theme} theme`, () => {
+    const block = themeBlock(selector);
+    for (const ground of ["--bg-section", "--bg-raised"]) {
+      const edge = over(token(block, "--border"), token(block, ground));
+      expect(contrast(edge, hexToLinear(token(block, ground)))).toBeGreaterThanOrEqual(1.3);
+    }
+  });
+}
+
+test("accent backgrounds are lighter than the dark ground they sit on", () => {
+  const block = themeBlock(DARK);
+  const cardGrounds = ["--bg-section", "--bg-raised"].map((name) => luminance(hexToLinear(token(block, name))));
+  for (const accent of ["--brand-softer", "--brand-soft", "--brand-strong"]) {
+    const l = luminance(hexToLinear(token(block, accent)));
+    for (const ground of cardGrounds) expect(l).toBeGreaterThan(ground);
+  }
+});
+
+/** A token that may carry an alpha channel (`#rrggbbaa`), laid over an opaque ground. */
+function over(tint: string, ground: string): Rgb {
+  const alpha = tint.length === 9 ? Number.parseInt(tint.slice(7, 9), 16) / 255 : 1;
+  const [top, bottom] = [hexToLinear(tint), hexToLinear(ground)];
+  // Browsers blend in sRGB space; convert back, mix, and linearise again.
+  const toSrgb = (v: number) => (v <= 0.0031308 ? v * 12.92 : 1.055 * v ** (1 / 2.4) - 0.055);
+  return top.map((v, i) => toLinear(toSrgb(v) * alpha + toSrgb(bottom[i]) * (1 - alpha))) as Rgb;
+}
+
+// kanban-board "Status labels use a semantic colour palette": every role is a filled chip on its own tint.
+for (const [theme, selector] of [["dark", DARK], ["light", LIGHT]] as const) {
+  test(`every status role keeps 4.5:1 on its own tint over both badge grounds in the ${theme} theme`, () => {
+    const block = themeBlock(selector);
+    for (const role of ROLES) {
+      for (const ground of BADGE_GROUNDS) {
+        const chip = over(token(block, `--${role}-bg`), token(block, ground));
+        const ratio = contrast(hexToLinear(token(block, `--${role}`)), chip);
+        if (ratio < 4.5) throw new Error(`${theme} --${role} on --${role}-bg over ${ground}: contrast ${ratio.toFixed(2)} < 4.5`);
+      }
+    }
+  });
+}
+
+test("every role badge is drawn on its own tint", () => {
+  for (const role of ROLES) expect(css).toContain(`background: var(--${role}-bg); }`);
+});
