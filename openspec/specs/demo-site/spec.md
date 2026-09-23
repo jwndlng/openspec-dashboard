@@ -2,7 +2,9 @@
 
 ## Purpose
 Defines the public demo of the dashboard: a build of the real UI on an in-memory mock API with synthetic sample data, the guarantees that no data from anyone's machine can appear in it, server-less navigation, screenshot generation from the demo build only, and publishing to GitHub Pages with the README entry points.
+
 ## Requirements
+
 ### Requirement: The demo is the real UI on a mock API
 The project SHALL provide a demo build, produced by `bun run build:demo`, that renders the same UI components, styles and views as the normal build but obtains all data from an in-memory mock API instead of HTTP. The output SHALL be a single self-contained `dist/demo/index.html` that makes no network requests and works when served from a site root, from a sub-path, and when opened directly from disk. The normal UI bundle and the compiled binary MUST NOT contain the demo code or its sample data.
 
@@ -50,7 +52,7 @@ The sample SHALL contain at least five repositories and enough changes that ever
 
 #### Scenario: Work in progress is visible at first sight
 - **WHEN** the demo is opened and nothing has been clicked
-- **THEN** at least one card shows a running session, cards show work-status badges for uncommitted, unpushed, pushed and merged work, the top bar shows "Open work" with a count, and Projects shows repositories carrying shared-config profiles with one marked outdated
+- **THEN** at least one card shows a running session, the detail views of changes with session worktrees show work-status badges for uncommitted, unpushed, pushed and merged work, the top bar shows "Open work" with a count, and Projects shows repositories carrying shared-config profiles with one marked outdated
 
 #### Scenario: Session data matches the board
 - **WHEN** the test suite inspects the seeded sessions
