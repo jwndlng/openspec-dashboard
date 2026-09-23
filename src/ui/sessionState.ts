@@ -129,7 +129,7 @@ const HOUR = 3_600_000;
 /** Work that is not even pushed is forgotten fastest; a pushed branch may simply wait for review. */
 const STALE_AFTER_MS: Partial<Record<SessionWorktree["work"]["state"], number>> = { uncommitted: 24 * HOUR, unpushed: 24 * HOUR, pushed: 7 * 24 * HOUR };
 
-/** Open work nobody is working on: past its age limit and without a running session. */
+/** Unshipped work nobody is working on: past its age limit and without a running session. */
 export function staleAge(worktree: SessionWorktree, sessions: Session[], now = Date.now()): string | undefined {
   const limit = STALE_AFTER_MS[worktree.work.state];
   const last = worktree.lastActivityAt ? Date.parse(worktree.lastActivityAt) : Number.NaN;
@@ -163,12 +163,9 @@ export function worktreeForChange(worktrees: SessionWorktree[], repoId: string, 
   return mine.find((w) => SHIPPABLE_WORK.includes(w.work.state)) ?? mine.find((w) => w.work.state === "merged");
 }
 
-/** The Open work list: everything unshipped plus merged worktrees still lying around; stale first, then oldest first. */
-export function openWork(worktrees: SessionWorktree[], sessions: Session[], now = Date.now()): { items: SessionWorktree[]; unshipped: number } {
-  const items = worktrees.filter((w) => SHIPPABLE_WORK.includes(w.work.state) || w.work.state === "merged");
-  const rank = (w: SessionWorktree) => (staleAge(w, sessions, now) ? 0 : w.work.state === "merged" ? 2 : 1);
-  items.sort((a, b) => rank(a) - rank(b) || (a.lastActivityAt ?? "").localeCompare(b.lastActivityAt ?? ""));
-  return { items, unshipped: items.filter((w) => w.work.state !== "merged").length };
+/** The Open work list: the agent sessions whose terminal is open right now, oldest first like the tab strip. */
+export function openSessions(sessions: Session[]): Session[] {
+  return sessions.filter((s) => s.state === "running").sort((a, b) => a.createdAt.localeCompare(b.createdAt));
 }
 
 const PARAM = "session";

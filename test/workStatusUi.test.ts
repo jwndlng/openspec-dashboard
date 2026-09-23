@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import type { Session, SessionWorktree, WorkStatus } from "../src/shared/types.ts";
-import { endSeverity, hideSession, pullOffer, searchWithShown, showSession, shownFromSearch, endWarning, nextStepFor, openWork, sessionsForChange, sessionTabs, staleAge, workBadge, worktreeForChange } from "../src/ui/sessionState.ts";
+import { endSeverity, hideSession, pullOffer, searchWithShown, showSession, shownFromSearch, endWarning, nextStepFor, openSessions, sessionsForChange, sessionTabs, staleAge, workBadge, worktreeForChange } from "../src/ui/sessionState.ts";
 
 const NOW = Date.parse("2026-09-21T12:00:00Z");
 const ago = (hours: number) => new Date(NOW - hours * 3_600_000).toISOString();
@@ -50,14 +50,13 @@ test("a card shows its change's open work first, its merged worktree otherwise, 
   expect(worktreeForChange(list, "elsewhere", "add-x")).toBeUndefined();
 });
 
-test("the open work list counts what is unshipped and puts stale work first, merged last", () => {
-  const list = [wt("merged", { state: "merged" }, 500), wt("fresh", { state: "uncommitted", count: 1 }, 2), wt("clean", { state: "clean" }), wt("old", { state: "unpushed", count: 4 }, 100)];
-  const { items, unshipped } = openWork(list, [], NOW);
-  expect(items.map((w) => w.name)).toEqual(["old", "fresh", "merged"]);
-  expect(unshipped).toBe(2);
-});
-
 const sess = (id: string, patch: Partial<Session> = {}): Session => ({ id, repoId: "r", change: "add-x", action: "implement", agentId: "a", agentName: "A", state: "running", worktreePath: `/w/${id}`, branch: "feat/add-x", createdAt: `2026-09-21T10:0${id.length}:00Z`, updatedAt: "", resumable: true, ...patch });
+
+test("the open work list holds only running sessions, oldest first", () => {
+  const list = [sess("newer", { createdAt: "2026-09-21T11:00:00Z" }), sess("ended", { state: "exited", exitCode: 0 }), sess("broke", { state: "failed" }), sess("older", { createdAt: "2026-09-21T09:00:00Z" })];
+  expect(openSessions(list).map((s) => s.id)).toEqual(["older", "newer"]);
+  expect(openSessions([])).toEqual([]);
+});
 
 test("a starter goes into the change's running session; archive always gets its own", () => {
   const draft = sess("d", { action: "draft" });
