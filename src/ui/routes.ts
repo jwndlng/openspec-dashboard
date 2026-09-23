@@ -31,19 +31,34 @@ export function changePath(repoId: string, changeName: string): string {
   return `${repoPath(repoId)}/change/${encodeURIComponent(changeName)}`;
 }
 
+/**
+ * The detail view's Console tab, where `artifact` names a tab rather than an artifact. No schema has an artifact of
+ * this name (`openspec status` ids are the schema's own), so the two cannot collide.
+ */
+export const CONSOLE_TAB = "console";
+
 /** What the change detail view keeps in the query string, so a view can be linked and survives a reload. */
 export interface DetailQuery {
+  /** An artifact id, or `CONSOLE_TAB`. */
   artifact?: string;
   /** Path relative to the change directory. */
   file?: string;
   raw: boolean;
   /** The board the view was opened from: its app path plus query, e.g. `/board?q=sync`. */
   from?: string;
+  /** Which of the change's sessions the Console tab shows. */
+  session?: string;
 }
 
 export function parseDetailQuery(search: string): DetailQuery {
   const p = new URLSearchParams(search);
-  return { artifact: p.get("artifact") || undefined, file: p.get("file") || undefined, raw: p.get("raw") === "1", from: p.get("from") || undefined };
+  return {
+    artifact: p.get("artifact") || undefined,
+    file: p.get("file") || undefined,
+    raw: p.get("raw") === "1",
+    from: p.get("from") || undefined,
+    session: p.get("session") || undefined,
+  };
 }
 
 export function serializeDetailQuery(q: DetailQuery): string {
@@ -52,6 +67,7 @@ export function serializeDetailQuery(q: DetailQuery): string {
   if (q.file) p.set("file", q.file);
   if (q.raw) p.set("raw", "1");
   if (q.from) p.set("from", q.from);
+  if (q.session) p.set("session", q.session);
   const s = p.toString();
   return s ? `?${s}` : "";
 }

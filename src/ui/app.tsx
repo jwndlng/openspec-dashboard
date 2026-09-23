@@ -12,7 +12,6 @@ import { PullProvider } from "./pull.tsx";
 import { enabledOnly } from "./overviewState.ts";
 import { backTarget, parseDetailQuery, repoPath, type Route, routeFromPath } from "./routes.ts";
 import { EndSessionDialog } from "./endSessionDialog.tsx";
-import { SessionDock } from "./sessionPanel.tsx";
 import { OpenWork, SessionProvider } from "./sessions.tsx";
 import { Settings } from "./settings.tsx";
 import { currentPath, currentQuery, href, navigate, onRouteChange } from "./url.ts";
@@ -146,9 +145,11 @@ export function App() {
 
   return (
     <PullProvider onPulled={reloadSoon}>
+    {/* Above both the page and the overlay: the detail view's Console tab reads sessions from here too, and the
+        end-session dialog it opens must not sit inside the part that goes inert. */}
+    <SessionProvider config={config} snapshot={shown}>
     {/* Everything but the detail overlay: inert while it is open, so the board behind it takes no focus and no clicks. */}
     <div class="app" inert={detailOpen} aria-hidden={detailOpen ? "true" : undefined}>
-      <SessionProvider config={config} snapshot={shown}>
       <header class="topbar">
         <div class="brand">
           <span class="dot" />
@@ -210,14 +211,14 @@ export function App() {
           />
         )}
       </main>
-      <SessionDock />
-      <EndSessionDialog />
-      </SessionProvider>
     </div>
+    {/* Outside the inert part: it is opened from the detail overlay's Console tab as well as from a card. */}
+    <EndSessionDialog />
     {route.view === "change" && (
       // Keyed so selection and content start over when moving between changes.
       <ChangeDetail key={`${route.repoId}/${route.changeName}`} snapshot={shown} repoId={route.repoId} changeName={route.changeName} />
     )}
+    </SessionProvider>
     </PullProvider>
   );
 }

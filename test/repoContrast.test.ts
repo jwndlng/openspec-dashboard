@@ -103,14 +103,14 @@ for (const [theme, selector] of [["dark", ":root"], ["light", ':root[data-theme=
   });
 }
 
-// The dock's tab strip: a session tab shows its repository name in the repository colour, on the strip's own
-// background and, for a tab whose session is shown, on the section background (kanban-board spec).
+// The Open work list: each row shows its repository name in the repository colour, on the list's raised ground
+// (kanban-board spec, "Each repository has its own stable colour"). It is the one cross-repository view left.
 for (const [theme, selector] of [["dark", ":root"], ["light", ':root[data-theme="light"]']] as const) {
-  test(`a session tab's repository name keeps 4.5:1 on both tab backgrounds in the ${theme} theme`, () => {
+  test(`an Open work row's repository name keeps 4.5:1 on the list's backgrounds in the ${theme} theme`, () => {
     const block = themeBlock(selector);
     const repoOf = (h: number): Lch => ({ l: Number(token(block, "--repo-l")), c: Number(token(block, "--repo-c")), h });
 
-    for (const name of ["--bg-base", "--bg-section"]) {
+    for (const name of ["--bg-base", "--bg-section", "--bg-raised"]) {
       const background = hexToLinear(token(block, name));
       for (const h of REPO_HUES) {
         const ratio = contrast(lchToLinear(repoOf(h)), background);
@@ -170,4 +170,16 @@ test("colour math sanity: white on black is 21:1 and sRGB round-trips through OK
   const rgb = hexToLinear("#71c7c5");
   const back = lchToLinear(linearToLch(rgb));
   for (let i = 0; i < 3; i++) expect(back[i]).toBeCloseTo(rgb[i], 4);
+});
+
+// Blue means "a live agent" on the Console tab. It is the `info` status role, so the hue-gap test above already keeps
+// every repository colour away from it; what this guards is that the tab did not grow a literal colour of its own.
+test("the Console tab is painted in the info role, never a literal colour", () => {
+  const rules = [...css.matchAll(/^\.detail-tab\.console[^{]*\{([^}]*)\}/gm)].map((m) => m[1]);
+  expect(rules.length).toBeGreaterThan(0);
+  for (const rule of rules) {
+    expect(rule).toMatch(/var\(--info/);
+    expect(rule).not.toMatch(/#[0-9a-fA-F]{3,8}\b/);
+    expect(rule).not.toMatch(/var\(--brand/);
+  }
 });

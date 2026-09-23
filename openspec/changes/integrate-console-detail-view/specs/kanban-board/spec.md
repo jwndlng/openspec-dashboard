@@ -33,22 +33,51 @@ When agent sessions apply to a card's repository and a session worktree exists f
 - **THEN** the badge is highlighted and says so
 
 ### Requirement: Open work list
-While agent sessions are enabled the top bar SHALL show an "Open work" control. It is the only view of agent activity that spans repositories. Its count SHALL be the number of running sessions plus the number of worktrees whose status is `uncommitted`, `unpushed` or `pushed`; it is hidden only when there is no running session, no such worktree and none that is `merged`. Opening it SHALL list, across all repositories, every running session and those worktrees together with the `merged` ones — including worktrees of archived or vanished changes and worktrees without a session record — with repository, change, branch, status and age; running sessions SHALL be listed first with their live badge, then stale entries, then the rest. An entry with a session SHALL open its change's detail view on the Console tab with that session shown; an entry without one SHALL offer copying a `cd` command and, after confirmation, removal when that is safe.
+While agent sessions are enabled the top bar SHALL show an "Open work" control. Now that each terminal lives in its
+change's detail view, this list is the only view of agent activity that spans repositories, so it SHALL cover both the
+agents running and the work they left behind.
 
-#### Scenario: Running sessions are listed
-- **WHEN** five sessions are running and no worktree holds unshipped work
-- **THEN** the "Open work" control is shown with the count 5 and lists all five with their repository, change, branch and live badge
+Its count SHALL be the number of running sessions plus the number of worktrees that hold unshipped work with no session
+running; it SHALL be hidden only when there is neither of those and no merged worktree either. Opening it SHALL list,
+across all repositories, first every running session — oldest first — each with repository, change, the session's
+action, agent, branch, its live session badge, the work-status badge of its worktree when there is one, and how long
+ago it started; and then every worktree whose work is `uncommitted`, `unpushed`, `pushed` or `merged` and whose session
+is not running, stale ones first and merged ones last, each with repository, change, branch, status and age.
+
+Sessions SHALL be listed by session and not by worktree, so that a session running in place — in a tracked folder that
+is not a git repository, which has no worktree — is listed like any other. A worktree SHALL be listed at most once, and
+a running session's own worktree SHALL count as that session rather than a second time as unshipped.
+
+Worktrees without a session record, and worktrees of archived or vanished changes, SHALL be listed: no card offers
+them, and with the dock gone this list is the only way to reach them. An entry with a session SHALL open its change's
+detail view on the Console tab with that session shown, and close the list; an entry without one SHALL offer copying a
+`cd` command and, after confirmation, removal when that is safe. The list SHALL update as sessions start and end,
+without a reload.
+
+#### Scenario: Running sessions are listed first
+- **WHEN** five sessions are running and two worktrees hold unpushed work with no session
+- **THEN** the control shows the count 7 and the list has the five running sessions first, oldest first, each with its
+  action, agent and live badge, and the two worktrees after them
+
+#### Scenario: A session running in place
+- **WHEN** a session runs in a tracked folder that is not a git repository, so it has no worktree
+- **THEN** it is listed with its repository, change and live badge like any other running session
 
 #### Scenario: Opening a running session
 - **WHEN** the user activates a running session's entry
-- **THEN** that change's detail view opens on its Console tab with that session's terminal and its earlier output
+- **THEN** that change's detail view opens on its Console tab with that session's terminal and its earlier output, and
+  the list closes
+
+#### Scenario: A worktree counted once
+- **WHEN** a running session's own worktree holds three uncommitted files
+- **THEN** it appears once, as that running session, and the count does not also count it as unshipped
 
 #### Scenario: Archive worktree of an archived change
 - **WHEN** the archive worktree of a change that is already archived holds a commit that is not pushed
 - **THEN** it appears in the Open work list although no card offers it, and opening it shows its Console tab
 
 #### Scenario: Nothing open
-- **WHEN** no session runs and no session worktree exists
+- **WHEN** no session runs and no session worktree holds anything
 - **THEN** the top bar shows no Open work control
 
 ### Requirement: Cards keep offering the next step while a session runs

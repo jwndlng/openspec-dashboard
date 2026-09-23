@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import type { Session, SessionWorktree, WorkStatus } from "../src/shared/types.ts";
-import { endSeverity, hideSession, pullOffer, searchWithShown, showSession, shownFromSearch, endWarning, nextStepFor, openSessions, sessionsForChange, sessionTabs, staleAge, workBadge, worktreeForChange, worktreeOfSession, worktreeRemovalPossible } from "../src/ui/sessionState.ts";
+import { consoleAvailable, consoleSession, consoleSessions, endSeverity, pullOffer, endWarning, nextStepFor, openWork, sessionsForChange, staleAge, workBadge, worktreeForChange, worktreeOfSession, worktreeRemovalPossible } from "../src/ui/sessionState.ts";
 
 const NOW = Date.parse("2026-09-21T12:00:00Z");
 const ago = (hours: number) => new Date(NOW - hours * 3_600_000).toISOString();
@@ -52,10 +52,10 @@ test("a card shows its change's open work first, its merged worktree otherwise, 
 
 const sess = (id: string, patch: Partial<Session> = {}): Session => ({ id, repoId: "r", change: "add-x", action: "implement", agentId: "a", agentName: "A", state: "running", worktreePath: `/w/${id}`, branch: "feat/add-x", createdAt: `2026-09-21T10:0${id.length}:00Z`, updatedAt: "", resumable: true, ...patch });
 
-test("the open work list holds only running sessions, oldest first", () => {
+test("the open work list holds the running sessions, oldest first", () => {
   const list = [sess("newer", { createdAt: "2026-09-21T11:00:00Z" }), sess("ended", { state: "exited", exitCode: 0 }), sess("broke", { state: "failed" }), sess("older", { createdAt: "2026-09-21T09:00:00Z" })];
-  expect(openSessions(list).map((s) => s.id)).toEqual(["older", "newer"]);
-  expect(openSessions([])).toEqual([]);
+  expect(openWork([], list, NOW).items.map((i) => i.session?.id)).toEqual(["older", "newer"]);
+  expect(openWork([], [], NOW).items).toEqual([]);
 });
 
 test("a starter goes into the change's running session; archive always gets its own", () => {
@@ -75,12 +75,6 @@ test("a card shows every running session, else the latest one that went wrong", 
   expect(sessionsForChange([a, arch, sess("x", { change: "other" })], "r", "add-x").map((s) => s.id).sort()).toEqual(["a", "arc"]);
   expect(sessionsForChange([sess("a", { state: "exited", exitCode: 0 })], "r", "add-x")).toEqual([]);
   expect(sessionsForChange([sess("a", { state: "exited", exitCode: 2 })], "r", "add-x").map((s) => s.id)).toEqual(["a"]);
-});
-
-test("tabs: running sessions oldest first, plus the one shown if it has ended", () => {
-  const list = [sess("bbb"), sess("a"), sess("cc", { state: "exited" }), sess("dddd", { state: "exited" })];
-  expect(sessionTabs(list, []).map((s) => s.id)).toEqual(["a", "bbb"]);
-  expect(sessionTabs(list, ["cc"]).map((s) => s.id)).toEqual(["a", "cc", "bbb"]);
 });
 
 test("ending is questioned as loudly as the work is unshipped", () => {
@@ -108,32 +102,82 @@ test("the pull is offered for a repository it can run in, and starts ticked only
   expect(pullOffer(undefined, { state: "merged" })).toEqual({ offered: false, preselected: false });
 });
 
-test("the dock shows at most three sessions: a fourth replaces the focused pane, shown ones are only focused", () => {
-  let state = showSession({ shown: [] }, "a");
-  state = showSession(state, "b");
-  state = showSession(state, "c");
-  expect(state).toEqual({ shown: ["a", "b", "c"], focusedId: "c" });
-  expect(showSession(state, "a")).toEqual({ shown: ["a", "b", "c"], focusedId: "a" }); // already shown: focus only
-  expect(showSession({ ...state, focusedId: "b" }, "d")).toEqual({ shown: ["a", "d", "c"], focusedId: "d" }); // the others stay put
-  expect(showSession({ shown: ["a", "b", "c"] }, "d").shown).toEqual(["a", "b", "d"]); // nobody focused: the last pane
-  expect(showSession({ shown: ["a", "b", "c"], focusedId: "gone" }, "d").shown).toEqual(["a", "b", "d"]);
+
+test("the console lists a change's sessions, most recently active first, and defaults to that one", () => {
+  const list = [
+    sess("old", { lastOutputAt: "2026-09-21T09:00:00Z" }),
+    sess("newest", { lastOutputAt: "2026-09-21T11:00:00Z" }),
+    sess("archiving", { action: "archive", lastOutputAt: "2026-09-21T10:00:00Z" }),
+    sess("elsewhere", { repoId: "other", lastOutputAt: "2026-09-21T23:00:00Z" }),
+    sess("another-change", { change: "add-y", lastOutputAt: "2026-09-21T23:00:00Z" }),
+  ];
+  const mine = consoleSessions(list, "r", "add-x");
+  expect(mine.map((s) => s.id)).toEqual(["newest", "archiving", "old"]);
+
+  // An ended session stays listed: its output is still readable and its worktree may still hold work.
+  expect(consoleSessions([sess("a", { state: "exited", exitCode: 0 })], "r", "add-x").map((s) => s.id)).toEqual(["a"]);
+  expect(consoleSessions(list, "r", "nothing-here")).toEqual([]);
+
+  // The URL picks one of the change's own sessions; anything else falls back to the most recent, never an error.
+  expect(consoleSession(mine, "archiving")?.id).toBe("archiving");
+  expect(consoleSession(mine, "elsewhere")?.id).toBe("newest");
+  expect(consoleSession(mine, undefined)?.id).toBe("newest");
+  expect(consoleSession([], "archiving")).toBeUndefined();
 });
 
-test("closing a pane moves the keyboard to its neighbour and never touches the others", () => {
-  expect(hideSession({ shown: ["a", "b", "c"], focusedId: "b" }, "b")).toEqual({ shown: ["a", "c"], focusedId: "c" });
-  expect(hideSession({ shown: ["a", "b"], focusedId: "b" }, "b")).toEqual({ shown: ["a"], focusedId: "a" });
-  expect(hideSession({ shown: ["a"], focusedId: "a" }, "a")).toEqual({ shown: [], focusedId: undefined });
-  expect(hideSession({ shown: ["a", "b"], focusedId: "a" }, "b")).toEqual({ shown: ["a"], focusedId: "a" });
-  expect(hideSession({ shown: ["a"], focusedId: "a" }, "zz")).toEqual({ shown: ["a"], focusedId: "a" });
+test("open work lists running sessions first, then worktrees nobody is working on", () => {
+  const worktrees = [
+    wt("merged", { state: "merged" }, 500),
+    wt("busy", { state: "clean" }, 1, { sessionId: "s1", path: "/w/s1" }),
+    wt("fresh", { state: "uncommitted", count: 1 }, 2),
+    wt("idle", { state: "clean" }),
+    wt("old", { state: "unpushed", count: 4 }, 100),
+  ];
+  const { items, unshipped, running: live } = openWork(worktrees, [sess("s1")], NOW);
+  // The running session leads; its own clean worktree is not listed again. An idle clean one stays out entirely.
+  expect(items.map((i) => i.change)).toEqual(["add-x", "old", "fresh", "merged"]);
+  expect(items[0].worktree?.name).toBe("busy");
+  expect(live).toBe(1);
+  expect(unshipped).toBe(2);
+
+  expect(openWork([wt("idle", { state: "clean" })], [], NOW).items).toEqual([]);
 });
 
-test("the URL carries the shown sessions in pane order, at most three, and keeps other parameters", () => {
-  expect(shownFromSearch("?session=a,b,c,d&q=x")).toEqual(["a", "b", "c"]);
-  expect(shownFromSearch("?session=a,,a, b")).toEqual(["a", "b"]);
-  expect(shownFromSearch("?q=x")).toEqual([]);
-  expect(searchWithShown("?q=x", ["a", "b"])).toBe("?q=x&session=a,b");
-  expect(searchWithShown("?session=a,b&q=x", ["b"])).toBe("?session=b&q=x");
-  expect(shownFromSearch(searchWithShown("", ["a", "b", "c"]))).toEqual(["a", "b", "c"]);
+test("a running session's own worktree is counted once, as running rather than as unshipped", () => {
+  const worktrees = [wt("shipping", { state: "uncommitted", count: 3 }, 1, { sessionId: "s1", path: "/w/s1" })];
+  const { items, unshipped, running: live } = openWork(worktrees, [sess("s1")], NOW);
+  expect(items).toHaveLength(1);
+  expect(live).toBe(1);
+  expect(unshipped).toBe(0);
+});
+
+test("an in-place session is listed although it has no worktree at all", () => {
+  // A tracked folder that is not a git repository: the agent works in the folder, so there is nothing worktree-shaped
+  // to find it by. Listing by session is the only thing that reaches it.
+  const inPlace = sess("s1", { inPlace: true, worktreePath: "/w/plain-folder" });
+  const { items, running: live } = openWork([], [inPlace], NOW);
+  expect(items.map((i) => i.session?.id)).toEqual(["s1"]);
+  expect(items[0].worktree).toBeUndefined();
+  expect(live).toBe(1);
+  expect(worktreeOfSession(inPlace, [wt("x", { state: "clean" }, 1, { path: "/w/plain-folder" })])).toBeUndefined();
+  expect(worktreeRemovalPossible(inPlace)).toBe(false);
+});
+
+test("a change gets a console when it has a session or a worktree, and a worktree outlives its change", () => {
+  const cfg = { agentSessions: { enabled: true }, repos: [{ id: "r", enabled: true }] } as never;
+  const off = { agentSessions: { enabled: false }, repos: [{ id: "r", enabled: true }] } as never;
+  const s = [sess("a")];
+  const w = [wt("add-x", { state: "uncommitted", count: 1 })];
+
+  expect(consoleAvailable(cfg, s, [], "r", "add-x")).toBe(true);
+  // No session record left, but the worktree is still there: this is the archive worktree of a change that is gone.
+  expect(consoleAvailable(cfg, [], w, "r", "add-x")).toBe(true);
+  expect(consoleAvailable(cfg, [], [], "r", "add-x")).toBe(false);
+  expect(consoleAvailable(cfg, s, w, "r", "another")).toBe(false);
+  expect(consoleAvailable(cfg, s, w, "elsewhere", "add-x")).toBe(false);
+  // Feature off: no console anywhere, whatever is lying around.
+  expect(consoleAvailable(off, s, w, "r", "add-x")).toBe(false);
+  expect(consoleAvailable(null, s, w, "r", "add-x")).toBe(false);
 });
 
 test("a session in a folder without git has no worktree, so no work status, no Ship and nothing to remove", () => {

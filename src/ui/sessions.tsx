@@ -4,9 +4,11 @@ import { createContext, type ComponentChildren } from "preact";
 import { useCallback, useContext, useEffect, useMemo, useState } from "preact/hooks";
 import type { AgentAvailability, ChangeSnapshot, Config, Session, SessionAction, SessionWorktree, Snapshot } from "../shared/types.ts";
 import { api } from "./api.ts";
-import { relTime } from "./format.ts";
-import { agentForRepo, openSessions, type SessionBadge, hideSession, nextStepFor, searchWithShown, sessionBadge, sessionsForChange, showSession, shownFromSearch, type Shown, sessionsEnabledFor, startersFor, workBadge, worktreeForChange } from "./sessionState.ts";
-import { currentQuery, replaceQuery } from "./url.ts";
+import { cdCommand, relTime } from "./format.ts";
+import { assignRepoHues, repoTint } from "./repoGroups.ts";
+import { agentForRepo, openWork, type SessionBadge, nextStepFor, sessionBadge, sessionsForChange, sessionsEnabledFor, startersFor, workBadge, worktreeForChange } from "./sessionState.ts";
+import { boardFrom, changePath, CONSOLE_TAB, parseDetailQuery, routeFromPath, serializeDetailQuery } from "./routes.ts";
+import { currentPath, currentQuery, navigate } from "./url.ts";
 
 const POLL_MS = 3000;
 
@@ -17,14 +19,6 @@ interface SessionUi {
   agents: AgentAvailability[];
   /** Every session worktree with what became of its work; outlives session records. */
   worktrees: SessionWorktree[];
-  /** Sessions with a pane in the dock, in pane order (at most three). */
-  shown: string[];
-  /** The pane that has, or last had, the keyboard. */
-  panelId?: string;
-  /** Removes a pane from the dock; the session itself is not touched. */
-  hidePane(id: string): void;
-  /** A pane took the keyboard. */
-  focusPane(id: string): void;
   /** The session the end-session dialog is open for. */
   endingId?: string;
   /** Bumped whenever the terminal should take the keyboard (after something was typed into it for the user). */
@@ -36,6 +30,7 @@ interface SessionUi {
   requestEnd(id: string | undefined): void;
   /** The polling error, if the session list could not be read. */
   error?: string;
+  /** Shows a session: navigates to its change's detail view with the Console tab selected. */
   openPanel(id: string | undefined): void;
   /**
    * Starts a session, or sends the next step into the change's running one. Resolves with the reason when the request
@@ -46,7 +41,7 @@ interface SessionUi {
 }
 
 const noop = async () => undefined;
-const Context = createContext<SessionUi>({ config: null, snapshot: null, sessions: [], agents: [], worktrees: [], shown: [], hidePane: () => {}, focusPane: () => {}, focusTick: { tick: 0 }, reportUnsent: () => {}, requestEnd: () => {}, openPanel: () => {}, start: noop, refresh: noop });
+const Context = createContext<SessionUi>({ config: null, snapshot: null, sessions: [], agents: [], worktrees: [], focusTick: { tick: 0 }, reportUnsent: () => {}, requestEnd: () => {}, openPanel: () => {}, start: noop, refresh: noop });
 
 export const useSessionUi = () => useContext(Context);
 
@@ -56,13 +51,6 @@ export function SessionProvider({ config, snapshot = null, children }: { config:
   const [agents, setAgents] = useState<AgentAvailability[]>([]);
   const [worktrees, setWorktrees] = useState<SessionWorktree[]>([]);
   const [error, setError] = useState<string>();
-  const [panes, setPanes] = useState<Shown>(() => {
-    const shown = shownFromSearch(currentQuery());
-    return { shown, focusedId: shown[0] };
-  });
-  const [loaded, setLoaded] = useState(false);
-  const { shown, focusedId: panelId } = panes;
-  const anyShown = shown.length > 0;
 
   const refresh = useCallback(async () => {
     try {
@@ -70,7 +58,6 @@ export function SessionProvider({ config, snapshot = null, children }: { config:
       setSessions(result.sessions);
       setAgents(result.agents);
       setWorktrees(result.worktrees ?? []);
-      setLoaded(true);
       setError(undefined);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -78,31 +65,32 @@ export function SessionProvider({ config, snapshot = null, children }: { config:
   }, []);
 
   useEffect(() => {
-    if (!enabled && !anyShown) return;
+    if (!enabled) return;
     void refresh();
     const timer = setInterval(() => void refresh(), POLL_MS);
     return () => clearInterval(timer);
-  }, [enabled, anyShown, refresh]);
+  }, [enabled, refresh]);
 
-  // The URL follows the panes (works in both routing modes: path and hash).
-  useEffect(() => {
-    replaceQuery(searchWithShown(currentQuery(), shown));
-  }, [shown]);
+  /**
+   * A session belongs to one change, so showing a terminal is a navigation to that change's detail view with its
+   * Console tab selected. `from` keeps the board to return to: the one on screen, or — when another change's detail
+   * view is already open — whatever board that one was opened from.
+   */
+  const openConsole = useCallback((repoId: string, change: string, sessionId: string) => {
+    const path = currentPath();
+    const view = routeFromPath(path).view;
+    const from = view === "board" || view === "repo" ? boardFrom(path, currentQuery()) : parseDetailQuery(currentQuery()).from;
+    navigate(changePath(repoId, change), serializeDetailQuery({ raw: false, artifact: CONSOLE_TAB, session: sessionId, from }));
+  }, []);
 
-  // Ids from a link that match no session are dropped — once the list is known, or a reload would lose its panes.
-  useEffect(() => {
-    if (!loaded) return;
-    setPanes((current) => {
-      const known = current.shown.filter((id) => sessions.some((s) => s.id === id));
-      if (known.length === current.shown.length) return current;
-      return { shown: known, focusedId: known.includes(current.focusedId ?? "") ? current.focusedId : known[0] };
-    });
-  }, [loaded, sessions]);
-
-  /** "Show this session" — every caller's way into the dock. `undefined` collapses the dock to its tab strip. */
-  const openPanel = useCallback((id: string | undefined) => setPanes((current) => (id ? showSession(current, id) : { shown: [] })), []);
-  const hidePane = useCallback((id: string) => setPanes((current) => hideSession(current, id)), []);
-  const focusPane = useCallback((id: string) => setPanes((current) => (current.focusedId === id || !current.shown.includes(id) ? current : { ...current, focusedId: id })), []);
+  /** "Show this session" — every caller's way to a terminal, by id. */
+  const openPanel = useCallback(
+    (id: string | undefined) => {
+      const session = id ? sessions.find((s) => s.id === id) : undefined;
+      if (session) openConsole(session.repoId, session.change, session.id);
+    },
+    [sessions, openConsole],
+  );
 
   const [endingId, requestEnd] = useState<string>();
   const [focusTick, setFocusTick] = useState<{ id?: string; tick: number }>({ tick: 0 });
@@ -119,7 +107,8 @@ export function SessionProvider({ config, snapshot = null, children }: { config:
           setFocusTick((t) => ({ id: into, tick: t.tick + 1 }));
         }
         await refresh();
-        openPanel(session.id);
+        // By id and place, not through `openPanel`: a session just started is not in this closure's list yet.
+        openConsole(repoId, change, session.id);
         return undefined;
       } catch (err) {
         // A start that failed has no session and so no panel to report itself in: the reason goes back to the caller,
@@ -127,10 +116,10 @@ export function SessionProvider({ config, snapshot = null, children }: { config:
         return err instanceof Error ? err.message : String(err);
       }
     },
-    [refresh, openPanel, sessions, reportUnsent],
+    [refresh, openConsole, sessions, reportUnsent],
   );
 
-  const value = useMemo(() => ({ config, snapshot, sessions, agents, worktrees, shown, hidePane, focusPane, panelId, endingId, focusTick, unsentId, reportUnsent, requestEnd, error, openPanel, start, refresh }), [config, snapshot, sessions, agents, worktrees, shown, hidePane, focusPane, panelId, endingId, focusTick, unsentId, error, openPanel, start, refresh]);
+  const value = useMemo(() => ({ config, snapshot, sessions, agents, worktrees, endingId, focusTick, unsentId, reportUnsent, requestEnd, error, openPanel, start, refresh }), [config, snapshot, sessions, agents, worktrees, endingId, focusTick, unsentId, error, openPanel, start, refresh]);
   return <Context.Provider value={value}>{children}</Context.Provider>;
 }
 
@@ -180,45 +169,98 @@ export function WorkBadge({ worktree }: { worktree: SessionWorktree }) {
   );
 }
 
-/** Top-bar control: the agent sessions running right now, across all repositories. Ended ones are left to their cards. */
+function OrphanActions({ worktree }: { worktree: SessionWorktree }) {
+  const ui = useSessionUi();
+  const [confirming, setConfirming] = useState(false);
+  const [note, setNote] = useState<string>();
+  const remove = async () => {
+    try {
+      const result = await api.removeWorktree(worktree.repoId, worktree.name);
+      setNote(result.removable ? undefined : `kept: ${result.reason ?? "not safe to remove"}`);
+      await ui.refresh();
+    } catch (err) {
+      setNote(err instanceof Error ? err.message : String(err));
+    }
+    setConfirming(false);
+  };
+  return (
+    <>
+      <button type="button" class="btn sm ghost" title={worktree.path} onClick={() => void navigator.clipboard.writeText(cdCommand(worktree.path))}>
+        Copy cd
+      </button>
+      {confirming ? (
+        <button type="button" class="btn sm primary" title="Removed only if it is clean and its work is merged or exists elsewhere; the branch stays" onClick={() => void remove()}>
+          Confirm remove
+        </button>
+      ) : (
+        <button type="button" class="btn sm ghost" onClick={() => setConfirming(true)}>
+          Remove…
+        </button>
+      )}
+      {note && <span class="hint">{note}</span>}
+    </>
+  );
+}
+
+/**
+ * Top-bar control, and the only view of agent activity that spans repositories now that each terminal lives in its
+ * change's detail view. It lists the sessions running right now — including in-place ones, which have no worktree —
+ * and then every worktree that still holds work with no session running, which is the only way to reach a worktree
+ * whose change has left the board. Every row with a session opens that change's Console tab.
+ */
 export function OpenWork() {
   const ui = useSessionUi();
   const [open, setOpen] = useState(false);
-  const running = useMemo(() => openSessions(ui.sessions), [ui.sessions]);
-  if (!ui.config?.agentSessions.enabled || running.length === 0) return null;
+  const { items, unshipped, running } = useMemo(() => openWork(ui.worktrees, ui.sessions), [ui.worktrees, ui.sessions]);
+  const hues = useMemo(() => assignRepoHues((ui.snapshot?.repos ?? []).map((r) => r.id)), [ui.snapshot]);
+  if (!ui.config?.agentSessions.enabled || items.length === 0) return null;
   const repoName = (id: string) => ui.config?.repos.find((r) => r.id === id)?.name ?? id;
   return (
     <div class="open-work">
-      <button type="button" class="btn sm ghost" aria-expanded={open} title="Agent sessions whose terminal is open right now" onClick={() => setOpen(!open)}>
-        Open work {running.length}
+      <button
+        type="button"
+        class={`btn sm ${unshipped > 0 ? "attention" : running > 0 ? "" : "ghost"}`}
+        aria-expanded={open}
+        title="Agents running right now, and work in agent worktrees that has not ended in a merged pull request"
+        onClick={() => setOpen(!open)}
+      >
+        Open work {running + unshipped > 0 ? running + unshipped : "✓"}
       </button>
       {open && (
         <div class="open-work-list" role="dialog" aria-label="Open work">
-          {running.map((s) => {
-            const worktree = ui.worktrees.find((w) => w.path === s.worktreePath);
-            const age = relTime(s.createdAt);
+          <div class="hint">Read from local git only — “pushed” and “merged” are as of your last fetch.</div>
+          {items.map((item) => {
+            const { session, worktree } = item;
+            const tint = repoTint(hues, item.repoId);
+            const age = session ? relTime(session.createdAt) : worktree?.lastActivityAt ? relTime(worktree.lastActivityAt) : undefined;
             return (
-              <div class="open-work-row" key={s.id}>
+              <div class={`open-work-row${tint.class ? ` ${tint.class}` : ""}`} style={tint.style} key={item.key}>
                 <div class="open-work-what">
-                  <span class="hint">
-                    {repoName(s.repoId)} · {s.action} · {s.agentName}
+                  <span class="hint repo-name">
+                    {repoName(item.repoId)}
+                    {session && ` · ${session.action} · ${session.agentName}`}
                   </span>
-                  <strong class="mono">{s.change}</strong>
-                  <span class="hint mono">{s.branch}</span>
+                  <strong class="mono">{item.change}</strong>
+                  {(session?.inPlace ? undefined : (session?.branch ?? worktree?.branch)) && <span class="hint mono">{session?.branch ?? worktree?.branch}</span>}
                 </div>
-                <SessionBadgeView badge={sessionBadge(s)} />
+                {session?.state === "running" && <SessionBadgeView badge={sessionBadge(session)} />}
                 {worktree && <WorkBadge worktree={worktree} />}
-                <span class="hint">{age === "just now" ? "started just now" : `started ${age} ago`}</span>
-                <button
-                  type="button"
-                  class="btn sm"
-                  onClick={() => {
-                    setOpen(false);
-                    ui.openPanel(s.id);
-                  }}
-                >
-                  Open
-                </button>
+                <span class="hint">{age === undefined ? "" : session ? (age === "just now" ? "started just now" : `started ${age} ago`) : `${age} ago`}</span>
+                {session ? (
+                  <button
+                    type="button"
+                    class="btn sm"
+                    title={`Opens ${item.change} in its detail view, on the Console tab`}
+                    onClick={() => {
+                      setOpen(false);
+                      ui.openPanel(session.id);
+                    }}
+                  >
+                    Open
+                  </button>
+                ) : (
+                  worktree && <OrphanActions worktree={worktree} />
+                )}
               </div>
             );
           })}

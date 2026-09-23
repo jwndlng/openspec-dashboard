@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { SHIPPABLE_WORK } from "../src/shared/types.ts";
 import { ApiError, type TerminalHandlers } from "../src/ui/api.ts";
 import { createDemoApi } from "../src/ui/demo/demoApi.ts";
-import { NEEDS_YOU_AFTER_MS, openSessions, sessionBadge } from "../src/ui/sessionState.ts";
+import { NEEDS_YOU_AFTER_MS, openWork, sessionBadge } from "../src/ui/sessionState.ts";
 import type { Clock } from "../src/ui/demo/transcripts.ts";
 
 /** The demo API on a wall clock and a timer clock the test advances by hand. */
@@ -50,7 +50,7 @@ test("first load: sessions are on, the agent is available, and every state and w
   const { sessions, agents, worktrees } = await api.sessions();
   expect(agents).toEqual([{ id: "demo-agent", name: "Demo Agent", available: true, path: "/home/demo/bin/demo-agent" }]);
   expect(new Set(sessions.map((s) => s.state))).toEqual(new Set(["running", "exited", "failed"]));
-  expect(openSessions(sessions)).toHaveLength(2); // the Open work control shows a count at first sight
+  expect(openWork([], sessions).running).toBe(2); // the Open work control shows a count at first sight
   expect(new Set(worktrees.map((w) => w.work.state))).toEqual(new Set(["clean", "uncommitted", "unpushed", "pushed", "merged"]));
   expect(worktrees.some((w) => w.sessionId === undefined)).toBe(true); // a worktree whose session record is gone
   expect(sessions.find((s) => s.state === "failed")?.error).toContain("could not create the worktree");
