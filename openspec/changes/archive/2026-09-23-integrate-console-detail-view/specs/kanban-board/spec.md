@@ -72,6 +72,11 @@ without a reload.
 - **WHEN** a running session's own worktree holds three uncommitted files
 - **THEN** it appears once, as that running session, and the count does not also count it as unshipped
 
+#### Scenario: A session that ends leaves its work behind
+- **WHEN** the list shows a running session whose worktree holds 2 unpushed commits and that session's agent exits
+- **THEN** the session's entry leaves the running entries, its worktree is listed after them as unpushed, and the count
+  stays the same
+
 #### Scenario: Archive worktree of an archived change
 - **WHEN** the archive worktree of a change that is already archived holds a commit that is not pushed
 - **THEN** it appears in the Open work list although no card offers it, and opening it shows its Console tab
