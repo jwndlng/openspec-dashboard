@@ -85,10 +85,10 @@ test("agent per repository, falling back to the default", () => {
 
 test("starters: stage decides, narrowed to the prompts the agent has", () => {
   const a = (...s: ("done" | "ready" | "blocked")[]) => s.map((status, i) => ({ id: `a${i}`, status }));
-  expect(availableActions({ artifacts: a("done", "ready"), stage: "artifact" })).toEqual(["draft"]);
+  expect(availableActions({ artifacts: a("done", "ready"), stage: "drafts" })).toEqual(["draft"]);
   expect(availableActions({ artifacts: a("done", "done"), stage: "ready" })).toEqual(["implement"]);
   expect(availableActions({ artifacts: a("done", "done"), stage: "done" })).toEqual(["archive"]);
-  expect(availableActions({ artifacts: a("done", "done"), stage: "synced" })).toEqual(["archive"]);
+  expect(availableActions({ artifacts: a("done", "done"), stage: "done" })).toEqual(["archive"]);
   expect(availableActions({ artifacts: a("done", "done"), stage: "implementing" })).toEqual(["implement"]);
   expect(availableActions({ artifacts: a("done", "done"), stage: "archived", archived: "2026-06-18" })).toEqual([]);
   const repo = newRepoConfig("/w/demo-ops", true);
@@ -96,7 +96,7 @@ test("starters: stage decides, narrowed to the prompts the agent has", () => {
   expect(startersFor(cfg, { repoId: repo.id, artifacts: a("done", "done"), stage: "ready" })).toEqual(["implement"]);
   expect(startersFor(cfg, { repoId: repo.id, artifacts: a("done", "done"), stage: "done" })).toEqual([]); // no archive prompt
   const archiving = { ...cfg, agentSessions: { ...cfg.agentSessions, agents: [fakeProfile({ prompts: { archive: "a {change}" } })] } };
-  for (const stage of ["done", "synced"] as const) expect(startersFor(archiving, { repoId: repo.id, artifacts: a("done", "done"), stage })).toEqual(["archive"]);
+  for (const stage of ["done"] as const) expect(startersFor(archiving, { repoId: repo.id, artifacts: a("done", "done"), stage })).toEqual(["archive"]);
   expect(sessionsEnabledFor(cfg, repo.id)).toBe(true);
   expect(sessionsEnabledFor({ ...cfg, repos: [{ ...repo, agent: { enabled: false } }] }, repo.id)).toBe(false);
   expect(sessionsEnabledFor({ ...cfg, agentSessions: { ...cfg.agentSessions, enabled: false } }, repo.id)).toBe(false);

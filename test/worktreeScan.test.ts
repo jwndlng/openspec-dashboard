@@ -127,12 +127,12 @@ test("copies are merged: further along in a worktree leads; a stale worktree cop
   const [audit] = byName(snap, "audit-trail");
   expect(byName(snap, "audit-trail")).toHaveLength(1);
   expect([audit.column, audit.checkout?.path, audit.branchMatch]).toEqual(["Implementing", ahead, "feat/audit-trail"]);
-  expect(audit.otherCheckouts).toEqual([{ path: root, branch: "main", isMain: true, column: "Proposal" }]);
+  expect(audit.otherCheckouts).toEqual([{ path: root, branch: "main", isMain: true, column: "Drafts" }]);
 
   const [upgrade] = byName(snap, "upgrade-runtime");
   expect(byName(snap, "upgrade-runtime")).toHaveLength(1);
   expect([upgrade.column, upgrade.checkout?.isMain, upgrade.tasks]).toEqual(["Implementing", true, { done: 2, total: 3 }]);
-  expect(upgrade.otherCheckouts).toEqual([{ path: stale, branch: "feat/upgrade-runtime", isMain: false, column: "Proposal" }]);
+  expect(upgrade.otherCheckouts).toEqual([{ path: stale, branch: "feat/upgrade-runtime", isMain: false, column: "Drafts" }]);
   // a clean copy reports the commit date, not the moment the worktree was checked out
   expect(at(upgrade.lastActivityAt)).toBeGreaterThanOrEqual(at(COMMIT_DATE));
 });
@@ -156,7 +156,7 @@ test("archived on main wins over a stale active copy; a later-created change of 
   await rm(join(reused, "openspec", "changes", "audit-trail"), { recursive: true, force: true });
   await writeChange(reused, "audit-trail", { created: "2026-10-02", artifacts: ["proposal", "design"] });
   snap = await scan(root);
-  expect(byName(snap, "audit-trail").map((c) => [c.column, c.checkout?.path ?? "main-archive"]).sort()).toEqual([["Archived", "main-archive"], ["Design", reused]].sort());
+  expect(byName(snap, "audit-trail").map((c) => [c.column, c.checkout?.path ?? "main-archive"]).sort()).toEqual([["Archived", "main-archive"], ["Drafts", reused]].sort());
 
   // that worktree's branch carries main's archive along: it is reported once, from main (asserted above); an
   // archive only the worktree has is a pending archive
@@ -173,7 +173,7 @@ test("spec sync is judged in the change's own checkout", async () => {
   const spec = join(wt, "openspec", "specs", "auth", "spec.md");
   await writeFile(spec, `${await readFile(spec, "utf8")}\n### Requirement: Two-factor\nSHALL 2FA.\n\n#### Scenario: works\n- **WHEN** x\n- **THEN** y\n`);
   const change = (await scan(root)).changes.find((c) => c.name === "two-factor")!;
-  expect([change.specsSynced, change.column]).toEqual([true, "Synced"]); // main's specs still lack it
+  expect([change.specsSynced, change.column]).toEqual([true, "Done"]); // main's specs still lack it
 });
 
 test("detached, prunable and failing worktrees: read, skipped, warned about — never fatal", async () => {
@@ -300,7 +300,7 @@ test("a name reused after a pending archive stays a separate active change", asy
   await mkdir(join(old, "openspec", "changes", "archive", "2026-09-20-audit-trail"), { recursive: true });
   await writeFile(join(old, "openspec", "changes", "archive", "2026-09-20-audit-trail", "proposal.md"), "# x\n");
   const cards = byName(await scan(root), "audit-trail");
-  expect(cards.map((c) => [c.column, c.checkout?.isMain]).sort()).toEqual([["Archived", false], ["Proposal", true]].sort());
+  expect(cards.map((c) => [c.column, c.checkout?.isMain]).sort()).toEqual([["Archived", false], ["Drafts", true]].sort());
 });
 
 test("a project in a subdirectory of its repository is read from the same subdirectory of each worktree", async () => {
@@ -317,5 +317,5 @@ test("a project in a subdirectory of its repository is read from the same subdir
 
   const snap = await scan(project);
   expect(snap.changes.map((c) => c.name)).toEqual(["invoice-export"]); // nothing from the repository's top-level openspec/
-  expect(byName(snap, "invoice-export")[0]).toMatchObject({ column: "Design", checkout: { path: join(wt, "services", "billing"), isMain: false } });
+  expect(byName(snap, "invoice-export")[0]).toMatchObject({ column: "Drafts", checkout: { path: join(wt, "services", "billing"), isMain: false } });
 });

@@ -9,7 +9,7 @@ export interface ChangeCopy {
   checkout: ChangeCheckout;
 }
 
-const STAGE_RANK: Record<Stage, number> = { new: 0, artifact: 1, ready: 2, implementing: 3, done: 4, synced: 5, archived: 6 };
+const STAGE_RANK: Record<Stage, number> = { unknown: 0, backlog: 1, drafts: 2, ready: 3, implementing: 4, done: 5, archived: 6 };
 
 const instant = (iso: string | undefined) => (iso && !Number.isNaN(Date.parse(iso)) ? Date.parse(iso) : 0);
 

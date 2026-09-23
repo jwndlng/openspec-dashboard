@@ -53,19 +53,34 @@ export function CopyButton({ text, label }: { text: string; label: string }) {
   );
 }
 
-export function Meter({ done, total }: { done: number; total: number }) {
+/** What a progress bar counts: ticked tasks, or written artifacts while a change is in `Drafts`. */
+export type MeterUnit = "tasks" | "artifacts";
+
+export function meterText(done: number, total: number, unit: MeterUnit): string {
+  return unit === "artifacts" ? `${done} of ${total} artifacts written` : `${done} of ${total} tasks complete`;
+}
+
+export function Meter({ done, total, unit = "tasks" }: { done: number; total: number; unit?: MeterUnit }) {
   const full = total > 0 && done === total;
   const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+  const text = meterText(done, total, unit);
   return (
-    <div class={`meter ${full ? "full" : ""}`} title={`${pct}% of tasks complete`}>
+    <div class={`meter ${full ? "full" : ""}`} title={text} role="progressbar" aria-label={text} aria-valuemin={0} aria-valuemax={total} aria-valuenow={done}>
       <div class="track">
         <div class="fill" style={{ width: `${pct}%` }} />
       </div>
-      <span class="value">
+      <span class="value" aria-hidden="true">
         {done}/{total}
       </span>
     </div>
   );
+}
+
+/** The progress bar a card shows: written artifacts in `Drafts`, else ticked tasks when there are any, else none. */
+export function cardProgress(card: Pick<Card, "stage" | "artifacts" | "tasks">): { done: number; total: number; unit: MeterUnit } | undefined {
+  if (card.stage === "drafts") return { done: card.artifacts.filter((a) => a.status === "done").length, total: card.artifacts.length, unit: "artifacts" };
+  if (card.stage === "backlog" || !card.tasks || card.tasks.total === 0) return undefined;
+  return { ...card.tasks, unit: "tasks" };
 }
 
 /** Where a card leads: its change's detail view, remembering the board (`from`) it sits on. */
@@ -79,6 +94,7 @@ export function cardLink(card: Pick<Card, "repoId" | "name">, from: string): { p
  */
 export function ChangeCard({ card, now, from }: { card: Card; now: number; from: string }) {
   const noTasks = card.warnings?.includes("tasks file has no tasks");
+  const progress = cardProgress(card);
   const link = cardLink(card, from);
   // Only what an overview needs: the name and its session state, task progress, the last update, the next step.
   // Branch, worktree, work status, prompt and completed phases are in the detail view.
@@ -96,7 +112,7 @@ export function ChangeCard({ card, now, from }: { card: Card; now: number; from:
           <ConsoleLink card={card} from={from} />
         </span>
       </div>
-      {card.tasks && card.tasks.total > 0 && <Meter done={card.tasks.done} total={card.tasks.total} />}
+      {progress && <Meter {...progress} />}
       <div class="meta">
         {noTasks && <span class="badge warning">no tasks</span>}
         {card.warnings?.filter((w) => w !== "tasks file has no tasks").map((w) => (
@@ -200,13 +216,13 @@ function RepoGroups({ column, cards, now, showRepo, from, groups: controls }: { 
   );
 }
 
-/** What the lifecycle columns mean; artifact columns are self-explanatory ("this artifact is written"). */
+/** What each lifecycle column means. */
 const COLUMN_HINT: Record<string, string> = {
-  New: "Created, nothing written yet",
+  Backlog: "Created, no artifact written yet",
+  Drafts: "Some artifacts written, not all of them yet",
   Ready: "Every artifact is written; no task ticked yet",
   Implementing: "At least one task ticked",
-  Done: "All tasks complete; delta specs not yet synced into openspec/specs",
-  Synced: "All tasks complete and specs synced (or nothing to sync); ready to archive",
+  Done: "All tasks complete; ready to archive",
   Archived: `Archived changes; the ${ARCHIVED_LIMIT} most recent are shown`,
 };
 
@@ -449,7 +465,7 @@ export function Kanban({ snapshot, config, repoId, query, onReload }: { snapshot
         {columns.map((label) => {
           const inColumn = visible.filter((c) => c.column === label);
           if (label !== "Archived") {
-            return <Column key={label} label={label} cards={inColumn} now={now} hot={label === "Done" || label === "Synced"} showRepo={!single} from={from} groups={groupControls} />;
+            return <Column key={label} label={label} cards={inColumn} now={now} hot={label === "Done"} showRepo={!single} from={from} groups={groupControls} />;
           }
           if (filters.hideArchived) return null;
           // A regular column, but bounded to the most recent archives; the header still reports the total.

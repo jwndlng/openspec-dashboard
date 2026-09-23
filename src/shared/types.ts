@@ -5,7 +5,8 @@ export const CHANGE_NAME_PATTERN = /^[A-Za-z0-9._-]+$/;
 
 export type ArtifactState = "done" | "ready" | "blocked";
 
-export type Stage = "new" | "artifact" | "ready" | "implementing" | "done" | "synced" | "archived";
+/** The lifecycle phase a change is in; each stage has exactly one board column (`STAGE_COLUMN`). */
+export type Stage = "backlog" | "drafts" | "unknown" | "ready" | "implementing" | "done" | "archived";
 
 export interface ArtifactStatus {
   id: string;
@@ -45,11 +46,11 @@ export interface ChangeSnapshot {
   otherCheckouts?: (ChangeCheckout & { column: string })[];
   /**
    * Whether the delta specs are already reflected in `openspec/specs/`. Only set for non-archived changes whose tasks
-   * are all complete — the one place where it decides the column (`Done` vs `Synced`).
+   * are all complete; it does not affect the column (such a change is `Done` until archived).
    */
   specsSynced?: boolean;
   stage: Stage;
-  /** Display column, e.g. "Proposal", "Implementing". */
+  /** Display column, e.g. "Drafts", "Implementing". */
   column: string;
   /**
    * Contents of the change's `prompt.md`, when present. A free-text hint the user jotted down when starting the change;
@@ -315,7 +316,7 @@ export function availableActions(change: Pick<ChangeSnapshot, "archived" | "arti
   const actions: SessionAction[] = [];
   if (change.artifacts.length === 0 || change.artifacts.some((a) => a.status !== "done")) actions.push("draft");
   if (change.stage === "ready" || change.stage === "implementing") actions.push("implement");
-  if (change.stage === "done" || change.stage === "synced") actions.push("archive"); // every task ticked, not archived yet
+  if (change.stage === "done") actions.push("archive"); // every task ticked, not archived yet
   return actions;
 }
 
@@ -340,7 +341,16 @@ export interface ScanTriggerResult {
   started: boolean;
 }
 
-export const IMPLEMENTATION_COLUMNS = ["Ready", "Implementing", "Done", "Synced", "Archived"] as const;
+/** The board column of each stage, in board order. `Unknown` is shown only while a change is in it. */
+export const STAGE_COLUMN: Record<Stage, string> = {
+  backlog: "Backlog",
+  drafts: "Drafts",
+  unknown: "Unknown",
+  ready: "Ready",
+  implementing: "Implementing",
+  done: "Done",
+  archived: "Archived",
+};
 
 /**
  * A named set of guidance for agents that the dashboard keeps once and applies to many repositories'

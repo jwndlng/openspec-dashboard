@@ -98,7 +98,7 @@ test("in a git repository the new directory is staged and the 201 body says so",
   await h.state.scanner.trigger().done;
   const snap = await (await fetch(`${h.base}/api/state`)).json();
   const change = snap.repos[0].changes.find((c: { name: string }) => c.name === "add-audit-trail");
-  expect(change?.column).toBe("New");
+  expect(change?.column).toBe("Backlog");
 });
 
 test("in a git repository with unrelated dirty and untracked files, only the new directory is staged", async () => {
@@ -154,7 +154,7 @@ test("subsequent GET /api/state reflects the new change (prompt included, recogn
   // The scanner ran through the OpenSpec adapter and recognised the marker as `spec-driven`:
   expect(change.schema).toBe("spec-driven");
   // No artifact is done, so it sits in New with the prompt visible on the snapshot.
-  expect(change.column).toBe("New");
+  expect(change.column).toBe("Backlog");
   expect(change.prompt).toBe("# Prompt\n\nLog every mutation\n");
 });
 

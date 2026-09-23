@@ -2,10 +2,8 @@ import { expect, test } from "bun:test";
 import { columnKind, promptBody } from "../src/ui/boardMarks.ts";
 
 test("column markers follow the lifecycle", () => {
-  const kinds = ["New", "Proposal", "Design", "Specs", "Ready", "Implementing", "Done", "Synced", "Archived", "Unknown"].map(columnKind);
-  expect(kinds).toEqual(["neutral", "neutral", "neutral", "neutral", "accent", "accent", "success", "success", "muted", "warning"]);
-  // Another schema's artifact columns are neutral too.
-  expect(columnKind("Brief")).toBe("neutral");
+  const kinds = ["Backlog", "Drafts", "Ready", "Implementing", "Done", "Archived", "Unknown"].map(columnKind);
+  expect(kinds).toEqual(["neutral", "neutral", "accent", "accent", "success", "muted", "warning"]);
 });
 
 test("the detail view shows the prompt without the heading the create form writes", () => {

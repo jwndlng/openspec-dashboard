@@ -8,12 +8,11 @@ const LIFECYCLE_KIND: Record<string, ColumnKind> = {
   Ready: "accent",
   Implementing: "accent",
   Done: "success",
-  Synced: "success",
   Archived: "muted",
   [UNKNOWN_COLUMN]: "warning",
 };
 
-/** The marker colour of a column: `New` and every schema's artifact columns are neutral. */
+/** The marker colour of a column: `Backlog` and `Drafts` are neutral. */
 export function columnKind(label: string): ColumnKind {
   return LIFECYCLE_KIND[label] ?? "neutral";
 }

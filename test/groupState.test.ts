@@ -3,7 +3,7 @@ import { defaultMinimized, isMinimized, parseGroupState, pruneGroupState, serial
 
 test("only Archived groups are minimized by default", () => {
   expect(defaultMinimized("Archived")).toBe(true);
-  for (const column of ["New", "Proposal", "Ready", "Implementing", "Done", "Synced", "Unknown"]) expect(defaultMinimized(column)).toBe(false);
+  for (const column of ["Backlog", "Drafts", "Ready", "Implementing", "Done", "Unknown"]) expect(defaultMinimized(column)).toBe(false);
   expect(isMinimized({}, "r1", "Archived")).toBe(true);
   expect(isMinimized({}, "r1", "Ready")).toBe(false);
 });

@@ -8,7 +8,7 @@ import { attentionCount, checkoutSummary, enabledOnly, filterRows, monogram, ove
 import { repoPath, routeFromPath } from "../src/ui/routes.ts";
 
 function change(repoId: string, name: string, column: string, extra: Partial<ChangeSnapshot> = {}): ChangeSnapshot {
-  const stage = column === "Done" ? "done" : column === "Synced" ? "synced" : column === "Archived" ? "archived" : column === "Implementing" ? "implementing" : "artifact";
+  const stage = column === "Done" ? "done" : column === "Archived" ? "archived" : column === "Implementing" ? "implementing" : column === "Backlog" ? "backlog" : "drafts";
   return { repoId, name, schema: "spec-driven", artifacts: [], tasks: null, stage, column, ...extra };
 }
 
@@ -23,15 +23,15 @@ const snapshot: Snapshot = {
       "a",
       "alpha-infra",
       [
-        change("a", "s1", "Specs"),
+        change("a", "s1", "Drafts"),
         ...Array.from({ length: 9 }, (_, i) => change("a", `i${i}`, "Implementing")),
         change("a", "d1", "Done"),
-        change("a", "d2", "Synced"),
+        change("a", "d2", "Done", { specsSynced: true }),
         change("a", "old", "Archived", { archived: "2026-01-01" }),
       ],
       { lastUpdatedAt: "2026-09-18T10:00:00+02:00" },
     ),
-    repo("b", "beta-soc", [change("b", "x", "Proposal", { lastActivityAt: "2026-07-01T00:00:00Z" }), change("b", "y", "Specs", { lastActivityAt: "2026-07-10T00:00:00Z" })]),
+    repo("b", "beta-soc", [change("b", "x", "Backlog", { lastActivityAt: "2026-07-01T00:00:00Z" }), change("b", "y", "Drafts", { lastActivityAt: "2026-07-10T00:00:00Z" })]),
     repo("c", "Fit", [change("c", "gone", "Archived", { archived: "2026-02-02" })], { lastUpdatedAt: "2026-09-19T08:00:00Z" }),
     repo("d", "broken", [], { ok: false, error: "repository path or its openspec/ directory does not exist" }),
   ],
@@ -69,7 +69,7 @@ test("toggleSort flips the active key and starts a new key in its natural direct
 
 test("overviewRows counts open changes per column and falls back to change activity", () => {
   const [aws, soc, fit, broken] = overviewRows(snapshot);
-  expect(aws.stageCounts).toEqual({ Specs: 1, Implementing: 9, Done: 1, Synced: 1 });
+  expect(aws.stageCounts).toEqual({ Drafts: 1, Implementing: 9, Done: 2 });
   expect([aws.open, aws.toArchive, aws.archived]).toEqual([12, 2, 1]);
   expect(soc.lastUpdatedAt).toBe("2026-07-10T00:00:00Z");
   expect([fit.open, fit.archived]).toEqual([0, 1]);
