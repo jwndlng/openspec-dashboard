@@ -1,5 +1,5 @@
 import type { ActivityQuery } from "../shared/activity.ts";
-import type { ActivityPage, CreateChangeResponse, PromptResult, PullResult, ShipResult, WorkStatus } from "../shared/types.ts";
+import type { ActivityPage, CleanupPreview, CleanupResult, CleanupSelection, CreateChangeResponse, PromptResult, PullResult, ShipResult, WorkStatus } from "../shared/types.ts";
 import type { AgentAvailability, ArtifactFileContent, ChangeArtifacts, Config, DiscoverResult, ScanTriggerResult, Session, SessionAction, SessionWorktree, SharedConfig, SharedConfigApplyResult, SharedConfigAssignment, SharedConfigPreview, Snapshot } from "../shared/types.ts";
 import { socketOrigin } from "./url.ts";
 
@@ -51,6 +51,10 @@ export interface Api {
    */
   pullRepo(repoId: string): Promise<PullResult>;
   pullAll(): Promise<{ results: PullResult[] }>;
+  /** Read-only: the repository's worktrees, stale worktree records and branches, each removable or kept with a reason. */
+  cleanupPreview(repoId: string): Promise<CleanupPreview>;
+  /** Removes what the user selected and confirmed, re-checking each item; the only call that deletes a branch. */
+  cleanup(repoId: string, selection: CleanupSelection): Promise<CleanupResult>;
   sharedConfig(): Promise<SharedConfig>;
   /** Stores the profiles in the dashboard home; never writes to a repository. */
   saveSharedConfig(config: SharedConfig): Promise<SharedConfig>;
@@ -129,6 +133,8 @@ export const httpApi: Api = {
     call<CreateChangeResponse>(`/api/repos/${encodeURIComponent(repoId)}/changes`, { method: "POST", body: JSON.stringify(prompt !== undefined && prompt !== "" ? { name, prompt } : { name }) }),
   pullRepo: (repoId) => call<PullResult>(`/api/repos/${encodeURIComponent(repoId)}/pull`, { method: "POST" }),
   pullAll: () => call<{ results: PullResult[] }>("/api/pull", { method: "POST" }),
+  cleanupPreview: (repoId) => call<CleanupPreview>(`/api/repos/${encodeURIComponent(repoId)}/cleanup`),
+  cleanup: (repoId, selection) => call<CleanupResult>(`/api/repos/${encodeURIComponent(repoId)}/cleanup`, { method: "POST", body: JSON.stringify(selection) }),
   sharedConfig: () => call<SharedConfig>("/api/shared-config"),
   saveSharedConfig: (config) => call<SharedConfig>("/api/shared-config", { method: "PUT", body: JSON.stringify(config) }),
   previewSharedConfig: (assignments) => call<{ previews: SharedConfigPreview[] }>("/api/shared-config/preview", { method: "POST", body: JSON.stringify({ assignments }) }),
@@ -185,6 +191,8 @@ export const api: Api = {
   createChange: (...args) => current.createChange(...args),
   pullRepo: (repoId) => current.pullRepo(repoId),
   pullAll: () => current.pullAll(),
+  cleanupPreview: (...args) => current.cleanupPreview(...args),
+  cleanup: (...args) => current.cleanup(...args),
   sharedConfig: () => current.sharedConfig(),
   saveSharedConfig: (config) => current.saveSharedConfig(config),
   previewSharedConfig: (assignments) => current.previewSharedConfig(assignments),

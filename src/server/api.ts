@@ -1,6 +1,7 @@
 import { ACTIVITY_KINDS, type ActivityKind } from "../shared/types.ts";
 import { MAX_PAGE, type ActivityLog, type PageQuery } from "./activity/log.ts";
-import type { Config, DiscoverResult, RepoConfig, ScanTriggerResult, SharedConfigApplyResult, SharedConfigAssignment, SharedConfigPreview } from "../shared/types.ts";
+import type { CleanupSelection, Config, DiscoverResult, RepoConfig, ScanTriggerResult, SharedConfigApplyResult, SharedConfigAssignment, SharedConfigPreview } from "../shared/types.ts";
+import { applyCleanup, CleanupBusyError, previewCleanup } from "./cleanup.ts";
 import { changeDirFor, listArtifactFiles, readArtifactFile } from "./artifacts.ts";
 import { ConfigValidationError, saveConfig, validateConfig, validateIgnorePaths, validateScanRoots } from "./config.ts";
 import { createChange } from "./createChange.ts";
@@ -384,6 +385,50 @@ async function postPullAll(state: AppState): Promise<Response> {
   return json({ results });
 }
 
+/** The repository cleanup is offered for, or the response refusing it — decided before any git runs. */
+function cleanupTarget(state: AppState, repoId: string): RepoConfig | Response {
+  const repo = state.config.repos.find((r) => r.id === repoId);
+  if (!repo) return json({ error: "unknown repository" }, 404);
+  if (!pullable(state).includes(repo)) return json({ error: "not a tracked, successfully scanned git repository" }, 409);
+  return repo;
+}
+
+const MAX_CLEANUP_ITEMS = 1000;
+
+/** Shape only: whether each item is the repository's own and still safe is decided by the cleanup itself. */
+function cleanupSelection(body: Record<string, unknown>): CleanupSelection | undefined {
+  const { worktrees, prune, branches } = body;
+  if (!Array.isArray(worktrees) || !worktrees.every((w) => typeof w === "string")) return undefined;
+  if (typeof prune !== "boolean") return undefined;
+  if (!Array.isArray(branches) || !branches.every((b) => typeof b?.name === "string" && typeof b.commit === "string" && /^[0-9a-f]{40,64}$/.test(b.commit))) return undefined;
+  if (worktrees.length + branches.length > MAX_CLEANUP_ITEMS) return undefined;
+  return { worktrees, prune, branches: branches.map((b) => ({ name: b.name, commit: b.commit })) };
+}
+
+async function getCleanup(state: AppState, repoId: string): Promise<Response> {
+  const repo = cleanupTarget(state, repoId);
+  if (repo instanceof Response) return repo;
+  return json(await previewCleanup(repo, (await state.sessions?.runningWorktreePaths()) ?? new Set()));
+}
+
+/** Removes worktrees and deletes branches the user selected and confirmed; the only route that deletes a branch. */
+async function postCleanup(state: AppState, req: Request, repoId: string): Promise<Response> {
+  const repo = cleanupTarget(state, repoId);
+  if (repo instanceof Response) return repo;
+  try {
+    const selection = cleanupSelection(await readJson(req));
+    if (!selection) return json({ error: "expected { worktrees: string[], prune: boolean, branches: { name, commit }[] }" }, 400);
+    const result = await applyCleanup(repo, selection, (await state.sessions?.runningWorktreePaths()) ?? new Set());
+    state.sessions?.forgetWorktrees();
+    state.scanner.trigger();
+    return json(result);
+  } catch (err) {
+    if (err instanceof CleanupBusyError) return json({ error: err.message }, 409);
+    if (err instanceof SessionError) return json({ error: err.message }, err.status);
+    throw err;
+  }
+}
+
 const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "[::1]"]);
 
 /**
@@ -469,6 +514,9 @@ export function createFetchHandler({ state, indexHtml }: AppOptions): (req: Requ
       if (req.method === "POST" && pathname === "/api/pull") return postPullAll(state);
       const pullOne = /^\/api\/repos\/([^/]+)\/pull$/.exec(pathname);
       if (req.method === "POST" && pullOne) return postPull(state, decodeURIComponent(pullOne[1]));
+      const cleanupMatch = /^\/api\/repos\/([^/]+)\/cleanup$/.exec(pathname);
+      if (cleanupMatch && req.method === "GET") return getCleanup(state, decodeURIComponent(cleanupMatch[1]));
+      if (cleanupMatch && req.method === "POST") return postCleanup(state, req, decodeURIComponent(cleanupMatch[1]));
       const createChangeMatch = /^\/api\/repos\/([^/]+)\/changes$/.exec(pathname);
       if (req.method === "POST" && createChangeMatch) return postCreateChange(state, req, decodeURIComponent(createChangeMatch[1]));
       if (req.method === "POST" && pathname === "/api/scan") {

@@ -58,6 +58,9 @@ track.
   ([change-creation](openspec/specs/change-creation/spec.md))
 - **Pull**: fetch and fast-forward a repository's main checkout. Never merges, rebases, stashes or switches branches.
   ([repository-pull](openspec/specs/repository-pull/spec.md))
+- **Clean up**: remove a repository's leftover worktrees and delete local branches whose work is merged, including
+  squash merges. Only what provably holds no work of its own is offered, and nothing goes before you confirm.
+  Remote branches are never touched. ([repository-cleanup](openspec/specs/repository-cleanup/spec.md))
 - **Shared config**: keep `context` and `rules` for `openspec/config.yaml` as profiles and apply them to selected
   repositories, with a diff preview first. ([shared-config](openspec/specs/shared-config/spec.md))
 - **Agent sessions** (off by default): start your agent CLI, such as Claude Code, for a change in its own git worktree,
@@ -74,7 +77,8 @@ track.
 - It reads repositories with read-only git commands. Scanning, polling and discovery never write anything or contact
   a remote.
 - It writes to a repository only when you click something: **Pull** (the only network access, using git's own
-  credentials), **New change**, **applying shared config**, and creating or removing an **agent session's worktree**.
+  credentials), **New change**, **applying shared config**, creating or removing an **agent session's worktree**, and
+  **Clean up** (removing worktrees and deleting merged local branches you selected).
   The full list is in the [dashboard-api spec](openspec/specs/dashboard-api/spec.md).
 - Its own state lives in `~/.openspec-dashboard/`.
 

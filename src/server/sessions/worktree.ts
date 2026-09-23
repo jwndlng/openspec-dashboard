@@ -51,11 +51,14 @@ export async function checkWorktreeRemovable(worktreePath: string, merged = fals
   return unique.out === "0" ? { removable: true } : { removable: false, reason: `${unique.out} commit(s) exist only on this worktree's branch` };
 }
 
-/** `git worktree unlock` (the CLI leaves its worktrees locked) followed by a non-forcing `git worktree remove`. */
-export async function removeWorktree(repoPath: string, worktreePath: string, merged = false): Promise<Removable> {
+/**
+ * `git worktree unlock` (the CLI leaves its worktrees locked) followed by a non-forcing `git worktree remove`. Only
+ * worktrees the dashboard created are unlocked (`unlock`); a lock on anyone else's worktree makes git refuse.
+ */
+export async function removeWorktree(repoPath: string, worktreePath: string, merged = false, unlock = true): Promise<Removable> {
   const check = await checkWorktreeRemovable(worktreePath, merged);
   if (!check.removable) return check;
-  await git(repoPath, ["worktree", "unlock", worktreePath]); // fails harmlessly when it was not locked
+  if (unlock) await git(repoPath, ["worktree", "unlock", worktreePath]); // fails harmlessly when it was not locked
   const removed = await git(repoPath, ["worktree", "remove", worktreePath]);
   return removed.ok ? { removable: true } : { removable: false, reason: "git refused to remove the worktree" };
 }

@@ -3,6 +3,7 @@ import { pageEvents } from "../../shared/activity.ts";
 import { summarizeWorkInProgress } from "../../shared/workInProgress.ts";
 import type { ChangeSnapshot, Config, PullResult, RepoSharedConfig, RepoSnapshot, SharedConfigApplyResult, SharedConfigPreview, SharedProfile, Snapshot } from "../../shared/types.ts";
 import { ApiError, type Api } from "../api.ts";
+import { demoApply, demoPreview, newCleanupState, remainingWorktrees } from "./demoCleanup.ts";
 import { createDemoSessions } from "./demoSessions.ts";
 import { sampleArtifactFiles } from "./sampleArtifacts.ts";
 import { buildActivity, buildSample, DEMO_CARRIED, DEMO_PROFILES, DEMO_ROOT } from "./sampleData.ts";
@@ -109,13 +110,27 @@ export function createDemoApi({ now = Date.now, latencyMs = 150, clock }: DemoAp
     return { ...base, update: "fast-forwarded", commits: 1 + (Number.parseInt(repoId.slice(0, 2), 16) % 5) };
   };
 
+  // What the visitor removed with Clean up: gone from the board until a reload.
+  const cleanupState = newCleanupState();
+  const cleanedUp = (repo: RepoSnapshot): RepoSnapshot => {
+    const worktrees = remainingWorktrees(cleanupState, repo.worktrees);
+    return worktrees.length === repo.worktrees.length ? repo : { ...repo, worktrees, workInProgress: summarizeWorkInProgress(worktrees) };
+  };
+  /** Cleanup sees the sample's own checkouts, not session worktrees: those are removed from the sessions view. */
+  const cleanupTarget = (repoId: string): RepoSnapshot => {
+    const repo = sample.snapshot.repos.find((r) => r.id === repoId);
+    if (!repo || !config.repos.some((r) => r.id === repoId && r.enabled)) throw new ApiError(404, "unknown repository");
+    if (!repo.ok || !repo.isGit) throw new ApiError(409, "not a tracked, successfully scanned git repository");
+    return repo;
+  };
+
   const snapshot = (): Snapshot => ({
     generatedAt,
     repos: config.repos
       .filter((r) => r.enabled)
       .map((r) => {
         const known = sample.snapshot.repos.find((s) => s.id === r.id);
-        const repo = known ? { ...known, name: r.name } : emptyRepo(r.id, r.name, r.path);
+        const repo = known ? cleanedUp({ ...known, name: r.name }) : emptyRepo(r.id, r.name, r.path);
         // A session's worktree is a worktree of its repository, so `git worktree list` — the snapshot — has it too.
         const sessionWorktrees = config.agentSessions.enabled ? demoSessions.gitWorktrees(r.id) : [];
         const worktrees = [...repo.worktrees, ...sessionWorktrees];
@@ -194,6 +209,13 @@ export function createDemoApi({ now = Date.now, latencyMs = 150, clock }: DemoAp
       generatedAt = new Date(now()).toISOString();
       return new Promise((resolve) => setTimeout(() => resolve(structuredClone({ results })), PULL_MS));
     },
+    cleanupPreview: (repoId) => attempt(() => demoPreview(cleanupState, cleanupTarget(repoId))),
+    cleanup: (repoId, selection) =>
+      attempt(() => {
+        const result = demoApply(cleanupState, cleanupTarget(repoId), selection);
+        generatedAt = new Date(now()).toISOString();
+        return result;
+      }),
     scan: () => {
       generatedAt = new Date(now()).toISOString();
       return reply({ started: true });
