@@ -2,29 +2,8 @@
 
 ## Purpose
 Defines the dashboard's light and dark themes: which themes exist, how the active theme is chosen (system preference or user override), how the choice persists, and that it is applied before first paint.
+
 ## Requirements
-### Requirement: Light and dark themes are available
-The dashboard UI SHALL provide two themes, `dark` and `light`. Exactly one theme SHALL be active at a time and SHALL apply to every view (board and settings), including native form controls and scrollbars.
-
-#### Scenario: Light theme active
-- **WHEN** the active theme is `light`
-- **THEN** the page, top bar, columns, cards, filters and settings panels render with the light token set and native checkboxes and scrollbars use the light colour scheme
-
-#### Scenario: Dark theme unchanged
-- **WHEN** the active theme is `dark`
-- **THEN** the page, top bar, columns, cards, filters and settings panels render with the dark token set and native checkboxes and scrollbars use the dark colour scheme
-
-#### Scenario: Dark theme is a soft dark grey, not near-black
-- **WHEN** the active theme is `dark`
-- **THEN** the page background is a near-neutral grey lighter than `#101214`, and the five background tokens still ascend from page to elevated surface with each step visibly lighter than the one below it
-
-#### Scenario: Dark theme stays readable after the lift
-- **WHEN** the active theme is `dark`
-- **THEN** heading, body and subtle text and every status colour used as text have a contrast ratio of at least 4.5:1 against the background they are rendered on
-
-#### Scenario: Accent backgrounds stay lighter than the ground
-- **WHEN** the active theme is `dark` and a brand-tinted chip, badge or primary button is rendered on a column or card
-- **THEN** its background is lighter than the background behind it, so the tint never reads as a hole in the surface
 
 ### Requirement: Theme follows the system preference by default
 When the user has not chosen a theme explicitly, the theme preference SHALL be `system`, and the active theme SHALL be `light` if the operating system reports `prefers-color-scheme: light` and `dark` otherwise. While the preference is `system`, the active theme SHALL update without a page reload when the operating system preference changes.
@@ -77,3 +56,26 @@ The active theme SHALL be resolved and applied before the page's first paint, so
 #### Scenario: No dark flash for a light-theme user
 - **WHEN** a user with stored preference `light` loads the dashboard
 - **THEN** the first painted frame already uses the light background
+
+### Requirement: Light and dark themes are available on a grey ground
+The dashboard UI SHALL provide two themes, `dark` and `light`. Exactly one theme SHALL be active at a time and SHALL apply to every view (board and settings), including native form controls and scrollbars.
+
+#### Scenario: Light theme active
+- **WHEN** the active theme is `light`
+- **THEN** the page, top bar, columns, cards, filters and settings panels render with the light token set and native checkboxes and scrollbars use the light colour scheme
+
+#### Scenario: Dark theme unchanged
+- **WHEN** the active theme is `dark`
+- **THEN** the page, top bar, columns, cards, filters and settings panels render with the dark token set and native checkboxes and scrollbars use the dark colour scheme
+
+#### Scenario: Dark theme is a neutral grey, not near-black
+- **WHEN** the active theme is `dark`
+- **THEN** the page background is a neutral dark grey lighter than `#1a1b1e`, and the five background tokens ascend from page to elevated surface with each step visibly lighter than the one below it, so borders and the edges between surfaces stay visible
+
+#### Scenario: Dark theme stays readable on the grey ground
+- **WHEN** the active theme is `dark`
+- **THEN** heading, body and subtle text and every status colour used as text have a contrast ratio of at least 4.5:1 against the background they are rendered on
+
+#### Scenario: Accent backgrounds stay lighter than the ground
+- **WHEN** the active theme is `dark` and a brand-tinted chip, badge or primary button is rendered on a column or card
+- **THEN** its background is lighter than the background behind it, so the tint never reads as a hole in the surface

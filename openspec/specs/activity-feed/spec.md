@@ -114,7 +114,7 @@ Consecutive task progress events of the same change SHALL be shown as one entry 
 - **THEN** the feed shows progress, the move, and progress as three entries
 
 ### Requirement: The feed can be filtered
-The feed SHALL be filterable by repository, using the same repository chips as the board, and by kind of event in the groups *Changes*, *Tasks*, *Sessions* and *Repositories*. Filters SHALL apply to older entries loaded on demand as well and SHALL be kept in the URL query string.
+The feed SHALL be filterable by repository, using the same **Repositories** menu and removable repository tags as the board's filter bar, and by kind of event in the groups *Changes*, *Tasks*, *Sessions* and *Repositories*, shown as one group of toggles, with **Clear filters** while any filter is active. Filters SHALL apply to older entries loaded on demand as well and SHALL be kept in the URL query string.
 
 #### Scenario: One repository, sessions only
 - **WHEN** the user selects repository `demo-ops` and the group *Sessions*
