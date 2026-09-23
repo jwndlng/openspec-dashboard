@@ -60,6 +60,9 @@
       **Run** section of `README.md` (releases link, checksum and attestation check, macOS quarantine note); mention
       `--version` next to the build command in `CLAUDE.md`. Verify the scenarios under "Releasing is documented" by
       reading the result, and `bun run check` passes.
-- [ ] 4.2 After merge (maintainer): confirm the draft `v0.1.0`, tidy its uncategorised entries, publish it, and check
+- [x] 4.2 After merge (maintainer): confirm the draft `v0.1.0`, tidy its uncategorised entries, publish it, and check
       that four binaries, `SHA256SUMS`, attestations and the Download section appear, and that a downloaded binary's
-      `--version` prints `v0.1.0`.
+      `--version` prints `v0.1.0`. Done as `v0.0.1`: with no published release, release-drafter v7 drafts without a
+      comparison baseline (no changes collected, patch bump), so the first release was published as `v0.0.1` to give
+      later drafts their baseline. Four binaries, `SHA256SUMS`, attestations and the Download section appeared, the
+      checksum and attestation verified, and the darwin-arm64 binary's `--version` printed `v0.0.1`.
