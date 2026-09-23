@@ -366,3 +366,30 @@ test("ending a session, worktree removal included, never reaches a remote — on
     else process.env.GIT_SSH_COMMAND = previousSsh;
   }
 });
+
+test("a folder that is not a git repository: the session runs in it, with no worktree, no branch and no git", async () => {
+  const h = track(await harness({ git: false }));
+  expect(h.snapshot.repos[0].isGit).toBe(false);
+
+  const s = await h.manager.open({ repoId: h.repoId, change: "upgrade-runtime", action: "implement" });
+  expect(s).toMatchObject({ state: "running", inPlace: true, worktreePath: h.repoPath });
+  expect(s.branch).toBeUndefined();
+  expect(existsSync(join(h.repoPath, ".git"))).toBe(false); // nothing turned it into a repository
+  expect(existsSync(join(worktreesDir(), h.repoId))).toBe(false); // and no worktree was made for it
+
+  const view = await watch(h.manager, s.id);
+  await waitFor(() => view.text().includes("implement upgrade-runtime"), "the agent to receive its prompt");
+  view.detach();
+});
+
+test("a folder that is not a git repository: archiving works there, and Ship is refused", async () => {
+  const h = track(await harness({ git: false }));
+  const done = h.snapshot.repos[0].changes.find((c) => c.stage === "done" || c.stage === "synced");
+  expect(done).toBeDefined();
+
+  const arch = await h.manager.open({ repoId: h.repoId, change: (done as { name: string }).name, action: "archive" });
+  expect(arch).toMatchObject({ state: "running", action: "archive", inPlace: true, worktreePath: h.repoPath });
+  expect(existsSync(join(worktreesDir(), h.repoId))).toBe(false);
+
+  await expect(h.manager.ship(arch.id)).rejects.toThrow(/not a git repository/);
+});

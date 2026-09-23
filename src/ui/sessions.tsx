@@ -34,13 +34,18 @@ interface SessionUi {
   reportUnsent(id: string | undefined): void;
   /** Opens the end-session dialog; nothing is ended before the user confirms there. */
   requestEnd(id: string | undefined): void;
+  /** The polling error, if the session list could not be read. */
   error?: string;
   openPanel(id: string | undefined): void;
-  start(repoId: string, change: string, action: SessionAction): Promise<void>;
+  /**
+   * Starts a session, or sends the next step into the change's running one. Resolves with the reason when the request
+   * was refused and no session exists to report it — the caller shows it where the starter was activated.
+   */
+  start(repoId: string, change: string, action: SessionAction): Promise<string | undefined>;
   refresh(): Promise<void>;
 }
 
-const noop = async () => {};
+const noop = async () => undefined;
 const Context = createContext<SessionUi>({ config: null, snapshot: null, sessions: [], agents: [], worktrees: [], shown: [], hidePane: () => {}, focusPane: () => {}, focusTick: { tick: 0 }, reportUnsent: () => {}, requestEnd: () => {}, openPanel: () => {}, start: noop, refresh: noop });
 
 export const useSessionUi = () => useContext(Context);
@@ -115,8 +120,11 @@ export function SessionProvider({ config, snapshot = null, children }: { config:
         }
         await refresh();
         openPanel(session.id);
+        return undefined;
       } catch (err) {
-        setError(err instanceof Error ? err.message : String(err));
+        // A start that failed has no session and so no panel to report itself in: the reason goes back to the caller,
+        // which shows it next to the starter. Not the provider's `error` — the poll clears that within seconds.
+        return err instanceof Error ? err.message : String(err);
       }
     },
     [refresh, openPanel, sessions, reportUnsent],
@@ -262,6 +270,7 @@ const STARTER_HINT: Record<SessionAction, string> = {
 export function SessionControls({ card }: { card: Pick<ChangeSnapshot, "repoId" | "name" | "archived" | "artifacts" | "stage"> }) {
   const ui = useSessionUi();
   const [starting, setStarting] = useState<SessionAction>();
+  const [failure, setFailure] = useState<string>();
   if (!sessionsEnabledFor(ui.config, card.repoId)) return null;
 
   const worktree = worktreeForChange(ui.worktrees, card.repoId, card.name);
@@ -297,7 +306,8 @@ export function SessionControls({ card }: { card: Pick<ChangeSnapshot, "repoId" 
             disabled={Boolean(blockedBy) || starting !== undefined}
             onClick={async () => {
               setStarting(action);
-              await ui.start(card.repoId, card.name, action);
+              setFailure(undefined);
+              setFailure(await ui.start(card.repoId, card.name, action));
               setStarting(undefined);
             }}
           >
@@ -305,6 +315,11 @@ export function SessionControls({ card }: { card: Pick<ChangeSnapshot, "repoId" 
           </button>
         );
       })}
+      {failure && (
+        <span class="notice danger session-failure" role="status">
+          {failure}
+        </span>
+      )}
     </>
   );
 }

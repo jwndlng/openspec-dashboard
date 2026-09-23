@@ -179,7 +179,7 @@ export function createDemoSessions({ now, getConfig, getSnapshot, clock }: DemoS
       from: s.session.state === "running" ? positionOf(s) : { index: TRANSCRIPTS[s.transcript].length, waiting: false },
       continuing,
       clock,
-      values: { change: s.session.change, branch: s.session.branch, path: s.session.worktreePath },
+      values: { change: s.session.change, branch: s.session.branch ?? "", path: s.session.worktreePath },
       handlers: {
         ...handlers,
         onExit: () => {

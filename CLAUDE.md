@@ -90,6 +90,12 @@ bun test test/scanner.test.ts   # a single test file
   the text never appears, nothing is sent and the user is told it was typed but not confirmed. That echo check is the
   one thing the dashboard may read out of an agent's output, and only to decide about Enter. One running session per
   worktree; archiving has its own.
+- A tracked folder **without git** is a supported repository, so its sessions run **in place**: the agent's working
+  directory is the folder itself, no worktree and no branch are made, and no git command runs for the session
+  (`Session.inPlace`). It is decided from the scan's `isGit`, never by letting a git command fail. Such a session has
+  no work status, no Ship, no worktree to remove and no pull; the panel says the agent edits the folder directly, with
+  no undo. A starter that cannot start says why **on the card** — `start` resolves with the reason, because a session
+  that was never created has no panel to report itself in.
 - **Work status** (`workStatus.ts`) is read per worktree *directory* — directories outlive session records — with
   read-only git and no network, so `merged` means "as of the user's last fetch"; squash merges are recognised by
   comparing the content of the files the branch touched. The dashboard never commits, pushes or calls `gh`: **Ship** only

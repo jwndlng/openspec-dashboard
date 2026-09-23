@@ -45,8 +45,15 @@ export interface Harness {
   newManager(extra?: Partial<ManagerDeps>): SessionManager;
 }
 
-export async function harness(overrides: { enabled?: boolean; repoOff?: boolean; agent?: Partial<AgentProfile> } = {}): Promise<Harness> {
-  const repoPath = await tempGitRepo();
+/** The same fixture tree, deliberately *not* a git repository: OpenSpec managed locally, with no version control. */
+export async function tempPlainRepo(): Promise<string> {
+  const dir = join(await realpath(await tempDir("osd-plain-")), "demo-ops");
+  await cp(join(FIXTURES, "demo-ops"), dir, { recursive: true });
+  return dir;
+}
+
+export async function harness(overrides: { enabled?: boolean; repoOff?: boolean; agent?: Partial<AgentProfile>; git?: boolean } = {}): Promise<Harness> {
+  const repoPath = overrides.git === false ? await tempPlainRepo() : await tempGitRepo();
   const repo = { ...newRepoConfig(repoPath, true), agent: overrides.repoOff ? { enabled: false } : undefined };
   const config: Config = { ...defaultConfig(), repos: [repo], agentSessions: { enabled: overrides.enabled ?? true, agents: [fakeProfile(overrides.agent)], defaultAgent: "fake" } };
   const snapshot: Snapshot = { generatedAt: new Date().toISOString(), repos: [await scanRepo(repo)] };

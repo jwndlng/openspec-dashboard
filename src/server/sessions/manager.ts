@@ -147,6 +147,9 @@ export class SessionManager {
     if (!prompt) throw new SessionError(400, `${agent.name} has no "${action}" prompt configured`);
     if (!Bun.which(agent.command[0])) throw new SessionError(503, `${agent.name} was not found (${agent.command[0]}); install it or change its command in Settings`);
 
+    // A tracked folder without git is a supported repository, it just cannot be isolated: the agent runs in the folder
+    // itself. Decided from the scan, never by letting a git command fail — see the agent-sessions spec.
+    const inPlace = scanned.isGit === false;
     const now = new Date().toISOString();
     const session: Session = {
       id: randomUUID(),
@@ -156,26 +159,29 @@ export class SessionManager {
       agentId: agent.id,
       agentName: agent.name,
       state: "running",
-      worktreePath: join(worktreesDir(), repo.id, worktreeName(action, change)),
-      branch: sessionBranch(action, change),
+      worktreePath: inPlace ? repo.path : join(worktreesDir(), repo.id, worktreeName(action, change)),
+      ...(inPlace ? { inPlace: true } : { branch: sessionBranch(action, change) }),
       createdAt: now,
       updatedAt: now,
       resumable: agent.resumeCommand !== undefined,
     };
-    try {
-      // The change's branch is often already checked out in the worktree where the change was started; git would
-      // refuse a second one, so the session works there. Archiving always gets a worktree and branch of its own.
-      const elsewhere = action === "archive" ? undefined : await linkedWorktreeOf(repo.path, session.branch);
-      if (elsewhere && elsewhere !== session.worktreePath) {
-        session.worktreePath = elsewhere;
-        session.adopted = true;
-      } else {
-        await ensureWorktree(repo.path, session.worktreePath, session.branch);
+    if (!inPlace) {
+      const branch = session.branch as string;
+      try {
+        // The change's branch is often already checked out in the worktree where the change was started; git would
+        // refuse a second one, so the session works there. Archiving always gets a worktree and branch of its own.
+        const elsewhere = action === "archive" ? undefined : await linkedWorktreeOf(repo.path, branch);
+        if (elsewhere && elsewhere !== session.worktreePath) {
+          session.worktreePath = elsewhere;
+          session.adopted = true;
+        } else {
+          await ensureWorktree(repo.path, session.worktreePath, branch);
+        }
+        // The change may live only in some other worktree (on another branch), not in the main checkout.
+        await copyChangeIfMissing(snapshot.checkout?.path ?? repo.path, session.worktreePath, change);
+      } catch (err) {
+        throw new SessionError(500, err instanceof Error ? err.message : String(err));
       }
-      // The change may live only in some other worktree (on another branch), not in the main checkout.
-      await copyChangeIfMissing(snapshot.checkout?.path ?? repo.path, session.worktreePath, change);
-    } catch (err) {
-      throw new SessionError(500, err instanceof Error ? err.message : String(err));
     }
     this.sessions.set(session.id, session);
     await this.store.saveMeta(session);
@@ -221,12 +227,16 @@ export class SessionManager {
   }
 
   private async restart(session: Session, repoPath: string, argv: string[], env: Record<string, string>, typed?: string): Promise<void> {
-    try {
-      // An adopted worktree is not ours to re-create: if its owner removed it, the session has nowhere to continue.
-      if (!session.adopted) await ensureWorktree(repoPath, session.worktreePath, session.branch);
-      else if ((await linkedWorktreeOf(repoPath, session.branch)) !== session.worktreePath) throw new Error(`the adopted worktree ${session.worktreePath} no longer exists`);
-    } catch (err) {
-      throw new SessionError(500, err instanceof Error ? err.message : String(err));
+    // An in-place session runs in the repository folder: there is no worktree to re-create and no git to ask.
+    if (!session.inPlace) {
+      const branch = session.branch as string;
+      try {
+        // An adopted worktree is not ours to re-create: if its owner removed it, the session has nowhere to continue.
+        if (!session.adopted) await ensureWorktree(repoPath, session.worktreePath, branch);
+        else if ((await linkedWorktreeOf(repoPath, branch)) !== session.worktreePath) throw new Error(`the adopted worktree ${session.worktreePath} no longer exists`);
+      } catch (err) {
+        throw new SessionError(500, err instanceof Error ? err.message : String(err));
+      }
     }
     session.state = "running";
     session.exitCode = undefined;
@@ -243,6 +253,7 @@ export class SessionManager {
    */
   async ship(id: string): Promise<ShipResult> {
     const session = this.get(id);
+    if (session.inPlace) throw new SessionError(400, "this session runs in a folder that is not a git repository — there is no branch to commit or push");
     const { agent, repo } = await this.prepareRestart(session);
     const { work } = await readWorkStatus(repo.path, session.worktreePath);
     if (!SHIPPABLE_WORK.includes(work.state)) throw new SessionError(409, `there is nothing to ship (${work.state})`);
