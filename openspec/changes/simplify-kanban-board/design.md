@@ -75,9 +75,6 @@ sample flags are updated so every new column has a card (demo-site "Every column
 - [A synced-but-unarchived change is indistinguishable from an unsynced one on the board] → Accepted per the request
   (archive does both); `specsSynced` stays in the API for the detail view or a later badge.
 - [Stale `minimized` overrides keyed by `Proposal`/`Synced` remain in localStorage] → Harmless; they never match again.
-- [Spec ordering: this change modifies requirements that `refactor-design` adds] → Archive `refactor-design` first.
-  Illustrative old column names left in other in-flight deltas (`refactor-design`'s tile-content scenario, the
-  change-detail checkout-tooltip example) are fixed by a follow-up to those specs once both are archived.
 
 ## Migration Plan
 

@@ -39,13 +39,15 @@ _None._
 ### Modified Capabilities
 
 - `kanban-board`: column derivation and column list (Backlog/Drafts, no artifact columns, no Synced); the card shows a
-  drafting progress bar in `Drafts`; column header markers for the new names.
+  drafting progress bar in `Drafts`; column header markers for the new names; examples in the grouping and lanes
+  requirements name `Drafts`.
 - `change-scanner`: the stage order used to pick the leading copy of a change names the new stages.
 - `project-overview`: per-stage counts use the new column list; a repository board no longer has schema-specific
-  columns.
+  columns; the tile example names `Drafts`.
 - `change-creation`: a newly created change appears in `Backlog`.
 - `activity-feed`: the example of a move event uses the new columns (the detection rule is unchanged).
 - `demo-site`: the refused-action example names `Drafts`.
+- `change-detail`: the checkout-tooltip example names `Drafts` (example only; the rule is unchanged).
 
 ## Impact
 
@@ -60,8 +62,4 @@ _None._
 - API: `GET /api/state` reports the new `stage` values and column names. The dashboard's own UI is the only consumer.
 - Stored state: remembered minimized repository groups keyed by an old column name simply stop matching (they fall
   back to the default); the activity log keeps old names in old entries.
-- Ordering: `refactor-design` (merged, not yet archived) adds the kanban-board requirements "Cards show only what an
-  overview needs" and "Column headers mark the lifecycle stage", which this change modifies. Archive `refactor-design`
-  before this change. Illustrative column names inside other in-flight deltas (`refactor-design`'s tile scenario and
-  change-detail checkout tooltip) are left to those changes; see design.md.
 - No new dependencies, no new writes, no network: invariants 1–7 are unaffected.

@@ -6,6 +6,48 @@
 
 ## MODIFIED Requirements
 
+### Requirement: Cards are grouped by repository within each column
+Within every column, including the expanded `Archived` column, the board SHALL group cards by repository: all cards of one repository SHALL be adjacent, under a group header showing the repository name and the number of cards in that group. Groups SHALL be ordered by repository name, case-insensitively, and the order SHALL be the same in every column. Within a group, cards SHALL keep the order they would have had without grouping. A repository with no visible cards in a column SHALL NOT produce a group there. Column counts SHALL remain the total number of cards in the column. Grouping SHALL be applied after filtering, and in the `Archived` column after selecting the most recently archived changes, so it never changes which cards are shown.
+
+#### Scenario: Two repositories in one column
+- **WHEN** the `Implementing` column contains changes `a1` and `a2` from repository `alpha` and `b1` from repository `beta`, scanned in the order `a1`, `b1`, `a2`
+- **THEN** the column shows a group `alpha` with count `2` containing `a1` then `a2`, followed by a group `beta` with count `1` containing `b1`, and the column count is `3`
+
+#### Scenario: Same group order across columns
+- **WHEN** repositories `zeta` and `Alpha` both have cards in `Drafts` and in `Done`
+- **THEN** the `Alpha` group is above the `zeta` group in both columns
+
+#### Scenario: No empty groups
+- **WHEN** repository `beta` has no cards in the `Ready` column
+- **THEN** the `Ready` column shows no `beta` group header
+
+#### Scenario: Filtered-out repository
+- **WHEN** the repository filter selects only `alpha`
+- **THEN** every column shows at most one group, `alpha`, and its header count equals the number of visible `alpha` cards in that column
+
+#### Scenario: Archived column keeps its bound
+- **WHEN** 96 changes are archived across repositories and the `Archived` column is expanded
+- **THEN** the 25 most recently archived changes are shown, grouped by repository, with each group's cards in archive-date descending order, and the column header still reports the total of `96`
+
+### Requirement: The board fits half a screen
+The board SHALL offer two layouts of the same columns and cards: **Lanes**, the columns side by side, and **Stack**, each column a full-width section whose repository groups (or, on a repository board, cards) flow in a grid, with the page scrolling vertically so the hero scrolls away. By default the layout SHALL follow the window: **Stack** below 1280px wide, **Lanes** otherwise, switching live as the window is resized. A **Lanes**/**Stack** switch in the filter bar SHALL mark the layout on screen and SHALL make an explicit choice that overrides the default and persists in the URL (`layout=lanes` or `layout=stack`); an unknown value SHALL mean the default. The layout SHALL NOT be a filter: it changes no card or count, and **Clear filters** keeps it. In **Lanes**, a column without cards SHALL shrink to a slim rail that still shows its name and count, and lanes SHALL be narrower on windows narrower than 1600px. Grouping, minimizing, counts, the archived bound and every card's content SHALL be the same in both layouts.
+
+#### Scenario: Half a screen
+- **WHEN** the combined board is opened in a window 960px wide
+- **THEN** the columns are stacked sections, the cards of each column's repository groups sit side by side in a grid, nothing scrolls horizontally, and the switch marks **Stack**
+
+#### Scenario: Explicit choice
+- **WHEN** the user activates **Lanes** in a 960px window
+- **THEN** the columns are shown side by side, the URL holds `layout=lanes`, and a reload keeps lanes
+
+#### Scenario: Empty lane
+- **WHEN** the `Drafts` column has no cards in the lanes layout
+- **THEN** it is a slim rail showing `Drafts` and `0`, and the other lanes get the width
+
+#### Scenario: Clearing filters keeps the layout
+- **WHEN** the board holds `layout=stack` and a text search and the user activates **Clear filters**
+- **THEN** the search is cleared and the board stays stacked
+
 ### Requirement: Cards show only what an overview needs
 A card SHALL show only what an overview needs: the change name in monospace, the relative age of `lastActivityAt` under it (e.g. `updated 3d ago`, or the archive date for an archived change), the change's session status beside the name as the "Cards offer session starters and show session state" requirement gives it, a progress bar, and a footer with the next-step starter and **Show details**, and — when the change has a console — the console quick link beside its session status. The progress bar SHALL be, for a change in `Drafts`, the drafting progress: the number of the change's artifacts that are done out of all of its schema's artifacts, labelled `done/total`, with a tooltip and accessible name that say it counts artifacts (e.g. `2 of 4 artifacts written`); for any other change with tasks (`tasks.total > 0`), the task progress labelled `done/total`, with a tooltip and accessible name that say it counts tasks. Both bars SHALL share one shape and style. A card in `Backlog`, and a card outside `Drafts` without tasks, SHALL show no progress bar. A card SHALL additionally show the `no tasks` warning and an error mark for any other warning the snapshot carries. A card SHALL NOT show the repository name — on the combined board every card sits in its repository's group, whose header names it, and a repository board names it in its header — nor the branch badge, the checkouts holding the change, the worktree's work status, the prompt, how long the change has been complete, whether its specs are synced, or which artifacts are written: the change's detail view shows those (change-detail: "Detail header shows the change's state"), and the column and the progress bar say how far the change has come.
 

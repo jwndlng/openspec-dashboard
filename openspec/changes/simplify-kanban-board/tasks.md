@@ -28,4 +28,4 @@
 
 - [x] 5.1 Run `bun run check` (lint, typecheck, tests) and verify it passes.
 - [x] 5.2 Run `bun run build` and start `dist/openspec-dashboard` on test data; verify the board shows `Backlog`, `Drafts`, `Ready`, `Implementing`, `Done`, `Archived`, that a Drafts card shows an artifact bar with the right tooltip, and the overview shows the same columns minus `Archived`.
-- [x] 5.3 Run `openspec validate simplify-kanban-board --strict` and verify it is valid (the INFO about `refactor-design` ordering is expected until that change is archived).
+- [x] 5.3 Run `openspec validate simplify-kanban-board --strict` and verify it is valid.
