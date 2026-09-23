@@ -64,6 +64,20 @@ export function endWarning(work: WorkStatus | undefined): string | undefined {
   return undefined;
 }
 
+/**
+ * The worktree a session's panel and dialogs speak for. An in-place session runs in the repository folder itself,
+ * which is not a worktree: it has no work status, nothing to ship and nothing to remove, so it has none.
+ */
+export function worktreeOfSession(session: Pick<Session, "inPlace" | "worktreePath"> | undefined, worktrees: SessionWorktree[]): SessionWorktree | undefined {
+  if (!session || session.inPlace) return undefined;
+  return worktrees.find((w) => w.path === session.worktreePath);
+}
+
+/** Whether ending a session may offer to remove its worktree at all: an in-place session has none to remove. */
+export function worktreeRemovalPossible(session: Pick<Session, "inPlace"> | undefined): boolean {
+  return session !== undefined && !session.inPlace;
+}
+
 export interface PullOffer {
   /** Whether the end-session dialog offers to pull at all: only a repository the pull action can run in. */
   offered: boolean;

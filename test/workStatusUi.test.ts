@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import type { Session, SessionWorktree, WorkStatus } from "../src/shared/types.ts";
-import { endSeverity, hideSession, pullOffer, searchWithShown, showSession, shownFromSearch, endWarning, nextStepFor, openSessions, sessionsForChange, sessionTabs, staleAge, workBadge, worktreeForChange } from "../src/ui/sessionState.ts";
+import { endSeverity, hideSession, pullOffer, searchWithShown, showSession, shownFromSearch, endWarning, nextStepFor, openSessions, sessionsForChange, sessionTabs, staleAge, workBadge, worktreeForChange, worktreeOfSession, worktreeRemovalPossible } from "../src/ui/sessionState.ts";
 
 const NOW = Date.parse("2026-09-21T12:00:00Z");
 const ago = (hours: number) => new Date(NOW - hours * 3_600_000).toISOString();
@@ -134,4 +134,23 @@ test("the URL carries the shown sessions in pane order, at most three, and keeps
   expect(searchWithShown("?q=x", ["a", "b"])).toBe("?q=x&session=a,b");
   expect(searchWithShown("?session=a,b&q=x", ["b"])).toBe("?session=b&q=x");
   expect(shownFromSearch(searchWithShown("", ["a", "b", "c"]))).toEqual(["a", "b", "c"]);
+});
+
+test("a session in a folder without git has no worktree, so no work status, no Ship and nothing to remove", () => {
+  const worktrees = [wt("upgrade-runtime", { state: "uncommitted", count: 2 })];
+  const inRepo = { inPlace: true, worktreePath: "/w/acme/demo-ops" } as Session;
+  const inWorktree = { worktreePath: worktrees[0].path } as Session;
+
+  // The in-place session's directory is the repository itself; it must never be matched against a worktree.
+  expect(worktreeOfSession(inWorktree, worktrees)).toBe(worktrees[0]);
+  expect(worktreeOfSession(inRepo, worktrees)).toBeUndefined();
+  expect(worktreeOfSession(undefined, worktrees)).toBeUndefined();
+
+  expect(worktreeRemovalPossible(inWorktree)).toBe(true);
+  expect(worktreeRemovalPossible(inRepo)).toBe(false);
+  expect(worktreeRemovalPossible(undefined)).toBe(false);
+
+  // Ending it offers no pull either: the pull action only runs in a git repository.
+  expect(pullOffer({ isGit: false, ok: true }, undefined)).toEqual({ offered: false, preselected: false });
+  expect(pullOffer({ isGit: true, ok: true }, { state: "merged" })).toEqual({ offered: true, preselected: true });
 });

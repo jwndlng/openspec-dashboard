@@ -271,14 +271,23 @@ export interface Session {
   state: SessionState;
   exitCode?: number | null;
   error?: string;
-  /** The worktree the agent runs in: the session's own, under the dashboard home — or an adopted one. */
+  /**
+   * The directory the agent runs in: the session's own worktree under the dashboard home, an adopted one — or, for an
+   * in-place session, the repository folder itself.
+   */
   worktreePath: string;
   /**
    * The worktree already existed with the session's branch checked out (git allows a branch in one worktree only), so
    * the session runs there. The dashboard did not create it and never removes it.
    */
   adopted?: boolean;
-  branch: string;
+  /**
+   * The repository is not a git repository, so there is no worktree to isolate the work in: the agent runs in the
+   * repository folder itself and edits it directly. No branch, no work status, no Ship, no worktree removal, no pull.
+   */
+  inPlace?: boolean;
+  /** Absent for an in-place session, which has no branch. */
+  branch?: string;
   createdAt: string;
   updatedAt: string;
   /** When the terminal last printed something; the only input to whether a running session may need the user. */

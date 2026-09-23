@@ -20,6 +20,7 @@ import {
   sessionTabs,
   startersFor,
   workBadge,
+  worktreeOfSession,
 } from "./sessionState.ts";
 import { SessionBadgeView, useSessionUi } from "./sessions.tsx";
 
@@ -373,7 +374,8 @@ function SessionPane({ id }: { id: string }) {
 
   const badge = session ? sessionBadge(session) : undefined;
   const repo = ui.config?.repos.find((r) => r.id === session?.repoId);
-  const worktree = session && ui.worktrees.find((w) => w.path === session.worktreePath);
+  // An in-place session runs in the repository folder, which is not a worktree: nothing git-derived applies to it.
+  const worktree = worktreeOfSession(session, ui.worktrees);
   const work = worktree && workBadge(worktree, ui.sessions);
   const shippable = worktree !== undefined && SHIPPABLE_WORK.includes(worktree.work.state);
   const merged = worktree?.work.state === "merged";
@@ -399,12 +401,17 @@ function SessionPane({ id }: { id: string }) {
       <header class="session-head">
         <div class="pane-title">
           <div class="row">
-            <strong class="mono" title={session ? `worktree ${session.worktreePath}\nbranch ${session.branch}` : undefined}>
+            <strong class="mono" title={session ? (session.inPlace ? `folder ${session.worktreePath}` : `worktree ${session.worktreePath}\nbranch ${session.branch}`) : undefined}>
               {session?.change ?? "session"}
             </strong>
             {repo && <span class="hint">{repo.name}</span>}
             {session && <span class="hint">· {session.agentName}</span>}
-            {session && <span class="hint mono pane-branch">{session.branch}</span>}
+            {session && !session.inPlace && <span class="hint mono pane-branch">{session.branch}</span>}
+            {session?.inPlace && (
+              <span class="badge warning" title={`${session.worktreePath} is not a git repository, so the agent works in the folder itself. There is no branch, no commit and no undo.`}>
+                in the folder — no undo
+              </span>
+            )}
             {badge && <SessionBadgeView badge={badge} />}
             {work && (
               <span class={`badge ${work.tone}`} title={merged && session?.state !== "running" ? `${work.title}: use Clean up.` : work.title}>
