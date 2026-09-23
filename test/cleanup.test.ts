@@ -14,13 +14,32 @@ setDefaultTimeout(30_000);
 
 let cleanup: () => Promise<void>;
 const managers: Harness["manager"][] = [];
+
+// A commit may start `git maintenance run --auto` in the background (it does on the macOS runners), which then writes
+// lock files into `.git/objects` while a test compares the repository byte for byte. The setup's git must not do that.
+const NO_AUTO_MAINTENANCE: Record<string, string> = {
+  GIT_CONFIG_COUNT: "2",
+  GIT_CONFIG_KEY_0: "maintenance.auto",
+  GIT_CONFIG_VALUE_0: "false",
+  GIT_CONFIG_KEY_1: "gc.auto",
+  GIT_CONFIG_VALUE_1: "0",
+};
+const savedEnv = Object.fromEntries(Object.keys(NO_AUTO_MAINTENANCE).map((k) => [k, process.env[k]]));
+
 beforeAll(async () => {
   ({ cleanup } = await useTempHome());
+  Object.assign(process.env, NO_AUTO_MAINTENANCE);
 });
 afterEach(async () => {
   for (const m of managers.splice(0)) await m.shutdown();
 });
-afterAll(() => cleanup());
+afterAll(async () => {
+  for (const [k, v] of Object.entries(savedEnv)) {
+    if (v === undefined) delete process.env[k];
+    else process.env[k] = v;
+  }
+  await cleanup();
+});
 
 interface Repo {
   repo: RepoConfig;
