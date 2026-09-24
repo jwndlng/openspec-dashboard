@@ -1,5 +1,5 @@
 import type { ActivityQuery } from "../shared/activity.ts";
-import type { ActivityPage, ConsoleSession, CleanupPreview, CleanupResult, CleanupSelection, CreateChangeResponse, PromptResult, PullResult, ShipResult, WorkStatus } from "../shared/types.ts";
+import type { ActivityPage, ConsoleSession, CleanupPreview, CleanupResult, CleanupSelection, CreateChangeResponse, DismissPreview, DismissResult, PromptResult, PullResult, ShipResult, WorkStatus } from "../shared/types.ts";
 import type { AgentAvailability, ArtifactFileContent, ChangeArtifacts, Config, DiscoverResult, ScanTriggerResult, Session, SessionAction, SessionWorktree, SharedConfig, SharedConfigApplyResult, SharedConfigAssignment, SharedConfigPreview, Snapshot } from "../shared/types.ts";
 import { socketOrigin } from "./url.ts";
 
@@ -55,6 +55,13 @@ export interface Api {
   cleanupPreview(repoId: string): Promise<CleanupPreview>;
   /** Removes what the user selected and confirmed, re-checking each item; the only call that deletes a branch. */
   cleanup(repoId: string, selection: CleanupSelection): Promise<CleanupResult>;
+  /** Read-only: what dismissing the change would delete, file by file, and whether git could restore each. */
+  dismissPreview(repoId: string, change: string): Promise<DismissPreview>;
+  /**
+   * Deletes the change's directory from the main checkout and stages that removal — only when it is still what the
+   * preview with `fingerprint` showed; `ApiError` 409 otherwise. The only call that deletes a change.
+   */
+  dismissChange(repoId: string, change: string, fingerprint: string): Promise<DismissResult>;
   sharedConfig(): Promise<SharedConfig>;
   /** Stores the profiles in the dashboard home; never writes to a repository. */
   saveSharedConfig(config: SharedConfig): Promise<SharedConfig>;
@@ -137,6 +144,9 @@ export const httpApi: Api = {
   pullAll: () => call<{ results: PullResult[] }>("/api/pull", { method: "POST" }),
   cleanupPreview: (repoId) => call<CleanupPreview>(`/api/repos/${encodeURIComponent(repoId)}/cleanup`),
   cleanup: (repoId, selection) => call<CleanupResult>(`/api/repos/${encodeURIComponent(repoId)}/cleanup`, { method: "POST", body: JSON.stringify(selection) }),
+  dismissPreview: (repoId, change) => call<DismissPreview>(`/api/repos/${encodeURIComponent(repoId)}/changes/${encodeURIComponent(change)}/dismiss`),
+  dismissChange: (repoId, change, fingerprint) =>
+    call<DismissResult>(`/api/repos/${encodeURIComponent(repoId)}/changes/${encodeURIComponent(change)}/dismiss`, { method: "POST", body: JSON.stringify({ fingerprint }) }),
   sharedConfig: () => call<SharedConfig>("/api/shared-config"),
   saveSharedConfig: (config) => call<SharedConfig>("/api/shared-config", { method: "PUT", body: JSON.stringify(config) }),
   previewSharedConfig: (assignments) => call<{ previews: SharedConfigPreview[] }>("/api/shared-config/preview", { method: "POST", body: JSON.stringify({ assignments }) }),
@@ -196,6 +206,8 @@ export const api: Api = {
   pullAll: () => current.pullAll(),
   cleanupPreview: (...args) => current.cleanupPreview(...args),
   cleanup: (...args) => current.cleanup(...args),
+  dismissPreview: (...args) => current.dismissPreview(...args),
+  dismissChange: (...args) => current.dismissChange(...args),
   sharedConfig: () => current.sharedConfig(),
   saveSharedConfig: (config) => current.saveSharedConfig(config),
   previewSharedConfig: (assignments) => current.previewSharedConfig(assignments),

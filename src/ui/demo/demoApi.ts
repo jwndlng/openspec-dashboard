@@ -1,7 +1,7 @@
 // In-memory stand-in for the dashboard server. Nothing is read from or written to anywhere: a reload starts over.
 import { pageEvents } from "../../shared/activity.ts";
 import { summarizeWorkInProgress } from "../../shared/workInProgress.ts";
-import type { ChangeSnapshot, Config, PullResult, RepoSharedConfig, RepoSnapshot, SharedConfigApplyResult, SharedConfigPreview, SharedProfile, Snapshot } from "../../shared/types.ts";
+import type { ChangeSnapshot, Config, DismissFile, DismissPreview, PullResult, RepoSharedConfig, RepoSnapshot, SharedConfigApplyResult, SharedConfigPreview, SharedProfile, Snapshot } from "../../shared/types.ts";
 import { ApiError, type Api } from "../api.ts";
 import { demoApply, demoPreview, newCleanupState, remainingWorktrees } from "./demoCleanup.ts";
 import { createDemoSessions } from "./demoSessions.ts";
@@ -89,10 +89,19 @@ export function createDemoApi({ now = Date.now, latencyMs = 150, clock }: DemoAp
     return { desired: profiles.filter((p) => profileIds.includes(p.id)) };
   };
 
+  // What the visitor dismissed: gone from the board until a reload. Keyed by repository id and change name.
+  const dismissed = new Set<string>();
+  const dismissKey = (repoId: string, name: string) => `${repoId}\0${name}`;
+  const withoutDismissed = (repo: RepoSnapshot): RepoSnapshot =>
+    repo.changes.some((c) => !c.archived && dismissed.has(dismissKey(repo.id, c.name))) ? { ...repo, changes: repo.changes.filter((c) => c.archived || !dismissed.has(dismissKey(repo.id, c.name))) } : repo;
+
   /** The board without session worktrees: what the sessions themselves are validated against. */
   const baseSnapshot = (): Snapshot => ({
     generatedAt,
-    repos: config.repos.filter((r) => r.enabled).map((r) => sample.snapshot.repos.find((s) => s.id === r.id) ?? emptyRepo(r.id, r.name, r.path)),
+    repos: config.repos.filter((r) => r.enabled).map((r) => {
+      const known = sample.snapshot.repos.find((s) => s.id === r.id);
+      return known ? withoutDismissed(known) : emptyRepo(r.id, r.name, r.path);
+    }),
   });
 
   const activityLog = buildActivity(sample.snapshot, now());
@@ -130,7 +139,7 @@ export function createDemoApi({ now = Date.now, latencyMs = 150, clock }: DemoAp
       .filter((r) => r.enabled)
       .map((r) => {
         const known = sample.snapshot.repos.find((s) => s.id === r.id);
-        const repo = known ? cleanedUp({ ...known, name: r.name }) : emptyRepo(r.id, r.name, r.path);
+        const repo = known ? cleanedUp(withoutDismissed({ ...known, name: r.name })) : emptyRepo(r.id, r.name, r.path);
         // A session's worktree is a worktree of its repository, so `git worktree list` — the snapshot — has it too.
         const sessionWorktrees = config.agentSessions.enabled ? demoSessions.gitWorktrees(r.id) : [];
         const worktrees = [...repo.worktrees, ...sessionWorktrees];
@@ -151,6 +160,22 @@ export function createDemoApi({ now = Date.now, latencyMs = 150, clock }: DemoAp
     if (!found) throw new ApiError(404, "unknown change");
     const dir = found.archived ? `${repo.path}/openspec/changes/archive/${found.archived}-${change}` : `${repo.path}/openspec/changes/${change}`;
     return { change: found, dir };
+  };
+  /**
+   * The sample's files of an active change in the main checkout, all committed — except a draft's scratch notes, so the
+   * confirmation's "lost for good" can be seen. A change only a linked worktree holds is refused, as by the server.
+   */
+  const demoDismissPreview = (repoId: string, name: string): DismissPreview => {
+    const { change } = findChange(repoId, name);
+    if (change.archived) throw new ApiError(404, `"${name}" is archived; only active changes can be dismissed`);
+    const checkouts = [change.checkout, ...(change.otherCheckouts ?? [])].filter((c) => c !== undefined);
+    const holder = checkouts.find((c) => !c.isMain);
+    if (checkouts.length > 0 && !checkouts.some((c) => c.isMain)) throw new ApiError(404, `"${name}" lives only in the worktree on ${holder?.branch ?? holder?.path}`);
+    const paths = [".openspec.yaml", ...Object.values(sampleArtifactFiles(change)).flatMap((byPath) => Object.keys(byPath))];
+    const files: DismissFile[] = paths.sort().map((path) => ({ path, state: "restorable" }));
+    if (change.stage === "drafts") files.push({ path: "notes.md", state: "lost" });
+    const copies = checkouts.filter((c) => !c.isMain).map((c) => ({ path: c.path, branch: c.branch }));
+    return { repoId, name, isGit: true, files, copies, fingerprint: `demo:${repoId}:${name}` };
   };
   const failing = <T>(work: () => T): Promise<T> => {
     try {
@@ -215,6 +240,16 @@ export function createDemoApi({ now = Date.now, latencyMs = 150, clock }: DemoAp
         const result = demoApply(cleanupState, cleanupTarget(repoId), selection);
         generatedAt = new Date(now()).toISOString();
         return result;
+      }),
+    // Dismissing in the demo deletes nothing anywhere: the change leaves the in-memory board until a reload.
+    dismissPreview: (repoId, name) => attempt(() => demoDismissPreview(repoId, name)),
+    dismissChange: (repoId, name, fingerprint) =>
+      attempt(() => {
+        const preview = demoDismissPreview(repoId, name);
+        if (fingerprint !== preview.fingerprint) throw new ApiError(409, `"${name}" changed since it was shown; look at it again before dismissing`);
+        dismissed.add(dismissKey(repoId, name));
+        generatedAt = new Date(now()).toISOString();
+        return { name, staged: true };
       }),
     scan: () => {
       generatedAt = new Date(now()).toISOString();

@@ -1,11 +1,12 @@
 import { ACTIVITY_KINDS, type ActivityKind } from "../shared/types.ts";
 import { MAX_PAGE, type ActivityLog, type PageQuery } from "./activity/log.ts";
-import type { CleanupSelection, Config, DiscoverResult, RepoConfig, ScanTriggerResult, SharedConfigApplyResult, SharedConfigAssignment, SharedConfigPreview } from "../shared/types.ts";
+import type { CleanupSelection, Config, DiscoverResult, RepoConfig, RepoSnapshot, ScanTriggerResult, SharedConfigApplyResult, SharedConfigAssignment, SharedConfigPreview } from "../shared/types.ts";
 import { applyCleanup, CleanupBusyError, previewCleanup } from "./cleanup.ts";
 import { changeDirFor, listArtifactFiles, readArtifactFile } from "./artifacts.ts";
 import { consoleFolderProblem } from "./sessions/consoleFolder.ts";
 import { ConfigValidationError, saveConfig, validateConfig, validateIgnorePaths, validateScanRoots } from "./config.ts";
 import { createChange } from "./createChange.ts";
+import { dismissChange, DismissError, isDismissableName, previewDismiss } from "./dismissChange.ts";
 import { discoverRepos } from "./discover.ts";
 import { PullBusyError, pullAll, pullRepository } from "./pull.ts";
 import type { Scanner } from "./scanner.ts";
@@ -372,6 +373,50 @@ async function postCreateChange(state: AppState, req: Request, repoId: string): 
   return json({ name: result.name, staged: result.staged }, 201);
 }
 
+/** A repository a change may be dismissed from: configured, enabled, successfully scanned; git is not required. */
+function dismissTarget(state: AppState, repoId: string, name: string): { repo: RepoConfig; scanned: RepoSnapshot } | Response {
+  const repo = state.config.repos.find((r) => r.id === repoId);
+  if (!repo) return json({ error: "unknown repository" }, 404);
+  if (!repo.enabled) return json({ error: "repository is disabled" }, 409);
+  const scanned = state.scanner.snapshot.repos.find((r) => r.id === repoId);
+  if (!scanned?.ok) return json({ error: "repository has not been successfully scanned" }, 409);
+  if (!isDismissableName(name)) return json({ error: "invalid change name" }, 400);
+  return { repo, scanned };
+}
+
+/** Read-only: what dismissing the change would delete. */
+async function getDismiss(state: AppState, repoId: string, name: string): Promise<Response> {
+  const target = dismissTarget(state, repoId, name);
+  if (target instanceof Response) return target;
+  try {
+    return json(await previewDismiss(target.repo, target.scanned, name));
+  } catch (err) {
+    if (err instanceof DismissError) return json({ error: err.message }, err.status);
+    throw err;
+  }
+}
+
+/**
+ * The one route that deletes a change directory: `openspec/changes/<name>/` of the main checkout, after re-checking it
+ * is exactly what the user confirmed, then stages that removal. A refusal deletes nothing and runs no writing git.
+ */
+async function postDismiss(state: AppState, req: Request, repoId: string, name: string): Promise<Response> {
+  const target = dismissTarget(state, repoId, name);
+  if (target instanceof Response) return target;
+  try {
+    const body = await readJson(req);
+    if (typeof body.fingerprint !== "string" || !body.fingerprint) return json({ error: "expected { fingerprint: string }" }, 400);
+    const sessions = state.sessions;
+    const result = await dismissChange(target.repo, target.scanned, name, body.fingerprint, () => sessions?.hasOpenSession(repoId, name) ?? false);
+    state.scanner.trigger();
+    return json(result);
+  } catch (err) {
+    if (err instanceof DismissError) return json({ error: err.message }, err.status);
+    if (err instanceof SessionError) return json({ error: err.message }, err.status);
+    throw err;
+  }
+}
+
 /**
  * Repositories the pull action may run in: tracked, scanned without error, and git. The path comes from the config —
  * a request only ever names an id.
@@ -534,6 +579,9 @@ export function createFetchHandler({ state, indexHtml }: AppOptions): (req: Requ
       const cleanupMatch = /^\/api\/repos\/([^/]+)\/cleanup$/.exec(pathname);
       if (cleanupMatch && req.method === "GET") return getCleanup(state, decodeURIComponent(cleanupMatch[1]));
       if (cleanupMatch && req.method === "POST") return postCleanup(state, req, decodeURIComponent(cleanupMatch[1]));
+      const dismissMatch = /^\/api\/repos\/([^/]+)\/changes\/([^/]+)\/dismiss$/.exec(pathname);
+      if (dismissMatch && req.method === "GET") return getDismiss(state, decodeURIComponent(dismissMatch[1]), decodeURIComponent(dismissMatch[2]));
+      if (dismissMatch && req.method === "POST") return postDismiss(state, req, decodeURIComponent(dismissMatch[1]), decodeURIComponent(dismissMatch[2]));
       const createChangeMatch = /^\/api\/repos\/([^/]+)\/changes$/.exec(pathname);
       if (req.method === "POST" && createChangeMatch) return postCreateChange(state, req, decodeURIComponent(createChangeMatch[1]));
       if (req.method === "POST" && pathname === "/api/scan") {

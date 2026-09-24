@@ -6,6 +6,7 @@ import { realpath } from "node:fs/promises";
 import { join } from "node:path";
 import { availableActions, changeSessions, isConsole, OPEN_SESSION_STATES, repoAgentEnabled, SESSION_ACTIONS, SHIPPABLE_WORK, type AgentAvailability, type ChangeSession, type Config, type ConsoleSession, type Session, type SessionAction, type SessionWorktree, type Snapshot, type WorkStatus, type PromptResult, type ShipResult } from "../../shared/types.ts";
 import { isCleaningUp } from "../cleanup.ts";
+import { isDismissing } from "../dismissChange.ts";
 import { worktreesDir } from "../paths.ts";
 import { CHANGE_NAME } from "../source.ts";
 import { agentEnv, agentFor, availability, defaultAgentOf, launchCommand, launchWithoutPrompt, openingPrompt, shipPrompt } from "./agents.ts";
@@ -138,6 +139,7 @@ export class SessionManager {
     const scanned = this.deps.getSnapshot().repos.find((r) => r.id === repo.id);
     if (!scanned?.ok) throw new SessionError(409, "the repository's last scan failed");
     if (isCleaningUp(repo.id)) throw new SessionError(409, "a cleanup of this repository is running");
+    if (isDismissing(repo.id, change)) throw new SessionError(409, "this change is being dismissed");
     const snapshot = scanned.changes.find((c) => c.name === change && !c.archived);
     if (!snapshot) throw new SessionError(404, "unknown change");
     if (!availableActions(snapshot).includes(action)) throw new SessionError(400, `"${action}" is not available for this change in its current stage`);
@@ -259,6 +261,11 @@ export class SessionManager {
     return new Set(await Promise.all(paths));
   }
 
+  /** Whether a session for the change is open; dismissing the change waits for it to end. */
+  hasOpenSession(repoId: string, change: string): boolean {
+    return changeSessions(this.list()).some((s) => s.repoId === repoId && s.change === change && OPEN_SESSION_STATES.includes(s.state));
+  }
+
   forgetWorktrees(): void {
     this.worktreeCache = undefined;
   }
@@ -271,6 +278,7 @@ export class SessionManager {
     const repo = config.repos.find((r) => r.id === session.repoId);
     if (!repo) throw new SessionError(409, "the repository is no longer configured");
     if (isCleaningUp(repo.id)) throw new SessionError(409, "a cleanup of this repository is running");
+    if (isDismissing(repo.id, session.change)) throw new SessionError(409, "this change is being dismissed");
     return { agent, repo };
   }
 

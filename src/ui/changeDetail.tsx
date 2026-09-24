@@ -1,9 +1,9 @@
 // One change with its artifacts, as an overlay over the board it belongs to. The header comes from the snapshot the
-// boards use; file lists and file text are fetched on demand from the read-only artifact endpoints. Nothing here
-// writes anywhere.
+// boards use; file lists and file text are fetched on demand from the read-only artifact endpoints. The one write is
+// dismissing the change, and only after the user confirmed it in its own dialog.
 import type { ComponentChildren, RefObject } from "preact";
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
-import type { ChangeArtifactEntry, ChangeArtifacts, ChangeSnapshot, RepoSnapshot, Snapshot, TaskProgress } from "../shared/types.ts";
+import type { ChangeArtifactEntry, ChangeArtifacts, ChangeSnapshot, DismissPreview, DismissResult, RepoSnapshot, Snapshot, TaskProgress } from "../shared/types.ts";
 import { ApiError, api } from "./api.ts";
 import { CopyButton, Meter } from "./kanban.tsx";
 import { renderMarkdown } from "./markdown.tsx";
@@ -14,6 +14,8 @@ import { useSessionUi, WorkStatus } from "./sessions.tsx";
 import { isComplete } from "../shared/columns.ts";
 import { promptBody } from "./boardMarks.ts";
 import { BranchBadge } from "./checkout.tsx";
+import { DismissDialog } from "./dismissChange.tsx";
+import { dismissedNotice, dismissOffer } from "./dismissState.ts";
 import { checkoutHint, daysSince, leftoverHint, pendingArchiveHint, relTime } from "./format.ts";
 import { currentQuery, followInApp, href, navigate, replaceQuery } from "./url.ts";
 
@@ -172,7 +174,20 @@ export function CloseButton({ onClose }: { onClose: () => void }) {
  * are the exception, because they say something is broken.
  */
 // The change is a full snapshot entry in the ordinary case, and just a name for a worktree whose change is gone.
-export function DetailHeader({ repo, change, from, onClose }: { repo: RepoSnapshot; change: ChangeSnapshot | Pick<ChangeSnapshot, "name" | "warnings">; from?: string; onClose: () => void }) {
+export function DetailHeader({
+  repo,
+  change,
+  from,
+  onClose,
+  onDismiss,
+}: {
+  repo: RepoSnapshot;
+  change: ChangeSnapshot | Pick<ChangeSnapshot, "name" | "warnings">;
+  from?: string;
+  onClose: () => void;
+  /** Opens the dismiss confirmation; absent where dismissing is not offered at all. */
+  onDismiss?: () => void;
+}) {
   // The repository's board, with its filters when that is the board the view was opened from.
   const back = backTarget(from, repo.id);
   const repoLink = back.path === repoPath(repo.id) ? back : { path: repoPath(repo.id), query: "" };
@@ -186,6 +201,7 @@ export function DetailHeader({ repo, change, from, onClose }: { repo: RepoSnapsh
           <span class="sep">/</span>
           <span class="mono change-name">{change.name}</span>
         </h1>
+        {onDismiss && "column" in change && <DismissButton change={change} failing={!repo.ok} onDismiss={onDismiss} />}
         <CloseButton onClose={onClose} />
       </div>
       {"column" in change && <ChangeFacts change={change} />}
@@ -195,6 +211,23 @@ export function DetailHeader({ repo, change, from, onClose }: { repo: RepoSnapsh
         </div>
       ))}
     </div>
+  );
+}
+
+/** Quiet until hovered or focused, so it never reads as the change's next step. */
+function DismissButton({ change, failing, onDismiss }: { change: ChangeSnapshot; failing: boolean; onDismiss: () => void }) {
+  const offer = dismissOffer(change);
+  if (!offer.shown || failing) return null;
+  return (
+    <button
+      type="button"
+      class="btn sm ghost dismiss-change"
+      disabled={offer.disabledReason !== undefined}
+      title={offer.disabledReason ?? "Delete this change's directory from the project, after you confirm"}
+      onClick={onDismiss}
+    >
+      Dismiss change
+    </button>
   );
 }
 
@@ -329,8 +362,20 @@ export function FileContent({ state, raw, isTasks, rendered, filePath }: { state
   );
 }
 
-export function ChangeDetail({ snapshot, repoId, changeName }: { snapshot: Snapshot | null; repoId: string; changeName: string }) {
+export function ChangeDetail({
+  snapshot,
+  repoId,
+  changeName,
+  onDismissed,
+}: {
+  snapshot: Snapshot | null;
+  repoId: string;
+  changeName: string;
+  /** Told the notice to show once the change was dismissed; the app shows it and picks up the rescan. */
+  onDismissed?: (notice: string) => void;
+}) {
   const ui = useSessionUi();
+  const [dismissing, setDismissing] = useState(false);
   const [query, setQueryState] = useState<DetailQuery>(() => parseDetailQuery(currentQuery()));
   const [listing, setListing] = useState<ChangeArtifacts | null>(null);
   const [listError, setListError] = useState<string | null>(null);
@@ -447,12 +492,19 @@ export function ChangeDetail({ snapshot, repoId, changeName }: { snapshot: Snaps
   }
 
   const artifact = listing?.artifacts.find((a) => a.id === selection.artifactId);
+  const dismissed = (result: DismissResult, preview: DismissPreview) => {
+    setDismissing(false);
+    onDismissed?.(dismissedNotice(result, preview));
+    // A worktree's copy keeps the change on the board: stay, and show that copy after the rescan.
+    if (preview.copies.length === 0) close();
+  };
   const filePath = listing && file ? absoluteFilePath(listing.change.dir, file) : undefined;
   const current = fileState && fileState.path === file ? fileState : null;
 
   return (
+    <>
     <DetailOverlay label={label} onClose={close} panelRef={panel}>
-      <DetailHeader repo={repo} change={change} from={query.from} onClose={close} />
+      <DetailHeader repo={repo} change={change} from={query.from} onClose={close} onDismiss={onDismissed ? () => setDismissing(true) : undefined} />
       {(listing || hasConsole) && (
         <ArtifactTabs artifacts={listing?.artifacts ?? []} selected={selection.artifactId} onSelect={(id) => setQuery({ artifact: id, file: undefined })} console={hasConsole} />
       )}
@@ -492,5 +544,8 @@ export function ChangeDetail({ snapshot, repoId, changeName }: { snapshot: Snaps
         </section>
       </div>
     </DetailOverlay>
+    {/* Outside the panel: a dialog of its own over the detail view, whose Escape closes only this dialog. */}
+    {dismissing && <DismissDialog repoId={repo.id} repoName={repo.name} change={change.name} onClose={() => setDismissing(false)} onDismissed={dismissed} />}
+    </>
   );
 }
