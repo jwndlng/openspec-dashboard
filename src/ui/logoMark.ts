@@ -1,40 +1,124 @@
 // The OpenSpec Dashboard mark, as data: the in-app logo (logo.tsx) and the favicon (scripts/build-ui.ts) both draw it
-// from here, so they never drift apart. A ring broken into four arcs — the four stages a change passes through — that
-// fades like a trail behind its leading arc, whose end carries a bright dot: the change, moving through its lifecycle.
-// Around it sits the page it is written on, as a small rounded square. Drawn on a 48×48 grid.
+// from here, so they never drift apart. A drafting sheet: faint construction lines overshoot a rounded square, ticks
+// mark its corner-radius centres, and a hub sits in the middle. On the square's four edges sit the stations a change
+// passes — an arrow for the proposal at the top, a document for the spec on the right, a triangle for the delta at the
+// bottom and a prompt for the code on the left. Drawn on a 128×128 grid, in one ink on one ground.
 
-export const MARK_VIEWBOX = "0 0 48 48";
-
-/** The four arcs, clockwise from the top, each with the opacity of its place in the trail (the first one leads). */
-export const MARK_ARCS: { d: string; opacity: number }[] = [
-  { d: "M25.88 10.63A13.5 13.5 0 0 1 37.37 22.12", opacity: 1 },
-  { d: "M37.37 25.88A13.5 13.5 0 0 1 25.88 37.37", opacity: 0.28 },
-  { d: "M22.12 37.37A13.5 13.5 0 0 1 10.63 25.88", opacity: 0.5 },
-  { d: "M10.63 22.12A13.5 13.5 0 0 1 22.12 10.63", opacity: 0.74 },
-];
-
-/** The leading dot at the end of the first arc. */
-export const MARK_HEAD = { cx: 37.37, cy: 22.12, r: 3.6 };
-
-/** The page in the middle. */
-export const MARK_CORE = { x: 19.5, y: 19.5, size: 9, rx: 2.6 };
-
-/** The tile the mark sits on. */
-export const MARK_TILE_RADIUS = 13;
+export const MARK_VIEWBOX = "0 0 128 128";
 
 /**
- * The favicon: the same mark as a standalone SVG. A favicon cannot read the page's CSS tokens, so it carries the dark
- * theme's accent values literally; they mirror --brand-strong, --brand and --brand-fg in styles.css.
+ * One element of the drawing. `fill` is a role, not a colour: `ink` is the stroke colour, `ground` the background the
+ * mark sits on, which lets a node hide the square's outline behind it. `detail` parts are hair-thin construction marks
+ * that a favicon leaves out.
+ */
+export interface MarkPart {
+  el: "line" | "rect" | "circle" | "path";
+  attrs: Record<string, number | string>;
+  strokeWidth?: number;
+  opacity?: number;
+  fill: "none" | "ink" | "ground";
+  detail?: boolean;
+  /** Where the part is drawn, for the parts of a node, which are drawn around their own centre. */
+  at?: [number, number];
+}
+
+const construction = (x1: number, y1: number, x2: number, y2: number): MarkPart => ({
+  el: "line",
+  attrs: { x1, y1, x2, y2, "stroke-dasharray": "3 4" },
+  strokeWidth: 1,
+  opacity: 0.3,
+  fill: "none",
+  detail: true,
+});
+
+const tick = (x: number, y: number): MarkPart => ({
+  el: "line",
+  attrs: { x1: x, y1: y - 6, x2: x, y2: y + 6 },
+  strokeWidth: 1.6,
+  opacity: 0.6,
+  fill: "none",
+  detail: true,
+});
+
+/** The rounded square the stations sit on. */
+export const MARK_SQUARE: MarkPart = { el: "rect", attrs: { x: 20, y: 20, width: 88, height: 88, rx: 22 }, strokeWidth: 2.6, fill: "none" };
+
+/** The four stations, clockwise from the top: a circle on the square's edge and the glyph inside it. */
+export const MARK_NODES: { name: string; at: [number, number]; glyph: MarkPart[] }[] = [
+  {
+    name: "proposal",
+    at: [64, 20],
+    glyph: [
+      { el: "path", attrs: { d: "M -4 -4 L 4 0 L -4 4", "stroke-linejoin": "round" }, strokeWidth: 2.4, fill: "none" },
+      { el: "line", attrs: { x1: -7, y1: 0, x2: 2, y2: 0 }, strokeWidth: 2.2, fill: "none" },
+    ],
+  },
+  {
+    name: "spec",
+    at: [108, 64],
+    glyph: [
+      { el: "rect", attrs: { x: -5, y: -6.5, width: 10, height: 13, rx: 1.5 }, strokeWidth: 2, fill: "none" },
+      { el: "line", attrs: { x1: -2.5, y1: -2.5, x2: 2.5, y2: -2.5 }, strokeWidth: 1.8, fill: "none" },
+      { el: "line", attrs: { x1: -2.5, y1: 0.5, x2: 2.5, y2: 0.5 }, strokeWidth: 1.8, fill: "none" },
+      { el: "line", attrs: { x1: -2.5, y1: 3.5, x2: 0.5, y2: 3.5 }, strokeWidth: 1.8, fill: "none" },
+    ],
+  },
+  {
+    name: "delta",
+    at: [64, 108],
+    glyph: [{ el: "path", attrs: { d: "M 0 -5.5 L 5.5 4 L -5.5 4 Z", "stroke-linejoin": "round" }, strokeWidth: 2.2, fill: "none" }],
+  },
+  {
+    name: "code",
+    at: [20, 64],
+    glyph: [
+      { el: "path", attrs: { d: "M -4.5 -3.5 L -1 0 L -4.5 3.5", "stroke-linejoin": "round" }, strokeWidth: 2.2, fill: "none" },
+      { el: "line", attrs: { x1: 1.5, y1: 3.5, x2: 5, y2: 3.5 }, strokeWidth: 2.2, fill: "none" },
+    ],
+  },
+];
+
+/** The whole drawing, in painting order. */
+export const MARK_PARTS: MarkPart[] = [
+  construction(8, 20, 120, 20),
+  construction(8, 108, 120, 108),
+  construction(20, 8, 20, 120),
+  construction(108, 8, 108, 120),
+  MARK_SQUARE,
+  tick(36, 20),
+  tick(92, 20),
+  tick(36, 108),
+  tick(92, 108),
+  { el: "circle", attrs: { cx: 64, cy: 64, r: 3.5 }, strokeWidth: 2, fill: "ground" },
+  { el: "circle", attrs: { cx: 64, cy: 64, r: 1.5 }, fill: "ink" },
+  ...MARK_NODES.flatMap((node) => [
+    { el: "circle", attrs: { cx: 0, cy: 0, r: 12 }, strokeWidth: 2.4, fill: "ground", at: node.at } satisfies MarkPart,
+    ...node.glyph.map((part) => ({ ...part, at: node.at })),
+  ]),
+];
+
+/** The favicon's frame: the square and the nodes that stick out of it, without the construction lines around them. */
+export const FAVICON_VIEWBOX = "6 6 116 116";
+
+/** How much heavier the favicon's strokes are, so that they survive being drawn at 16px. */
+export const FAVICON_STROKE_SCALE = 1.75;
+
+/**
+ * The favicon: the same mark as a standalone SVG. A favicon cannot read the page's CSS tokens and must read on light
+ * and dark tab strips, so it fills the square with the dark theme's --bg-base and inks in its --brand-fg, both written
+ * out literally; they mirror styles.css. The construction details are left out: at 16px they would only be blur.
  */
 export function faviconSvg(): string {
-  const arcs = MARK_ARCS.map((a) => `<path d="${a.d}" stroke="#fff" stroke-opacity="${a.opacity}" stroke-width="4" stroke-linecap="round" fill="none"/>`).join("");
-  return (
-    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${MARK_VIEWBOX}">` +
-    `<defs><linearGradient id="g" x1="0" y1="48" x2="48" y2="0" gradientUnits="userSpaceOnUse"><stop stop-color="#4f46e5"/><stop offset=".55" stop-color="#6366f1"/><stop offset="1" stop-color="#a5b4fc"/></linearGradient></defs>` +
-    `<rect width="48" height="48" rx="${MARK_TILE_RADIUS}" fill="url(#g)"/>` +
-    arcs +
-    `<circle cx="${MARK_HEAD.cx}" cy="${MARK_HEAD.cy}" r="${MARK_HEAD.r}" fill="#fff"/>` +
-    `<rect x="${MARK_CORE.x}" y="${MARK_CORE.y}" width="${MARK_CORE.size}" height="${MARK_CORE.size}" rx="${MARK_CORE.rx}" fill="#fff" fill-opacity=".92"/>` +
-    "</svg>"
-  );
+  const ink = "#a5b4fc";
+  const ground = "#26272b";
+  const body = MARK_PARTS.filter((part) => !part.detail).map((part) => {
+    const fill = part === MARK_SQUARE ? ground : { none: "none", ink, ground }[part.fill];
+    const attrs: Record<string, number | string> = { ...part.attrs, fill };
+    if (part.strokeWidth !== undefined) Object.assign(attrs, { stroke: ink, "stroke-width": +(part.strokeWidth * FAVICON_STROKE_SCALE).toFixed(2) });
+    if (part.opacity !== undefined) attrs.opacity = part.opacity;
+    if (part.at) attrs.transform = `translate(${part.at[0]} ${part.at[1]})`;
+    const written = Object.entries(attrs).map(([k, v]) => `${k}="${v}"`);
+    return `<${part.el} ${written.join(" ")}/>`;
+  });
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${FAVICON_VIEWBOX}">${body.join("")}</svg>`;
 }
