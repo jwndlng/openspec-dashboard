@@ -67,6 +67,24 @@ export function pendingArchiveHint(change: { archived?: string | null; checkout?
   return { label: `on ${where} · not in main checkout`, title: lines.join("\n") };
 }
 
+/**
+ * An archive in the main checkout next to an active copy of the same change there — usually its uncommitted original,
+ * left behind when the archive arrived by a merge. The scanner reports it as one archived change and lists the copy
+ * among its other checkouts; this says so. The dashboard never removes it.
+ */
+export function leftoverHint(change: { name: string; archived?: string | null; checkout?: { isMain: boolean }; otherCheckouts?: { isMain: boolean; column: string }[] }): { label: string; title: string } | undefined {
+  if (!change.archived || (change.checkout && !change.checkout.isMain)) return undefined;
+  const left = change.otherCheckouts?.find((o) => o.isMain);
+  if (!left) return undefined;
+  const dir = `openspec/changes/${change.name}/`;
+  const title = [
+    `${dir} is still in the main checkout, where it would be in ${left.column}`,
+    "it usually holds files that were never committed and stayed behind when the archive arrived",
+    `remove ${dir} to clear this`,
+  ].join("\n");
+  return { label: `active copy left · ${left.column}`, title };
+}
+
 export function cdCommand(repoPath: string): string {
   return `cd ${shellQuote(repoPath)}`;
 }

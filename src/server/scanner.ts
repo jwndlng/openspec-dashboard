@@ -3,7 +3,7 @@ import { deriveStage } from "../shared/columns.ts";
 import type { ChangeSnapshot, Config, RepoConfig, RepoSnapshot, SharedConfig, Snapshot, Worktree } from "../shared/types.ts";
 import { summarizeWorkInProgress } from "../shared/workInProgress.ts";
 import { emptySnapshot, writeSnapshot } from "./cache.ts";
-import { type ChangeCopy, mergeChanges } from "./mergeChanges.ts";
+import { type ChangeCopy, foldLeftovers, mergeChanges } from "./mergeChanges.ts";
 import { readChangeArtifacts } from "./openspecAdapter.ts";
 import { loadSharedConfig, repoSharedConfig } from "./sharedConfig.ts";
 import { changeSpecsSynced } from "./specSync.ts";
@@ -222,10 +222,12 @@ export async function scanRepo(repo: RepoConfig, source: RepoSource = new LocalR
   const listing = await source.listChanges();
   const warnings = [...listing.warnings];
   const mainCheckout = { path: repo.path, branch, isMain: true };
-  const copies: ChangeCopy[] = [];
-  for (const entry of listing.active) copies.push({ change: await scanChange(ctx, entry, true), checkout: mainCheckout });
-  const archived: ChangeSnapshot[] = [];
-  for (const [i, entry] of listing.archived.entries()) archived.push(await scanChange(ctx, entry, i < ARCHIVED_ACTIVITY_LIMIT));
+  const mainCopies: ChangeCopy[] = [];
+  for (const entry of listing.active) mainCopies.push({ change: await scanChange(ctx, entry, true), checkout: mainCheckout });
+  const scannedArchives: ChangeSnapshot[] = [];
+  for (const [i, entry] of listing.archived.entries()) scannedArchives.push(await scanChange(ctx, entry, i < ARCHIVED_ACTIVITY_LIMIT));
+  // An uncommitted change directory stays behind when its archive arrives; it is part of that archive, not a new change.
+  const { copies, archived } = foldLeftovers(mainCopies, scannedArchives);
 
   // Newest archive date per name: `listing.archived` is sorted newest first, so the first one seen wins.
   const archivedOnMain = new Map<string, string>();

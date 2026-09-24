@@ -14,7 +14,7 @@ import { useSessionUi, WorkStatus } from "./sessions.tsx";
 import { isComplete } from "../shared/columns.ts";
 import { promptBody } from "./boardMarks.ts";
 import { BranchBadge } from "./checkout.tsx";
-import { checkoutHint, daysSince, pendingArchiveHint, relTime } from "./format.ts";
+import { checkoutHint, daysSince, leftoverHint, pendingArchiveHint, relTime } from "./format.ts";
 import { currentQuery, followInApp, href, navigate, replaceQuery } from "./url.ts";
 
 export function artifactLabel(id: string): string {
@@ -200,12 +200,13 @@ export function DetailHeader({ repo, change, from, onClose }: { repo: RepoSnapsh
 
 /**
  * What the card leaves out: where the change lives and what state it is in — column, tasks, last update, how long it
- * has been complete, its branch and checkouts, an archive the main checkout lacks, its worktree's work status — and
- * the prompt it was started with. The artifact tabs below say which phases are written.
+ * has been complete, its branch and checkouts, an archive the main checkout lacks or an active copy left next to one,
+ * its worktree's work status — and the prompt it was started with. The artifact tabs below say which phases are written.
  */
 function ChangeFacts({ change, now = Date.now() }: { change: ChangeSnapshot; now?: number }) {
   const age = daysSince(change.lastActivityAt, now);
   const pending = pendingArchiveHint(change);
+  const leftover = leftoverHint(change);
   const prompt = promptBody(change.prompt);
   return (
     <>
@@ -221,6 +222,11 @@ function ChangeFacts({ change, now = Date.now() }: { change: ChangeSnapshot; now
         {pending && (
           <span class="badge warning" title={pending.title}>
             ⑂ {pending.label}
+          </span>
+        )}
+        {leftover && (
+          <span class="badge warning" title={leftover.title}>
+            ⚠ {leftover.label}
           </span>
         )}
         {change.branchMatch && <BranchBadge branch={change.branchMatch} hint={checkoutHint(change)} />}

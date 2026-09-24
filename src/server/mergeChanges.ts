@@ -40,6 +40,31 @@ export function leadingCopy(copies: ChangeCopy[]): ChangeCopy {
 }
 
 /**
+ * The main checkout's own active copies of changes it has also archived. Git moves only what it tracks, so an
+ * uncommitted change directory stays behind when its archive arrives by a merge — a leftover, not a change of its own.
+ * Such a copy (not created after the archive) is removed from `mainCopies` and listed among the other checkouts of the
+ * newest archive of its name, with its column; a copy created later is a new change reusing the name and is kept.
+ * `archived` is newest first, as `listChanges` returns it. Runs for repositories without git too.
+ */
+export function foldLeftovers(mainCopies: ChangeCopy[], archived: ChangeSnapshot[]): { copies: ChangeCopy[]; archived: ChangeSnapshot[] } {
+  const newest = new Map<string, number>();
+  for (const [i, change] of archived.entries()) if (change.archived && !newest.has(change.name)) newest.set(change.name, i);
+  const leftovers = new Map<number, ChangeCopy[]>();
+  const copies: ChangeCopy[] = [];
+  for (const copy of mainCopies) {
+    const i = newest.get(copy.change.name);
+    if (i === undefined || (copy.change.created ?? "") > (archived[i].archived ?? "")) copies.push(copy);
+    else leftovers.set(i, [...(leftovers.get(i) ?? []), copy]);
+  }
+  const folded = archived.map((change, i) => {
+    const left = leftovers.get(i);
+    if (!left) return change;
+    return { ...change, otherCheckouts: [...(change.otherCheckouts ?? []), ...left.map((o) => ({ ...o.checkout, column: o.change.column }))] };
+  });
+  return { copies, archived: folded };
+}
+
+/**
  * One change per name from the active copies of every checkout. `archivedOnMain` maps a change name to the date it was
  * archived in the main checkout: a worktree copy of such a change is a leftover on a branch cut before the archive and
  * is dropped — unless it was created after the archive, which makes it a new change reusing the name.
