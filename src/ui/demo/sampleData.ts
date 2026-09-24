@@ -158,7 +158,7 @@ const REPOS: SampleRepo[] = [
     ],
     changes: [
       // proposed on main, being implemented in a worktree: one card, led by the worktree's copy
-      { name: "add-rate-limiting", tasks: [9, 14], age: 0.1, branch: "feat/add-rate-limiting", onMain: "Proposal" },
+      { name: "add-rate-limiting", tasks: [9, 14], age: 0.1, branch: "feat/add-rate-limiting", onMain: "Drafts" },
       { name: "paginate-list-endpoints", tasks: [3, 22], age: 2 },
       { name: "migrate-to-postgres-16", tasks: [0, 31], age: 5 },
       { name: "structured-error-codes", written: "specs", age: 1 },
@@ -324,10 +324,8 @@ export function buildSample(now: number): Sample {
       const written = c.written ?? "planned";
       const input = {
         archived: false,
-        schema: SCHEMA,
         artifacts: artifacts(written),
         tasks: c.tasks ? { done: c.tasks[0], total: c.tasks[1] } : null,
-        specsSynced: c.synced,
       };
       return {
         repoId: r.id,
@@ -345,7 +343,7 @@ export function buildSample(now: number): Sample {
       };
     });
     const archived: ChangeSnapshot[] = r.archived.map(([name, age, total]) => {
-      const input = { archived: true, schema: SCHEMA, artifacts: artifacts("planned"), tasks: { done: total, total } };
+      const input = { archived: true, artifacts: artifacts("planned"), tasks: { done: total, total } };
       return {
         repoId: r.id,
         name,
@@ -398,7 +396,7 @@ export function buildSample(now: number): Sample {
   return { snapshot: { generatedAt: iso(0), repos }, config, candidates };
 }
 
-const FLOW = ["New", "Proposal", "Design", "Specs", "Tasks", "Ready", "Implementing", "Done", "Synced"];
+const FLOW = ["Backlog", "Drafts", "Ready", "Implementing", "Done"];
 
 /**
  * A feed that fits the sample: what would have been observed on the way to the snapshot's state. Derived from the
@@ -414,7 +412,7 @@ export function buildActivity(snapshot: Snapshot, now: number): ActivityEvent[] 
       const last = change.lastActivityAt ? Date.parse(change.lastActivityAt) : now - 3 * DAY;
       if (change.archived) {
         const at = Date.parse(`${change.archived}T16:30:00`);
-        if (now - at < 21 * DAY) drafts.push({ at, repo, rest: { kind: "change-archived", change: change.name, from: "Synced" } });
+        if (now - at < 21 * DAY) drafts.push({ at, repo, rest: { kind: "change-archived", change: change.name, from: "Done" } });
         continue;
       }
       const step = FLOW.indexOf(change.column);

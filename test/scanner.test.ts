@@ -78,8 +78,8 @@ test("skip_specs marks spec artifacts done; unknown schema is reported per chang
     { id: "design", status: "ready" },
     { id: "tasks", status: "blocked" },
   ]);
-  // design comes before specs in display order and is not written, so the last completed step is the proposal
-  expect(refactor.column).toBe("Proposal");
+  // some artifacts written, not all
+  expect(refactor.column).toBe("Drafts");
 
   const odd = snap.changes.find((c) => c.name === "odd")!;
   expect(odd.schema).toBe("my-custom");
@@ -387,12 +387,12 @@ test("scanner reports prompt.md: absent, small, oversized, and does not affect a
 
   const noPrompt = byName.get("no-prompt")!;
   expect(noPrompt.prompt).toBeUndefined();
-  // Artifact status unchanged by the prompt logic — proposal not done ⇒ "New".
-  expect(noPrompt.column).toBe("New");
+  // Artifact status unchanged by the prompt logic — no artifact done ⇒ "Backlog".
+  expect(noPrompt.column).toBe("Backlog");
 
   const withPrompt = byName.get("with-prompt")!;
   expect(withPrompt.prompt).toBe("# Prompt\n\nLog every mutation\n");
-  expect(withPrompt.column).toBe("New");
+  expect(withPrompt.column).toBe("Backlog");
 
   const oversized = byName.get("oversized")!;
   expect(oversized.prompt?.length).toBe(PROMPT_LIMIT_BYTES);

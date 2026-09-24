@@ -105,8 +105,8 @@ test("the sample shows worktree-agnostic changes: one that lives in a worktree a
     expect([change.name, worktree?.isMain, worktree?.branch]).toEqual([change.name, undefined, change.branchMatch]);
   }
   const both = inWorktree.find(({ change }) => change.otherCheckouts?.length)!;
-  expect(both.change.otherCheckouts).toEqual([{ path: both.repo.path, branch: both.repo.currentBranch, isMain: true, column: "Proposal" }]);
-  expect(both.change.column).not.toBe("Proposal"); // led by the copy that is further along
+  expect(both.change.otherCheckouts).toEqual([{ path: both.repo.path, branch: both.repo.currentBranch, isMain: true, column: "Drafts" }]);
+  expect(both.change.column).not.toBe("Drafts"); // led by the copy that is further along
   // every repository lists its main checkout first, like `git worktree list` does; names are unique per repository
   for (const repo of sample.snapshot.repos) {
     if (repo.worktrees.length) expect([repo.name, repo.worktrees[0].isMain, repo.worktrees[0].path]).toEqual([repo.name, true, repo.path]);

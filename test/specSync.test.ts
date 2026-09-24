@@ -82,13 +82,13 @@ async function project(): Promise<{ root: string; change: string; mainSpec: stri
 
 const changeOf = async (root: string, source?: LocalRepoSource) => (await scanRepo(newRepoConfig(root, true), source)).changes.find((c) => c.name === "harden-auth")!;
 
-test("scanner: a finished change is Done until its delta is in the main specs, then Synced", async () => {
+test("scanner: a finished change reports whether its delta is in the main specs and stays Done either way", async () => {
   const { root, mainSpec } = await project();
   let c = await changeOf(root);
   expect([c.specsSynced, c.stage, c.column]).toEqual([false, "done", "Done"]);
   await writeFile(mainSpec, AFTER);
   c = await changeOf(root);
-  expect([c.specsSynced, c.stage, c.column]).toEqual([true, "synced", "Synced"]);
+  expect([c.specsSynced, c.stage, c.column]).toEqual([true, "done", "Done"]);
   await rm(root, { recursive: true, force: true });
 });
 
@@ -108,7 +108,7 @@ test("scanner: no delta specs means nothing to sync; unfinished changes are not 
   await writeFile(join(change, "tasks.md"), "## 1. Work\n\n- [x] 1.1 do it\n");
   await rm(join(change, "specs"), { recursive: true });
   c = await changeOf(root);
-  expect([c.specsSynced, c.column]).toEqual([true, "Synced"]);
+  expect([c.specsSynced, c.column]).toEqual([true, "Done"]);
   await rm(root, { recursive: true, force: true });
 });
 

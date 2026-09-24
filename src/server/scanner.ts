@@ -168,7 +168,7 @@ async function scanChange(ctx: RepoContext, entry: ChangeDirEntry, withGit: bool
   );
   if (!lastActivityAt) lastActivityAt = await ctx.source.newestMtime(entry.dir);
 
-  // Only a finished, unarchived change can be Done or Synced, so only then is it worth reading its delta specs.
+  // Sync state is only reported for a finished, unarchived change, so only then is it worth reading its delta specs.
   let specsSynced: boolean | undefined;
   if (!entry.archived && tasks && tasks.total > 0 && tasks.done === tasks.total) {
     const sync = await changeSpecsSynced(ctx.source, entry.dir);
@@ -176,7 +176,7 @@ async function scanChange(ctx: RepoContext, entry: ChangeDirEntry, withGit: bool
     warnings.push(...sync.warnings);
   }
 
-  const { stage, column } = deriveStage({ archived: Boolean(entry.archived), schema, artifacts, tasks, specsSynced });
+  const { stage, column } = deriveStage({ archived: Boolean(entry.archived), artifacts, tasks });
   return {
     repoId: ctx.repo.id,
     name: entry.name,

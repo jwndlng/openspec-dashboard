@@ -47,12 +47,12 @@ test("checkoutHint says where a change lives and which other checkouts are at a 
     checkoutHint({
       checkout: wt,
       otherCheckouts: [
-        { isMain: true, branch: "main", column: "Proposal" },
-        { isMain: false, branch: "wip/old", column: "Design" },
-        { isMain: false, column: "New" },
+        { isMain: true, branch: "main", column: "Drafts" },
+        { isMain: false, branch: "wip/old", column: "Ready" },
+        { isMain: false, column: "Backlog" },
       ],
     }).split("\n"),
-  ).toEqual(["lives in worktree /w/acme/alpha-infra/.claude/worktrees/audit-trail", "also in: main checkout — Proposal", "also in: wip/old — Design", "also in: detached worktree — New"]);
+  ).toEqual(["lives in worktree /w/acme/alpha-infra/.claude/worktrees/audit-trail", "also in: main checkout — Drafts", "also in: wip/old — Ready", "also in: detached worktree — Backlog"]);
 });
 
 test("the cd command quotes a path only when it needs to", () => {

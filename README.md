@@ -43,8 +43,8 @@ track.
   unpushed commits (ahead of the upstream, or never pushed), `↓N` behind, `stale`, `locked` or `?` (unknown), each with
   a tooltip. Ahead, behind and unpushed reflect your last `git fetch`: the dashboard never fetches. Only counts are
   recorded, never file names. ([change-scanner](openspec/specs/change-scanner/spec.md))
-- **Boards**: one board per repository, plus one across all of them. Columns follow the lifecycle: New → one column
-  per artifact → Ready → Implementing → Done → Synced → Archived. Changes in git worktrees are included, so work shows
+- **Boards**: one board per repository, plus one across all of them. Columns follow the lifecycle: Backlog → Drafts
+  (with a bar of written artifacts) → Ready → Implementing → Done → Archived. Changes in git worktrees are included, so work shows
   up before it is merged. ([kanban-board](openspec/specs/kanban-board/spec.md),
   [change-scanner](openspec/specs/change-scanner/spec.md))
 - **Change details**: **Show details** on a card opens the change's proposal, design, specs and tasks in an overlay

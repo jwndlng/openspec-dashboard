@@ -141,7 +141,7 @@ test("one running session per change; archive gets its own worktree and branch; 
   expect(view.text()).toContain(`cwd=${await realpath(a.worktreePath)}`);
 });
 
-test("archive is offered in Synced too: the delta is already in the main specs, only archiving is left", async () => {
+test("archive is offered once the delta is already in the main specs: the change stays Done", async () => {
   const h = track(await harness());
   const delta = await readFile(join(h.repoPath, "openspec", "changes", "bump-toolchain", "specs", "bump-toolchain", "spec.md"), "utf8");
   await mkdir(join(h.repoPath, "openspec", "specs", "bump-toolchain"), { recursive: true });
@@ -149,7 +149,7 @@ test("archive is offered in Synced too: the delta is already in the main specs, 
   git(h.repoPath, "add", "-A");
   git(h.repoPath, "commit", "-q", "-m", "sync specs");
   h.snapshot.repos[0] = await scanRepo(h.config.repos[0]);
-  expect(h.snapshot.repos[0].changes.find((c) => c.name === "bump-toolchain")).toMatchObject({ stage: "synced", column: "Synced" });
+  expect(h.snapshot.repos[0].changes.find((c) => c.name === "bump-toolchain")).toMatchObject({ specsSynced: true, stage: "done", column: "Done" });
 
   const arch = await h.manager.open({ repoId: h.repoId, change: "bump-toolchain", action: "archive" });
   expect(arch).toMatchObject({ state: "running", action: "archive", branch: "chore/archive-bump-toolchain" });
@@ -394,7 +394,7 @@ test("a folder that is not a git repository: the session runs in it, with no wor
 
 test("a folder that is not a git repository: archiving works there, and Ship is refused", async () => {
   const h = track(await harness({ git: false }));
-  const done = h.snapshot.repos[0].changes.find((c) => c.stage === "done" || c.stage === "synced");
+  const done = h.snapshot.repos[0].changes.find((c) => c.stage === "done");
   expect(done).toBeDefined();
 
   const arch = await h.manager.open({ repoId: h.repoId, change: (done as { name: string }).name, action: "archive" });
