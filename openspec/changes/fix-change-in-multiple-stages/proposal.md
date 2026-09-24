@@ -40,8 +40,8 @@ _None._
   separately; this also holds for repositories without git.
 - `change-detail`: new requirement "Detail header marks an active copy left behind next to its archive" — the detail
   header of a change archived in the main checkout gets a warning badge when a leftover active copy exists; the board
-  shows the change as one `Archived` card. Added rather than modifying "Detail header shows the change's state", whose
-  current text lives in the not yet archived `refactor-design`.
+  shows the change as one `Archived` card. A requirement of its own, so "Detail header shows the change's state" stays
+  as `refactor-design` wrote it.
 
 ## Impact
 

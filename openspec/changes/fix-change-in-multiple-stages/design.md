@@ -73,9 +73,9 @@ mutually exclusive by construction. No API or type change: `otherCheckouts` alre
 
 *Alternative:* a badge on the board card. Rejected. `refactor-design` moved the pending-archive badge and every other
 "where does this change live" detail off the card into the detail header; a leftover is the same kind of detail. The
-card already tells the important part by being a single `Archived` card. The requirement is added to `change-detail`
-instead of modifying "Detail header shows the change's state", so it applies whichever of the two changes is archived
-first.
+card already tells the important part by being a single `Archived` card. The requirement is a new one in
+`change-detail` rather than a change to "Detail header shows the change's state", which keeps that list of facts as
+`refactor-design` wrote it.
 
 ## Risks / Trade-offs
 
