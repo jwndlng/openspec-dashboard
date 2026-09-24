@@ -38,7 +38,9 @@ The dashboard SHALL start agents from user-configurable profiles. A profile cons
 ### Requirement: Session starters run a fixed prompt for a validated change
 The dashboard SHALL offer the starters **Draft artifacts** (while at least one artifact of the change is not done), **Implement** (change in `Ready` or `Implementing`) and **Archive** (change in `Done` or `Synced`), each only when the repository's agent has an opening prompt configured for it, and none for archived changes. A request to start a starter that is not available for the change's current stage SHALL be refused. The opening prompt SHALL be produced from the profile's template, in which `{change}` is the only placeholder, replaced by the change name after it passed change-name validation. The agent MUST be started without a shell from an argument list; the prompt MUST reach it either as exactly one argument (where the command contains `{prompt}`) or by being submitted to its terminal after start-up under the rules for text sent on the user's behalf (where it does not). No text from the browser other than the validated change name may become part of the command line.
 
-The preconfigured profile's Archive prompt SHALL instruct the agent to sync the change's delta specs into the main specs and then archive the change, without asking whether to sync, and to archive right away when nothing is left to sync. It SHALL remain an ordinary prompt template the user can edit or remove. A saved configuration whose preconfigured profile still carries the former preconfigured Archive prompt verbatim (`/opsx:archive {change}`) SHALL be read as carrying the current one; any other Archive prompt, and a removed one, SHALL be left as saved. Syncing and archiving are done by the agent in the session's worktree; the dashboard itself MUST NOT write specs or move a change.
+The preconfigured profile's Archive prompt SHALL instruct the agent to sync the change's delta specs into the main specs and then archive the change, without asking whether to sync, and to archive right away when nothing is left to sync. It SHALL remain an ordinary prompt template the user can edit or remove. A saved configuration whose preconfigured profile still carries the former preconfigured Archive prompt verbatim (`/opsx:archive {change}`) SHALL be read as carrying the current one; any other Archive prompt, and a removed one, SHALL be left as saved. Syncing and archiving are done by the agent in the session's working directory; the dashboard itself MUST NOT write specs or move a change.
+
+A starter that does not result in a session MUST NOT fail silently. When starting is refused or fails, the dashboard SHALL show the reason to the user in the place the starter was activated from, without requiring a session panel to be open — a session that could not be created has no panel to report itself in. The message SHALL be the reason the request was refused with. It SHALL be cleared once a later start from the same place succeeds.
 
 #### Scenario: Implement on a ready change
 - **WHEN** the user starts **Implement** on change `cache-api-calls` with the preconfigured profile
@@ -83,6 +85,14 @@ The preconfigured profile's Archive prompt SHALL instruct the agent to sync the 
 #### Scenario: Edited Archive prompt is kept
 - **WHEN** a saved configuration's `claude` profile has the Archive prompt `/opsx:archive {change} and ask me before syncing`
 - **THEN** the loaded configuration carries exactly that prompt
+
+#### Scenario: A refused start is reported on the card
+- **WHEN** the user activates a starter and the request is refused, so that no session is created
+- **THEN** the card that starter belongs to shows the reason, and no session panel is required for it to be visible
+
+#### Scenario: The reason goes away on the next successful start
+- **WHEN** a starter was refused, its reason is shown, and a later start from the same card succeeds
+- **THEN** the reason is no longer shown
 
 ### Requirement: A session is the agent's own terminal
 A session SHALL run the agent attached to a pseudo-terminal, and the session panel SHALL show that terminal: what the agent prints is displayed as the agent rendered it, and what the user types is delivered to the agent unchanged. The dashboard MUST NOT parse, summarise or filter the agent's output, with one exception: after typing text on the user's behalf it MAY check whether that same text appeared in the terminal, solely to decide whether to press Enter. It MUST NOT derive anything else from the output, MUST NOT classify the agent's state from it, and MUST NOT store, log or forward what it observed for that check. Keystrokes typed by the user MUST NOT be observed in this way. The agent's own prompts — including its permission and trust questions — SHALL be answered by the user in the terminal. The terminal SHALL follow the size of the panel. Several viewers MAY be attached to one session at once; a viewer that attaches later SHALL first receive what the terminal has shown so far (bounded), then follow live. Closing the panel MUST NOT end the session.
@@ -131,7 +141,9 @@ Whenever the dashboard sends text to an agent's terminal on the user's behalf an
 - **THEN** the echoed text counts as shown and the line is submitted
 
 ### Requirement: Every session works in its own git worktree, created by the dashboard
-A session MUST NOT run in the repository's main checkout. Before starting the agent, the dashboard SHALL ensure a git worktree for the session under `~/.openspec-dashboard/worktrees/<repository id>/`, outside the repository's working tree, on branch `feat/<change>` — or, for **Archive**, in a worktree and branch of its own (`archive-<change>`, `chore/archive-<change>`). An existing worktree for that name SHALL be reused; an existing branch SHALL be checked out; otherwise the branch SHALL be created from the repository's default branch as currently known locally (`origin/HEAD`, else `HEAD`). As the one exception, when a Draft or Implement session's branch `feat/<change>` is already checked out in another linked worktree of the repository, the session SHALL adopt that worktree — run the agent there instead of creating one — and SHALL record and show that the worktree was adopted. The dashboard MUST NOT contact a remote for this. If the change's directory is missing from the session's worktree, the dashboard SHALL copy it from the checkout the change's data comes from (the main checkout or a linked worktree), including when it exists there only uncommitted. The main checkout's branch, index and working tree MUST NOT be changed. The session record and panel SHALL show the worktree path and branch.
+In a git repository a session MUST NOT run in the repository's main checkout. Before starting the agent, the dashboard SHALL ensure a git worktree for the session under `~/.openspec-dashboard/worktrees/<repository id>/`, outside the repository's working tree, on branch `feat/<change>` — or, for **Archive**, in a worktree and branch of its own (`archive-<change>`, `chore/archive-<change>`). An existing worktree for that name SHALL be reused; an existing branch SHALL be checked out; otherwise the branch SHALL be created from the repository's default branch as currently known locally (`origin/HEAD`, else `HEAD`). As the one exception, when a Draft or Implement session's branch `feat/<change>` is already checked out in another linked worktree of the repository, the session SHALL adopt that worktree — run the agent there instead of creating one — and SHALL record and show that the worktree was adopted. The dashboard MUST NOT contact a remote for this. If the change's directory is missing from the session's worktree, the dashboard SHALL copy it from the checkout the change's data comes from (the main checkout or a linked worktree), including when it exists there only uncommitted. The main checkout's branch, index and working tree MUST NOT be changed. The session record and panel SHALL show the worktree path and branch.
+
+A tracked folder that holds an `openspec/` tree but is **not a git repository** is a supported repository, and its sessions SHALL run **in place**: the agent's working directory SHALL be the repository folder itself, no worktree SHALL be created, no branch SHALL be made, and no git command SHALL be run for the session. Whether a session runs in place SHALL be decided from the repository's own scan result, never by attempting a git command and reacting to its failure. An in-place session SHALL be recorded as such and MUST NOT carry a branch. The panel SHALL name the folder the agent runs in and SHALL state plainly that the agent edits the tracked folder directly, with no branch, no commit and no undo. Session starters MUST NOT be hidden or disabled because a repository is not a git repository.
 
 #### Scenario: Two sessions in one repository
 - **WHEN** sessions are open for changes `audit-trail` and `upgrade-runtime` of the same repository
@@ -154,8 +166,16 @@ A session MUST NOT run in the repository's main checkout. Before starting the ag
 - **THEN** the archive session runs in a separate worktree on a `chore/archive-<change>` branch
 
 #### Scenario: Worktree cannot be created
-- **WHEN** git refuses to create the worktree
+- **WHEN** git refuses to create the worktree in a git repository
 - **THEN** the request fails with git's reason and no agent is started
+
+#### Scenario: Archiving a change in a folder that is not a git repository
+- **WHEN** the user starts **Archive** for a completed change in a tracked folder that has an `openspec/` tree but no `.git`
+- **THEN** the agent starts with the tracked folder as its working directory, no worktree and no branch are created, and no git command is run for the session
+
+#### Scenario: The panel names the folder for an in-place session
+- **WHEN** the panel of an in-place session is open
+- **THEN** it names the repository folder the agent runs in, shows no branch, and states that the agent edits that folder directly with no branch, no commit and no undo
 
 ### Requirement: Session lifecycle and control
 A session SHALL be `running` while its agent process lives, `exited` with the process's exit code once it has ended, or `failed` when the agent could not be started. At most one session per worktree may be running; a request to open another for the same worktree SHALL return the running one. Because archiving has a worktree of its own, an Archive session MAY run next to the change's other session. **End session** SHALL terminate the agent as closing its terminal window would (hang-up, then a forced kill if it does not exit). When the agent's profile has a resume command, an ended session SHALL offer **Resume**, which starts that command in the same worktree within the same session. Because a terminal cannot outlive the process that owns it, stopping the dashboard MUST end every agent, and sessions recorded as running at start-up MUST be shown as ended with that reason.
@@ -271,7 +291,7 @@ Session metadata SHALL be stored only under `~/.openspec-dashboard/sessions/<ses
 - **THEN** the stored terminal output is shown and no input is accepted
 
 ### Requirement: Worktree clean-up is offered only when safe
-When ending or cleaning up a session, or for a worktree that has no session record, the dashboard SHALL offer to remove the worktree only if the dashboard created it, it has no uncommitted changes, and either its work status is `merged` or it has no commits that exist nowhere else (nothing ahead of its upstream, or, without an upstream, no commit that is unreachable from every other local or remote-tracking branch). Removal SHALL happen only after the user confirms, by a non-forcing `git worktree remove`; the branch is never deleted. Otherwise the worktree MUST be kept and the reason shown. A worktree MUST NOT be removed while a session is running in it. A worktree that a session adopted MUST NOT be offered for removal and MUST NOT be removed by the dashboard.
+When ending or cleaning up a session, or for a worktree that has no session record, the dashboard SHALL offer to remove the worktree only if the dashboard created it, it has no uncommitted changes, and either its work status is `merged` or it has no commits that exist nowhere else (nothing ahead of its upstream, or, without an upstream, no commit that is unreachable from every other local or remote-tracking branch). Removal SHALL happen only after the user confirms, by a non-forcing `git worktree remove`; the branch is never deleted. Otherwise the worktree MUST be kept and the reason shown. A worktree MUST NOT be removed while a session is running in it. A worktree that a session adopted MUST NOT be offered for removal and MUST NOT be removed by the dashboard. An in-place session has no worktree: removal MUST NOT be offered for it, and ending it SHALL end the agent and nothing else.
 
 #### Scenario: Unpushed work
 - **WHEN** the user ends a session whose worktree has commits that exist only on its branch
@@ -288,6 +308,10 @@ When ending or cleaning up a session, or for a worktree that has no session reco
 #### Scenario: Adopted worktree
 - **WHEN** the user ends a session that adopted a worktree the user had created, and that worktree is clean
 - **THEN** removal is not offered and the worktree is kept
+
+#### Scenario: Ending an in-place session
+- **WHEN** the user ends a session that ran in a folder that is not a git repository
+- **THEN** the dialog offers neither a worktree removal nor a pull, and confirming ends the agent and leaves the folder untouched
 
 ### Requirement: Every session worktree has a work status
 For every directory under `~/.openspec-dashboard/worktrees/<repoId>/` of a configured repository the dashboard SHALL derive a work status from local git, using read-only commands and without contacting a remote. The base is the repository's default branch as locally known (`origin/HEAD`), or the main checkout's `HEAD` when there is none. The status SHALL be the first that applies: `missing` when the directory is not a git worktree; `uncommitted` with the number of changed or untracked files; `merged` when the branch has no commit that the base lacks and a remote-tracking branch of the same name exists, or when every file the branch changed has the same content in the base (which also recognises squash and rebase merges); `clean` when the branch has no commit that the base lacks; `unpushed` with the number of commits ahead of its upstream, or all commits the base lacks when it has no upstream; otherwise `pushed`. Statuses MAY be cached for up to 15 seconds and MUST be recomputed after a session ends, a Ship action or a worktree removal. Because nothing is fetched, `merged` reflects the user's last fetch; the UI MUST say so.
@@ -317,7 +341,7 @@ For every directory under `~/.openspec-dashboard/worktrees/<repoId>/` of a confi
 - **THEN** no git command that contacts a remote is run
 
 ### Requirement: Ship asks the agent to commit, push and open a pull request
-For a session whose worktree has status `uncommitted`, `unpushed` or `pushed` the dashboard SHALL offer a Ship action. It uses the agent profile's Ship prompt, or an agent-neutral default asking to commit with a conventional message, push the branch, open a pull request against the default branch if none exists, not to merge it, and to report its URL. When the session is running the prompt SHALL be submitted to its terminal under the rules for text sent on the user's behalf, so that one activation sends it; otherwise the agent SHALL be started in the session's worktree — with its resume command and the prompt submitted after start-up when it has one, else with its command and the prompt as opening prompt — in the same session record, under the same checks as resuming. The result of Ship SHALL state whether the prompt was submitted, and when it was only typed the panel SHALL say so. The dashboard itself MUST NOT commit, push, or contact a remote.
+For a session whose worktree has status `uncommitted`, `unpushed` or `pushed` the dashboard SHALL offer a Ship action. It uses the agent profile's Ship prompt, or an agent-neutral default asking to commit with a conventional message, push the branch, open a pull request against the default branch if none exists, not to merge it, and to report its URL. When the session is running the prompt SHALL be submitted to its terminal under the rules for text sent on the user's behalf, so that one activation sends it; otherwise the agent SHALL be started in the session's worktree — with its resume command and the prompt submitted after start-up when it has one, else with its command and the prompt as opening prompt — in the same session record, under the same checks as resuming. The result of Ship SHALL state whether the prompt was submitted, and when it was only typed the panel SHALL say so. The dashboard itself MUST NOT commit, push, or contact a remote. An in-place session has no worktree and no branch: it has no work status, Ship MUST NOT be offered for it, and a Ship request for it SHALL be refused.
 
 #### Scenario: Ship in a running session
 - **WHEN** Ship is used on a running session whose agent waits at its text prompt
@@ -334,6 +358,10 @@ For a session whose worktree has status `uncommitted`, `unpushed` or `pushed` th
 #### Scenario: Nothing to ship
 - **WHEN** Ship is requested for a session whose worktree is `merged`, `clean` or `missing`
 - **THEN** the request is refused and nothing is started
+
+#### Scenario: Ship is not offered without git
+- **WHEN** the panel of an in-place session is open
+- **THEN** no Ship control is shown, no work status is shown for it, and a Ship request for that session is refused
 
 ### Requirement: A starter's prompt can be sent to a running session
 For a running session in a change's own worktree the dashboard SHALL be able to send the opening prompt of the Draft or Implement starter to that session instead of opening a new one, under the same conditions as opening: the action must be available in the change's current stage and the session's agent must have a prompt for it. The prompt SHALL be submitted to the session's terminal under the rules for text sent on the user's behalf, so that one activation sends it where the agent shows a text prompt and it is only typed, never confirmed, where it does not. The result SHALL state whether the prompt was submitted, and when it was only typed the dashboard SHALL say so as it does for any other text sent on the user's behalf. The session's recorded action SHALL become the one sent, whether or not the prompt was submitted. Archive MUST NOT be sent to a session in the change's own worktree, and nothing SHALL be sent to a session that is not running.
