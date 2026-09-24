@@ -73,16 +73,16 @@ test("pendingArchiveHint: only for an archive that lives in a linked worktree", 
 });
 
 test("leftoverHint: only for an archive in the main checkout with an active copy left there", () => {
-  const main = { path: "/w/acme/alpha-infra", branch: "main", isMain: true, column: "Synced" };
+  const main = { path: "/w/acme/alpha-infra", branch: "main", isMain: true, column: "Done" };
   const hint = leftoverHint({ name: "audit-trail", archived: "2026-09-20", otherCheckouts: [main] });
-  expect(hint?.label).toBe("active copy left · Synced");
+  expect(hint?.label).toBe("active copy left · Done");
   expect(hint?.title).toContain("openspec/changes/audit-trail/");
   expect(hint?.title).toContain("never committed");
   expect(hint?.title).toContain("remove openspec/changes/audit-trail/ to clear this");
   // a main checkout named explicitly is the same; an ordinary archive, a pending archive and an active change are not
-  expect(leftoverHint({ name: "audit-trail", archived: "2026-09-20", checkout: { isMain: true }, otherCheckouts: [main] })?.label).toBe("active copy left · Synced");
+  expect(leftoverHint({ name: "audit-trail", archived: "2026-09-20", checkout: { isMain: true }, otherCheckouts: [main] })?.label).toBe("active copy left · Done");
   expect(leftoverHint({ name: "audit-trail", archived: "2026-09-20" })).toBeUndefined();
   expect(leftoverHint({ name: "audit-trail", archived: "2026-09-20", checkout: { isMain: false }, otherCheckouts: [{ ...main, column: "Implementing" }] })).toBeUndefined();
-  expect(leftoverHint({ name: "audit-trail", archived: null, checkout: { isMain: true }, otherCheckouts: [{ isMain: false, column: "Proposal" }] })).toBeUndefined();
+  expect(leftoverHint({ name: "audit-trail", archived: null, checkout: { isMain: true }, otherCheckouts: [{ isMain: false, column: "Drafts" }] })).toBeUndefined();
   expect(leftoverHint({ name: "audit-trail", archived: null, otherCheckouts: [main] })).toBeUndefined();
 });

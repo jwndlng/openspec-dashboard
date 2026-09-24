@@ -339,7 +339,7 @@ test("an uncommitted change left behind in the main checkout next to its merged 
   expect((await readdir(join(root, "openspec", "changes"))).includes("audit-trail")).toBe(true); // the leftover is really there
   const cards = byName(await scan(root), "audit-trail");
   expect(cards.map((c) => [c.column, c.archived, c.checkout])).toEqual([["Archived", "2026-09-20", undefined]]);
-  expect(cards[0].otherCheckouts).toEqual([{ path: root, branch: "main", isMain: true, column: "Synced" }]);
+  expect(cards[0].otherCheckouts).toEqual([{ path: root, branch: "main", isMain: true, column: "Done" }]);
 });
 
 test("a leftover next to its archive in a folder without git is reported once, as archived", async () => {
@@ -360,7 +360,7 @@ test("a leftover next to its archive in a folder without git is reported once, a
 
   const snap = await scan(plain, new NotGit(plain));
   expect(snap.isGit).toBe(false);
-  expect(byName(snap, "audit-trail").map((c) => [c.column, c.checkout, c.otherCheckouts])).toEqual([["Archived", undefined, [{ path: plain, branch: undefined, isMain: true, column: "Synced" }]]]);
+  expect(byName(snap, "audit-trail").map((c) => [c.column, c.checkout, c.otherCheckouts])).toEqual([["Archived", undefined, [{ path: plain, branch: undefined, isMain: true, column: "Done" }]]]);
   // active changes of a folder without git still carry no checkout
-  expect(byName(snap, "solo").map((c) => [c.column, c.checkout])).toEqual([["Proposal", undefined]]);
+  expect(byName(snap, "solo").map((c) => [c.column, c.checkout])).toEqual([["Drafts", undefined]]);
 });

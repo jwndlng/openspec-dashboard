@@ -2,12 +2,13 @@
 
 ## Why
 
-A change can show up on the board twice — once in `Synced` (or any other active column) and once in `Archived`. It
+A change can show up on the board twice — once in `Done` (`Synced` before
+`simplify-kanban-board`, or any other active column) and once in `Archived`. It
 happens when the main checkout holds both `openspec/changes/<name>/` and `openspec/changes/archive/<date>-<name>/`.
 The usual cause is the recommended workflow itself: the change directory is created uncommitted in the main checkout,
 copied into a worktree, implemented and archived there, merged and pulled. Git moves only what it tracked, so the
 untracked original stays behind in the main checkout. Its tasks are all ticked and the archive just applied its delta
-specs, so it reads as `Synced`. The scanner merges copies across worktrees and folds a *pending* archive (one found only
+specs, so it reads as `Done`. The scanner merges copies across worktrees and folds a *pending* archive (one found only
 in a worktree) together with the active copies of the same name. But it deliberately never folds the main checkout's own
 active copy into the main checkout's archive, so one change gets two cards. The activity log, keyed by change name,
 then sees two conflicting snapshots of one change.

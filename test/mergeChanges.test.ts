@@ -63,10 +63,10 @@ test("mergeChanges: archived on main wins, unless the copy was created after the
   expect(mergeChanges([stale, undated, sameDay], archived)).toEqual([]);
   expect(mergeChanges([stale, reused], archived).map((c) => [c.name, c.checkout?.path, c.otherCheckouts])).toEqual([["audit-trail", reused.checkout.path, undefined]]);
   // main's own copy is not decided here: foldLeftovers has already taken it into the archive
-  const leftover = copy(MAIN, "synced", "Synced", { created: "2026-09-01" });
+  const leftover = copy(MAIN, "done", "Done", { created: "2026-09-01" });
   const folded = foldLeftovers([leftover], [archivedSnapshot("2026-09-20")]);
   expect(mergeChanges(folded.copies, archived)).toEqual([]);
-  expect(folded.archived.map((c) => c.otherCheckouts)).toEqual([[{ ...MAIN, column: "Synced" }]]);
+  expect(folded.archived.map((c) => c.otherCheckouts)).toEqual([[{ ...MAIN, column: "Done" }]]);
 });
 
 const archivedSnapshot = (date: string, extra: Partial<ChangeSnapshot> = {}): ChangeSnapshot => ({ ...copy(MAIN, "archived", "Archived").change, archived: date, ...extra });
@@ -78,9 +78,9 @@ test("foldLeftovers: main's active copy of a change it archived is a leftover of
     ["no created date", {}],
     ["same day", { created: "2026-09-20" }],
   ] as const) {
-    const { copies, archived: out } = foldLeftovers([copy(MAIN, "synced", "Synced", extra)], archived);
+    const { copies, archived: out } = foldLeftovers([copy(MAIN, "done", "Done", extra)], archived);
     expect([label, copies]).toEqual([label, []]);
-    expect([label, out.map((c) => [c.archived, c.otherCheckouts])]).toEqual([label, [["2026-09-20", [{ ...MAIN, column: "Synced" }]]]]);
+    expect([label, out.map((c) => [c.archived, c.otherCheckouts])]).toEqual([label, [["2026-09-20", [{ ...MAIN, column: "Done" }]]]]);
   }
   // other names pass through untouched, and the input is not mutated
   const other = { ...copy(MAIN, "ready", "Ready"), change: { ...copy(MAIN, "ready", "Ready").change, name: "upgrade-runtime" } };
@@ -90,17 +90,17 @@ test("foldLeftovers: main's active copy of a change it archived is a leftover of
 });
 
 test("foldLeftovers: a name reused after the archive stays a change of its own", () => {
-  const reused = copy(MAIN, "artifact", "Proposal", { created: "2026-10-02" });
+  const reused = copy(MAIN, "drafts", "Drafts", { created: "2026-10-02" });
   const { copies, archived } = foldLeftovers([reused], [archivedSnapshot("2026-09-20")]);
   expect(copies).toEqual([reused]);
   expect(archived.map((c) => c.otherCheckouts)).toEqual([undefined]);
 });
 
 test("foldLeftovers: of two archives of one name only the newest gets the leftover", () => {
-  const { copies, archived } = foldLeftovers([copy(MAIN, "synced", "Synced", { created: "2026-09-10" })], [archivedSnapshot("2026-09-20"), archivedSnapshot("2026-08-01")]);
+  const { copies, archived } = foldLeftovers([copy(MAIN, "done", "Done", { created: "2026-09-10" })], [archivedSnapshot("2026-09-20"), archivedSnapshot("2026-08-01")]);
   expect(copies).toEqual([]);
   expect(archived.map((c) => [c.archived, c.otherCheckouts])).toEqual([
-    ["2026-09-20", [{ ...MAIN, column: "Synced" }]],
+    ["2026-09-20", [{ ...MAIN, column: "Done" }]],
     ["2026-08-01", undefined],
   ]);
 });

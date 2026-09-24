@@ -79,8 +79,8 @@ test("header: repository link, change name, close control, warnings — and the 
   expect(classed(archived, "notice")).toEqual([]);
   expect(textOf(archived)).not.toContain("active copy left");
   // an active copy left next to the archive in the main checkout: a warning, with the directory to remove in its tooltip
-  const leftover = DetailHeader({ repo, change: { ...change, archived: "2026-03-09", column: "Archived", branchMatch: undefined, otherCheckouts: [{ path: "/w/acme/forum-admin", branch: "main", isMain: true, column: "Synced" }] }, onClose: noop });
-  const badge = classed(leftover, "warning").find((el) => textOf(el).includes("active copy left · Synced"));
+  const leftover = DetailHeader({ repo, change: { ...change, archived: "2026-03-09", column: "Archived", branchMatch: undefined, otherCheckouts: [{ path: "/w/acme/forum-admin", branch: "main", isMain: true, column: "Done" }] }, onClose: noop });
+  const badge = classed(leftover, "warning").find((el) => textOf(el).includes("active copy left · Done"));
   expect(String(badge?.props.title)).toContain("openspec/changes/multi-tenant-sync/");
 
   // A change that is gone from the snapshot has only its name: no facts row.
