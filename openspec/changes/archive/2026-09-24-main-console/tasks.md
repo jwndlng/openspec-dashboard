@@ -38,4 +38,4 @@
 
 - [x] 6.1 Describe the main console and the console folder in `README.md`, and extend invariant 1's sentence on starting the agent in `CLAUDE.md` to cover the console folder (never inside a tracked repository)
 - [x] 6.2 Run `bun run check` and `bun run build`, then start `dist/openspec-dashboard` and open, answer (a default response), end and resume the console with `test/fixtures/fake-agent.ts` as the default agent to confirm it works in the compiled binary
-- [ ] 6.3 Open the console once with the real preconfigured Claude Code profile and confirm it starts as plain `claude` in the console folder (a manual check for the user; the automated checks never start a real agent)
+- [x] 6.3 Open the console once with the real preconfigured Claude Code profile and confirm it starts as plain `claude` in the console folder (a manual check for the user; the automated checks never start a real agent)
