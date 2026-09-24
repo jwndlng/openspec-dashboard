@@ -4,14 +4,14 @@
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
 import { useEffect, useRef, useState } from "preact/hooks";
-import { SHIPPABLE_WORK, type Session, type SessionAction, type SessionWorktree } from "../shared/types.ts";
+import { SHIPPABLE_WORK, type ChangeSession, type Session, type SessionAction, type SessionWorktree } from "../shared/types.ts";
 import { api, type TerminalMessage } from "./api.ts";
 import { cdCommand } from "./format.ts";
 import { DEFAULT_QUICK_REPLIES, NOT_SUBMITTED_NOTICE, replyHint, replyMessage, type QuickReply } from "./quickReplies.ts";
 import { nextStepFor, sessionBadge, startersFor, workBadge, worktreeOfSession } from "./sessionState.ts";
 import { SessionBadgeView, useSessionUi } from "./sessions.tsx";
 
-function Copy({ text, label }: { text: string; label: string }) {
+export function Copy({ text, label }: { text: string; label: string }) {
   const [done, setDone] = useState(false);
   return (
     <button
@@ -49,7 +49,11 @@ const SUBMIT_GUARD_MS = 10_000;
 /** How long the "typed but not sent" notice stays before it dismisses itself. */
 const UNSENT_NOTICE_MS = 12_000;
 
-function TerminalView({ sessionId, running, onExit }: { sessionId: string; running: boolean; onExit: () => void }) {
+/**
+ * One session's terminal plus its default responses. Used by a change's Console tab and by the main console; it knows
+ * nothing about repositories or changes.
+ */
+export function TerminalView({ sessionId, running, onExit }: { sessionId: string; running: boolean; onExit: () => void }) {
   const host = useRef<HTMLDivElement>(null);
   const [status, setStatus] = useState<"connecting" | "open" | "closed">("connecting");
   // The effect below owns the terminal and its socket; the default responses reach them through this ref.
@@ -187,7 +191,7 @@ const STEP_LABEL: Record<SessionAction, string> = { draft: "Draft artifacts", im
  * The change's sessions, in the slot the delta specs use for their file list. Omitted for a single session: there is
  * nothing to choose. A change can legitimately have two — its own and its archive worktree's.
  */
-export function ConsoleSessionList({ sessions, selected, onSelect }: { sessions: Session[]; selected?: string; onSelect: (id: string) => void }) {
+export function ConsoleSessionList({ sessions, selected, onSelect }: { sessions: ChangeSession[]; selected?: string; onSelect: (id: string) => void }) {
   if (sessions.length < 2) return null;
   return (
     <nav class="detail-files console-sessions" aria-label="Sessions of this change">
@@ -219,10 +223,8 @@ export function ConsoleSessionList({ sessions, selected, onSelect }: { sessions:
  * A worktree without a session record still gets a panel: its path, its work status and a way to copy a `cd` for it.
  * There is nothing to attach a terminal to, and the dashboard will not start one behind the user's back.
  */
-export function ConsolePanel({ session, worktree }: { session?: Session; worktree?: SessionWorktree }) {
-  const ui = useSessionUi();
-  const [error, setError] = useState<string>();
-  // An agent that was started again (Resume, Ship — from here or from the end-session dialog) gets a fresh terminal view.
+/** Bumps when an ended session runs again (Resume, Ship), so its terminal view starts fresh on the new process. */
+export function useTerminalGeneration(session: Session | undefined): number {
   const [generation, setGeneration] = useState(0);
   const seen = useRef<{ id?: string; running?: boolean }>({});
   const runningNow = session?.state === "running";
@@ -230,6 +232,14 @@ export function ConsolePanel({ session, worktree }: { session?: Session; worktre
     if (seen.current.id === session?.id && seen.current.running === false && runningNow) setGeneration((n) => n + 1);
     seen.current = { id: session?.id, running: session ? runningNow : undefined };
   }, [session?.id, runningNow, session]);
+  return generation;
+}
+
+export function ConsolePanel({ session, worktree }: { session?: ChangeSession; worktree?: SessionWorktree }) {
+  const ui = useSessionUi();
+  const [error, setError] = useState<string>();
+  // An agent that was started again (Resume, Ship — from here or from the end-session dialog) gets a fresh terminal view.
+  const generation = useTerminalGeneration(session);
 
   const badge = session ? sessionBadge(session) : undefined;
   const repo = ui.config?.repos.find((r) => r.id === session?.repoId);

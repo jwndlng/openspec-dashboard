@@ -3,7 +3,7 @@ import { defaultAgentSessions, defaultConfig, newRepoConfig, validateConfig } fr
 import { agentEnv, agentFor, launchCommand, openingPrompt } from "../src/server/sessions/agents.ts";
 import { Scrollback, sessionBranch, worktreeName } from "../src/server/sessions/manager.ts";
 import { CLAUDE_PROFILE, FORMER_ARCHIVE_PROMPTS } from "../src/shared/agentDefaults.ts";
-import { availableActions, type Session } from "../src/shared/types.ts";
+import { availableActions, type ChangeSession, type Session } from "../src/shared/types.ts";
 import { agentForRepo, NEEDS_YOU_AFTER_MS, parseArgLines, sessionBadge, sessionForChange, sessionsEnabledFor, silenceDuration, slugId, startersFor } from "../src/ui/sessionState.ts";
 import { fakeProfile } from "./sessionHelpers.ts";
 
@@ -102,7 +102,7 @@ test("starters: stage decides, narrowed to the prompts the agent has", () => {
   expect(sessionsEnabledFor({ ...cfg, agentSessions: { ...cfg.agentSessions, enabled: false } }, repo.id)).toBe(false);
 });
 
-const session = (patch: Partial<Session>): Session => ({ id: "s", repoId: "r", change: "c", action: "implement", agentId: "fake", agentName: "Fake Agent", state: "running", worktreePath: "/w/wt", branch: "feat/c", createdAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-01T00:00:00Z", resumable: true, ...patch });
+const session = (patch: Partial<ChangeSession>): ChangeSession => ({ id: "s", repoId: "r", change: "c", action: "implement", agentId: "fake", agentName: "Fake Agent", state: "running", worktreePath: "/w/wt", branch: "feat/c", createdAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-01T00:00:00Z", resumable: true, ...patch });
 
 test("badges are honest about what a terminal can tell", () => {
   const now = Date.parse("2026-01-01T01:00:00Z");
@@ -116,7 +116,7 @@ test("badges are honest about what a terminal can tell", () => {
 
 test("only a terminal that is producing output is shown with motion", () => {
   const now = Date.parse("2026-01-01T01:00:00Z");
-  const live = (patch: Partial<Session>) => sessionBadge(session(patch), now).live === true;
+  const live = (patch: Partial<ChangeSession>) => sessionBadge(session(patch), now).live === true;
   expect(live({ lastOutputAt: "2026-01-01T00:59:50Z" })).toBe(true);
   expect(live({})).toBe(true); // just started, nothing printed yet
   expect(live({ lastOutputAt: "2026-01-01T00:50:00Z" })).toBe(false); // silent: may need the user

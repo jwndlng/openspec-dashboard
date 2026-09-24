@@ -5,6 +5,7 @@ import { Activity } from "./activity.tsx";
 import { loadSeen, saveSeen, unseenLabel } from "./activityState.ts";
 import { api } from "./api.ts";
 import { ChangeDetail } from "./changeDetail.tsx";
+import { ConsoleButton, ConsoleOverlay } from "./console.tsx";
 import { relTime } from "./format.ts";
 import { Kanban } from "./kanban.tsx";
 import { Overview } from "./overview.tsx";
@@ -31,6 +32,8 @@ export function App() {
   const [, tick] = useState(0);
   const [themePref, setThemePref] = useState<ThemePreference>(loadPreference);
   const [unseen, setUnseen] = useState(0);
+  // The main console overlay. Not in the route: opening and closing it leaves the page (and its filters) as it was.
+  const [consoleOpen, showConsole] = useState(false);
 
   useEffect(() => onRouteChange(() => setRoute(routeFromPath(currentPath()))), []);
 
@@ -131,7 +134,9 @@ export function App() {
   // where closing the overlay goes. The detail view keeps `from` in the query, so this stays put while it is open.
   const back = route.view === "change" ? backTarget(parseDetailQuery(currentQuery()).from, route.repoId) : undefined;
   const boardRoute: Route = back ? routeFromPath(back.path) : route;
-  const detailOpen = route.view === "change";
+  // The overlay closes with the feature: nothing may be started while agent sessions are off.
+  const consoleShown = consoleOpen && config?.agentSessions.enabled === true;
+  const overlayOpen = route.view === "change" || consoleShown;
 
   const ThemeIcon = THEME_ICON[themePref];
   const link = (path: string, label: ComponentChildren, active: boolean) => (
@@ -151,9 +156,9 @@ export function App() {
     <PullProvider onPulled={reloadSoon}>
     {/* Above both the page and the overlay: the detail view's Console tab reads sessions from here too, and the
         end-session dialog it opens must not sit inside the part that goes inert. */}
-    <SessionProvider config={config} snapshot={shown}>
+    <SessionProvider config={config} snapshot={shown} consoleOpen={consoleShown} showConsole={showConsole}>
     {/* Everything but the detail overlay: inert while it is open, so the board behind it takes no focus and no clicks. */}
-    <div class="app" inert={detailOpen} aria-hidden={detailOpen ? "true" : undefined}>
+    <div class="app" inert={overlayOpen} aria-hidden={overlayOpen ? "true" : undefined}>
       {/* The hero: the product's name, big, over a soft accent glow; below it the navigation, and — continuing the same
           ground — the current view's own header band and filter bar. The status and actions keep their corner. */}
       <header class="topbar hero">
@@ -174,6 +179,7 @@ export function App() {
               </span>
             ))}
             {error && <span class="badge danger">API: {error}</span>}
+            <ConsoleButton />
             <button type="button" class="btn sm ghost" onClick={cycleTheme} title="Cycle theme: System → Light → Dark">
               <ThemeIcon />
               Theme: {THEME_LABEL[themePref]}
@@ -255,6 +261,7 @@ export function App() {
       // Keyed so selection and content start over when moving between changes.
       <ChangeDetail key={`${route.repoId}/${route.changeName}`} snapshot={shown} repoId={route.repoId} changeName={route.changeName} />
     )}
+    <ConsoleOverlay />
     </SessionProvider>
     </PullProvider>
   );

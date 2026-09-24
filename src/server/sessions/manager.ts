@@ -4,11 +4,12 @@
 import { randomUUID } from "node:crypto";
 import { realpath } from "node:fs/promises";
 import { join } from "node:path";
-import { availableActions, OPEN_SESSION_STATES, repoAgentEnabled, SESSION_ACTIONS, SHIPPABLE_WORK, type AgentAvailability, type Config, type Session, type SessionAction, type SessionWorktree, type Snapshot, type WorkStatus, type PromptResult, type ShipResult } from "../../shared/types.ts";
+import { availableActions, changeSessions, isConsole, OPEN_SESSION_STATES, repoAgentEnabled, SESSION_ACTIONS, SHIPPABLE_WORK, type AgentAvailability, type ChangeSession, type Config, type ConsoleSession, type Session, type SessionAction, type SessionWorktree, type Snapshot, type WorkStatus, type PromptResult, type ShipResult } from "../../shared/types.ts";
 import { isCleaningUp } from "../cleanup.ts";
 import { worktreesDir } from "../paths.ts";
 import { CHANGE_NAME } from "../source.ts";
-import { agentEnv, agentFor, availability, launchCommand, openingPrompt, shipPrompt } from "./agents.ts";
+import { agentEnv, agentFor, availability, defaultAgentOf, launchCommand, launchWithoutPrompt, openingPrompt, shipPrompt } from "./agents.ts";
+import { consoleFolderProblem, prepareConsoleFolder } from "./consoleFolder.ts";
 import type { SessionActivity } from "../activity/events.ts";
 import { SessionStore } from "./store.ts";
 import { submitText, validSubmission, type SubmitOptions } from "./submit.ts";
@@ -38,6 +39,8 @@ export function worktreeName(action: SessionAction, change: string): string {
 export function sessionBranch(action: SessionAction, change: string): string {
   return action === "archive" ? `chore/archive-${change}` : `feat/${change}`;
 }
+
+const NOT_A_CHANGE = "this is the main console, which belongs to no change";
 
 /** An adopted worktree was created outside the dashboard; removing it is its owner's call, however clean it is. */
 const NOT_OURS: Removable = { removable: false, reason: "this worktree was not created by the dashboard (the session adopted it), so it is kept" };
@@ -85,7 +88,7 @@ export interface ManagerDeps {
   /** Test seam for how long a submission waits for its echo and before Enter. */
   submitTimings?: SubmitOptions;
   /** Told when a session starts, ends or ships, for the activity feed. Never consulted for any decision. */
-  onActivity?: (session: Session, activity: SessionActivity) => void;
+  onActivity?: (session: ChangeSession, activity: SessionActivity) => void;
 }
 
 export class SessionManager {
@@ -154,7 +157,7 @@ export class SessionManager {
     // itself. Decided from the scan, never by letting a git command fail — see the agent-sessions spec.
     const inPlace = scanned.isGit === false;
     const now = new Date().toISOString();
-    const session: Session = {
+    const session: ChangeSession = {
       id: randomUUID(),
       repoId: repo.id,
       change,
@@ -196,6 +199,44 @@ export class SessionManager {
   }
 
   /**
+   * The main console: the default agent, without a prompt, in the console folder — no repository, no change, no
+   * worktree, no git. One at a time: while one runs, it is returned instead of starting another.
+   */
+  async openConsole(): Promise<{ session: ConsoleSession; created: boolean }> {
+    const config = this.deps.getConfig();
+    if (!config.agentSessions.enabled) throw new SessionError(403, "agent sessions are disabled");
+    const running = this.list().find((s): s is ConsoleSession => isConsole(s) && s.state === "running");
+    if (running) return { session: running, created: false };
+    const agent = defaultAgentOf(config);
+    if (!agent) throw new SessionError(503, "no agent is configured");
+    if (!Bun.which(agent.command[0])) throw new SessionError(503, `${agent.name} was not found (${agent.command[0]}); install it or change its command in Settings`);
+    let prepared: ReturnType<typeof prepareConsoleFolder>;
+    try {
+      prepared = prepareConsoleFolder(config);
+    } catch (err) {
+      throw new SessionError(409, `the console folder could not be created: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    if (prepared.problem) throw new SessionError(409, prepared.problem);
+    const now = new Date().toISOString();
+    const session: ConsoleSession = {
+      id: randomUUID(),
+      console: true,
+      agentId: agent.id,
+      agentName: agent.name,
+      state: "running",
+      worktreePath: prepared.folder.path,
+      createdAt: now,
+      updatedAt: now,
+      resumable: agent.resumeCommand !== undefined,
+    };
+    this.sessions.set(session.id, session);
+    await this.store.saveMeta(session);
+    this.start(session, launchWithoutPrompt(agent), agentEnv(agent, process.env));
+    for (const removed of await this.store.prune(this.list())) this.sessions.delete(removed);
+    return { session, created: true };
+  }
+
+  /**
    * Every session worktree with what became of its work. Cached briefly (the UI polls) and shared while in flight;
    * anything that changes a worktree's state drops the cache. With the feature off, no git runs at all.
    */
@@ -204,7 +245,7 @@ export class SessionManager {
     if (!config.agentSessions.enabled) return Promise.resolve([]);
     const cached = this.worktreeCache;
     if (cached && Date.now() - cached.at < WORKTREES_TTL_MS) return cached.list;
-    const list = listWorktrees(config.repos, this.list());
+    const list = listWorktrees(config.repos, changeSessions(this.list()));
     this.worktreeCache = { at: Date.now(), list };
     list.catch(() => {
       if (this.worktreeCache?.list === list) this.worktreeCache = undefined;
@@ -223,11 +264,8 @@ export class SessionManager {
   }
 
   /** Checks shared by everything that starts an agent again in an existing session's worktree. */
-  private async prepareRestart(session: Session) {
-    const config = this.deps.getConfig();
-    if (!config.agentSessions.enabled) throw new SessionError(403, "agent sessions are disabled");
-    const agent = config.agentSessions.agents.find((a) => a.id === session.agentId);
-    if (!agent) throw new SessionError(409, "this session's agent is no longer configured");
+  private async prepareRestart(session: ChangeSession) {
+    const { agent, config } = this.prepareAgainAnywhere(session);
     const running = this.list().find((s) => s.id !== session.id && s.worktreePath === session.worktreePath && s.state === "running");
     if (running) throw new SessionError(409, "another session is running in this worktree");
     const repo = config.repos.find((r) => r.id === session.repoId);
@@ -236,9 +274,27 @@ export class SessionManager {
     return { agent, repo };
   }
 
-  private async restart(session: Session, repoPath: string, argv: string[], env: Record<string, string>, typed?: string): Promise<void> {
-    // An in-place session runs in the repository folder: there is no worktree to re-create and no git to ask.
-    if (!session.inPlace) {
+  /** What starting any session's agent again needs, repository or not. */
+  private prepareAgainAnywhere(session: Session) {
+    const config = this.deps.getConfig();
+    if (!config.agentSessions.enabled) throw new SessionError(403, "agent sessions are disabled");
+    const agent = config.agentSessions.agents.find((a) => a.id === session.agentId);
+    if (!agent) throw new SessionError(409, "this session's agent is no longer configured");
+    return { agent, config };
+  }
+
+  /** The console's folder is its own: no worktree to re-create, no git — only that it still is a usable folder. */
+  private async prepareConsoleRestart(session: ConsoleSession) {
+    const { agent, config } = this.prepareAgainAnywhere(session);
+    if (this.list().some((s) => s.id !== session.id && isConsole(s) && s.state === "running")) throw new SessionError(409, "another console is running");
+    const problem = consoleFolderProblem(session.worktreePath, config);
+    if (problem) throw new SessionError(409, problem);
+    return { agent };
+  }
+
+  private async restart(session: Session, repoPath: string | undefined, argv: string[], env: Record<string, string>, typed?: string): Promise<void> {
+    // An in-place session runs in the repository folder, the console in its own: no worktree to re-create, no git to ask.
+    if (!isConsole(session) && !session.inPlace && repoPath !== undefined) {
       const branch = session.branch as string;
       try {
         // An adopted worktree is not ours to re-create: if its owner removed it, the session has nowhere to continue.
@@ -253,7 +309,7 @@ export class SessionManager {
     session.error = undefined;
     await this.touch(session);
     this.start(session, argv, env, typed);
-    if (session.state === "running") this.report(session, { kind: "session-started", action: session.action, agentName: session.agentName, resumed: true });
+    if (session.state === "running" && !isConsole(session)) this.report(session, { kind: "session-started", action: session.action, agentName: session.agentName, resumed: true });
   }
 
   /**
@@ -263,6 +319,7 @@ export class SessionManager {
    */
   async ship(id: string): Promise<ShipResult> {
     const session = this.get(id);
+    if (isConsole(session)) throw new SessionError(409, NOT_A_CHANGE);
     if (session.inPlace) throw new SessionError(400, "this session runs in a folder that is not a git repository — there is no branch to commit or push");
     const { agent, repo } = await this.prepareRestart(session);
     const { work } = await readWorkStatus(repo.path, session.worktreePath);
@@ -291,6 +348,7 @@ export class SessionManager {
    */
   async prompt(id: string, input: { action?: unknown }): Promise<PromptResult> {
     const session = this.get(id);
+    if (isConsole(session)) throw new SessionError(409, NOT_A_CHANGE);
     const config = this.deps.getConfig();
     if (!config.agentSessions.enabled) throw new SessionError(403, "agent sessions are disabled");
     if (!SESSION_ACTIONS.includes(input.action as SessionAction)) throw new SessionError(400, "unknown action");
@@ -331,10 +389,10 @@ export class SessionManager {
   async resume(id: string): Promise<Session> {
     const session = this.get(id);
     if (session.state === "running") return session;
-    const { agent, repo } = await this.prepareRestart(session);
+    const { agent, repoPath } = isConsole(session) ? { ...(await this.prepareConsoleRestart(session)), repoPath: undefined } : await this.prepareRestart(session).then(({ agent, repo }) => ({ agent, repoPath: repo.path }));
     if (!agent.resumeCommand) throw new SessionError(400, "this agent has no resume command configured");
     if (!Bun.which(agent.resumeCommand[0])) throw new SessionError(503, `${agent.name} was not found (${agent.resumeCommand[0]})`);
-    await this.restart(session, repo.path, [...agent.resumeCommand], agentEnv(agent, process.env));
+    await this.restart(session, repoPath, [...agent.resumeCommand], agentEnv(agent, process.env));
     return session;
   }
 
@@ -387,7 +445,9 @@ export class SessionManager {
     for (const viewer of live?.viewers ?? []) viewer(new Uint8Array()); // an empty chunk tells viewers the process ended
   }
 
+  /** The activity log is about repositories and changes; the console is neither, so it is never reported. */
   private report(session: Session, activity: SessionActivity): void {
+    if (isConsole(session)) return;
     try {
       this.deps.onActivity?.(session, activity);
     } catch {
@@ -455,7 +515,9 @@ export class SessionManager {
       for (let i = 0; i < 50 && session.state === "running"; i++) await new Promise((r) => setTimeout(r, 20));
     }
     let worktree: Removable | undefined;
-    if (options.removeWorktree && session.adopted) {
+    if (isConsole(session)) {
+      // The console has no worktree: ending it ends the agent and nothing else.
+    } else if (options.removeWorktree && session.adopted) {
       worktree = NOT_OURS;
     } else if (options.removeWorktree) {
       const repo = this.deps.getConfig().repos.find((r) => r.id === session.repoId);
@@ -465,13 +527,14 @@ export class SessionManager {
     return { session, worktree };
   }
 
-  private async isMerged(repoPath: string, session: Session): Promise<boolean> {
+  private async isMerged(repoPath: string, session: ChangeSession): Promise<boolean> {
     return (await readWorkStatus(repoPath, session.worktreePath)).work.state === "merged";
   }
 
   /** Read now, not from the list's cache: the end-session dialog warns on the strength of it. */
   async worktreeStatus(id: string): Promise<Removable & { work: WorkStatus }> {
     const session = this.get(id);
+    if (isConsole(session)) throw new SessionError(409, NOT_A_CHANGE);
     const repo = this.deps.getConfig().repos.find((r) => r.id === session.repoId);
     const work: WorkStatus = repo ? (await readWorkStatus(repo.path, session.worktreePath)).work : { state: "missing" };
     if (session.adopted) return { ...NOT_OURS, work };

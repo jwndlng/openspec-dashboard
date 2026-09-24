@@ -250,6 +250,7 @@ export function createDemoApi({ now = Date.now, latencyMs = 150, clock }: DemoAp
     // Agent sessions are simulated: state lives in memory, terminals play hand-written recordings, nothing is started.
     sessions: () => reply(demoSessions.list()),
     openSession: (repoId, change, action) => attempt(() => demoSessions.open(repoId, change, action)),
+    openConsole: () => attempt(() => demoSessions.openConsole()),
     resumeSession: (id) => attempt(() => demoSessions.resume(id)),
     shipSession: (id) => attempt(() => demoSessions.ship(id)),
     removeWorktree: (repoId, name) => attempt(() => demoSessions.removeWorktree(repoId, name)),

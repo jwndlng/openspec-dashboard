@@ -15,7 +15,7 @@ export type Step =
   /** The agent's process ends. */
   | { exit: number; after?: number };
 
-export type TranscriptName = "draft" | "implement" | "implementAsking" | "archive" | "resume" | "ship";
+export type TranscriptName = "draft" | "implement" | "implementAsking" | "archive" | "resume" | "ship" | "console";
 
 const DIM = "\x1b[2m";
 const BOLD = "\x1b[1m";
@@ -135,6 +135,19 @@ export const TRANSCRIPTS: Record<TranscriptName, Step[]> = {
     { out: note("on {branch}, working tree as you left it"), after: 800 },
     { ask: `${GREEN}>${OFF} `, after: 500 },
     { out: say("This recording ends here — in the dashboard you would be talking to your own agent."), after: 700 },
+    { exit: 0, after: 1500 },
+  ],
+  // The main console: no change, no branch, no prompt — the agent waits for the visitor to say something.
+  console: [
+    { out: line(`${BOLD}demo-agent${OFF} ${DIM}· {path}${OFF}`) },
+    { out: line(), after: 300 },
+    { out: say("Hi. This console belongs to no change — ask for anything, or spin off a new one."), after: 700 },
+    { ask: `${GREEN}>${OFF} `, after: 400 },
+    { out: tool("Read the tracked repositories"), after: 900 },
+    { out: note("five repositories, 14 changes in flight"), after: 1200 },
+    { out: say("In the dashboard you would be talking to your own agent here, in your console folder."), after: 800 },
+    { ask: `${GREEN}>${OFF} `, after: 400 },
+    { out: say("This recording ends here."), after: 600 },
     { exit: 0, after: 1500 },
   ],
   ship: [

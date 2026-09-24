@@ -70,6 +70,10 @@ track.
   A tracked folder that is not a git repository works too — there the agent runs in the folder itself, so it edits your
   files directly, with no branch and no undo, and the session says so.
   ([agent-sessions](openspec/specs/agent-sessions/spec.md))
+- **Console**: the terminal button next to the theme control opens your default agent outside every change, with no
+  prompt — for drafting a new change, looking across repositories or any chore. It runs in a console folder
+  (`~/.openspec-dashboard/console/` unless you pick another one in Settings, never inside a tracked repository), one at
+  a time, and keeps running when you close it. ([main-console](openspec/specs/main-console/spec.md))
 - Light and dark themes.
 
 ## What it touches

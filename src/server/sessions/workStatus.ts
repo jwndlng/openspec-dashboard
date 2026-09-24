@@ -2,7 +2,7 @@
 // of the user's last fetch. Worktree directories are listed themselves, because they outlive session records.
 import { readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
-import type { RepoConfig, Session, SessionAction, SessionWorktree, WorkStatus } from "../../shared/types.ts";
+import type { ChangeSession, RepoConfig, SessionAction, SessionWorktree, WorkStatus } from "../../shared/types.ts";
 import { worktreesDir } from "../paths.ts";
 
 const ENV = { GIT_TERMINAL_PROMPT: "0", GIT_OPTIONAL_LOCKS: "0" };
@@ -86,7 +86,7 @@ export function changeOfWorktree(name: string): { change: string; action: Sessio
 
 const latest = (a?: string, b?: string) => (!a ? b : !b ? a : a > b ? a : b);
 
-export async function listWorktrees(repos: RepoConfig[], sessions: Session[]): Promise<SessionWorktree[]> {
+export async function listWorktrees(repos: RepoConfig[], sessions: ChangeSession[]): Promise<SessionWorktree[]> {
   const perRepo = await Promise.all(
     repos.map(async (repo) => {
       const dir = join(worktreesDir(), repo.id);

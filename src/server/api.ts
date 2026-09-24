@@ -3,6 +3,7 @@ import { MAX_PAGE, type ActivityLog, type PageQuery } from "./activity/log.ts";
 import type { CleanupSelection, Config, DiscoverResult, RepoConfig, ScanTriggerResult, SharedConfigApplyResult, SharedConfigAssignment, SharedConfigPreview } from "../shared/types.ts";
 import { applyCleanup, CleanupBusyError, previewCleanup } from "./cleanup.ts";
 import { changeDirFor, listArtifactFiles, readArtifactFile } from "./artifacts.ts";
+import { consoleFolderProblem } from "./sessions/consoleFolder.ts";
 import { ConfigValidationError, saveConfig, validateConfig, validateIgnorePaths, validateScanRoots } from "./config.ts";
 import { createChange } from "./createChange.ts";
 import { discoverRepos } from "./discover.ts";
@@ -56,6 +57,9 @@ async function putConfig(state: AppState, req: Request): Promise<Response> {
     if (err instanceof ConfigValidationError) return json({ error: err.message, issues: err.issues }, 400);
     throw err;
   }
+  // Checked on save only (loading must survive a folder deleted since); opening the console checks it again.
+  const consoleProblem = next.agentSessions.consoleDir ? consoleFolderProblem(next.agentSessions.consoleDir, next) : undefined;
+  if (consoleProblem) return json({ error: `invalid config: agentSessions.consoleDir: ${consoleProblem}`, issues: [`agentSessions.consoleDir: ${consoleProblem}`] }, 400);
   const previous = state.config;
   state.config = await saveConfig(next);
   if (state.config.pollIntervalSeconds !== previous.pollIntervalSeconds) {
@@ -182,6 +186,18 @@ export function createWebSocketHandlers(state: AppState) {
       ws.data.detach?.();
     },
   };
+}
+
+/** Opens the main console, or returns the one that is running. Mutating, so the same-origin guard has run already. */
+async function consoleRoute(state: AppState): Promise<Response> {
+  if (!state.sessions) return json({ error: "agent sessions are not available" }, 403);
+  try {
+    const { session, created } = await state.sessions.openConsole();
+    return json(session, created ? 201 : 200);
+  } catch (err) {
+    if (err instanceof SessionError) return json({ error: err.message }, err.status);
+    throw err;
+  }
 }
 
 async function sessionRoutes(state: AppState, req: Request, url: URL, server?: ServerLike): Promise<Response> {
@@ -499,6 +515,7 @@ export function createFetchHandler({ state, indexHtml }: AppOptions): (req: Requ
         if (refusal) return json({ error: refusal }, 403);
       }
       if (pathname === "/api/sessions" || pathname.startsWith("/api/sessions/")) return sessionRoutes(state, req, url, server);
+      if (pathname === "/api/console" && req.method === "POST") return consoleRoute(state);
       const artifactMatch = req.method === "GET" ? ARTIFACT_ROUTE.exec(pathname) : null;
       if (artifactMatch) return artifactRoutes(state, url, artifactMatch);
       if (req.method === "POST" && pathname === "/api/worktrees/remove") return postWorktreeRemove(state, req);

@@ -1,5 +1,5 @@
 // Pure helpers for the agent-session UI; free of DOM access at import time so they can be unit-tested.
-import { availableActions, repoAgentEnabled, SHIPPABLE_WORK, type AgentProfile, type ChangeSnapshot, type Config, type RepoSnapshot, type Session, type SessionAction, type SessionWorktree, type WorkStatus } from "../shared/types.ts";
+import { availableActions, repoAgentEnabled, SHIPPABLE_WORK, type AgentProfile, type ChangeSnapshot, type Config, type RepoSnapshot, type ChangeSession, changeSessions, type ConsoleSession, type Session, type SessionAction, type SessionWorktree, type WorkStatus } from "../shared/types.ts";
 
 /** Session starters are shown when the feature is on, for every tracked repository that has not been switched off. */
 export function sessionsEnabledFor(config: Config | null, repoId: string): boolean {
@@ -25,7 +25,7 @@ export function startersFor(config: Config | null, card: Pick<ChangeSnapshot, "r
  * The sessions a card shows: every running one (archiving may run next to the change's other session), otherwise the
  * most recent one if it did not end cleanly.
  */
-export function sessionsForChange(sessions: Session[], repoId: string, change: string): Session[] {
+export function sessionsForChange(sessions: ChangeSession[], repoId: string, change: string): ChangeSession[] {
   const mine = sessions.filter((s) => s.repoId === repoId && s.change === change).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   const running = mine.filter((s) => s.state === "running");
   if (running.length > 0) return running;
@@ -37,7 +37,7 @@ export function sessionsForChange(sessions: Session[], repoId: string, change: s
  * Where a starter goes: into the change's running session (the prompt is typed there), or into a new session.
  * Archive always gets its own, and nothing is typed into an archive session.
  */
-export function nextStepFor(sessions: Session[], repoId: string, change: string, action: SessionAction): { promptSessionId?: string; blocked?: boolean } {
+export function nextStepFor(sessions: ChangeSession[], repoId: string, change: string, action: SessionAction): { promptSessionId?: string; blocked?: boolean } {
   const running = sessions.filter((s) => s.repoId === repoId && s.change === change && s.state === "running");
   if (action === "archive") return { blocked: running.some((s) => s.action === "archive") };
   return { promptSessionId: running.find((s) => s.action !== "archive")?.id };
@@ -50,12 +50,12 @@ const activityAt = (s: Session) => s.lastOutputAt ?? s.updatedAt ?? s.createdAt;
  * Every session of one change, most recently active first: what the detail view's Console tab lists. Ended sessions
  * stay listed — their output is still readable and their worktree may still hold work.
  */
-export function consoleSessions(sessions: Session[], repoId: string, change: string): Session[] {
+export function consoleSessions(sessions: ChangeSession[], repoId: string, change: string): ChangeSession[] {
   return sessions.filter((s) => s.repoId === repoId && s.change === change).sort((a, b) => activityAt(b).localeCompare(activityAt(a)));
 }
 
 /** The session the Console tab shows: the one the URL names while it is one of the change's, else the most recent. */
-export function consoleSession(sessions: Session[], wanted: string | undefined): Session | undefined {
+export function consoleSession(sessions: ChangeSession[], wanted: string | undefined): ChangeSession | undefined {
   return sessions.find((s) => s.id === wanted) ?? sessions[0];
 }
 
@@ -63,7 +63,7 @@ export function consoleSession(sessions: Session[], wanted: string | undefined):
  * Whether a change gets a Console tab at all. A worktree counts even without a session record, and outlives the change
  * itself — which is why a change the snapshot no longer carries is shown rather than reported as not found.
  */
-export function consoleAvailable(config: Config | null, sessions: Session[], worktrees: SessionWorktree[], repoId: string, change: string): boolean {
+export function consoleAvailable(config: Config | null, sessions: ChangeSession[], worktrees: SessionWorktree[], repoId: string, change: string): boolean {
   if (!sessionsEnabledFor(config, repoId)) return false;
   return sessions.some((s) => s.repoId === repoId && s.change === change) || worktrees.some((w) => w.repoId === repoId && w.change === change);
 }
@@ -116,7 +116,7 @@ export function pullOffer(repo: Pick<RepoSnapshot, "isGit" | "ok"> | undefined, 
 }
 
 /** The one session a card stands for, where only one fits (see `sessionsForChange`). */
-export function sessionForChange(sessions: Session[], repoId: string, change: string): Session | undefined {
+export function sessionForChange(sessions: ChangeSession[], repoId: string, change: string): ChangeSession | undefined {
   return sessionsForChange(sessions, repoId, change)[0];
 }
 
@@ -164,7 +164,7 @@ const HOUR = 3_600_000;
 const STALE_AFTER_MS: Partial<Record<SessionWorktree["work"]["state"], number>> = { uncommitted: 24 * HOUR, unpushed: 24 * HOUR, pushed: 7 * 24 * HOUR };
 
 /** Unshipped work nobody is working on: past its age limit and without a running session. */
-export function staleAge(worktree: SessionWorktree, sessions: Session[], now = Date.now()): string | undefined {
+export function staleAge(worktree: SessionWorktree, sessions: readonly Session[], now = Date.now()): string | undefined {
   const limit = STALE_AFTER_MS[worktree.work.state];
   const last = worktree.lastActivityAt ? Date.parse(worktree.lastActivityAt) : Number.NaN;
   if (limit === undefined || Number.isNaN(last) || now - last < limit) return undefined;
@@ -179,7 +179,7 @@ const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
  * Text plus colour, never colour alone. Nothing for `clean` and `missing`: there is nothing to say about them.
  * Everything short of merged is work in a branch, so it wears the branch role; stale overrides that with danger.
  */
-export function workBadge(worktree: SessionWorktree, sessions: Session[], now = Date.now()): SessionBadge | undefined {
+export function workBadge(worktree: SessionWorktree, sessions: readonly Session[], now = Date.now()): SessionBadge | undefined {
   const { state, count = 0, base } = worktree.work;
   const stale = staleAge(worktree, sessions, now);
   const tail = stale ? ` · ${stale}` : "";
@@ -204,7 +204,7 @@ export interface OpenWorkItem {
   change: string;
   /** Absent for an in-place session, which runs in the folder itself and has no worktree. */
   worktree?: SessionWorktree;
-  session?: Session;
+  session?: ChangeSession;
   /** Running sessions come first, then stale work, then the rest, then merged. */
   rank: number;
 }
@@ -218,7 +218,9 @@ export interface OpenWorkItem {
  * worktree that still holds work and has no running session — including worktrees whose change is gone from the board,
  * which no card can offer.
  */
-export function openWork(worktrees: SessionWorktree[], sessions: Session[], now = Date.now()): { items: OpenWorkItem[]; unshipped: number; running: number } {
+export function openWork(worktrees: SessionWorktree[], all: readonly Session[], now = Date.now()): { items: OpenWorkItem[]; unshipped: number; running: number } {
+  // The main console belongs to no repository and no change: it is never open work.
+  const sessions = changeSessions(all);
   const live = sessions.filter((s) => s.state === "running").sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   const items: OpenWorkItem[] = live.map((session) => ({
     key: session.id,
@@ -256,4 +258,25 @@ export function slugId(name: string, taken: string[]): string {
   let id = base;
   for (let n = 2; taken.includes(id); n++) id = `${base}-${n}`;
   return id;
+}
+
+/**
+ * The main console the overlay shows: the running one (there is at most one), else the one the overlay just opened or
+ * last showed, else the most recent. An ended console stays readable until the user starts a new one.
+ */
+export function consoleToShow(consoles: readonly ConsoleSession[], preferred?: string): ConsoleSession | undefined {
+  return consoles.find((s) => s.state === "running") ?? consoles.find((s) => s.id === preferred) ?? [...consoles].sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
+}
+
+export const CONSOLE_CONTROL_NAME = "Open the agent console";
+
+/**
+ * The top-bar console control's name and state. The state is the running console's badge — the same two running states
+ * as every session, decided the same way — and is part of the name, so it is never shown by colour or motion alone.
+ */
+export function consoleControl(consoles: readonly ConsoleSession[], now = Date.now()): { name: string; title: string; badge?: SessionBadge } {
+  const running = consoles.find((s) => s.state === "running");
+  if (!running) return { name: CONSOLE_CONTROL_NAME, title: `${CONSOLE_CONTROL_NAME}: talk to your agent about anything that is not a change` };
+  const badge = sessionBadge(running, now);
+  return { name: `${CONSOLE_CONTROL_NAME} — ${badge.label}`, title: `${CONSOLE_CONTROL_NAME} — ${badge.title}`, badge };
 }

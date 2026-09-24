@@ -200,6 +200,8 @@ export interface AgentSessionsConfig {
   enabled: boolean;
   agents: AgentProfile[];
   defaultAgent: string;
+  /** Where the main console's agent runs; absent means `~/.openspec-dashboard/console/`. Never inside a tracked repository. */
+  consoleDir?: string;
 }
 
 export interface Config {
@@ -262,11 +264,9 @@ export type SessionState = "running" | "exited" | "failed";
 
 export const OPEN_SESSION_STATES: readonly SessionState[] = ["running"];
 
-export interface Session {
+/** What every session has, whether it belongs to a change or is the main console. */
+interface SessionBase {
   id: string;
-  repoId: string;
-  change: string;
-  action: SessionAction;
   agentId: string;
   agentName: string;
   state: SessionState;
@@ -295,6 +295,39 @@ export interface Session {
   lastOutputAt?: string;
   /** True once the agent has a conversation that `resumeCommand` can continue. */
   resumable: boolean;
+}
+
+/** A session started for one change of one repository, from a card's starter. */
+export interface ChangeSession extends SessionBase {
+  console?: undefined;
+  repoId: string;
+  change: string;
+  action: SessionAction;
+}
+
+/**
+ * The main console: the default agent in the console folder, belonging to no repository and no change. It has no
+ * branch, no worktree of its own, no work status, no Ship and no pull, and is never part of Open work or the activity log.
+ */
+export interface ConsoleSession extends SessionBase {
+  console: true;
+  repoId?: undefined;
+  change?: undefined;
+  action?: undefined;
+  branch?: undefined;
+  adopted?: undefined;
+  inPlace?: undefined;
+}
+
+export type Session = ChangeSession | ConsoleSession;
+
+export function isConsole(session: Session): session is ConsoleSession {
+  return session.console === true;
+}
+
+/** Only the change sessions of a list: every view about repositories and changes starts here. */
+export function changeSessions(sessions: readonly Session[]): ChangeSession[] {
+  return sessions.filter((s): s is ChangeSession => !isConsole(s));
 }
 
 export interface AgentAvailability {

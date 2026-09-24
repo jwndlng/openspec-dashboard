@@ -165,3 +165,11 @@ test("ignore paths must be absolute and are stored canonically", () => {
   const { ignorePaths: _dropped, ...withoutIgnore } = defaultConfig();
   expect(validateConfig(withoutIgnore).ignorePaths).toEqual([]);
 });
+
+test("a saved console folder that no longer exists still loads; its shape is still checked", () => {
+  const base = defaultConfig();
+  const gone = validateConfig({ ...base, agentSessions: { ...base.agentSessions, consoleDir: "/w/acme/was-here-once" } });
+  expect(gone.agentSessions.consoleDir).toBe("/w/acme/was-here-once");
+  expect(() => validateConfig({ ...base, agentSessions: { ...base.agentSessions, consoleDir: "acme" } })).toThrow(ConfigValidationError);
+  expect(validateConfig(base).agentSessions.consoleDir).toBeUndefined();
+});

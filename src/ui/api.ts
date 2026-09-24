@@ -1,5 +1,5 @@
 import type { ActivityQuery } from "../shared/activity.ts";
-import type { ActivityPage, CleanupPreview, CleanupResult, CleanupSelection, CreateChangeResponse, PromptResult, PullResult, ShipResult, WorkStatus } from "../shared/types.ts";
+import type { ActivityPage, ConsoleSession, CleanupPreview, CleanupResult, CleanupSelection, CreateChangeResponse, PromptResult, PullResult, ShipResult, WorkStatus } from "../shared/types.ts";
 import type { AgentAvailability, ArtifactFileContent, ChangeArtifacts, Config, DiscoverResult, ScanTriggerResult, Session, SessionAction, SessionWorktree, SharedConfig, SharedConfigApplyResult, SharedConfigAssignment, SharedConfigPreview, Snapshot } from "../shared/types.ts";
 import { socketOrigin } from "./url.ts";
 
@@ -65,6 +65,8 @@ export interface Api {
   /** Agent sessions (optional feature): an agent CLI in a terminal, one per change. */
   sessions(): Promise<{ sessions: Session[]; agents: AgentAvailability[]; worktrees: SessionWorktree[] }>;
   openSession(repoId: string, change: string, action: SessionAction): Promise<Session>;
+  /** Opens the main console, or returns the one that is running. */
+  openConsole(): Promise<ConsoleSession>;
   /** Continues the agent's latest conversation in the session's worktree. */
   resumeSession(id: string): Promise<Session>;
   /** Asks the session's agent to commit, push and open a pull request. */
@@ -141,6 +143,7 @@ export const httpApi: Api = {
   applySharedConfig: (assignments) => call<{ results: SharedConfigApplyResult[] }>("/api/shared-config/apply", { method: "POST", body: JSON.stringify({ assignments }) }),
   sessions: () => call<{ sessions: Session[]; agents: AgentAvailability[]; worktrees: SessionWorktree[] }>("/api/sessions"),
   openSession: (repoId, change, action) => call<Session>("/api/sessions", { method: "POST", body: JSON.stringify({ repoId, change, action }) }),
+  openConsole: () => call<ConsoleSession>("/api/console", { method: "POST" }),
   resumeSession: (id) => call<Session>(`/api/sessions/${id}/resume`, { method: "POST" }),
   shipSession: (id) => call<ShipResult>(`/api/sessions/${id}/ship`, { method: "POST" }),
   removeWorktree: (repoId, name) => call("/api/worktrees/remove", { method: "POST", body: JSON.stringify({ repoId, name }) }),
@@ -199,6 +202,7 @@ export const api: Api = {
   applySharedConfig: (assignments) => current.applySharedConfig(assignments),
   sessions: (...args) => current.sessions(...args),
   openSession: (...args) => current.openSession(...args),
+  openConsole: () => current.openConsole(),
   resumeSession: (...args) => current.resumeSession(...args),
   shipSession: (...args) => current.shipSession(...args),
   removeWorktree: (...args) => current.removeWorktree(...args),

@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { SHIPPABLE_WORK } from "../src/shared/types.ts";
+import { changeSessions, SHIPPABLE_WORK } from "../src/shared/types.ts";
 import { ApiError, type TerminalHandlers } from "../src/ui/api.ts";
 import { createDemoApi } from "../src/ui/demo/demoApi.ts";
 import { NEEDS_YOU_AFTER_MS, openWork, sessionBadge } from "../src/ui/sessionState.ts";
@@ -40,7 +40,7 @@ function demo(start = Date.parse("2026-06-01T12:00:00.000Z")) {
 }
 
 const refusal = async (p: Promise<unknown>) => p.then(() => "resolved", (e) => (e instanceof ApiError ? `${e.status}: ${e.message}` : `unexpected ${e}`));
-const byChange = async (api: ReturnType<typeof createDemoApi>, change: string) => (await api.sessions()).sessions.find((s) => s.change === change)!;
+const byChange = async (api: ReturnType<typeof createDemoApi>, change: string) => changeSessions((await api.sessions()).sessions).find((s) => s.change === change)!;
 const workOf = async (api: ReturnType<typeof createDemoApi>, change: string) => (await api.sessions()).worktrees.find((w) => w.change === change)?.work;
 
 test("first load: sessions are on, the agent is available, and every state and work status is there", async () => {
@@ -229,4 +229,35 @@ test("switching sessions off hides them; nothing else breaks; callers cannot rea
   list.worktrees[0].work.state = "missing";
   const again = await fresh.sessions();
   expect([again.sessions[0].state, again.worktrees[0].work.state]).not.toEqual(["failed", "missing"]);
+});
+
+test("the main console in the demo: one at a time, a recording in the demo's console folder, never open work", async () => {
+  const { api, advance, terminal } = demo();
+  const before = await api.sessions();
+  const session = await api.openConsole();
+  expect(session).toMatchObject({ console: true, state: "running", worktreePath: "/home/demo/.openspec-dashboard/console" });
+  expect((await api.openConsole()).id).toBe(session.id);
+
+  const after = await api.sessions();
+  expect(after.worktrees).toEqual(before.worktrees);
+  expect(openWork(after.worktrees, after.sessions).items.some((i) => i.key === session.id)).toBe(false);
+
+  const view = terminal(session.id);
+  advance(5_000);
+  expect(view.text()).toContain("demo recording");
+  expect(view.text()).toContain("belongs to no change");
+  expect(await refusal(api.shipSession(session.id))).toBe("409: this is the main console, which belongs to no change");
+  expect(await refusal(api.worktreeStatus(session.id))).toBe("409: this is the main console, which belongs to no change");
+
+  await api.closeSession(session.id, true);
+  const next = await api.openConsole();
+  expect(next.id).not.toBe(session.id);
+  view.connection.close();
+});
+
+test("the demo console is refused while agent sessions are off", async () => {
+  const { api } = demo();
+  const config = await api.config();
+  await api.saveConfig({ ...config, agentSessions: { ...config.agentSessions, enabled: false } });
+  expect(await refusal(api.openConsole())).toBe("403: agent sessions are disabled");
 });

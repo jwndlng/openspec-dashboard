@@ -175,3 +175,62 @@ test("feature off: nothing can be opened", async () => {
   expect(res.status).toBe(403);
   expect(h.manager.list()).toEqual([]);
 });
+
+test("the main console: opened once, same-origin only, attachable, refused change-only routes", async () => {
+  const h = await harness();
+  const { http, ws } = await serve(h);
+
+  // Another web page cannot start it.
+  expect((await post(`${http}/api/console`, undefined, { ...JSON_HEADERS, origin: "https://example.com" })).status).toBe(403);
+  expect(h.manager.list()).toEqual([]);
+
+  const first = await post(`${http}/api/console`);
+  expect(first.status).toBe(201);
+  const session = (await first.json()) as Session;
+  expect(session).toMatchObject({ console: true, state: "running" });
+  expect(session.repoId).toBeUndefined();
+  const again = await post(`${http}/api/console`);
+  expect(again.status).toBe(200);
+  expect(((await again.json()) as Session).id).toBe(session.id);
+
+  const listed = (await (await fetch(`${http}/api/sessions`)).json()) as { sessions: Session[] };
+  expect(listed.sessions.filter((s) => s.console).map((s) => s.id)).toEqual([session.id]);
+
+  // The terminal is served like any session's, under the same guard.
+  expect(await connect(`${ws}/api/sessions/${session.id}/terminal`, "https://example.com").opened).toBe(false);
+  const client = connect(`${ws}/api/sessions/${session.id}/terminal`, http);
+  expect(await client.opened).toBe(true);
+  await waitFor(() => client.text().includes("fake-agent ready"), "console output");
+  client.send({ type: "input", data: "hello\r" });
+  await waitFor(() => client.text().includes("you said: hello"), "console echo");
+
+  expect((await post(`${http}/api/sessions/${session.id}/ship`)).status).toBe(409);
+  expect((await post(`${http}/api/sessions/${session.id}/prompt`, { action: "implement" })).status).toBe(409);
+  expect((await fetch(`${http}/api/sessions/${session.id}/worktree`)).status).toBe(409);
+  const closed = await post(`${http}/api/sessions/${session.id}/close`, { removeWorktree: true });
+  expect(closed.status).toBe(200);
+  expect((await closed.json()).worktree).toBeUndefined();
+  client.close();
+});
+
+test("the main console is refused while agent sessions are off", async () => {
+  const h = await harness({ enabled: false });
+  const { http } = await serve(h);
+  expect((await post(`${http}/api/console`)).status).toBe(403);
+  expect(h.manager.list()).toEqual([]);
+});
+
+test("saving a console folder inside a tracked repository is refused; a folder above it is saved", async () => {
+  const h = await harness();
+  const { http } = await serve(h);
+  const put = (consoleDir: string) => fetch(`${http}/api/config`, { method: "PUT", headers: JSON_HEADERS, body: JSON.stringify({ ...h.config, agentSessions: { ...h.config.agentSessions, consoleDir } }) });
+  const inside = await put(`${h.repoPath}/openspec`);
+  expect(inside.status).toBe(400);
+  expect((await inside.json()).error).toContain("inside a tracked repository (demo-ops)");
+  expect((await put("relative/dir")).status).toBe(400);
+  expect((await put(`${h.repoPath}-missing`)).status).toBe(400);
+  expect(h.config.agentSessions.consoleDir).toBeUndefined();
+  const above = await put(`${h.repoPath}/..`);
+  expect(above.status).toBe(200);
+  expect((await above.json()).agentSessions.consoleDir).toBe(h.repoPath.replace(/\/demo-ops$/, ""));
+});
