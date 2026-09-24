@@ -118,3 +118,13 @@ test("the navigation moves with the content and is never pinned", async () => {
   // Only the one scroll area: sections with their own overflow would leave the navigation standing still.
   expect(css).not.toMatch(/^\.settings \{[^}]*overflow/m);
 });
+
+// The demo build sizes #app in demo.css, so a check against the demo alone passed while `bun run dev` and the binary
+// scrolled the whole document and .settings-scroll never scrolled.
+test("the product sizes the mount point, so .settings-scroll is the page's scroll area outside the demo too", async () => {
+  const css = await Bun.file(new URL("../src/ui/styles.css", import.meta.url)).text();
+  expect(css).toMatch(/^html, body \{ height: 100%; \}/m);
+  expect(css).toMatch(/^#app \{[^}]*height: 100%/m);
+  expect(css).toMatch(/^\.app \{[^}]*height: 100%/m);
+  expect(css).toMatch(/^\.settings-scroll \{[^}]*flex: 1; min-height: 0; overflow: auto;/m);
+});
