@@ -55,3 +55,21 @@ export function currentSection(rects: SectionRect[], atEnd: boolean): string | u
   }
   return current;
 }
+
+/** Positions relative to the navigation's home beside the first section, in pixels downwards. */
+export interface NavPlacement {
+  sectionTop: number;
+  sectionBottom: number;
+  /** Where a section lands after a jump: the top of the view plus the sections' scroll margin. */
+  viewTop: number;
+}
+
+/**
+ * How far the wide navigation is moved down: level with the current section's start while that is in view; once the
+ * start has scrolled past, level with the top of the view, so that it stays in view while the section is read; never
+ * further than where it ends with the section, and never outside the layout.
+ */
+export function navOffset({ sectionTop, sectionBottom, viewTop }: NavPlacement, navHeight: number, layoutHeight: number): number {
+  const follow = Math.max(sectionTop, Math.min(viewTop, sectionBottom - navHeight));
+  return Math.max(0, Math.min(follow, layoutHeight - navHeight));
+}

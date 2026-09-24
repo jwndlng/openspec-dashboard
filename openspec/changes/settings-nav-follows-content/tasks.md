@@ -57,3 +57,13 @@
 - [x] 7.3 Source-level test: no `.settings-nav` rule is sticky, fixed or has its own vertical overflow
 - [x] 7.4 Real-scroll check over CDP against the demo build (1500×800, 420×800): with each wheel step the nav's top in the view moves by exactly the scrolled distance (0 → −400 → … → −2650), the marker follows, the document never scrolls; a real click-jump scrolls to the section and marks it current
 - [x] 7.5 Spec delta, proposal and design (D8) updated; `bun run check`, `openspec validate settings-nav-follows-content --strict`
+
+## 8. The navigation moves along beside the current section (added after using D8 on `main`)
+
+- [x] 8.1 `navOffset({ sectionTop, sectionBottom, viewTop }, navHeight, layoutHeight)` in `src/ui/settingsSections.ts` with unit tests: home at the top, level with a section start in view, level with the view inside a tall section, stopped at the section's end, short section, short last section, navigation taller than the layout
+- [x] 8.2 `src/ui/settingsNav.tsx`: place `--nav-offset` on scroll, on a change of the current section and on layout resize; `data-glide` for 220ms when the current section changes
+- [x] 8.3 `src/ui/styles.css`: wide `.settings-nav { top: var(--nav-offset, 0px) }`, `[data-glide]` transition (none under reduced motion); narrow `top: 0`, no transition
+- [x] 8.4 Source-level test: never sticky/fixed or its own vertical scroller; wide rule uses `--nav-offset`, narrow rule `top: 0`
+- [x] 8.5 Real-scroll check over CDP against the demo build (1500×800, 420×800): wheel down and up through all sections — nav level with short sections' starts, 16px below the view's top through the tall Agent sessions section, pushed up with a section's end, never pulling the page back, document never scrolls; real click-jumps and `?section=agents` land the section level with the nav with focus in it; narrow row unchanged; no uncaught errors
+- [x] 8.6 Spec delta, proposal and design (D9) updated; `bun run check`, `openspec validate settings-nav-follows-content --strict`
+- [ ] 8.7 Maintainer: scroll through Settings in a real browser and confirm the navigation now moves the way you want

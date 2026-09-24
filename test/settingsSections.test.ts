@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { currentSection, parseSection, rowScrollLeft, SECTION_IDS, serializeSection } from "../src/ui/settingsSections.ts";
+import { currentSection, navOffset, parseSection, rowScrollLeft, SECTION_IDS, serializeSection } from "../src/ui/settingsSections.ts";
 import { hrefWithQuery } from "../src/ui/url.ts";
 
 test("parseSection accepts known ids only", () => {
@@ -87,12 +87,34 @@ test("the navigation never scrolls the page to reveal itself", async () => {
   expect(source.indexOf("target?.scrollIntoView")).toBeLessThan(source.indexOf("// Follow manual scrolling."));
 });
 
-test("the navigation scrolls away with the content", async () => {
+test("navOffset keeps the navigation level with the current section, in view while it is read", () => {
+  const nav = 200;
+  const layout = 3000;
+  // At the top of the page: home.
+  expect(navOffset({ sectionTop: 0, sectionBottom: 300, viewTop: 0 }, nav, layout)).toBe(0);
+  // The section's start is in view below the top: level with it.
+  expect(navOffset({ sectionTop: 1200, sectionBottom: 2400, viewTop: 1150 }, nav, layout)).toBe(1200);
+  // Reading further down a tall section: level with the top of the view.
+  expect(navOffset({ sectionTop: 1200, sectionBottom: 2400, viewTop: 1800 }, nav, layout)).toBe(1800);
+  // Near its end: stops where it ends with the section.
+  expect(navOffset({ sectionTop: 1200, sectionBottom: 2400, viewTop: 2350 }, nav, layout)).toBe(2200);
+  // A section shorter than the navigation: level with its start.
+  expect(navOffset({ sectionTop: 1200, sectionBottom: 1300, viewTop: 1250 }, nav, layout)).toBe(1200);
+  // A short last section: the navigation stays inside the page.
+  expect(navOffset({ sectionTop: 2900, sectionBottom: 3000, viewTop: 2700 }, nav, layout)).toBe(2800);
+  // Navigation taller than the layout.
+  expect(navOffset({ sectionTop: 400, sectionBottom: 500, viewTop: 400 }, 500, 300)).toBe(0);
+});
+
+test("the navigation moves with the content and is never pinned", async () => {
   const css = await Bun.file(new URL("../src/ui/styles.css", import.meta.url)).text();
   const navRules = css.match(/^\s*\.settings-nav \{[^}]*\}/gm) ?? [];
   expect(navRules.length).toBeGreaterThan(0);
   // Neither pinned (sticky/fixed) nor a scroll area of its own that the page would scroll past.
   for (const rule of navRules) expect(rule).not.toMatch(/position: (sticky|fixed)|overflow-y/);
+  // Wide: level with the current section; narrow: the row stays above the sections.
+  expect(navRules[0]).toContain("top: var(--nav-offset, 0px)");
+  expect(navRules.at(-1)).toContain("top: 0");
   // Only the one scroll area: sections with their own overflow would leave the navigation standing still.
   expect(css).not.toMatch(/^\.settings \{[^}]*overflow/m);
 });

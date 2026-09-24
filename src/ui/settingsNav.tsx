@@ -1,7 +1,7 @@
 // Section navigation of the Settings page: jump links, the "which section is in view" marker and ?section= deep links.
 import type { ComponentChildren, RefObject } from "preact";
 import { useEffect, useRef, useState } from "preact/hooks";
-import { currentSection, rowScrollLeft, SECTION_IDS, serializeSection } from "./settingsSections.ts";
+import { currentSection, navOffset, rowScrollLeft, SECTION_IDS, serializeSection } from "./settingsSections.ts";
 import { currentQuery, hrefWithQuery, replaceQuery } from "./url.ts";
 
 export interface SettingsSection {
@@ -18,6 +18,8 @@ const sectionElementId = (id: string) => `settings-${id}`;
 
 /** How long a programmatic scroll may take before the view-tracking takes over again. */
 const SCROLL_SETTLE_MS = 700;
+/** How long the navigation glides to a new current section (matches the transition in styles.css). */
+const GLIDE_MS = 220;
 
 function prefersReducedMotion(): boolean {
   return matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -27,7 +29,7 @@ function prefersReducedMotion(): boolean {
  * Tracks the section at the top of `scroller`, jumps to sections, and keeps ?section= in step. A jump pins its target
  * as current until the user scrolls again, so the marker neither flickers through the sections passing by nor snaps
  * to a neighbour when the target is too short to reach the top. Pass no ids until the sections are rendered.
- * The navigation is part of the page and scrolls away with the content (styles.css); it is not moved along.
+ * The navigation scrolls with the content; on wide screens SettingsNav moves it along beside the current section.
  */
 export function useSectionNav(scroller: RefObject<HTMLElement>, ids: string[]) {
   const [current, setCurrent] = useState<string | undefined>(ids[0]);
@@ -147,6 +149,49 @@ export function SettingsNav({ sections, current, onJump }: { sections: SettingsS
     return () => resized.disconnect();
     // The entries' own widths matter too: a count going from "…" to "3 new" pushes everything after it sideways.
   }, [current, sections.map((s) => `${s.label}${s.count ?? ""}`).join("|")]);
+
+  // Wide screens: the navigation moves along with the content, level with the current section and in view while that
+  // section is read (styles.css applies --nav-offset only there). It glides when the current section changes and keeps
+  // exact pace with the view otherwise. Placed again when the layout's size changes: sections above the current one can
+  // grow (discovery results, a repository enabled) and the last section clamps the offset.
+  const placedFor = useRef(current);
+  useEffect(() => {
+    const el = nav.current;
+    const layout = el?.parentElement;
+    const scroller = el?.closest<HTMLElement>(".settings-scroll");
+    if (!el || !layout || !scroller) return;
+    let frame = 0;
+    let glideEnd = 0;
+    if (placedFor.current !== current) {
+      placedFor.current = current;
+      el.dataset.glide = "true";
+      glideEnd = window.setTimeout(() => delete el.dataset.glide, GLIDE_MS);
+    }
+    const place = () => {
+      frame = 0;
+      const first = layout.querySelector<HTMLElement>(".settings-section");
+      const section = current ? document.getElementById(sectionElementId(current)) : null;
+      if (!first || !section) return;
+      const home = first.getBoundingClientRect().top;
+      const rect = section.getBoundingClientRect();
+      const margin = Number.parseFloat(getComputedStyle(section).scrollMarginTop) || 0;
+      const at = { sectionTop: rect.top - home, sectionBottom: rect.bottom - home, viewTop: scroller.getBoundingClientRect().top + margin - home };
+      el.style.setProperty("--nav-offset", `${navOffset(at, el.offsetHeight, layout.clientHeight)}px`);
+    };
+    const onScroll = () => {
+      if (!frame) frame = requestAnimationFrame(place);
+    };
+    place();
+    const resized = new ResizeObserver(() => place());
+    resized.observe(layout);
+    scroller.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      resized.disconnect();
+      scroller.removeEventListener("scroll", onScroll);
+      if (frame) cancelAnimationFrame(frame);
+      clearTimeout(glideEnd);
+    };
+  }, [current]);
 
   return (
     <nav ref={nav} class="settings-nav" aria-label="Settings sections">

@@ -77,13 +77,22 @@ Added after further use: with D6 the navigation came along on a jump, but manual
 - **The `<nav>` is the row's horizontal scroller, not the `<ul>`.** In Chrome, once the `<ul>` (`overflow-x: auto`) inside the nav had been scrolled sideways, clicks on its entries hit the `<ul>` and not the links (measured with `elementFromPoint` and real mouse events over CDP; it happened on `main` too, stuck or not). With the nav as the scroller every visible entry is clickable. The entries' offsetParent is the (sticky, so positioned) nav, which keeps `rowScrollLeft` in the row's own coordinates.
 - **Removed:** `navOffset`, `--nav-offset`, `--nav-order`, `--section-order`, the flattened narrow grid (`display: contents`) and the "return home at `scrollTop = 0`" logic; sticky does all of that. Kept: the jump pin, and re-scrolling to the section jumped to when the layout above it grows before the user scrolls (late discovery results).
 
-### D8. Plain page content, no sticky (supersedes D6 and D7)
+### D8. Plain page content, no sticky (supersedes D6 and D7; superseded on wide screens by D9)
 
 Added after further use of D7: "If I scroll on the settings page the navigation stays at the top. It should move with the content while scrolling." Asked to choose between scrolling away, scrolling away but coming along on a jump, and staying level with the current section, the maintainer chose the first: the navigation is simply part of the page.
 
 - **Wide and narrow:** `.settings-nav` is not sticky and gets no offset; it scrolls with `.settings-scroll` like the sections. It keeps `position: relative` only so it stays its entries' offsetParent (`rowScrollLeft` measures in the row's own coordinates).
 - **Removed:** the narrow row's page background and `z-index`, `--settings-nav-height` and its `ResizeObserver`; sections go back to `scroll-margin-top: var(--gap-2)` everywhere.
 - **Kept:** the one full-width scroll area (D1), the horizontal-only row reveal (D4), the `<nav>` as the row's sideways scroller (D7), the jump pin and the re-scroll when the layout grows before the user scrolls.
+
+### D9. Moved along beside the current section (supersedes D8 on wide screens)
+
+Added after using D8 on the current `main`: "the navigation is not moving with the content and it's not working." With D8 the navigation was gone as soon as the first section scrolled past. Asked again, the maintainer chose: the navigation glides along with the content, level with the current section, and — for a section taller than the window — keeps following into view while that section is read.
+
+- **Placement (wide):** `--nav-offset` on `.settings-nav` (`position: relative; top: var(--nav-offset)`), computed by `navOffset` in `settingsSections.ts` from positions relative to the navigation's home beside the first section: level with the current section's start while that start is in view; once it has scrolled past, level with the top of the view plus the sections' scroll margin (where a jump lands a section); never further down than where it ends with the section; clamped to the layout. It is not `position: sticky` (D7): the navigation belongs to a section and leaves with it, and between sections it moves to the next one's start.
+- **Motion:** it glides (220ms, `data-glide`) only when the current section changes; while scrolling within one section it keeps exact pace with the view, since a transition there would make it lag and bounce with every wheel step. No transition under reduced motion.
+- **When it is placed:** on every scroll frame of `.settings-scroll`, on a change of the current section (so a jump or deep link moves it with the pinned target), and when the layout's size changes (sections growing above, the last section clamping).
+- **Narrow:** unchanged from D8. The row sits above the sections and scrolls away with them; moving it along would cover the sections.
 
 ## Risks / Trade-offs
 
