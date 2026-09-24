@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { cdCommand, checkoutHint, pendingArchiveHint, splitBranchLabel } from "../src/ui/format.ts";
+import { cdCommand, checkoutHint, leftoverHint, pendingArchiveHint, splitBranchLabel } from "../src/ui/format.ts";
 
 test("short branch names are not split", () => {
   expect(splitBranchLabel("feat/add-login")).toEqual({ head: "feat/add-login", tail: "" });
@@ -70,4 +70,19 @@ test("pendingArchiveHint: only for an archive that lives in a linked worktree", 
   expect(pendingArchiveHint({ archived: "2026-09-20", checkout: { path: "/w/acme/alpha-infra", isMain: true } })).toBeUndefined();
   expect(pendingArchiveHint({ archived: null, checkout: worktree })).toBeUndefined();
   expect(pendingArchiveHint({ archived: "2026-09-20", checkout: { ...worktree, branch: undefined } })?.label).toContain("a detached worktree");
+});
+
+test("leftoverHint: only for an archive in the main checkout with an active copy left there", () => {
+  const main = { path: "/w/acme/alpha-infra", branch: "main", isMain: true, column: "Synced" };
+  const hint = leftoverHint({ name: "audit-trail", archived: "2026-09-20", otherCheckouts: [main] });
+  expect(hint?.label).toBe("active copy left · Synced");
+  expect(hint?.title).toContain("openspec/changes/audit-trail/");
+  expect(hint?.title).toContain("never committed");
+  expect(hint?.title).toContain("remove openspec/changes/audit-trail/ to clear this");
+  // a main checkout named explicitly is the same; an ordinary archive, a pending archive and an active change are not
+  expect(leftoverHint({ name: "audit-trail", archived: "2026-09-20", checkout: { isMain: true }, otherCheckouts: [main] })?.label).toBe("active copy left · Synced");
+  expect(leftoverHint({ name: "audit-trail", archived: "2026-09-20" })).toBeUndefined();
+  expect(leftoverHint({ name: "audit-trail", archived: "2026-09-20", checkout: { isMain: false }, otherCheckouts: [{ ...main, column: "Implementing" }] })).toBeUndefined();
+  expect(leftoverHint({ name: "audit-trail", archived: null, checkout: { isMain: true }, otherCheckouts: [{ isMain: false, column: "Proposal" }] })).toBeUndefined();
+  expect(leftoverHint({ name: "audit-trail", archived: null, otherCheckouts: [main] })).toBeUndefined();
 });

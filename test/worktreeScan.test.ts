@@ -319,3 +319,48 @@ test("a project in a subdirectory of its repository is read from the same subdir
   expect(snap.changes.map((c) => c.name)).toEqual(["invoice-export"]); // nothing from the repository's top-level openspec/
   expect(byName(snap, "invoice-export")[0]).toMatchObject({ column: "Drafts", checkout: { path: join(wt, "services", "billing"), isMain: false } });
 });
+
+const TWO_FACTOR = "\n### Requirement: Two-factor\nSHALL 2FA.\n\n#### Scenario: works\n- **WHEN** x\n- **THEN** y\n";
+
+test("an uncommitted change left behind in the main checkout next to its merged archive is reported once, as archived", async () => {
+  // The recommended workflow: created uncommitted in main, copied into a worktree, archived there, merged back.
+  const root = await repo();
+  await writeChange(root, "audit-trail", { created: "2026-09-10", artifacts: [...ALL], tasks: "- [x] 1.1 a\n" });
+  const work = await worktree(root, join(root, ".claude", "worktrees", "audit-trail"), "feat/audit-trail");
+  await writeChange(work, "audit-trail", { created: "2026-09-10", artifacts: [...ALL], tasks: "- [x] 1.1 a\n" });
+  await mkdir(join(work, "openspec", "changes", "archive"), { recursive: true });
+  await Bun.$`mv ${join(work, "openspec", "changes", "audit-trail")} ${join(work, "openspec", "changes", "archive", "2026-09-20-audit-trail")}`.quiet();
+  const spec = join(work, "openspec", "specs", "auth", "spec.md");
+  await writeFile(spec, `${await readFile(spec, "utf8")}${TWO_FACTOR}`);
+  await git(work, "add", "-A");
+  await git(work, "commit", "-q", "-m", "archive");
+  await git(root, "merge", "-q", "feat/audit-trail");
+
+  expect((await readdir(join(root, "openspec", "changes"))).includes("audit-trail")).toBe(true); // the leftover is really there
+  const cards = byName(await scan(root), "audit-trail");
+  expect(cards.map((c) => [c.column, c.archived, c.checkout])).toEqual([["Archived", "2026-09-20", undefined]]);
+  expect(cards[0].otherCheckouts).toEqual([{ path: root, branch: "main", isMain: true, column: "Synced" }]);
+});
+
+test("a leftover next to its archive in a folder without git is reported once, as archived", async () => {
+  class NotGit extends LocalRepoSource {
+    override isGit() {
+      return Promise.resolve(false);
+    }
+  }
+  const plain = await tempDir("osd-plain-");
+  temps.push(plain);
+  await mkdir(join(plain, "openspec", "specs", "auth"), { recursive: true });
+  await writeFile(join(plain, "openspec", "config.yaml"), "schema: spec-driven\n");
+  await writeFile(join(plain, "openspec", "specs", "auth", "spec.md"), `# auth\n\n## Purpose\nx\n\n## Requirements\n${TWO_FACTOR}`);
+  await writeChange(plain, "audit-trail", { created: "2026-09-10", artifacts: [...ALL], tasks: "- [x] 1.1 a\n" });
+  const archived = await writeChange(plain, "archive/2026-09-20-audit-trail", { created: "2026-09-10", artifacts: [...ALL], tasks: "- [x] 1.1 a\n" });
+  expect(archived.endsWith(join("archive", "2026-09-20-audit-trail"))).toBe(true);
+  await writeChange(plain, "solo", { created: "2026-09-21" });
+
+  const snap = await scan(plain, new NotGit(plain));
+  expect(snap.isGit).toBe(false);
+  expect(byName(snap, "audit-trail").map((c) => [c.column, c.checkout, c.otherCheckouts])).toEqual([["Archived", undefined, [{ path: plain, branch: undefined, isMain: true, column: "Synced" }]]]);
+  // active changes of a folder without git still carry no checkout
+  expect(byName(snap, "solo").map((c) => [c.column, c.checkout])).toEqual([["Proposal", undefined]]);
+});
