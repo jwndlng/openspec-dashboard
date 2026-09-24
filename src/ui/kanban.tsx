@@ -60,7 +60,8 @@ export function meterText(done: number, total: number, unit: MeterUnit): string 
   return unit === "artifacts" ? `${done} of ${total} artifacts written` : `${done} of ${total} tasks complete`;
 }
 
-export function Meter({ done, total, unit = "tasks" }: { done: number; total: number; unit?: MeterUnit }) {
+/** `showUnit` names what the bar counts in its visible value (`2/4 Artifacts`, `3/12 Tasks`); the card uses it. */
+export function Meter({ done, total, unit = "tasks", showUnit = false }: { done: number; total: number; unit?: MeterUnit; showUnit?: boolean }) {
   const full = total > 0 && done === total;
   const pct = total > 0 ? Math.round((done / total) * 100) : 0;
   const text = meterText(done, total, unit);
@@ -69,8 +70,9 @@ export function Meter({ done, total, unit = "tasks" }: { done: number; total: nu
       <div class="track">
         <div class="fill" style={{ width: `${pct}%` }} />
       </div>
-      <span class="value" aria-hidden="true">
+      <span class={`value ${showUnit ? "unit" : ""}`} aria-hidden="true">
         {done}/{total}
+        {showUnit && (unit === "artifacts" ? " Artifacts" : " Tasks")}
       </span>
     </div>
   );
@@ -96,7 +98,7 @@ export function ChangeCard({ card, now, from }: { card: Card; now: number; from:
   const noTasks = card.warnings?.includes("tasks file has no tasks");
   const progress = cardProgress(card);
   const link = cardLink(card, from);
-  // Only what an overview needs: the name and its session state, task progress, the last update, the next step.
+  // Only what an overview needs: the name and the last update, under them its session state, progress, the next step.
   // Branch, worktree, work status, prompt and completed phases are in the detail view.
   return (
     <article class="card">
@@ -112,7 +114,7 @@ export function ChangeCard({ card, now, from }: { card: Card; now: number; from:
           <ConsoleLink card={card} from={from} />
         </span>
       </div>
-      {progress && <Meter {...progress} />}
+      {progress && <Meter {...progress} showUnit />}
       <div class="meta">
         {noTasks && <span class="badge warning">no tasks</span>}
         {card.warnings?.filter((w) => w !== "tasks file has no tasks").map((w) => (

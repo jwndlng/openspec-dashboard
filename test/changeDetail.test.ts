@@ -68,6 +68,8 @@ test("header: repository link, change name, close control, warnings — and the 
   // Column, tasks and the last update moved here from the card, and so did the branch.
   for (const label of ["Implementing", "4/12", "updated"]) expect(text).toContain(label);
   expect(classed(header, "meter")).toHaveLength(1);
+  // The detail view's task bar keeps its bare count; only the card names the unit.
+  expect(textOf(classed(classed(header, "meter")[0], "value")[0]).trim()).toBe("4/12");
   expect(elements(header).some((el) => String(el.props.title ?? "").includes("a branch or worktree matches this change"))).toBe(true);
   // Still not repeated: creation date and schema.
   for (const label of ["created", "2026-03-02", "spec-driven"]) expect(text).not.toContain(label);
@@ -300,6 +302,12 @@ test("a card shows only what an overview needs, and leaves the rest to the detai
   const top = classed(view, "card-top")[0];
   expect(textOf(classed(top, "name")[0])).toBe("multi-tenant-sync");
   expect(textOf(classed(top, "age")[0])).toBe("updated 3d ago");
+  // The name comes first and has the top to itself; the session status gets the line below it.
+  expect([top.props.children].flat().map((el) => (el as { props: { class?: string } }).props.class)).toEqual(["card-title", "card-status"]);
+  // The progress bar names what it counts: tasks once the change is past Drafts, artifacts while drafting.
+  expect(textOf(classed(view, "value")[0])).toBe("4/12 Tasks");
+  const drafting = ChangeCard({ card: { ...detailed, stage: "drafts", column: "Drafts" }, now: NOW, from: "/board" });
+  expect(textOf(classed(drafting, "value")[0])).toBe("2/2 Artifacts");
   // No coloured card edge: the card itself is not repository-tinted.
   expect(String(elements(view)[0].props.class).split(" ")).not.toContain("repo-tint");
 });
