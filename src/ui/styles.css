@@ -185,7 +185,7 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: 
 /* The hero: the product mark and name, big; the status corner; the navigation below. */
 .topbar.hero { position: relative; z-index: 5; display: flex; flex-direction: column; gap: 26px; padding: 34px var(--gap-3) 0; }
 .hero-brand { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 22px; }
-.logo-mark { flex: none; display: block; color: var(--on-brand); filter: drop-shadow(0 12px 28px color-mix(in oklch, var(--brand) 45%, transparent)); }
+.logo-mark { flex: none; display: block; color: var(--brand-fg); filter: drop-shadow(0 6px 18px color-mix(in oklch, var(--brand) 35%, transparent)); }
 .hero-copy { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
 .hero-title { margin: 0; font-size: clamp(34px, 4.4vw, 56px); font-weight: 800; line-height: 1.02; letter-spacing: -0.04em; color: var(--fg-heading); text-transform: none; }
 /* The accent word: an indigo gradient where text can be clipped to one, the accent's text colour otherwise. */
