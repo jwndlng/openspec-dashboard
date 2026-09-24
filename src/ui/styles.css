@@ -144,6 +144,9 @@
 
 *, *::before, *::after { box-sizing: border-box; }
 html, body { height: 100%; }
+/* The mount point too: .app's height: 100% (and every scroll area inside it, e.g. .settings-scroll) needs a sized
+   parent, or the whole document scrolls instead. demo.css sets it for the demo build as well; the product must not rely on that. */
+#app { height: 100%; }
 body {
   margin: 0;
   background: var(--bg-base);
