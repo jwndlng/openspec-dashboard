@@ -56,6 +56,10 @@ track.
   board with a project dropdown, optionally with a prompt.
   Nothing is committed.
   ([change-creation](openspec/specs/change-creation/spec.md))
+- **Dismiss change**: drop a change you are not going ahead with from its detail view. The confirmation lists every file
+  and says which ones git can restore and which are lost for good; confirming deletes `openspec/changes/<name>/` from
+  the main checkout and stages that removal. Nothing is committed, and worktrees and branches are left alone.
+  ([change-dismissal](openspec/specs/change-dismissal/spec.md))
 - **Pull**: fetch and fast-forward a repository's main checkout. Never merges, rebases, stashes or switches branches.
   ([repository-pull](openspec/specs/repository-pull/spec.md))
 - **Clean up**: remove a repository's leftover worktrees and delete local branches whose work is merged, including
@@ -83,8 +87,9 @@ track.
 - It reads repositories with read-only git commands. Scanning, polling and discovery never write anything or contact
   a remote.
 - It writes to a repository only when you click something: **Pull** (the only network access, using git's own
-  credentials), **New change**, **applying shared config**, creating or removing an **agent session's worktree**, and
-  **Clean up** (removing worktrees and deleting merged local branches you selected).
+  credentials), **New change**, **Dismiss change** (deleting that change's directory), **applying shared config**,
+  creating or removing an **agent session's worktree**, and **Clean up** (removing worktrees and deleting merged local
+  branches you selected).
   The full list is in the [dashboard-api spec](openspec/specs/dashboard-api/spec.md).
 - Its own state lives in `~/.openspec-dashboard/`.
 

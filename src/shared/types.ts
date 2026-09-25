@@ -634,3 +634,29 @@ export interface CleanupResult {
   repoId: string;
   items: CleanupItemResult[];
 }
+
+/** One file of a change directory as the dismiss confirmation shows it. */
+export interface DismissFile {
+  /** Relative to the change directory, with `/` separators. */
+  path: string;
+  /** `restorable`: tracked and identical to `HEAD`, so git can bring it back. `lost`: untracked, modified, or no git. */
+  state: "restorable" | "lost";
+}
+
+/** What dismissing a change would delete (openspec/specs/change-dismissal). */
+export interface DismissPreview {
+  repoId: string;
+  name: string;
+  isGit: boolean;
+  files: DismissFile[];
+  /** Linked worktrees holding their own copy of the change; they are kept, and the card stays while one does. */
+  copies: { path: string; branch?: string }[];
+  /** "Same as shown" token over every file's path, size, mtime and state; the dismissal is refused when it changed. */
+  fingerprint: string;
+}
+
+export interface DismissResult {
+  name: string;
+  /** Whether the removal was staged; false for a repository without git, an untracked change, or a failed `git add`. */
+  staged: boolean;
+}

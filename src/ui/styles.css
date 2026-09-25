@@ -780,6 +780,21 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: 
 .new-change .hint { font-size: 11px; font-weight: 400; }
 .new-change .hint.danger { color: var(--danger); }
 
+/* Dismissing a change: the file list and its verdicts, then Cancel and the destructive button apart. */
+.dismiss-body { display: flex; flex-direction: column; gap: 12px; padding: 20px 24px 12px; }
+.dismiss-body .hint { margin: 0; font-size: 12px; }
+.dismiss-files { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; font-size: 12px; }
+.dismiss-files li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
+.dismiss-files .mono { overflow-wrap: anywhere; }
+.notice .dismiss-files { margin-top: 6px; }
+.dismiss-actions { display: flex; align-items: center; gap: 8px; padding: 14px 24px 18px; border-top: 1px solid var(--border-light); }
+/* Quiet in the header: it only reads as destructive once hovered or focused. */
+.btn.ghost.dismiss-change { flex: none; margin-left: auto; }
+.btn.ghost.dismiss-change:not(:disabled):hover, .btn.ghost.dismiss-change:focus-visible { color: var(--danger); border-color: var(--danger-border); background: var(--danger-bg); }
+.btn.ghost.dismiss-change:disabled { opacity: 0.55; cursor: not-allowed; }
+.app-notice { display: flex; align-items: center; gap: 8px; margin: 8px 16px 0; background: var(--bg-section); }
+.app-notice span { flex: 1; min-width: 0; }
+
 /* ---- Empty / notices ---- */
 .empty {
   margin: var(--gap-4) auto; max-width: 480px; text-align: center; padding: var(--gap-3);

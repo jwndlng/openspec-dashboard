@@ -29,6 +29,8 @@ export function App() {
   const [config, setConfig] = useState<Config | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  /** A one-line outcome of an action taken in an overlay that has since closed, e.g. a dismissed change. */
+  const [notice, setNotice] = useState<string>();
   const [, tick] = useState(0);
   const [themePref, setThemePref] = useState<ThemePreference>(loadPreference);
   const [unseen, setUnseen] = useState(0);
@@ -234,6 +236,14 @@ export function App() {
         </nav>
       </header>
       <main class="main">
+        {notice && (
+          <div class="notice app-notice" role="status">
+            <span>{notice}</span>
+            <button type="button" class="btn sm ghost" onClick={() => setNotice(undefined)} aria-label="Dismiss notice">
+              ✕
+            </button>
+          </div>
+        )}
         {route.view === "settings" ? (
           <Settings config={config} snapshot={shown} onSaved={(c) => { setConfig(c); void loadState(); }} onRescan={reloadSoon} />
         ) : route.view === "activity" ? (
@@ -259,7 +269,16 @@ export function App() {
     <EndSessionDialog />
     {route.view === "change" && (
       // Keyed so selection and content start over when moving between changes.
-      <ChangeDetail key={`${route.repoId}/${route.changeName}`} snapshot={shown} repoId={route.repoId} changeName={route.changeName} />
+      <ChangeDetail
+        key={`${route.repoId}/${route.changeName}`}
+        snapshot={shown}
+        repoId={route.repoId}
+        changeName={route.changeName}
+        onDismissed={(text) => {
+          setNotice(text);
+          reloadSoon();
+        }}
+      />
     )}
     <ConsoleOverlay />
     </SessionProvider>

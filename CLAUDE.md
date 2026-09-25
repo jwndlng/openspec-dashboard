@@ -26,8 +26,8 @@ bun test test/scanner.test.ts   # a single test file
 
 1. **Read-only towards tracked repositories, with enumerated exceptions.** The dashboard writes to a tracked
    repository only in response to an explicit user action, only to the paths enumerated in the "never writes"
-   requirement of `openspec/specs/dashboard-api/spec.md`, deletes nothing there beyond the worktrees and branches enumerated below, and runs a git
-   command that writes only where enumerated below. Today that list has six entries: the managed sections of `openspec/config.yaml` (applying shared config profiles,
+   requirement of `openspec/specs/dashboard-api/spec.md`, deletes nothing there beyond the worktrees, branches and change directories enumerated below, and runs a git
+   command that writes only where enumerated below. Today that list has seven entries: the managed sections of `openspec/config.yaml` (applying shared config profiles,
    `src/server/sharedConfig.ts`); for agent sessions, off by default, a session's git worktree, created with
    `git worktree add` (directory under `~/.openspec-dashboard/worktrees/`, never inside the repository's working tree)
    and removed with a non-forcing `git worktree remove` after the user confirmed and read-only checks proved nothing
@@ -47,8 +47,14 @@ bun test test/scanner.test.ts   # a single test file
    or pushed, `git worktree prune` of records whose directory is gone, and `git branch -D` of a local branch other than
    the default branch and the main checkout's branch whose work read-only checks proved is in the default branch and
    that still points at the commit the user saw (`src/server/cleanup.ts`, the only place that deletes a branch; never a
-   remote branch or remote-tracking ref). Those five modules are the only places that write to a tracked repository. Apart from the pull action and that one
-   `git add`, the main checkout's index and files are never touched and no remote is ever contacted; the main
+   remote branch or remote-tracking ref); and **dismissing a change** — on the user's confirmation, deleting an active
+   change's directory `openspec/changes/<name>/` from the main checkout (never under `archive/`, never a symbolic link
+   or its target, never anything in a linked worktree) after re-checking that its content is what the confirmation
+   showed and that no agent session for the change runs, then staging that removal with a single
+   `git add --all -- openspec/changes/<name>/`, best-effort and never followed by a commit
+   (`src/server/dismissChange.ts`, `POST /api/repos/<id>/changes/<name>/dismiss`, the only place that deletes a change
+   directory). Those six modules are the only places that write to a tracked repository. Apart from the pull action and
+   those two `git add`s, the main checkout's index and files are never touched and no remote is ever contacted; the main
    checkout's branch is never changed by anything; and the pull action runs only on the user's explicit request — never
    on a timer, during a scan, on page load or as a side effect (`test/pull.test.ts` proves scans leave a recording
    remote untouched). Starting the user's
@@ -58,7 +64,7 @@ bun test test/scanner.test.ts   # a single test file
    refused when it is, or lies inside, a tracked repository — with no worktree, no branch and no git command. With agent sessions disabled no process that can modify a repository is ever started. Scanning, polling, discovery, previews and saving settings
    write nothing to a repository. All other writes stay under `~/.openspec-dashboard/` (or `OPENSPEC_DASHBOARD_HOME`
    in tests). Apart from the worktree commands, the pull action's `fetch` and `merge --ff-only`, the create-change
-   `add` and the cleanup's `branch -D`, git is invoked only with the read-only subcommands listed in that spec. Adding a path or a subcommand means
+   and dismissal `add` and the cleanup's `branch -D`, git is invoked only with the read-only subcommands listed in that spec. Adding a path or a subcommand means
    changing that spec first.
 2. **Loopback only.** The server binds `127.0.0.1`; there is no auth because nothing else can reach it.
 2a. **Mutating API routes are same-origin only.** Every non-GET `/api/` request passes `crossSiteRefusal` in
