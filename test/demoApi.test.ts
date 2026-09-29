@@ -123,6 +123,34 @@ test("pull in the demo: canned outcomes, the notice's repositories are only fetc
   expect((await demo().api.pullRepo(onMain.id)).update).toBe("fast-forwarded"); // a reload starts over
 });
 
+test("a blocked pull in the demo: the leftovers are listed, then Resolve and pull answers with a fast-forward", async () => {
+  const { api } = demo();
+  const repos = (await api.state()).repos;
+  const blocked = repos.find((r) => r.name === "quill-docs")!;
+
+  const refused = await api.pullRepo(blocked.id);
+  expect(refused).toMatchObject({ fetched: true, update: "refused" });
+  expect(refused.blocking?.map((b) => [b.path, b.kind, b.differs])).toEqual([
+    ["openspec/changes/add-import-redirects/.openspec.yaml", "leftover", false],
+    ["openspec/changes/add-import-redirects/prompt.md", "leftover", true],
+  ]);
+  expect(refused.resolvable?.files).toHaveLength(2);
+  expect(refused.hint).toContain("Resolve and pull replaces them");
+
+  // a claim that is not the one that was offered changes nothing
+  expect(await api.resolvePull(blocked.id, { upstream: "0".repeat(40), files: refused.resolvable!.files })).toMatchObject({ update: "refused" });
+
+  const resolved = await api.resolvePull(blocked.id, refused.resolvable!);
+  expect(resolved).toMatchObject({ fetched: false, update: "fast-forwarded" });
+  expect(resolved.resolved).toEqual([
+    { path: "openspec/changes/add-import-redirects/.openspec.yaml" },
+    { path: "openspec/changes/add-import-redirects/prompt.md", copy: expect.stringContaining("/home/demo/.openspec-dashboard/pull-backups/") },
+  ]);
+  expect((await api.pullRepo(blocked.id)).update).toBe("up-to-date"); // it stays resolved until a reload
+  await expect(api.resolvePull("nope", refused.resolvable!)).rejects.toThrow("not a tracked");
+  expect((await demo().api.pullRepo(blocked.id)).update).toBe("refused"); // a reload starts over
+});
+
 test("change artifacts in the demo: files follow the sample's state, tasks.md agrees with the card, errors match the server's", async () => {
   const { api } = demo();
   const [repo] = (await api.state()).repos;

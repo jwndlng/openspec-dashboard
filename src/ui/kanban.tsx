@@ -323,7 +323,7 @@ function RepoHeader({ repo, now, stats, onCreated }: { repo: RepoSnapshot; now: 
       </div>
       {(canGit || repo.ok) && (
         <div class="band-actions">
-          {canGit && <PullButton repoId={repo.id} />}
+          {canGit && <PullButton repoId={repo.id} repoName={repo.name} />}
           {canGit && <CleanupButton repoId={repo.id} repoName={repo.name} onDone={onCreated} />}
           {repo.ok && (
             <button type="button" class="btn primary" onClick={() => setCreating(true)}>

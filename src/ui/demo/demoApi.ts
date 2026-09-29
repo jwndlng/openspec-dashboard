@@ -1,7 +1,7 @@
 // In-memory stand-in for the dashboard server. Nothing is read from or written to anywhere: a reload starts over.
 import { pageEvents } from "../../shared/activity.ts";
 import { summarizeWorkInProgress } from "../../shared/workInProgress.ts";
-import type { ChangeSnapshot, Config, DismissFile, DismissPreview, PullResult, RepoSharedConfig, RepoSnapshot, SharedConfigApplyResult, SharedConfigPreview, SharedProfile, Snapshot } from "../../shared/types.ts";
+import type { ChangeSnapshot, Config, DismissFile, DismissPreview, PullBlockingFile, PullResult, RepoSharedConfig, RepoSnapshot, SharedConfigApplyResult, SharedConfigPreview, SharedProfile, Snapshot } from "../../shared/types.ts";
 import { ApiError, type Api } from "../api.ts";
 import { demoApply, demoPreview, newCleanupState, remainingWorktrees } from "./demoCleanup.ts";
 import { createDemoSessions } from "./demoSessions.ts";
@@ -9,6 +9,35 @@ import { sampleArtifactFiles } from "./sampleArtifacts.ts";
 import { buildActivity, buildSample, DEMO_CARRIED, DEMO_PROFILES, DEMO_ROOT } from "./sampleData.ts";
 import type { Clock } from "./transcripts.ts";
 
+
+// ---------------------------------------------------------------------------------------------------------------------
+// One sample repository's first pull is blocked by the dashboard's own leftovers, so the visitor can try Resolve and
+// pull: `.openspec.yaml` is the same on both sides, `prompt.md` is not, and everything here is made up.
+// ---------------------------------------------------------------------------------------------------------------------
+const BLOCKED_REPO = "2f86b0cd"; // quill-docs
+const BLOCKED_CHANGE = "add-import-redirects";
+const BLOCKED_UPSTREAM = "4f19b7ce0a2d5168b3c47ae90d1f6825bb3c07ea";
+const BLOCKED_FILES: PullBlockingFile[] = [
+  {
+    path: `openspec/changes/${BLOCKED_CHANGE}/.openspec.yaml`,
+    kind: "leftover",
+    differs: false,
+    incoming: "9a3c1d5e7b02f48619cd3a7e04b8156f2c9d0e71",
+    staged: "9a3c1d5e7b02f48619cd3a7e04b8156f2c9d0e71",
+    worktree: "9a3c1d5e7b02f48619cd3a7e04b8156f2c9d0e71",
+  },
+  {
+    path: `openspec/changes/${BLOCKED_CHANGE}/prompt.md`,
+    kind: "leftover",
+    differs: true,
+    incoming: "1b74e0c6d9a25f38401e7bc3a5d68f291047c3ba",
+    staged: "e52d8106f3ba9c74d015e6b82a39fc07461d9825",
+    worktree: "e52d8106f3ba9c74d015e6b82a39fc07461d9825",
+  },
+];
+const BLOCKED_HINT =
+  "These files are left over from changes created here that the incoming commits already contain. Resolve and pull replaces them with the incoming version and keeps a copy of anything that differs.";
+const BLOCKED_COPY = `/home/demo/.openspec-dashboard/pull-backups/${BLOCKED_REPO}/2026-02-14T09-41-08-317Z/openspec/changes/${BLOCKED_CHANGE}/prompt.md`;
 
 export interface DemoApiOptions {
   now?: () => number;
@@ -111,15 +140,45 @@ export function createDemoApi({ now = Date.now, latencyMs = 150, clock }: DemoAp
   /** Long enough to see "Pulling…", like a fetch over a network would be. */
   const PULL_MS = Math.min(900, latencyMs * 6);
   const pulled = new Set<string>();
+  let leftoversResolved = false;
   const simulatedPull = (repoId: string): PullResult | undefined => {
     const repo = snapshot().repos.find((r) => r.id === repoId);
     if (!repo?.ok || !repo.isGit) return undefined;
     const base = { repoId, fetched: true, branch: repo.currentBranch, upstream: `origin/${repo.currentBranch}`, defaultBranch: repo.defaultBranch };
     if (repo.onDefaultBranch === false) return { ...base, update: "skipped", reason: `on ${repo.currentBranch}, not ${repo.defaultBranch}; only fetched` };
+    // One sample repository is blocked by the dashboard's own leftovers until the visitor tries Resolve and pull.
+    if (repoId === BLOCKED_REPO && !leftoversResolved) {
+      return {
+        ...base,
+        update: "refused",
+        reason: `Your local changes to the following files would be overwritten by merge: ${BLOCKED_FILES.map((f) => f.path).join(" ")}`,
+        blocking: structuredClone(BLOCKED_FILES),
+        resolvable: { upstream: BLOCKED_UPSTREAM, files: structuredClone(BLOCKED_FILES) },
+        hint: BLOCKED_HINT,
+      };
+    }
     if (pulled.has(repoId)) return { ...base, update: "up-to-date" };
     pulled.add(repoId);
     // a made-up but stable number of new commits per sample repository
     return { ...base, update: "fast-forwarded", commits: 1 + (Number.parseInt(repoId.slice(0, 2), 16) % 5) };
+  };
+
+  /** Resolving in the demo removes nothing anywhere: it answers with what the dashboard would say for those files. */
+  const simulatedResolve = (repoId: string, upstream: string): PullResult | undefined => {
+    const repo = snapshot().repos.find((r) => r.id === repoId);
+    if (!repo?.ok || !repo.isGit) return undefined;
+    const base = { repoId, fetched: false, branch: repo.currentBranch, upstream: `origin/${repo.currentBranch}`, defaultBranch: repo.defaultBranch };
+    if (repoId !== BLOCKED_REPO || leftoversResolved || upstream !== BLOCKED_UPSTREAM) {
+      return { ...base, update: "refused", reason: "the blocking files are no longer the ones that were shown; pull again to see where they stand" };
+    }
+    leftoversResolved = true;
+    pulled.add(repoId);
+    return {
+      ...base,
+      update: "fast-forwarded",
+      commits: 2,
+      resolved: [{ path: BLOCKED_FILES[0].path }, { path: BLOCKED_FILES[1].path, copy: BLOCKED_COPY }],
+    };
   };
 
   // What the visitor removed with Clean up: gone from the board until a reload.
@@ -253,6 +312,13 @@ export function createDemoApi({ now = Date.now, latencyMs = 150, clock }: DemoAp
       const results = snapshot().repos.flatMap((r) => simulatedPull(r.id) ?? []);
       generatedAt = new Date(now()).toISOString();
       return new Promise((resolve) => setTimeout(() => resolve(structuredClone({ results })), PULL_MS));
+    },
+    // Confirming Resolve and pull in the demo writes nothing: the outcome is the one the dashboard would report.
+    resolvePull: (repoId, claim) => {
+      const result = simulatedResolve(repoId, claim.upstream);
+      if (!result) return new Promise((_, reject) => setTimeout(() => reject(new Error("not a tracked, successfully scanned git repository")), latencyMs));
+      generatedAt = new Date(now()).toISOString();
+      return new Promise((resolve) => setTimeout(() => resolve(structuredClone(result)), PULL_MS));
     },
     cleanupPreview: (repoId) => attempt(() => demoPreview(cleanupState, cleanupTarget(repoId))),
     cleanup: (repoId, selection) =>

@@ -57,7 +57,8 @@ confirmation sends back, so "unchanged since shown" is a comparison of ids, with
 ```ts
 interface PullBlockingFile { path: string; kind: "leftover" | "local-work"; differs?: boolean;
   incoming?: string; staged?: string; worktree?: string }
-interface PullResult { …; blocking?: PullBlockingFile[]; resolvable?: { upstream: string };  // upstream commit id
+interface PullResolve { upstream: string; files: PullBlockingFile[] }  // the claim, posted back unchanged
+interface PullResult { …; blocking?: PullBlockingFile[]; resolvable?: PullResolve;
   resolved?: { path: string; copy?: string }[]; hint?: string }
 ```
 `hint` carries the plain-language next step for refusals (commit or set aside / reconcile outside the dashboard).
@@ -72,8 +73,12 @@ A plain pull keeps accepting an empty body.
 3. For each differing leftover, copy to `~/.openspec-dashboard/pull-backups/<repo-id>/<UTC timestamp>/<path>`; when
    the staged blob differs from both the working tree and the incoming blob, also write it (`git cat-file blob`) as
    `<path>.staged`. Copy failure aborts before anything is removed.
-4. Hold every leftover's working-tree bytes in memory, then `git rm --cached --quiet -- <staged leftovers>` and unlink
-   every leftover file. Directories are left in place — the fast-forward refills them, and git ignores them if not.
+4. Hold every leftover's working-tree bytes (and mode) in memory, then unlink every leftover file and only then
+   `git rm --cached --quiet -- <staged leftovers>`. That order is what keeps the command force-free: while an edited
+   staged file is still on disk, `git rm --cached` refuses it ("staged content different from both the file and the
+   HEAD") and wants `-f`; once the file is gone it succeeds. Nothing is at risk from unlinking first — the bytes are
+   already in memory and everything that differs is already copied. Directories are left in place — the fast-forward
+   refills them, and git ignores them if not.
 5. `git -c core.hooksPath=/dev/null merge --ff-only --quiet <upstream>`.
 6. On failure: write each file back from memory, `git add -- <previously staged leftovers>`, return `refused` with
    git's reason and the copies. On success: `fast-forwarded` with `resolved`.
@@ -81,6 +86,11 @@ A plain pull keeps accepting an empty body.
 `git rm --cached` was chosen over `git reset -- <path>` (reset is on the forbidden list) and over `git rm -f`
 (a force flag, and it would delete the working-tree file before we held its bytes). `git stash` was rejected
 outright: it is forbidden, and it would also sweep up unrelated local work.
+
+A blocking file is also only a leftover when it is an ordinary file on both sides: the upstream blob's mode and, when
+staged, the index entry's mode must be `100644` or `100755`, and `lstat` must say the working-tree entry is a regular
+file. A symlink, a gitlink or a submodule at such a path is local work and is never removed. A mode of its own counts
+as "differs", so it costs a copy rather than a surprise.
 
 The repository id is used as a directory name only after mapping any character outside `[A-Za-z0-9._-]` to `_`.
 
@@ -102,9 +112,12 @@ running). The end-session dialog renders the same list component inline under it
 
 ## Risks / Trade-offs
 
-- [Archive order with `add-cleanup-capabilities`: both replace the full "never writes" requirement] → this delta
-  already contains cleanup's text. Archive cleanup first; if this change is archived first, re-apply item (6) from
-  cleanup when archiving it. Noted in tasks.
+- [Archive order: four active changes replace the full "never writes" requirement, so the last one archived wins] →
+  this delta has items (1)-(6) with the leftover text inside item (3), and already contains `add-cleanup-capabilities`'
+  item (6), so archiving either of those in either order loses nothing. It does **not** contain `dismiss-task`'s item
+  (7): archive this change before `dismiss-task`, or re-apply item (7) here first. `list-recently-opened-prs` has
+  neither the leftovers nor the dismissal, so whoever archives it last has to fold both in. The real fix is for these
+  deltas to stop replacing the whole requirement, which is out of scope here. Noted in tasks.
 - [Race between the check and the removal — another process edits a leftover in that window] → the bytes removed are
   the bytes held in memory and put back on failure; a write landing after the unlink would be a new untracked file
   that git then refuses, which triggers the put-back.

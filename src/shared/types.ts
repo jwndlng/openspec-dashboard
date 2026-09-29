@@ -620,12 +620,40 @@ export interface ActivityPage {
 }
 
 /**
+ * One uncommitted path that stops a fast-forward: the incoming commits change it and the main checkout has it modified,
+ * staged or untracked. A **change leftover** is a file the dashboard's own create-change wrote and staged that the
+ * incoming commits now bring along; anything else is the user's **local work** and is never touched
+ * (openspec/specs/repository-pull: "Change leftovers blocking a pull are resolved on confirmation").
+ */
+export interface PullBlockingFile {
+  /** Repository-relative, forward slashes — git's own spelling. */
+  path: string;
+  kind: "leftover" | "local-work";
+  /** Leftovers only: the local content is not the incoming content, so a copy is kept before it is replaced. */
+  differs?: boolean;
+  /** Leftovers only. Blob ids, the claim a confirmation is checked against: upstream, index (when staged), working tree. */
+  incoming?: string;
+  staged?: string;
+  worktree?: string;
+}
+
+/**
+ * What a confirmed **Resolve and pull** claims: the upstream commit the user was shown and the blocking files exactly as
+ * they were offered. The server re-determines all of it and proceeds only when its own answer matches this one.
+ */
+export interface PullResolve {
+  /** Full commit id the upstream pointed at when the offer was made. */
+  upstream: string;
+  files: PullBlockingFile[];
+}
+
+/**
  * What the pull action did for one repository. The fetch and the update of the main checkout are reported separately:
  * the fetch is always safe, the update only happens when it is an unambiguous fast-forward on the default branch.
  */
 export interface PullResult {
   repoId: string;
-  /** The remote was fetched (remote-tracking refs are current). */
+  /** The remote was fetched (remote-tracking refs are current). A confirmed resolve never fetches. */
   fetched: boolean;
   update: "fast-forwarded" | "up-to-date" | "skipped" | "refused" | "failed";
   /** Commits the main checkout moved forward. */
@@ -637,6 +665,14 @@ export interface PullResult {
   defaultBranch?: string;
   /** The repository has a post-merge hook; the dashboard does not run hooks. */
   hooksSkipped?: boolean;
+  /** Refusals over uncommitted files: every blocking path, classified. Absent when git refused for another reason. */
+  blocking?: PullBlockingFile[];
+  /** Present only when every blocking file is a change leftover: post this back to run Resolve and pull. */
+  resolvable?: PullResolve;
+  /** What a confirmed resolve replaced, and where a copy of the local version was saved when it differed. */
+  resolved?: { path: string; copy?: string }[];
+  /** The next step in plain words, for a refusal the user has to act on. Never suggests forcing or discarding. */
+  hint?: string;
 }
 
 /** What `POST /api/repos/<id>/changes` answers on success: the change exists on disk; `staged` says whether git tracks it already. */

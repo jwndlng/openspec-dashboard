@@ -4,7 +4,7 @@
 import { useEffect, useState } from "preact/hooks";
 import type { PullResult, WorkStatus } from "../shared/types.ts";
 import { api } from "./api.ts";
-import { usePull } from "./pull.tsx";
+import { PullBlockedList, usePull } from "./pull.tsx";
 import { pullNeedsReport, pullOutcome } from "./pullState.ts";
 import { endSeverity, endWarning, pullOffer, worktreeRemovalPossible } from "./sessionState.ts";
 import { useSessionUi } from "./sessions.tsx";
@@ -124,7 +124,11 @@ export function EndSessionDialog() {
   };
 
   if (report) {
-    const outcome = pullOutcome(report.result);
+    // Resolve and pull can be confirmed from right here, so the report follows the repository's live pull outcome.
+    const live = pulls.states[session.repoId];
+    const result = live && live !== "running" ? live : report.result;
+    const outcome = pullOutcome(result);
+    const updated = result.update === "fast-forwarded" || result.update === "up-to-date";
     return (
       <div class="overlay end-overlay">
         <div class="dialog end-dialog" role="alertdialog" aria-modal="true" aria-labelledby="end-title" aria-describedby="end-body">
@@ -133,12 +137,20 @@ export function EndSessionDialog() {
           </strong>
           <div id="end-body" class="dialog-body">
             <div class={`notice ${outcome.tone}`}>
-              <strong>{outcome.tone === "danger" ? "⚠ " : ""}The main checkout was not updated. </strong>
+              <strong>
+                {outcome.tone === "danger" ? "⚠ " : ""}
+                {updated ? "The main checkout was updated. " : "The main checkout was not updated. "}
+              </strong>
               {outcome.detail}
             </div>
+            {(result.blocking !== undefined || result.resolved !== undefined) && (
+              <PullBlockedList result={result} running={live === "running"} onResolve={(claim) => void pulls.resolve(session.repoId, claim)} />
+            )}
             <div class="hint">
-              The session for <span class="mono">{session.change}</span> has ended{report.worktreeRemoved ? " and its worktree was removed" : ""}. Archives, specs and progress shown for this repository still come from
-              the checkout as it is, so they may be outdated; you can pull again from the board header.
+              The session for <span class="mono">{session.change}</span> has ended{report.worktreeRemoved ? " and its worktree was removed" : ""}.{" "}
+              {updated
+                ? "Archives, specs and progress shown for this repository now come from the updated checkout."
+                : "Archives, specs and progress shown for this repository still come from the checkout as it is, so they may be outdated; you can pull again from the board header."}
             </div>
           </div>
           <div class="row">
