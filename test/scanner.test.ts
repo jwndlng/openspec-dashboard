@@ -34,6 +34,17 @@ test("scans a fixture repo: artifacts, tasks, archive dates, columns", async () 
   expect(complete.tasks?.done).toBe(complete.tasks?.total);
   expect(complete.column).toBe("Done");
 
+  // All three checkbox states end to end: `[~]` is counted in `total` and in `awaiting`, never in `done`.
+  const awaiting = byName.get("verify-rollout")!;
+  expect(awaiting.tasks).toEqual({ done: 3, awaiting: 2, total: 6 });
+  expect(awaiting.column).toBe("Implementing");
+
+  // Every task settled with two awaiting a person: the done column, sub-state `validate`.
+  const validating = byName.get("confirm-retention")!;
+  expect(validating.tasks).toEqual({ done: 4, awaiting: 2, total: 6 });
+  expect([validating.column, validating.subState]).toEqual(["Done", "validate"]);
+  expect(complete.subState).toBe("complete");
+
   const archived = byName.get("runbook-repo-field")!;
   expect(archived.archived).toBe("2026-06-18");
   expect(archived.created).toBe("2026-06-16");
@@ -54,7 +65,7 @@ test("all artifacts done with an empty tasks file lands in Ready with a warning"
   const snap = await scanRepo(newRepoConfig(root, true));
   const empty = snap.changes.find((c) => c.name === "empty-tasks")!;
   expect(empty.artifacts.every((a) => a.status === "done")).toBe(true);
-  expect(empty.tasks).toEqual({ done: 0, total: 0 });
+  expect(empty.tasks).toEqual({ done: 0, awaiting: 0, total: 0 });
   expect(empty.column).toBe("Ready");
   expect(empty.warnings).toContain("tasks file has no tasks");
   expect(empty.created).toBe("2026-09-01");

@@ -4,7 +4,7 @@ import { realpathSync } from "node:fs";
 import { mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { ConfigValidationError, defaultAgentSessions, defaultConfig, loadConfig, newRepoConfig, repoId, saveConfig, validateConfig, validateIgnorePaths } from "../src/server/config.ts";
-import { CLAUDE_PROFILE } from "../src/shared/agentDefaults.ts";
+import { CLAUDE_PROFILE, FORMER_PROMPTS } from "../src/shared/agentDefaults.ts";
 import { tempDir, useTempHome } from "./helpers.ts";
 
 let home: string;
@@ -91,6 +91,36 @@ test("the former preconfigured Archive prompt is read as the current one; anythi
   expect(archiveOf(withArchive(FORMER_ARCHIVE, "my-agent"))).toBe(FORMER_ARCHIVE); // not the preconfigured profile
   const upgraded = validateConfig(withArchive(FORMER_ARCHIVE)).agentSessions.agents[0];
   expect(upgraded.prompts).toEqual(CLAUDE_PROFILE.prompts); // the other prompts are untouched
+});
+
+const withPrompts = (prompts: Record<string, string>, id = "claude") => {
+  const agent = { ...CLAUDE_PROFILE, id, prompts };
+  return { ...defaultConfig(), agentSessions: { enabled: true, agents: [agent], defaultAgent: id } };
+};
+const promptsOf = (input: unknown) => validateConfig(input).agentSessions.agents[0].prompts;
+
+test("former preconfigured prompts are upgraded per starter, so one never rewrites another", () => {
+  const FORMER_IMPLEMENT = "/opsx:apply {change}";
+  const FORMER_SYNCING_ARCHIVE = FORMER_PROMPTS.archive?.at(-1) as string;
+  expect(FORMER_PROMPTS.implement).toContain(FORMER_IMPLEMENT);
+  expect(CLAUDE_PROFILE.prompts.implement).not.toBe(FORMER_IMPLEMENT);
+  expect(CLAUDE_PROFILE.prompts.archive).not.toBe(FORMER_SYNCING_ARCHIVE);
+
+  // What every installation on the previous version has saved: both former texts, verbatim. Both upgrade — and no
+  // Validate prompt is invented, because the rule only ever replaces a prompt that is there (agent-sessions spec).
+  const { validate: _new, ...upgraded } = CLAUDE_PROFILE.prompts;
+  expect(promptsOf(withPrompts({ draft: "/opsx:ff {change}", implement: FORMER_IMPLEMENT, archive: FORMER_SYNCING_ARCHIVE }))).toEqual(upgraded);
+
+  // An edited Implement prompt is the user's and stays; the untouched Archive one still upgrades.
+  const edited = "/opsx:apply {change} and stop after each task";
+  expect(promptsOf(withPrompts({ implement: edited, archive: FORMER_SYNCING_ARCHIVE }))).toEqual({ implement: edited, archive: CLAUDE_PROFILE.prompts.archive });
+
+  // A removed starter stays removed, and a profile the user added is never touched.
+  expect(promptsOf(withPrompts({ archive: FORMER_SYNCING_ARCHIVE })).implement).toBeUndefined();
+  expect(promptsOf(withPrompts({ implement: FORMER_IMPLEMENT, archive: FORMER_SYNCING_ARCHIVE }, "my-agent"))).toEqual({ implement: FORMER_IMPLEMENT, archive: FORMER_SYNCING_ARCHIVE });
+
+  // Nothing invents a Validate prompt for a profile that has none: the new starter is simply not offered there.
+  expect(promptsOf(withPrompts({ implement: FORMER_IMPLEMENT })).validate).toBeUndefined();
 });
 
 test("a config file with the former Archive prompt loads upgraded, is not rewritten by loading, and saves the new prompt", async () => {

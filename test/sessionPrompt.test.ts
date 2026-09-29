@@ -3,9 +3,10 @@ import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { createFetchHandler, type AppState } from "../src/server/api.ts";
 import { Scanner } from "../src/server/scanner.ts";
-import type { ChangeSnapshot, Session } from "../src/shared/types.ts";
+import type { ChangeSession, ChangeSnapshot, Session } from "../src/shared/types.ts";
+import { nextStepFor, startersFor } from "../src/ui/sessionState.ts";
 import { useTempHome } from "./helpers.ts";
-import { FAKE_AGENT, harness, waitFor, watch, type Harness } from "./sessionHelpers.ts";
+import { fakeProfile, FAKE_AGENT, harness, waitFor, watch, type Harness } from "./sessionHelpers.ts";
 
 setDefaultTimeout(30_000);
 
@@ -122,4 +123,27 @@ test("API: the prompt route is guarded, and the worktree route reports the work 
   const status = (await (await handle(new Request(`http://127.0.0.1:4173/api/sessions/${s.id}/worktree`))).json()) as { removable: boolean; work: { state: string; count: number } };
   expect(status.work).toMatchObject({ state: "uncommitted", count: 1 });
   expect(status.removable).toBe(false);
+});
+
+test("Validate is the next step of a validating change: typed into its running session, and Implement is not offered", async () => {
+  const h = await harness({ agent: { prompts: { implement: "implement {change}", validate: "validate {change}", archive: "archive {change}" } } });
+  managers.push(h.manager);
+  const card = changeOf(h, "confirm-retention");
+  expect([card.column, card.subState]).toEqual(["Done", "validate"]);
+
+  const cfg = { ...h.config, agentSessions: { ...h.config.agentSessions, agents: [fakeProfile({ prompts: { implement: "i {change}", validate: "v {change}", archive: "a {change}" } })] } };
+  expect(startersFor(cfg, card)).toEqual(["validate", "archive"]);
+  // Without a Validate prompt the card is left with Archive alone.
+  const noValidate = { ...cfg, agentSessions: { ...cfg.agentSessions, agents: [fakeProfile({ prompts: { implement: "i {change}", archive: "a {change}" } })] } };
+  expect(startersFor(noValidate, card)).toEqual(["archive"]);
+
+  // `validate` is not `archive`, so it takes the default path: into the change's running session.
+  const s = await h.manager.open({ repoId: h.repoId, change: "confirm-retention", action: "validate" });
+  expect(nextStepFor(h.manager.list().filter((x) => !x.console) as ChangeSession[], h.repoId, "confirm-retention", "validate")).toEqual({ promptSessionId: s.id });
+  const seen = await watch(h.manager, s.id);
+  await waitFor(() => seen.text().includes("fake-agent ready"), "the agent");
+  expect((await h.manager.prompt(s.id, { action: "validate" })).submitted).toBe(true);
+  await waitFor(() => seen.text().includes("you said: validate confirm-retention"), "the prompt the agent received");
+  // Nothing is left to implement in `Done`, so that step is refused even into a running session.
+  expect(h.manager.prompt(s.id, { action: "implement" })).rejects.toThrow(/not available/);
 });

@@ -56,22 +56,27 @@ export function CopyButton({ text, label }: { text: string; label: string }) {
 /** What a progress bar counts: ticked tasks, or written artifacts while a change is in `Drafts`. */
 export type MeterUnit = "tasks" | "artifacts";
 
-export function meterText(done: number, total: number, unit: MeterUnit): string {
-  return unit === "artifacts" ? `${done} of ${total} artifacts written` : `${done} of ${total} tasks complete`;
+/** Colour is never the only cue: the awaiting count is named in words, here and in the visible value. */
+export function meterText(done: number, total: number, unit: MeterUnit, awaiting = 0): string {
+  if (unit === "artifacts") return `${done} of ${total} artifacts written`;
+  if (awaiting > 0) return `${done} of ${total} tasks complete, ${awaiting} awaiting validation, ${total - done - awaiting} open`;
+  return `${done} of ${total} tasks complete`;
 }
 
 /** `showUnit` names what the bar counts in its visible value (`2/4 Artifacts`, `3/12 Tasks`); the card uses it. */
-export function Meter({ done, total, unit = "tasks", showUnit = false }: { done: number; total: number; unit?: MeterUnit; showUnit?: boolean }) {
+export function Meter({ done, total, awaiting = 0, unit = "tasks", showUnit = false }: { done: number; total: number; awaiting?: number; unit?: MeterUnit; showUnit?: boolean }) {
   const full = total > 0 && done === total;
   const pct = total > 0 ? Math.round((done / total) * 100) : 0;
-  const text = meterText(done, total, unit);
+  const awaitingPct = total > 0 ? Math.round((awaiting / total) * 100) : 0;
+  const text = meterText(done, total, unit, awaiting);
   return (
-    <div class={`meter ${full ? "full" : ""}`} title={text} role="progressbar" aria-label={text} aria-valuemin={0} aria-valuemax={total} aria-valuenow={done}>
+    <div class={`meter ${full ? "full" : ""} ${awaiting > 0 ? "has-awaiting" : ""}`} title={text} role="progressbar" aria-label={text} aria-valuemin={0} aria-valuemax={total} aria-valuenow={done}>
       <div class="track">
         <div class="fill" style={{ width: `${pct}%` }} />
+        {awaiting > 0 && <div class="awaiting" style={{ width: `${awaitingPct}%` }} />}
       </div>
       <span class={`value ${showUnit ? "unit" : ""}`} aria-hidden="true">
-        {done}/{total}
+        {awaiting > 0 ? `${done} + ${awaiting} awaiting / ${total}` : `${done}/${total}`}
         {showUnit && (unit === "artifacts" ? " Artifacts" : " Tasks")}
       </span>
     </div>
@@ -79,7 +84,7 @@ export function Meter({ done, total, unit = "tasks", showUnit = false }: { done:
 }
 
 /** The progress bar a card shows: written artifacts in `Drafts`, else ticked tasks when there are any, else none. */
-export function cardProgress(card: Pick<Card, "stage" | "artifacts" | "tasks">): { done: number; total: number; unit: MeterUnit } | undefined {
+export function cardProgress(card: Pick<Card, "stage" | "artifacts" | "tasks">): { done: number; total: number; awaiting?: number; unit: MeterUnit } | undefined {
   if (card.stage === "drafts") return { done: card.artifacts.filter((a) => a.status === "done").length, total: card.artifacts.length, unit: "artifacts" };
   if (card.stage === "backlog" || !card.tasks || card.tasks.total === 0) return undefined;
   return { ...card.tasks, unit: "tasks" };
@@ -96,6 +101,8 @@ export function cardLink(card: Pick<Card, "repoId" | "name">, from: string): { p
  */
 export function ChangeCard({ card, now, from }: { card: Card; now: number; from: string }) {
   const noTasks = card.warnings?.includes("tasks file has no tasks");
+  // The work is finished, a person still has to confirm it — `warning`, not `success`; never on an archived change.
+  const validating = !card.archived && (card.tasks?.awaiting ?? 0) > 0;
   const progress = cardProgress(card);
   const link = cardLink(card, from);
   // Only what an overview needs: the name and the last update, under them its session state, progress, the next step.
@@ -116,6 +123,11 @@ export function ChangeCard({ card, now, from }: { card: Card; now: number; from:
       </div>
       {progress && <Meter {...progress} showUnit />}
       <div class="meta">
+        {validating && (
+          <span class="badge warning" title={`${card.tasks?.awaiting} ${card.tasks?.awaiting === 1 ? "task awaits" : "tasks await"} your confirmation`}>
+            Validate
+          </span>
+        )}
         {noTasks && <span class="badge warning">no tasks</span>}
         {card.warnings?.filter((w) => w !== "tasks file has no tasks").map((w) => (
           <span class="badge danger" title={w}>
