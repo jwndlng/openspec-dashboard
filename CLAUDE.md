@@ -66,7 +66,10 @@ bun test test/scanner.test.ts   # a single test file
    on a timer, during a scan, on page load or as a side effect (`test/pull.test.ts` proves scans leave a recording
    remote untouched). Starting the user's
    agent in that worktree on the user's click is not a write by the dashboard: what the agent changes is decided by its
-   own permission prompts. The same holds for the **main console** (`openConsole`, `src/server/sessions/consoleFolder.ts`):
+   own permission prompts. That is also why **Integrate** (`src/server/integration.ts`) needs no entry in the list
+   above: it starts the default agent in a git repository that is not tracked yet so the agent can run `openspec init`
+   there, while the dashboard runs no git command and writes no file in that repository and adds it to its own config
+   only once `openspec/config.yaml` is on disk. The same holds for the **main console** (`openConsole`, `src/server/sessions/consoleFolder.ts`):
    the default agent in the console folder — `~/.openspec-dashboard/console/` or a folder the user configured, which is
    refused when it is, or lies inside, a tracked repository — with no worktree, no branch and no git command. With agent sessions disabled no process that can modify a repository is ever started. Scanning, polling, discovery, previews and saving settings
    write nothing to a repository. In particular `tasks.md` is never written: the dashboard reads the three checkbox
@@ -114,6 +117,13 @@ bun test test/scanner.test.ts   # a single test file
   the text never appears, nothing is sent and the user is told it was typed but not confirmed. That echo check is the
   one thing the dashboard may read out of an agent's output, and only to decide about Enter. One running session per
   worktree; archiving has its own.
+- **Integrate** (`src/server/integration.ts`, `POST /api/integrations`) is the second in-place case, and the only one
+  in a git repository: the agent runs in the repository's **main checkout**, with no worktree and no branch, because
+  `openspec init` has to leave `openspec/config.yaml` where discovery looks for it — on a branch in a worktree the
+  repository would stay integratable. An `IntegrationSession` belongs to no tracked repository, no change and no
+  action, so `changeSessions()` keeps it out of Open work, the activity log, work status, Ship, pull and cleanup, the
+  same way it keeps the console out. The panel uses the same in-place wording. What decides that it worked is the
+  marker on disk, re-checked when the session ends and on every discovery run — never anything the agent printed.
 - A tracked folder **without git** is a supported repository, so its sessions run **in place**: the agent's working
   directory is the folder itself, no worktree and no branch are made, and no git command runs for the session
   (`Session.inPlace`). It is decided from the scan's `isGit`, never by letting a git command fail. Such a session has

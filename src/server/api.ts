@@ -8,6 +8,7 @@ import { ConfigValidationError, saveConfig, validateConfig, validateIgnorePaths,
 import { createChange } from "./createChange.ts";
 import { dismissChange, DismissError, isDismissableName, previewDismiss } from "./dismissChange.ts";
 import { discoverRepos } from "./discover.ts";
+import { confirmPendingIntegrations, startIntegration } from "./integration.ts";
 import { MAX_BLOCKING_FILES, PullBusyError, pullAll, pullRepository, resolvePullRepository } from "./pull.ts";
 import type { Scanner } from "./scanner.ts";
 import { applyTo, EMPTY_SHARED_CONFIG, loadSharedConfig, previewFor, SharedConfigValidationError, saveSharedConfig } from "./sharedConfig.ts";
@@ -95,6 +96,9 @@ async function postDiscover(state: AppState, req: Request): Promise<Response> {
       throw err;
     }
   }
+  // A marker written while an agent was still going is noticed here: the folder becomes a tracked repository rather
+  // than being offered again. Read-only towards repositories; the only write is to the dashboard's own config.
+  await confirmPendingIntegrations(state);
   const result: DiscoverResult = await discoverRepos(state.config.repos, roots, ignorePaths);
   return json(result);
 }
@@ -194,6 +198,18 @@ async function consoleRoute(state: AppState): Promise<Response> {
   if (!state.sessions) return json({ error: "agent sessions are not available" }, 403);
   try {
     const { session, created } = await state.sessions.openConsole();
+    return json(session, created ? 201 : 200);
+  } catch (err) {
+    if (err instanceof SessionError) return json({ error: err.message }, err.status);
+    throw err;
+  }
+}
+
+/** Starts an integration session for one integratable repository, or returns the one running for it. Mutating. */
+async function integrationRoute(state: AppState, req: Request): Promise<Response> {
+  if (!state.sessions) return json({ error: "agent sessions are not available" }, 403);
+  try {
+    const { session, created } = await startIntegration(state, await readJson(req));
     return json(session, created ? 201 : 200);
   } catch (err) {
     if (err instanceof SessionError) return json({ error: err.message }, err.status);
@@ -616,6 +632,7 @@ export function createFetchHandler({ state, indexHtml }: AppOptions): (req: Requ
       }
       if (pathname === "/api/sessions" || pathname.startsWith("/api/sessions/")) return sessionRoutes(state, req, url, server);
       if (pathname === "/api/console" && req.method === "POST") return consoleRoute(state);
+      if (pathname === "/api/integrations" && req.method === "POST") return integrationRoute(state, req);
       const artifactMatch = req.method === "GET" ? ARTIFACT_ROUTE.exec(pathname) : null;
       if (artifactMatch) return artifactRoutes(state, url, artifactMatch);
       if (req.method === "POST" && pathname === "/api/worktrees/remove") return postWorktreeRemove(state, req);

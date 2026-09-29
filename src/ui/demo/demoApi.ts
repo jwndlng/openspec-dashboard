@@ -125,10 +125,13 @@ export function createDemoApi({ now = Date.now, latencyMs = 150, clock }: DemoAp
     repo.changes.some((c) => !c.archived && dismissed.has(dismissKey(repo.id, c.name))) ? { ...repo, changes: repo.changes.filter((c) => c.archived || !dismissed.has(dismissKey(repo.id, c.name))) } : repo;
 
   /** The board without session worktrees: what the sessions themselves are validated against. */
+  /** Every repository the sample can describe: the tracked ones, plus any that has been integrated in this session. */
+  const sampleRepo = (id: string): RepoSnapshot | undefined => sample.snapshot.repos.find((s) => s.id === id) ?? sample.integrated.find((s) => s.id === id);
+
   const baseSnapshot = (): Snapshot => ({
     generatedAt,
     repos: config.repos.filter((r) => r.enabled).map((r) => {
-      const known = sample.snapshot.repos.find((s) => s.id === r.id);
+      const known = sampleRepo(r.id);
       return known ? withoutDismissed(known) : emptyRepo(r.id, r.name, r.path);
     }),
   });
@@ -186,7 +189,7 @@ export function createDemoApi({ now = Date.now, latencyMs = 150, clock }: DemoAp
   };
   /** Cleanup sees the sample's own checkouts, not session worktrees: those are removed from the sessions view. */
   const cleanupTarget = (repoId: string): RepoSnapshot => {
-    const repo = sample.snapshot.repos.find((r) => r.id === repoId);
+    const repo = sampleRepo(repoId);
     if (!repo || !config.repos.some((r) => r.id === repoId && r.enabled)) throw new ApiError(404, "unknown repository");
     if (!repo.ok || !repo.isGit) throw new ApiError(409, "not a tracked, successfully scanned git repository");
     return repo;
@@ -197,7 +200,7 @@ export function createDemoApi({ now = Date.now, latencyMs = 150, clock }: DemoAp
     repos: config.repos
       .filter((r) => r.enabled)
       .map((r) => {
-        const known = sample.snapshot.repos.find((s) => s.id === r.id);
+        const known = sampleRepo(r.id);
         const repo = known ? cleanedUp(withoutDismissed({ ...known, name: r.name })) : emptyRepo(r.id, r.name, r.path);
         // A session's worktree is a worktree of its repository, so `git worktree list` — the snapshot — has it too.
         const sessionWorktrees = config.agentSessions.enabled ? demoSessions.gitWorktrees(r.id) : [];
@@ -208,7 +211,23 @@ export function createDemoApi({ now = Date.now, latencyMs = 150, clock }: DemoAp
       }),
   });
 
-  const demoSessions: ReturnType<typeof createDemoSessions> = createDemoSessions({ now, clock, getConfig: () => config, getSnapshot: () => baseSnapshot() });
+  /** Still without OpenSpec: the sample's integratable repositories minus the ones the visitor has already set up. */
+  const integratable = () => sample.integratable.filter((r) => !config.repos.some((c) => c.id === r.id));
+
+  const demoSessions: ReturnType<typeof createDemoSessions> = createDemoSessions({
+    now,
+    clock,
+    getConfig: () => config,
+    getSnapshot: () => baseSnapshot(),
+    integratable,
+    // The recording ended, which here stands for `openspec/config.yaml` appearing: track it and show its board.
+    onIntegrated: (path) => {
+      const repo = sample.integratable.find((r) => r.path === path);
+      if (!repo || config.repos.some((r) => r.id === repo.id)) return;
+      config = { ...config, repos: [...config.repos, { id: repo.id, path: repo.path, name: repo.name, enabled: true }] };
+      generatedAt = new Date(now()).toISOString();
+    },
+  });
 
   // Same answers as the server: 404 for a repository that is not enabled or a change it does not have.
   const findChange = (repoId: string, change: string): { change: ChangeSnapshot; dir: string } => {
@@ -278,6 +297,7 @@ export function createDemoApi({ now = Date.now, latencyMs = 150, clock }: DemoAp
       const tracked = new Set(config.repos.map((r) => r.id));
       return reply({
         candidates: roots.some(inDemo) ? sample.candidates.filter((c) => !tracked.has(c.id) && !ignored(c.path)) : [],
+        integratable: roots.some(inDemo) ? integratable().filter((r) => !ignored(r.path)) : [],
         errors: roots.filter((root) => !inDemo(root)).map((root) => ({ root, message: "The demo cannot read your disk; only the sample workspace exists here." })),
       });
     },
@@ -352,6 +372,7 @@ export function createDemoApi({ now = Date.now, latencyMs = 150, clock }: DemoAp
     sessions: () => reply(demoSessions.list()),
     openSession: (repoId, change, action) => attempt(() => demoSessions.open(repoId, change, action)),
     openConsole: () => attempt(() => demoSessions.openConsole()),
+    startIntegration: (path) => attempt(() => demoSessions.openIntegration(path)),
     resumeSession: (id) => attempt(() => demoSessions.resume(id)),
     shipSession: (id) => attempt(() => demoSessions.ship(id)),
     removeWorktree: (repoId, name) => attempt(() => demoSessions.removeWorktree(repoId, name)),

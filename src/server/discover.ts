@@ -1,8 +1,8 @@
 import type { Dirent } from "node:fs";
 import { readdir, stat } from "node:fs/promises";
 import { join, sep } from "node:path";
-import type { DiscoveredRepo, DiscoverResult, RepoConfig } from "../shared/types.ts";
-import { newRepoConfig } from "./config.ts";
+import type { DiscoveredRepo, DiscoverResult, IntegratableRepo, RepoConfig } from "../shared/types.ts";
+import { newRepoConfig, repoId, repoNameFromPath } from "./config.ts";
 import { normalizeRemote, originUrl } from "./git.ts";
 import { canonicalPath } from "./paths.ts";
 
@@ -12,7 +12,8 @@ export const IGNORED_DIRS = new Set(["node_modules", ".git", ".venv", "target", 
 
 const MARKERS = ["openspec/config.yaml", "openspec/config.yml"];
 
-async function isOpenSpecRepo(dir: string): Promise<boolean> {
+/** The marker that makes a directory an OpenSpec project — and, once it appears, an integration that worked. */
+export async function isOpenSpecRepo(dir: string): Promise<boolean> {
   for (const marker of MARKERS) {
     try {
       if ((await stat(join(dir, marker))).isFile()) return true;
@@ -46,7 +47,7 @@ async function hasOwnGitDir(dir: string): Promise<boolean> {
   }
 }
 
-async function walk(dir: string, depth: number, maxDepth: number, found: Set<string>, ignorePaths: string[]): Promise<void> {
+async function walk(dir: string, depth: number, maxDepth: number, found: Set<string>, integratable: Set<string>, ignorePaths: string[]): Promise<void> {
   if (isIgnored(dir, ignorePaths)) return;
   if (await isOpenSpecRepo(dir)) {
     // Worktrees mirror their main repo's changes; listing them would show every change twice.
@@ -54,6 +55,9 @@ async function walk(dir: string, depth: number, maxDepth: number, found: Set<str
     // Anything nested inside a repo (fixtures, vendored copies, in-repo worktrees) is not a project of its own.
     return;
   }
+  // A git repository without the marker: a candidate for integration. The walk deliberately keeps descending — stopping
+  // here would change which OpenSpec projects are reported. Containers are dropped afterwards, once the projects are known.
+  if ((await hasOwnGitDir(dir)) && !(await isLinkedWorktree(dir))) integratable.add(dir);
   if (depth >= maxDepth) return;
   let entries: Dirent[];
   try {
@@ -63,7 +67,7 @@ async function walk(dir: string, depth: number, maxDepth: number, found: Set<str
   }
   for (const entry of entries) {
     if (!entry.isDirectory() || IGNORED_DIRS.has(entry.name) || entry.name === "openspec") continue;
-    await walk(join(dir, entry.name), depth + 1, maxDepth, found, ignorePaths);
+    await walk(join(dir, entry.name), depth + 1, maxDepth, found, integratable, ignorePaths);
   }
 }
 
@@ -76,8 +80,9 @@ export async function findOpenSpecRepos(
   roots: string[],
   maxDepth = DEFAULT_MAX_DEPTH,
   ignorePaths: string[] = [],
-): Promise<{ paths: string[]; errors: DiscoverResult["errors"] }> {
+): Promise<{ paths: string[]; integratable: string[]; errors: DiscoverResult["errors"] }> {
   const found = new Set<string>();
+  const integratable = new Set<string>();
   const errors: DiscoverResult["errors"] = [];
   const ignored = ignorePaths.map(canonicalPath);
   for (const root of roots) {
@@ -91,9 +96,34 @@ export async function findOpenSpecRepos(
       errors.push({ root, message: "does not exist" });
       continue;
     }
-    await walk(abs, 0, maxDepth, found, ignored);
+    await walk(abs, 0, maxDepth, found, integratable, ignored);
   }
-  return { paths: [...found].sort(), errors };
+  return { paths: [...found].sort(), integratable: withoutContainers(integratable, found), errors };
+}
+
+/**
+ * A directory that holds an OpenSpec project below it is a container, not a project waiting to be set up: a monorepo
+ * with one OpenSpec package offers the package, not the monorepo.
+ */
+function withoutContainers(integratable: Set<string>, projects: Set<string>): string[] {
+  const inside = (dir: string) => {
+    const prefix = dir.endsWith(sep) ? dir : dir + sep;
+    for (const project of projects) if (project.startsWith(prefix)) return true;
+    return false;
+  };
+  return [...integratable].filter((dir) => !inside(dir)).sort();
+}
+
+/**
+ * Integratable paths that are not configured yet. A repository already in the config is never offered: it is tracked,
+ * whatever state its `openspec/` tree is in.
+ */
+export function toIntegratable(known: RepoConfig[], paths: string[]): IntegratableRepo[] {
+  const knownPaths = new Set(known.map((r) => canonicalPath(r.path)));
+  return paths
+    .filter((path) => !knownPaths.has(path))
+    .map((path) => ({ id: repoId(path), path, name: repoNameFromPath(path) }))
+    .sort((a, b) => a.path.localeCompare(b.path));
 }
 
 /**
@@ -138,6 +168,6 @@ export async function withSameRemote(known: RepoConfig[], candidates: RepoConfig
 }
 
 export async function discoverRepos(known: RepoConfig[], roots: string[], ignorePaths: string[] = []): Promise<DiscoverResult> {
-  const { paths, errors } = await findOpenSpecRepos(roots, DEFAULT_MAX_DEPTH, ignorePaths);
-  return { candidates: await withSameRemote(known, toCandidates(known, paths)), errors };
+  const { paths, integratable, errors } = await findOpenSpecRepos(roots, DEFAULT_MAX_DEPTH, ignorePaths);
+  return { candidates: await withSameRemote(known, toCandidates(known, paths)), integratable: toIntegratable(known, integratable), errors };
 }

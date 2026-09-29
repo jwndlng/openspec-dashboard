@@ -1,6 +1,6 @@
 import type { ActivityQuery } from "../shared/activity.ts";
 import type { ActivityPage, ConsoleSession, CleanupPreview, CleanupResult, CleanupSelection, CreateChangeResponse, DismissPreview, DismissResult, PromptResult, PullResolve, PullResult, ShipResult, WorkStatus } from "../shared/types.ts";
-import type { AgentAvailability, ArtifactFileContent, ChangeArtifacts, Config, DiscoverResult, ScanTriggerResult, Session, SessionAction, SessionWorktree, SharedConfig, SharedConfigApplyResult, SharedConfigAssignment, SharedConfigPreview, Snapshot } from "../shared/types.ts";
+import type { AgentAvailability, ArtifactFileContent, ChangeArtifacts, Config, DiscoverResult, IntegrationSession, ScanTriggerResult, Session, SessionAction, SessionWorktree, SharedConfig, SharedConfigApplyResult, SharedConfigAssignment, SharedConfigPreview, Snapshot } from "../shared/types.ts";
 import { socketOrigin } from "./url.ts";
 
 export class ApiError extends Error {
@@ -79,6 +79,12 @@ export interface Api {
   openSession(repoId: string, change: string, action: SessionAction): Promise<Session>;
   /** Opens the main console, or returns the one that is running. */
   openConsole(): Promise<ConsoleSession>;
+  /**
+   * Starts an agent in a repository that does not use OpenSpec yet, to set it up — in that folder, with no worktree
+   * and no branch. Returns the one already running for the folder if there is one. `ApiError` 404 when the folder is
+   * not offered for integration, 403/400/503 when the action is unavailable.
+   */
+  startIntegration(path: string): Promise<IntegrationSession>;
   /** Continues the agent's latest conversation in the session's worktree. */
   resumeSession(id: string): Promise<Session>;
   /** Asks the session's agent to commit, push and open a pull request. */
@@ -160,6 +166,7 @@ export const httpApi: Api = {
   sessions: () => call<{ sessions: Session[]; agents: AgentAvailability[]; worktrees: SessionWorktree[] }>("/api/sessions"),
   openSession: (repoId, change, action) => call<Session>("/api/sessions", { method: "POST", body: JSON.stringify({ repoId, change, action }) }),
   openConsole: () => call<ConsoleSession>("/api/console", { method: "POST" }),
+  startIntegration: (path) => call<IntegrationSession>("/api/integrations", { method: "POST", body: JSON.stringify({ path }) }),
   resumeSession: (id) => call<Session>(`/api/sessions/${id}/resume`, { method: "POST" }),
   shipSession: (id) => call<ShipResult>(`/api/sessions/${id}/ship`, { method: "POST" }),
   removeWorktree: (repoId, name) => call("/api/worktrees/remove", { method: "POST", body: JSON.stringify({ repoId, name }) }),
@@ -222,6 +229,7 @@ export const api: Api = {
   sessions: (...args) => current.sessions(...args),
   openSession: (...args) => current.openSession(...args),
   openConsole: () => current.openConsole(),
+  startIntegration: (path) => current.startIntegration(path),
   resumeSession: (...args) => current.resumeSession(...args),
   shipSession: (...args) => current.shipSession(...args),
   removeWorktree: (...args) => current.removeWorktree(...args),

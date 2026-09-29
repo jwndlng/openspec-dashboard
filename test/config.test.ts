@@ -106,9 +106,10 @@ test("former preconfigured prompts are upgraded per starter, so one never rewrit
   expect(CLAUDE_PROFILE.prompts.implement).not.toBe(FORMER_IMPLEMENT);
   expect(CLAUDE_PROFILE.prompts.archive).not.toBe(FORMER_SYNCING_ARCHIVE);
 
-  // What every installation on the previous version has saved: both former texts, verbatim. Both upgrade — and no
-  // Validate prompt is invented, because the rule only ever replaces a prompt that is there (agent-sessions spec).
-  const { validate: _new, ...upgraded } = CLAUDE_PROFILE.prompts;
+  // What every installation on the previous version has saved: both former texts, verbatim. Both upgrade — and neither
+  // a Validate nor an Integrate prompt is invented, because the rule only ever replaces a prompt that is there
+  // (agent-sessions spec).
+  const { validate: _validate, integrate: _integrate, ...upgraded } = CLAUDE_PROFILE.prompts;
   expect(promptsOf(withPrompts({ draft: "/opsx:ff {change}", implement: FORMER_IMPLEMENT, archive: FORMER_SYNCING_ARCHIVE }))).toEqual(upgraded);
 
   // An edited Implement prompt is the user's and stays; the untouched Archive one still upgrades.

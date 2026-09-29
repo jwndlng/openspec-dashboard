@@ -70,6 +70,25 @@ function AgentEditor({ agent, found, isDefault, canRemove, onChange, onRemove, o
           />
         </label>
         <label class="agent-tools">
+          <span class="hint">
+            Integrate prompt (optional): what <strong>Integrate</strong> asks this agent in a repository that does not use OpenSpec yet. It runs in that repository's folder, so
+            it takes <strong>no placeholder at all</strong> — nothing from this page becomes part of the command line. Empty means this agent offers no Integrate action.
+          </span>
+          <textarea
+            class="input mono"
+            rows={3}
+            placeholder={CLAUDE_PROFILE.prompts.integrate}
+            value={agent.prompts.integrate ?? ""}
+            onInput={(e) => {
+              const prompts = { ...agent.prompts };
+              const value = e.currentTarget.value;
+              if (value.trim()) prompts.integrate = value;
+              else delete prompts.integrate;
+              onChange({ prompts });
+            }}
+          />
+        </label>
+        <label class="agent-tools">
           <span class="hint">Resume command (optional, one argument per line): continues the agent's latest conversation in the same worktree.</span>
           <textarea class="input mono" rows={2} value={(agent.resumeCommand ?? []).join("\n")} onInput={(e) => onChange({ resumeCommand: parseArgLines(e.currentTarget.value).length ? parseArgLines(e.currentTarget.value) : undefined })} />
         </label>
@@ -128,8 +147,9 @@ export function AgentSettings({ draft, update }: Props) {
       <p class="hint">
         Start an agent CLI for a change straight from its card; it opens in a terminal here in the dashboard — the same program you would run in your own terminal, with its own
         login, settings and permission prompts. <strong>Turning this on lets the dashboard start that program on this machine, and the agent can change files and run commands as
-        you allow it to.</strong> Each session works in its own git worktree under <code>~/.openspec-dashboard/worktrees/</code>, never in a repository's main checkout. It
-        applies to <strong>every tracked repository</strong>; switch individual ones off below.
+        you allow it to.</strong> Each session works in its own git worktree under <code>~/.openspec-dashboard/worktrees/</code>, never in a repository's main checkout — except an{" "}
+        <strong>Integrate</strong> session, which runs in the repository folder itself to set it up for OpenSpec. It applies to <strong>every tracked repository</strong>; switch
+        individual ones off below.
       </p>
       <div class="row">
         <label class="check">
