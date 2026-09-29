@@ -34,8 +34,8 @@ The detail view SHALL show, above the artifacts: the change name in monospace, t
 - **THEN** the header shows `cloud-deployment`, `demo-ops` as a link to that repository's board, a close control, `Implementing`, a progress bar with `4/12`, `updated 3d ago` and the branch badge `feat/cloud-deployment`, and shows neither the creation date nor the schema
 
 #### Scenario: Worktree and other checkouts
-- **WHEN** `audit-trail` is `Implementing` in a worktree on `feat/audit-trail` and `Proposal` in the main checkout
-- **THEN** its detail header shows the badge `feat/audit-trail`, whose tooltip names the worktree path and lists the main checkout with `Proposal`
+- **WHEN** `audit-trail` is `Implementing` in a worktree on `feat/audit-trail` and `Drafts` in the main checkout
+- **THEN** its detail header shows the badge `feat/audit-trail`, whose tooltip names the worktree path and lists the main checkout with `Drafts`
 
 #### Scenario: Work status
 - **WHEN** a change's session has ended and its worktree holds 3 uncommitted files

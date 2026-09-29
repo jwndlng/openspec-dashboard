@@ -5,32 +5,30 @@ Defines the Kanban board UI: how changes map to columns, what cards display, fil
 
 ## Requirements
 
-### Requirement: Board columns are derived from schema and implementation state
-The board SHALL place each change in exactly one column, where a column names the last step of the lifecycle that is complete. Using, in order: `Archived` if the change is archived; `Synced` if `tasks.total > 0`, `tasks.done == tasks.total` and the change's delta specs are synced into the main specs (a change without delta specs counts as synced); `Done` if `tasks.total > 0` and `tasks.done == tasks.total`; `Implementing` if `tasks.done > 0`; `Ready` if every artifact is done (ready to apply, nothing ticked yet); `Unknown` if the change's artifacts could not be read; otherwise, taking the schema's artifacts in display order, `New` if the first artifact is not done, else the display name of the last artifact of the longest leading run of done artifacts.
+### Requirement: Board columns follow the lifecycle phases
+The board SHALL place each change in exactly one column, where a column names the phase of the lifecycle the change is in. Using, in order: `Archived` if the change is archived; `Done` if `tasks.total > 0` and `tasks.done == tasks.total`, whether or not the change's delta specs are already synced into the main specs; `Implementing` if `tasks.done > 0`; `Ready` if every artifact is done (ready to apply, nothing ticked yet); `Unknown` if the change's artifacts could not be read; `Backlog` if no artifact is done; otherwise `Drafts` (at least one artifact is done and at least one is not). Which artifacts are done, and in which order they were written, SHALL NOT matter beyond that: every schema's artifacts count alike.
 
-Display order SHALL be the schema's own artifact order, except that for the `spec-driven` schema it SHALL be `proposal`, `design`, `specs`, `tasks` (artifacts not named there follow in schema order). Column order SHALL be `New`, then the artifact columns of the majority schema followed by any additional artifact columns of other schemas, each schema omitting its last artifact in display order (completing it means every artifact is done, which is `Ready`), then `Ready`, `Implementing`, `Done`, `Synced`, `Archived`. Apart from the display-order exception, columns MUST NOT be hardcoded to the `spec-driven` schema.
-
-A change in `Synced` SHALL be treated as complete wherever a change in `Done` is: the completion badge on its card, the highlighted column count, and every "to archive" count.
+The board SHALL show the columns `Backlog`, `Drafts`, `Ready`, `Implementing`, `Done`, `Archived`, in that order, on the combined board and on every repository board, whether or not a column holds a change; `Unknown` SHALL be shown between `Drafts` and `Ready` only while at least one change on that board is in it. Columns MUST NOT depend on the schemas the tracked changes use: there SHALL be no column per artifact and no `Synced` column.
 
 #### Scenario: Brand-new change
-- **WHEN** a change directory exists and its `proposal` artifact is not done
-- **THEN** it appears in the `New` column
+- **WHEN** a change directory exists and none of its artifacts is done
+- **THEN** it appears in the `Backlog` column
+
+#### Scenario: Change with a prompt only
+- **WHEN** a change has a `prompt.md` and none of its artifacts is done
+- **THEN** it appears in the `Backlog` column
 
 #### Scenario: Change with proposal only
-- **WHEN** a `spec-driven` change has `proposal: done` and `design` and `specs` not done
-- **THEN** it appears in the `Proposal` column
-
-#### Scenario: Design written
-- **WHEN** a `spec-driven` change has `proposal` and `design` done and `specs` not done
-- **THEN** it appears in the `Design` column
+- **WHEN** a `spec-driven` change has `proposal: done` and `design`, `specs` and `tasks` not done
+- **THEN** it appears in the `Drafts` column
 
 #### Scenario: Specs written before design
-- **WHEN** a `spec-driven` change has `proposal` and `specs` done and `design` not done
-- **THEN** it appears in the `Proposal` column, because `design` precedes `specs` in display order
+- **WHEN** a `spec-driven` change has `proposal` and `specs` done and `design` and `tasks` not done
+- **THEN** it appears in the `Drafts` column
 
-#### Scenario: Specs written, tasks not yet
-- **WHEN** a `spec-driven` change has `proposal`, `design` and `specs` done and `tasks` not done
-- **THEN** it appears in the `Specs` column
+#### Scenario: Only a later artifact written
+- **WHEN** a `spec-driven` change has `specs` done and `proposal` not done
+- **THEN** it appears in the `Drafts` column, not in `Backlog`
 
 #### Scenario: Ready to apply
 - **WHEN** all artifacts are done and `tasks` is `done: 0, total: 12`
@@ -48,13 +46,13 @@ A change in `Synced` SHALL be treated as complete wherever a change in `Done` is
 - **WHEN** `tasks` is `done: 12, total: 12`, the change is not archived, and its delta specs are not yet reflected in the main specs
 - **THEN** it appears in the `Done` column
 
-#### Scenario: Synced, waiting to be archived
+#### Scenario: Complete and synced, not yet archived
 - **WHEN** `tasks` is `done: 12, total: 12`, the change is not archived, and its delta specs are reflected in the main specs
-- **THEN** it appears in the `Synced` column with the completion badge and counts towards "to archive"
+- **THEN** it appears in the `Done` column, counts towards "to archive", and is offered **Archive** like any other change in `Done`
 
-#### Scenario: Complete change without delta specs
-- **WHEN** `tasks` is `done: 5, total: 5` and the change has no delta spec files
-- **THEN** it appears in the `Synced` column
+#### Scenario: Archived after syncing
+- **WHEN** a change whose specs were synced is archived
+- **THEN** it appears in the `Archived` column
 
 #### Scenario: All artifacts done but tasks file empty
 - **WHEN** all artifacts are done and `tasks` is `done: 0, total: 0`
@@ -62,19 +60,19 @@ A change in `Synced` SHALL be treated as complete wherever a change in `Done` is
 
 #### Scenario: Column list for the spec-driven schema
 - **WHEN** every tracked change uses the `spec-driven` schema
-- **THEN** the board shows the columns `New`, `Proposal`, `Design`, `Specs`, `Ready`, `Implementing`, `Done`, `Synced`, `Archived`, with no `Tasks` column
+- **THEN** the board shows the columns `Backlog`, `Drafts`, `Ready`, `Implementing`, `Done`, `Archived`, and no `Proposal`, `Design`, `Specs`, `Tasks` or `Synced` column
 
-#### Scenario: Another schema keeps its own order
-- **WHEN** every tracked change uses a schema whose artifacts are `brief`, `plan`, `checklist` in that order
-- **THEN** the board shows `New`, `Brief`, `Plan`, `Ready`, `Implementing`, `Done`, `Synced`, `Archived`
+#### Scenario: Another schema gets the same columns
+- **WHEN** every tracked change uses a schema whose artifacts are `brief`, `plan`, `checklist`, and one change has `brief` done
+- **THEN** the board shows `Backlog`, `Drafts`, `Ready`, `Implementing`, `Done`, `Archived`, and that change is in `Drafts`
 
 #### Scenario: Lifecycle columns are always present
-- **WHEN** no change is new, ready to apply or synced
-- **THEN** the board still shows empty `New`, `Ready` and `Synced` columns in their positions
+- **WHEN** no change is in the backlog, being drafted or ready to apply
+- **THEN** the board still shows empty `Backlog`, `Drafts` and `Ready` columns in their positions
 
 #### Scenario: Unreadable change
 - **WHEN** a change's artifacts could not be read
-- **THEN** it appears in the `Unknown` column, not in `New`
+- **THEN** it appears in the `Unknown` column, between `Drafts` and `Ready`, not in `Backlog`
 
 ### Requirement: Board filters
 The board SHALL provide filters for repository (multi-select), free-text search over change name and repository name, stale threshold (hide changes with activity within N days, default off), and a toggle to hide the `Archived` column. Filters SHALL apply instantly on the client and persist in the URL query string.
@@ -231,7 +229,7 @@ Within every column, including the expanded `Archived` column, the board SHALL g
 - **THEN** the column shows a group `alpha` with count `2` containing `a1` then `a2`, followed by a group `beta` with count `1` containing `b1`, and the column count is `3`
 
 #### Scenario: Same group order across columns
-- **WHEN** repositories `zeta` and `Alpha` both have cards in `Design` and in `Done`
+- **WHEN** repositories `zeta` and `Alpha` both have cards in `Drafts` and in `Done`
 - **THEN** the `Alpha` group is above the `zeta` group in both columns
 
 #### Scenario: No empty groups
@@ -570,13 +568,29 @@ Every tab in the dock's tab strip SHALL be drawn as a tab of its own — with a 
 - **THEN** every tab is fully visible and no part of the board is hidden behind the strip
 
 ### Requirement: Cards show only what an overview needs
-A card SHALL show only what an overview needs: the change name in monospace, the relative age of `lastActivityAt` under it (e.g. `updated 3d ago`, or the archive date for an archived change), the change's session status beside the name as the "Cards offer session starters and show session state" requirement gives it, a progress bar with `done/total` when tasks exist, and a footer with the next-step starter and **Show details**, and — when the change has a console — the console quick link beside its session status. A card SHALL additionally show the `no tasks` warning and an error mark for any other warning the snapshot carries. A card SHALL NOT show the repository name — on the combined board every card sits in its repository's group, whose header names it, and a repository board names it in its header — nor the branch badge, the checkouts holding the change, the worktree's work status, the prompt, how long the change has been complete, or which artifacts are written: the change's detail view shows those (change-detail: "Detail header shows the change's state"), and the column says how far the change has come.
+A card SHALL show only what an overview needs: the change name in monospace, the relative age of `lastActivityAt` under it (e.g. `updated 3d ago`, or the archive date for an archived change), the change's session status beside the name as the "Cards offer session starters and show session state" requirement gives it, a progress bar, and a footer with the next-step starter and **Show details**, and — when the change has a console — the console quick link beside its session status. The progress bar SHALL be, for a change in `Drafts`, the drafting progress: the number of the change's artifacts that are done out of all of its schema's artifacts, labelled `done/total`, with a tooltip and accessible name that say it counts artifacts (e.g. `2 of 4 artifacts written`); for any other change with tasks (`tasks.total > 0`), the task progress labelled `done/total`, with a tooltip and accessible name that say it counts tasks. Both bars SHALL share one shape and style. A card in `Backlog`, and a card outside `Drafts` without tasks, SHALL show no progress bar. A card SHALL additionally show the `no tasks` warning and an error mark for any other warning the snapshot carries. A card SHALL NOT show the repository name — on the combined board every card sits in its repository's group, whose header names it, and a repository board names it in its header — nor the branch badge, the checkouts holding the change, the worktree's work status, the prompt, how long the change has been complete, whether its specs are synced, or which artifacts are written: the change's detail view shows those (change-detail: "Detail header shows the change's state"), and the column and the progress bar say how far the change has come.
 
 The branch badge in the repository board header MUST NOT extend beyond its container at any width. A branch name that fits SHALL be shown in full; one that does not SHALL be shortened in the middle with an ellipsis so that both its beginning and its end remain readable, with the branch glyph visible and the full name as its tooltip and accessible name.
 
 #### Scenario: Card content
 - **WHEN** a change `cloud-deployment` in repo `demo-ops` has `tasks 30/30`, last activity 12 days ago and a branch match `feat/cloud-deployment`, and is shown on the combined board
 - **THEN** the card sits in the `demo-ops` group and shows `cloud-deployment`, `updated 12d ago`, a full progress bar labelled `30/30` and **Show details**, and shows neither `demo-ops`, the branch, nor a completion badge
+
+#### Scenario: Drafting progress
+- **WHEN** a `spec-driven` change has `proposal` and `design` done and `specs` and `tasks` not done
+- **THEN** its card in `Drafts` shows a progress bar half filled and labelled `2/4`, whose tooltip and accessible name read `2 of 4 artifacts written`
+
+#### Scenario: Drafting progress for another schema
+- **WHEN** a change of a schema with the artifacts `brief`, `plan`, `checklist` has `brief` done
+- **THEN** its card in `Drafts` shows a drafting progress bar labelled `1/3`
+
+#### Scenario: Backlog card has no bar
+- **WHEN** a change in `Backlog` has a `tasks.md` that is not written yet
+- **THEN** its card shows no progress bar
+
+#### Scenario: Task progress replaces drafting progress
+- **WHEN** a change moves from `Drafts` to `Ready` with `tasks` `done: 0, total: 12`
+- **THEN** its card shows the task progress bar labelled `0/12`, whose tooltip says it counts tasks, and no drafting progress
 
 #### Scenario: Card with a running session
 - **WHEN** a change in `Implementing` has a session whose agent is waiting for the user
@@ -653,11 +667,15 @@ The combined board SHALL show a header band above its filter row. It SHALL hold 
 - **THEN** the repository header is drawn as the band and shows the open and to-archive counts of `alpha-infra`, and the filter row holds no counts and no **New change** button
 
 ### Requirement: Column headers mark the lifecycle stage
-Every column header SHALL show a small lifecycle marker before the column name, followed by the name and the column count in a pill. The marker's colour SHALL mean the kind of column: neutral for `New` and the artifact columns, the brand accent for `Ready` and `Implementing`, the `success` role for `Done` and `Synced`, a muted neutral for `Archived`, and the `warning` role for `Unknown`. The marker SHALL be decorative only and hidden from assistive technology: the column name SHALL remain the cue. The existing highlighting of the `Done` and `Synced` counts and the `Archived` column's `25 of <total>` count SHALL be kept.
+Every column header SHALL show a small lifecycle marker before the column name, followed by the name and the column count in a pill. The marker's colour SHALL mean the kind of column: neutral for `Backlog` and `Drafts`, the brand accent for `Ready` and `Implementing`, the `success` role for `Done`, a muted neutral for `Archived`, and the `warning` role for `Unknown`. The marker SHALL be decorative only and hidden from assistive technology: the column name SHALL remain the cue. The existing highlighting of the `Done` count and the `Archived` column's `25 of <total>` count SHALL be kept. Each lifecycle column's name SHALL carry a tooltip saying what it holds.
 
 #### Scenario: Markers along the lifecycle
-- **WHEN** the board shows the columns `New`, `Proposal`, `Design`, `Specs`, `Ready`, `Implementing`, `Done`, `Synced`, `Archived`
-- **THEN** `New`, `Proposal`, `Design` and `Specs` carry a neutral marker, `Ready` and `Implementing` an accent marker, `Done` and `Synced` a success marker, and `Archived` a muted one
+- **WHEN** the board shows the columns `Backlog`, `Drafts`, `Ready`, `Implementing`, `Done`, `Archived`
+- **THEN** `Backlog` and `Drafts` carry a neutral marker, `Ready` and `Implementing` an accent marker, `Done` a success marker, and `Archived` a muted one
+
+#### Scenario: Column hints
+- **WHEN** the user hovers the `Drafts` column name
+- **THEN** a tooltip says that the column holds changes with some but not all artifacts written
 
 #### Scenario: Marker is not the only cue
 - **WHEN** a screen reader reads a column header
@@ -743,8 +761,8 @@ The board SHALL offer two layouts of the same columns and cards: **Lanes**, the 
 - **THEN** the columns are shown side by side, the URL holds `layout=lanes`, and a reload keeps lanes
 
 #### Scenario: Empty lane
-- **WHEN** the `Design` column has no cards in the lanes layout
-- **THEN** it is a slim rail showing `Design` and `0`, and the other lanes get the width
+- **WHEN** the `Drafts` column has no cards in the lanes layout
+- **THEN** it is a slim rail showing `Drafts` and `0`, and the other lanes get the width
 
 #### Scenario: Clearing filters keeps the layout
 - **WHEN** the board holds `layout=stack` and a text search and the user activates **Clear filters**

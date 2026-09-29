@@ -134,7 +134,7 @@ The demo SHALL start with agent sessions enabled and one fictional agent profile
 - **THEN** the card shows a running session, the session panel opens with a terminal, and starting it again returns the same session
 
 #### Scenario: Action not available
-- **WHEN** Implement is requested for a change that is still at `Proposal`
+- **WHEN** Implement is requested for a change that is still in `Drafts`
 - **THEN** the request is refused with the same reason the dashboard gives
 
 #### Scenario: Ship
