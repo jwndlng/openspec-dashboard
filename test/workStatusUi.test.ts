@@ -67,6 +67,8 @@ test("a starter goes into the change's running session; archive always gets its 
   expect(nextStepFor([arch], "r", "add-x", "implement")).toEqual({ promptSessionId: undefined }); // never typed into an archive session
   expect(nextStepFor([arch], "r", "add-x", "archive")).toEqual({ blocked: true });
   expect(nextStepFor([draft], "r", "other", "implement")).toEqual({ promptSessionId: undefined });
+  expect(nextStepFor([draft], "r", "add-x", "validate")).toEqual({ promptSessionId: "d" }); // `validate` takes the default path
+  expect(nextStepFor([arch], "r", "add-x", "validate")).toEqual({ promptSessionId: undefined });
 });
 
 test("a card shows every running session, else the latest one that went wrong", () => {

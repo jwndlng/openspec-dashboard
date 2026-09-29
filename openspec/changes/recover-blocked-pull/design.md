@@ -112,9 +112,12 @@ running). The end-session dialog renders the same list component inline under it
 
 ## Risks / Trade-offs
 
-- [Archive order with `add-cleanup-capabilities`: both replace the full "never writes" requirement] → this delta
-  already contains cleanup's text. Archive cleanup first; if this change is archived first, re-apply item (6) from
-  cleanup when archiving it. Noted in tasks.
+- [Archive order: four active changes replace the full "never writes" requirement, so the last one archived wins] →
+  this delta has items (1)-(6) with the leftover text inside item (3), and already contains `add-cleanup-capabilities`'
+  item (6), so archiving either of those in either order loses nothing. It does **not** contain `dismiss-task`'s item
+  (7): archive this change before `dismiss-task`, or re-apply item (7) here first. `list-recently-opened-prs` has
+  neither the leftovers nor the dismissal, so whoever archives it last has to fold both in. The real fix is for these
+  deltas to stop replacing the whole requirement, which is out of scope here. Noted in tasks.
 - [Race between the check and the removal — another process edits a leftover in that window] → the bytes removed are
   the bytes held in memory and put back on failure; a write landing after the unlink would be a new untracked file
   that git then refuses, which triggers the put-back.

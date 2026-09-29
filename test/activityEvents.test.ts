@@ -128,3 +128,15 @@ test("a snapshot cached by a version with other columns is re-derived, so the fi
   expect(adopted.repos[0].changes.map((c) => [c.stage, c.column])).toEqual([["drafts", "Drafts"], ["done", "Done"]]);
   expect(diff(adopted, snap(T0 + MIN, [repo("r1", "demo-ops", fresh)]))).toEqual([]);
 });
+
+test("a snapshot cached before `awaiting` existed loads as `complete`, and a stale sub-state is dropped", () => {
+  const A = ["proposal", "specs", "design", "tasks"].map((id) => ({ id, status: "done" as const }));
+  const cached = [
+    // No `awaiting`, no `subState`: what every version before this one wrote.
+    change("bump-toolchain", "Done", { stage: "done", artifacts: A, tasks: { done: 4, total: 4 } }),
+    // A sub-state left over from a scan before a task was reopened; it is derived, so it must not survive.
+    change("cache-api-calls", "Done", { stage: "done", artifacts: A, tasks: { done: 2, total: 4 }, subState: "validate" }),
+  ];
+  const adopted = rederive(snap(T0, [repo("r1", "demo-ops", cached)])).repos[0].changes;
+  expect(adopted.map((c) => [c.column, c.subState])).toEqual([["Done", "complete"], ["Implementing", undefined]]);
+});

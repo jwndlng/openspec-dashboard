@@ -14,9 +14,16 @@ export interface ArtifactStatus {
 }
 
 export interface TaskProgress {
+  /** `[x]` boxes only: verified work. A task awaiting validation is never counted here. */
   done: number;
+  /** `[~]` boxes: finished by the agent, not yet confirmed by a person. Absent in snapshots cached by older versions. */
+  awaiting?: number;
+  /** Every checkbox: done, awaiting and open together. */
   total: number;
 }
+
+/** A change in `Done` is either awaiting a person's confirmation (`validate`) or fully verified (`complete`). */
+export type DoneSubState = "complete" | "validate";
 
 export interface ChangeSnapshot {
   repoId: string;
@@ -52,6 +59,8 @@ export interface ChangeSnapshot {
   stage: Stage;
   /** Display column, e.g. "Drafts", "Implementing". */
   column: string;
+  /** Only for `done`: `validate` while a person still has to confirm a task. Derived with the column, never stored. */
+  subState?: DoneSubState;
   /**
    * Contents of the change's `prompt.md`, when present. A free-text hint the user jotted down when starting the change;
    * not a schema artifact and does not affect artifact status. Bounded, so pathological files do not bloat the snapshot.
@@ -215,8 +224,8 @@ export interface Config {
   agentSessions: AgentSessionsConfig;
 }
 
-export type SessionAction = "draft" | "implement" | "archive";
-export const SESSION_ACTIONS: readonly SessionAction[] = ["draft", "implement", "archive"];
+export type SessionAction = "draft" | "implement" | "validate" | "archive";
+export const SESSION_ACTIONS: readonly SessionAction[] = ["draft", "implement", "validate", "archive"];
 /** `ship` is a prompt, not a starter: it asks the agent of an existing session to commit, push and open a pull request. */
 export type PromptKey = SessionAction | "ship";
 /** Agent-neutral on purpose, so every profile can ship without being configured for it. */
@@ -344,12 +353,14 @@ export function repoAgentEnabled(repo: Pick<RepoConfig, "enabled" | "agent">): b
 }
 
 /** The session starters a change currently qualifies for (before feature/opt-in checks). */
-export function availableActions(change: Pick<ChangeSnapshot, "archived" | "artifacts" | "stage">): SessionAction[] {
+export function availableActions(change: Pick<ChangeSnapshot, "archived" | "artifacts" | "stage" | "subState">): SessionAction[] {
   if (change.archived) return [];
   const actions: SessionAction[] = [];
   if (change.artifacts.length === 0 || change.artifacts.some((a) => a.status !== "done")) actions.push("draft");
   if (change.stage === "ready" || change.stage === "implementing") actions.push("implement");
-  if (change.stage === "done") actions.push("archive"); // every task ticked, not archived yet
+  // In `Done` there is nothing left to implement; offering it is what sends an agent back into finished code.
+  if (change.stage === "done" && change.subState === "validate") actions.push("validate");
+  if (change.stage === "done") actions.push("archive"); // every task settled, not archived yet
   return actions;
 }
 

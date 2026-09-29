@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { defaultAgentSessions, defaultConfig, newRepoConfig, validateConfig } from "../src/server/config.ts";
 import { agentEnv, agentFor, launchCommand, openingPrompt } from "../src/server/sessions/agents.ts";
 import { Scrollback, sessionBranch, worktreeName } from "../src/server/sessions/manager.ts";
-import { CLAUDE_PROFILE, FORMER_ARCHIVE_PROMPTS } from "../src/shared/agentDefaults.ts";
+import { CLAUDE_PROFILE, FORMER_PROMPTS } from "../src/shared/agentDefaults.ts";
 import { availableActions, type ChangeSession, type Session } from "../src/shared/types.ts";
 import { agentForRepo, NEEDS_YOU_AFTER_MS, parseArgLines, sessionBadge, sessionForChange, sessionsEnabledFor, silenceDuration, slugId, startersFor } from "../src/ui/sessionState.ts";
 import { fakeProfile } from "./sessionHelpers.ts";
@@ -24,13 +24,39 @@ test("the preconfigured Archive prompt syncs the specs first without asking, as 
   expect(archive).toMatch(/sync the delta specs/);
   expect(archive).toMatch(/without asking/);
   expect(archive).toMatch(/already in sync, archive right away/);
+  // The user's confirmation during archiving is the validation, so it is what ticks the awaiting tasks off.
+  expect(archive).toMatch(/tick off the tasks left for me to validate once I have confirmed them/);
   expect(archive).not.toContain("\n");
-  expect(FORMER_ARCHIVE_PROMPTS).toEqual(["/opsx:archive {change}"]);
-  expect(FORMER_ARCHIVE_PROMPTS).not.toContain(archive);
+  expect(FORMER_PROMPTS.archive).toContain("/opsx:archive {change}");
+  expect(FORMER_PROMPTS.archive).not.toContain(archive);
   const prompt = openingPrompt(CLAUDE_PROFILE, "archive", "cache-api-calls") ?? "";
   expect(prompt.startsWith("/opsx:archive cache-api-calls — sync")).toBe(true);
   expect(launchCommand(CLAUDE_PROFILE, prompt)).toEqual({ argv: ["claude", prompt] }); // one argument
   expect(validateConfig(withAgents([CLAUDE_PROFILE])).agentSessions.agents[0].prompts.archive).toBe(archive); // passes the prompt rules
+});
+
+test("the preconfigured prompts carry what `- [~]` means, each on one line", () => {
+  const prompts = defaultAgentSessions().agents[0].prompts;
+  expect(Object.keys(prompts)).toEqual(["draft", "implement", "validate", "archive"]);
+  for (const [key, text] of Object.entries(prompts)) {
+    expect([key, text.includes("\n")]).toEqual([key, false]); // a prompt may be typed into a terminal
+    expect([key, text.includes("{change}")]).toEqual([key, true]);
+  }
+  // Implement: do the work, then leave what only the user can judge for the user.
+  expect(prompts.implement).toMatch(/^\/opsx:apply \{change\}/);
+  expect(prompts.implement).toMatch(/only be verified by me/);
+  expect(prompts.implement).toMatch(/`- \[~\]` instead of `- \[x\]`/);
+  // Validate: one task at a time, tick off only what the user confirms.
+  expect(prompts.validate).toMatch(/`- \[~\]` tasks one at a time/);
+  expect(prompts.validate).toMatch(/tell me exactly what to check/);
+  expect(prompts.validate).toMatch(/tick off only the ones I confirm/);
+  // Both new texts survive the prompt rules, and reach the agent as one argument.
+  const config = validateConfig(withAgents([CLAUDE_PROFILE])).agentSessions.agents[0].prompts;
+  expect(config).toEqual(prompts);
+  const opened = openingPrompt(CLAUDE_PROFILE, "validate", "cache-api-calls") ?? "";
+  expect(opened).toContain("cache-api-calls");
+  expect(opened).not.toContain("{change}");
+  expect(launchCommand(CLAUDE_PROFILE, opened)).toEqual({ argv: ["claude", opened] });
 });
 
 test("configs from the transcript-based version load: their keys are dropped, defaults fill in", () => {
@@ -88,7 +114,7 @@ test("starters: stage decides, narrowed to the prompts the agent has", () => {
   expect(availableActions({ artifacts: a("done", "ready"), stage: "drafts" })).toEqual(["draft"]);
   expect(availableActions({ artifacts: a("done", "done"), stage: "ready" })).toEqual(["implement"]);
   expect(availableActions({ artifacts: a("done", "done"), stage: "done" })).toEqual(["archive"]);
-  expect(availableActions({ artifacts: a("done", "done"), stage: "done" })).toEqual(["archive"]);
+  expect(availableActions({ artifacts: a("done", "done"), stage: "done", subState: "complete" })).toEqual(["archive"]);
   expect(availableActions({ artifacts: a("done", "done"), stage: "implementing" })).toEqual(["implement"]);
   expect(availableActions({ artifacts: a("done", "done"), stage: "archived", archived: "2026-06-18" })).toEqual([]);
   const repo = newRepoConfig("/w/demo-ops", true);
@@ -182,4 +208,27 @@ test("small helpers", () => {
   const sb = new Scrollback(10);
   for (const part of ["aaaa", "bbbb", "cccc", "dd"]) sb.push(new TextEncoder().encode(part));
   expect(new TextDecoder().decode(sb.bytes())).toBe("bbbbccccdd"); // oldest chunk dropped once over the limit
+});
+
+test("starters: a change awaiting validation offers Validate and Archive, never Implement", () => {
+  const a = (...s: ("done" | "ready" | "blocked")[]) => s.map((status, i) => ({ id: `a${i}`, status }));
+  const done = a("done", "done");
+  expect(availableActions({ artifacts: done, stage: "done", subState: "validate" })).toEqual(["validate", "archive"]);
+  expect(availableActions({ artifacts: done, stage: "done", subState: "validate" })).not.toContain("implement");
+  // `validate` belongs to `Done` alone; nothing earlier offers it.
+  for (const stage of ["backlog", "drafts", "ready", "implementing", "unknown"] as const) {
+    expect(availableActions({ artifacts: done, stage })).not.toContain("validate");
+  }
+  // An archived change offers nothing, whatever a leftover sub-state says.
+  expect(availableActions({ artifacts: done, stage: "archived", subState: "validate", archived: "2026-06-18" })).toEqual([]);
+  // A snapshot cached before sub-states existed reads as `complete`.
+  expect(availableActions({ artifacts: done, stage: "done" })).toEqual(["archive"]);
+
+  // Narrowed to the prompts the agent has: without a Validate prompt only Archive is offered.
+  const repo = newRepoConfig("/w/demo-ops", true);
+  const card = { repoId: repo.id, artifacts: done, stage: "done" as const, subState: "validate" as const };
+  const withBoth = { ...base, repos: [repo], agentSessions: { enabled: true, agents: [fakeProfile({ prompts: { validate: "v {change}", archive: "a {change}" } })], defaultAgent: "fake" } };
+  expect(startersFor(withBoth, card)).toEqual(["validate", "archive"]);
+  const archiveOnly = { ...withBoth, agentSessions: { ...withBoth.agentSessions, agents: [fakeProfile({ prompts: { archive: "a {change}" } })] } };
+  expect(startersFor(archiveOnly, card)).toEqual(["archive"]);
 });

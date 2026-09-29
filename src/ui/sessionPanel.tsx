@@ -185,7 +185,7 @@ export function TerminalView({ sessionId, running, onExit }: { sessionId: string
   );
 }
 
-const STEP_LABEL: Record<SessionAction, string> = { draft: "Draft artifacts", implement: "Implement", archive: "Archive" };
+const STEP_LABEL: Record<SessionAction, string> = { draft: "Draft artifacts", implement: "Implement", validate: "Validate", archive: "Archive" };
 
 /**
  * The change's sessions, in the slot the delta specs use for their file list. Omitted for a single session: there is
