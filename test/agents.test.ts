@@ -170,6 +170,15 @@ test("a card shows the running session's badge instead of a starter, and a faile
   // Another change's session is none of this card's business.
   expect(cardSessionControls(cfg, [session({ repoId: repo.id, change: "other" })], card)).toEqual({ shown: [], starters: ["implement"] });
 
+  // `subState` has to reach `availableActions` through here, or a change awaiting confirmation would never offer
+  // Validate on its card. The stock fake agent has no validate prompt, so one that has is what shows the difference.
+  const done = { ...card, stage: "done" as const, subState: "validate" as const };
+  const validating = { ...cfg, agentSessions: { ...cfg.agentSessions, agents: [fakeProfile({ prompts: { validate: "v {change}", archive: "a {change}" } })] } };
+  expect(cardSessionControls(validating, [], done).starters).toEqual(["validate", "archive"]);
+  expect(cardSessionControls(validating, [], { ...done, subState: undefined }).starters).toEqual(["archive"]);
+  // And a running session still takes the starters' place, Validate included.
+  expect(cardSessionControls(validating, [mine({})], done).starters).toEqual([]);
+
   // Feature off, or the repository switched off: no badge and no starter, as before.
   for (const off of [{ ...cfg, agentSessions: { ...cfg.agentSessions, enabled: false } }, { ...cfg, repos: [{ ...repo, agent: { enabled: false } }] }]) {
     expect(cardSessionControls(off, [mine({})], card)).toEqual({ shown: [], starters: [] });

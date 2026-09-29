@@ -327,7 +327,7 @@ const STARTER_HINT: Record<SessionAction, string> = {
  * case, so it keeps its starters — the next attempt stays one activation away. The work status is the detail view's
  * (see `WorkStatus`), never a card's.
  */
-export function SessionControls({ card }: { card: Pick<ChangeSnapshot, "repoId" | "name" | "archived" | "artifacts" | "stage"> }) {
+export function SessionControls({ card }: { card: Pick<ChangeSnapshot, "repoId" | "name" | "archived" | "artifacts" | "stage" | "subState"> }) {
   const ui = useSessionUi();
   const [starting, setStarting] = useState<SessionAction>();
   const [failure, setFailure] = useState<string>();

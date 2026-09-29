@@ -45,7 +45,7 @@ export function sessionsForChange(sessions: ChangeSession[], repoId: string, cha
 export function cardSessionControls(
   config: Config | null,
   sessions: ChangeSession[],
-  card: Pick<ChangeSnapshot, "repoId" | "name" | "archived" | "artifacts" | "stage">,
+  card: Pick<ChangeSnapshot, "repoId" | "name" | "archived" | "artifacts" | "stage" | "subState">,
 ): { shown: ChangeSession[]; starters: SessionAction[] } {
   if (!sessionsEnabledFor(config, card.repoId)) return { shown: [], starters: [] };
   const shown = sessionsForChange(sessions, card.repoId, card.name);
