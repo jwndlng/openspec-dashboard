@@ -136,3 +136,17 @@ test("a pending archive leads: one archived change from the worktree, active cop
   const both = mergeChanges([reused, stale], new Map(), [archivedCopy("archive-a", "2026-09-18")]);
   expect(both.map((c) => [c.column, c.checkout?.isMain, c.otherCheckouts?.length]).sort()).toEqual([["Archived", false, 1], ["Drafts", true, undefined]].sort());
 });
+
+test("mergeChanges: the card carries the leading copy's Done sub-state", () => {
+  // The worktree is further along: everything settled, two tasks still awaiting a person.
+  const validating = copy(wt("audit-trail"), "done", "Done", { tasks: { done: 13, awaiting: 2, total: 15 }, subState: "validate" as const });
+  const behind = copy(MAIN, "implementing", "Implementing", { tasks: { done: 4, awaiting: 0, total: 15 } });
+  const [change] = mergeChanges([behind, validating], new Map());
+  expect([change.column, change.subState, change.tasks]).toEqual(["Done", "validate", { done: 13, awaiting: 2, total: 15 }]);
+  expect(change.otherCheckouts).toEqual([{ ...MAIN, column: "Implementing" }]);
+
+  // The other way round: main has everything confirmed, so it leads and the card says `complete`.
+  const confirmed = copy(MAIN, "done", "Done", { tasks: { done: 15, awaiting: 0, total: 15 }, subState: "complete" as const });
+  const [led] = mergeChanges([validating, confirmed], new Map());
+  expect([led.checkout, led.subState]).toEqual([MAIN, "complete"]);
+});

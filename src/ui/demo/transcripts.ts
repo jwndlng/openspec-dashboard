@@ -15,7 +15,7 @@ export type Step =
   /** The agent's process ends. */
   | { exit: number; after?: number };
 
-export type TranscriptName = "draft" | "implement" | "implementAsking" | "archive" | "resume" | "ship" | "console" | "integrate";
+export type TranscriptName = "draft" | "implement" | "implementAsking" | "validate" | "archive" | "resume" | "ship" | "console" | "integrate";
 
 const DIM = "\x1b[2m";
 const BOLD = "\x1b[1m";
@@ -113,6 +113,21 @@ export const TRANSCRIPTS: Record<TranscriptName, Step[]> = {
     { out: say("Done with 1.1. Tell me when to go on."), after: 1200 },
     { ask: `${GREEN}>${OFF} `, after: 600 },
     { out: say("Continuing is not part of this recording — in the dashboard the agent would carry on from here."), after: 700 },
+    { exit: 0, after: 1500 },
+  ],
+  validate: [
+    ...header("/opsx:apply {change} — walk me through the tasks left to validate"),
+    { out: tool("Read openspec/changes/{change}/tasks.md"), after: 900 },
+    { out: say("Two tasks are marked as awaiting you. Taking them one at a time."), after: 1400 },
+    { out: line(), after: 400 },
+    { out: say("2.4: the refusal carries a retry hint. Send two bursts to the demo endpoint and check the second one names the wait in whole seconds."), after: 2200 },
+    { ask: `${YELLOW}?${OFF} Did that check pass? ${DIM}(yes / no)${OFF} `, after: 900 },
+    { out: tool("Edit openspec/changes/{change}/tasks.md"), after: 1200, work: { state: "uncommitted", count: 1 } },
+    { out: note("2.4 ticked — 1 of 2 left to validate"), after: 400 },
+    { out: line(), after: 400 },
+    { out: say("2.5: the per-route override. Set a lower limit for one route in the config and confirm the other routes keep theirs."), after: 2200 },
+    { ask: `${YELLOW}?${OFF} Did that check pass? ${DIM}(yes / no)${OFF} `, after: 900 },
+    { out: say("Leaving 2.5 as it is, then — it stays marked for you and the change stays in Done."), after: 1400 },
     { exit: 0, after: 1500 },
   ],
   archive: [

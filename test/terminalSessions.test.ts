@@ -168,8 +168,22 @@ test("refusals", async () => {
   await expect(open(h, "add-health-endpoint")).rejects.toMatchObject({ status: 400 }); // proposal only
   await expect(open(h, "upgrade-runtime", "archive")).rejects.toMatchObject({ status: 400 }); // not Done
   await expect(open(h, "runbook-repo-field")).rejects.toMatchObject({ status: 404 }); // archived
+  // The sub-state decides too: `validate` needs `Done` with an awaiting task, and `Done` has nothing left to implement.
+  await expect(open(h, "upgrade-runtime", "validate")).rejects.toThrow(/"validate" is not available/);
+  await expect(open(h, "confirm-retention", "implement")).rejects.toThrow(/"implement" is not available/);
+  await expect(open(h, "configurable-builder", "validate")).rejects.toMatchObject({ status: 400 }); // Done, but nothing awaits
   expect(h.manager.list()).toEqual([]);
   expect(existsSync(join(worktreesDir(), h.repoId))).toBe(false); // a refused request creates no worktree
+});
+
+test("a change awaiting validation starts a Validate session and refuses Implement", async () => {
+  const h = track(await harness({ agent: { prompts: { implement: "implement {change}", validate: "validate {change}", archive: "archive {change}" } } }));
+  const s = await h.manager.open({ repoId: h.repoId, change: "confirm-retention", action: "validate" });
+  expect(s).toMatchObject({ state: "running", action: "validate", change: "confirm-retention" });
+  await expect(h.manager.open({ repoId: h.repoId, change: "confirm-retention", action: "implement" })).rejects.toMatchObject({ status: 400 });
+  // Archive is offered for the whole Done column, validating or not, and gets its own worktree.
+  const arch = await h.manager.open({ repoId: h.repoId, change: "confirm-retention", action: "archive" });
+  expect(arch).toMatchObject({ state: "running", action: "archive" });
 });
 
 test("a crash is recorded; shutdown ends agents; a restarted dashboard knows nothing is running", async () => {

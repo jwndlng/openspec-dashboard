@@ -102,7 +102,7 @@ test("a change that exists only, uncommitted, in a worktree is on the board with
   expect([snap.ok, snap.warnings]).toEqual([true, undefined]);
   const [change, ...rest] = byName(snap, "audit-trail");
   expect(rest).toEqual([]);
-  expect([change.column, change.tasks, change.branchMatch]).toEqual(["Implementing", { done: 1, total: 3 }, "wip/compliance"]);
+  expect([change.column, change.tasks, change.branchMatch]).toEqual(["Implementing", { done: 1, awaiting: 0, total: 3 }, "wip/compliance"]);
   expect(change.checkout).toEqual({ path: wt, branch: "wip/compliance", isMain: false });
   expect(change.otherCheckouts).toBeUndefined();
   // untracked files count: the change's time, and the repository's, is that edit — not the old commit
@@ -131,7 +131,7 @@ test("copies are merged: further along in a worktree leads; a stale worktree cop
 
   const [upgrade] = byName(snap, "upgrade-runtime");
   expect(byName(snap, "upgrade-runtime")).toHaveLength(1);
-  expect([upgrade.column, upgrade.checkout?.isMain, upgrade.tasks]).toEqual(["Implementing", true, { done: 2, total: 3 }]);
+  expect([upgrade.column, upgrade.checkout?.isMain, upgrade.tasks]).toEqual(["Implementing", true, { done: 2, awaiting: 0, total: 3 }]);
   expect(upgrade.otherCheckouts).toEqual([{ path: stale, branch: "feat/upgrade-runtime", isMain: false, column: "Drafts" }]);
   // a clean copy reports the commit date, not the moment the worktree was checked out
   expect(at(upgrade.lastActivityAt)).toBeGreaterThanOrEqual(at(COMMIT_DATE));

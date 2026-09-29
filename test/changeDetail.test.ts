@@ -203,8 +203,8 @@ test("file list only for multi-file artifacts, first file selected by default", 
 
 test("tasks artifact: read-only checklist with done/total from the file on screen", () => {
   const text = readFileSync(join(FIXTURES, "demo-ops", "openspec", "changes", "cloud-deployment", "tasks.md"), "utf8");
-  expect(taskProgress(text)).toEqual({ done: 4, total: 10 });
-  expect(taskProgress("1. [X] a\n* [ ] b\n  - [x] c\nnot [x] a task")).toEqual({ done: 2, total: 3 });
+  expect(taskProgress(text)).toEqual({ done: 4, awaiting: 0, total: 10 });
+  expect(taskProgress("1. [X] a\n* [ ] b\n  - [x] c\nnot [x] a task")).toEqual({ done: 2, awaiting: 0, total: 3 });
   const view = FileContent({ state: { status: "ok", path: "tasks.md", text }, raw: false, isTasks: true, rendered: renderMarkdown(text) });
   expect(textOf(view)).toContain("4/10");
   const boxes = byTag(view, "input");
@@ -216,6 +216,32 @@ test("tasks artifact: read-only checklist with done/total from the file on scree
   }
   // other artifacts get no progress bar
   expect(textOf(FileContent({ state: { status: "ok", path: "proposal.md", text }, raw: false, isTasks: false, rendered: renderMarkdown(text) }))).not.toContain("4/10");
+});
+
+test("tasks artifact: the three checkbox states render distinctly, none of them operable", () => {
+  const text = ["## 1. Work", "", "- [x] 1.1 built and checked", "- [~] 1.2 check it in the browser", "- [ ] 1.3 still open", ""].join("\n");
+  expect(taskProgress(text)).toEqual({ done: 1, awaiting: 1, total: 3 });
+  const view = FileContent({ state: { status: "ok", path: "tasks.md", text }, raw: false, isTasks: true, rendered: renderMarkdown(text) });
+
+  const boxes = byTag(view, "input");
+  expect(boxes.map((b) => [b.props.checked, b.props.indeterminate, b.props["aria-checked"]])).toEqual([
+    [true, undefined, undefined],
+    [false, true, "mixed"],
+    [false, undefined, undefined],
+  ]);
+  // Clicking any of them sends nothing: every box is disabled and carries no handler at all.
+  for (const box of boxes) {
+    expect(box.props.disabled).toBe(true);
+    expect(Object.keys(box.props).filter((k) => k.startsWith("on"))).toEqual([]);
+  }
+  // The awaiting item is marked as such, and reads as its own words: the marker is not left in the text.
+  const items = byTag(view, "li");
+  expect(items.map((li) => li.props.class)).toEqual(["task", "task awaiting", "task"]);
+  expect(textOf(items[1])).toBe("1.2 check it in the browser");
+  // And the view says in words how many await validation.
+  expect(textOf(view)).toContain("1 + 1 awaiting / 3");
+  expect(textOf(view)).toContain("1 task awaits your validation");
+  expect(textOf(FileContent({ state: { status: "ok", path: "tasks.md", text: "- [x] a\n- [ ] b\n" }, raw: false, isTasks: true, rendered: renderMarkdown("- [x] a\n- [ ] b\n") }))).not.toContain("await");
 });
 
 test("raw shows the source verbatim instead of the rendering", () => {

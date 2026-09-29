@@ -2,12 +2,35 @@ import { expect, test } from "bun:test";
 import { parseStatusV2, parseWorktrees } from "../src/server/git.ts";
 import { parseTaskProgress } from "../src/server/tasksParser.ts";
 import { boardColumns, deriveStage, isComplete } from "../src/shared/columns.ts";
-import type { ArtifactStatus, Snapshot } from "../src/shared/types.ts";
+import type { ArtifactStatus, Snapshot, TaskProgress } from "../src/shared/types.ts";
 
 test("task progress counts mixed list markers", () => {
   const md = ["## 1. Setup", "- [x] 1.1 a", "* [ ] 1.2 b", "1. [X] 1.3 c", "+ [ ] d", "2) [x] e", "- not a task", "[x] no marker"].join("\n");
-  expect(parseTaskProgress(md)).toEqual({ done: 3, total: 5 });
-  expect(parseTaskProgress("")).toEqual({ done: 0, total: 0 });
+  expect(parseTaskProgress(md)).toEqual({ done: 3, awaiting: 0, total: 5 });
+  expect(parseTaskProgress("")).toEqual({ done: 0, awaiting: 0, total: 0 });
+});
+
+test("task progress counts tasks awaiting validation apart from done ones", () => {
+  const md = ["## 1. Build", "- [x] 1.1 a", "- [~] 1.2 b", "- [ ] 1.3 c", "* [~] d", "2) [X] e"].join("\n");
+  expect(parseTaskProgress(md)).toEqual({ done: 2, awaiting: 2, total: 5 });
+  // `[~]` is never folded into `done`: nobody has confirmed it yet.
+  expect(parseTaskProgress("- [x] a\n- [~] b")).toEqual({ done: 1, awaiting: 1, total: 2 });
+  const thirteenAndTwo = [...Array(13).fill("- [x] done"), ...Array(2).fill("- [~] check it")].join("\n");
+  expect(parseTaskProgress(thirteenAndTwo)).toEqual({ done: 13, awaiting: 2, total: 15 });
+});
+
+test("task progress: spacing inside the brackets does not matter, an unknown marker is open", () => {
+  expect(parseTaskProgress("- [ x] a\n- [x ] b\n- [ ~] c\n- [~ ] d")).toEqual({ done: 2, awaiting: 2, total: 4 });
+  // Markers OpenSpec assigns no meaning to count as tasks, never as done.
+  expect(parseTaskProgress("- [-] a\n- [?] b")).toEqual({ done: 0, awaiting: 0, total: 2 });
+  expect(parseTaskProgress("- [] a")).toEqual({ done: 0, awaiting: 0, total: 1 });
+});
+
+test("task progress: a file without the awaiting marker counts exactly as before", () => {
+  const md = ["## 1. Setup", "- [x] 1.1 a", "- [ ] 1.2 b", "* [X] c", "1. [ ] d", "+ [x] e", "prose"].join("\n");
+  const { done, total } = parseTaskProgress(md);
+  expect({ done, total }).toEqual({ done: 3, total: 5 });
+  expect(parseTaskProgress(md).awaiting).toBe(0);
 });
 
 test("worktree porcelain parsing: main first, detached kept, flags read", () => {
@@ -101,7 +124,7 @@ const A = (...pairs: [string, ArtifactStatus["status"]][]): ArtifactStatus[] => 
 // Artifacts in the order the spec-driven schema declares them (specs before design), with the named ones done.
 const specDriven = (...done: string[]) => A(...["proposal", "specs", "design", "tasks"].map((id): [string, ArtifactStatus["status"]] => [id, done.includes(id) ? "done" : "ready"]));
 const ALL = ["proposal", "specs", "design", "tasks"];
-const stage = (artifacts: ArtifactStatus[], tasks: { done: number; total: number } | null, extra: { archived?: boolean } = {}) =>
+const stage = (artifacts: ArtifactStatus[], tasks: TaskProgress | null, extra: { archived?: boolean } = {}) =>
   deriveStage({ archived: false, artifacts, tasks, ...extra });
 const LIFECYCLE = ["Backlog", "Drafts", "Ready", "Implementing", "Done", "Archived"];
 
@@ -125,9 +148,34 @@ test("column derivation: backlog until something is written, drafts until everyt
 });
 
 test("column derivation: every complete change is Done until archived", () => {
-  expect(stage(specDriven(...ALL), { done: 12, total: 12 })).toEqual({ stage: "done", column: "Done" });
+  expect(stage(specDriven(...ALL), { done: 12, total: 12 })).toEqual({ stage: "done", column: "Done", subState: "complete" });
+  expect(stage(specDriven(...ALL), { done: 12, awaiting: 0, total: 12 })).toEqual({ stage: "done", column: "Done", subState: "complete" });
   expect(stage(specDriven(...ALL), { done: 3, total: 3 }, { archived: true })).toEqual({ stage: "archived", column: "Archived" });
   expect([isComplete("done"), isComplete("implementing"), isComplete("archived")]).toEqual([true, false, false]);
+});
+
+test("column derivation: a task awaiting validation settles the change into Done with the validate sub-state", () => {
+  expect(stage(specDriven(...ALL), { done: 13, awaiting: 2, total: 15 })).toEqual({ stage: "done", column: "Done", subState: "validate" });
+  // Nothing ticked, everything awaiting: still the done column — the agent is finished with all of it.
+  expect(stage(specDriven(...ALL), { done: 0, awaiting: 9, total: 9 })).toEqual({ stage: "done", column: "Done", subState: "validate" });
+  // One task still open: not settled.
+  expect(stage(specDriven(...ALL), { done: 13, awaiting: 1, total: 15 })).toEqual({ stage: "implementing", column: "Implementing" });
+  // The first task left for validation takes the change out of Ready, exactly as a ticked one would.
+  expect(stage(specDriven(...ALL), { done: 0, awaiting: 1, total: 12 })).toEqual({ stage: "implementing", column: "Implementing" });
+  // Only `done` carries a sub-state.
+  expect(stage(specDriven(...ALL), { done: 3, awaiting: 3, total: 3 }, { archived: true }).subState).toBeUndefined();
+  expect(stage(specDriven(...ALL), { done: 0, awaiting: 0, total: 12 }).subState).toBeUndefined();
+});
+
+test("column derivation: a snapshot cached without `awaiting` derives exactly what it derived before", () => {
+  const cached: [TaskProgress | null, string][] = [
+    [null, "Ready"],
+    [{ done: 0, total: 0 }, "Ready"],
+    [{ done: 0, total: 12 }, "Ready"],
+    [{ done: 1, total: 12 }, "Implementing"],
+    [{ done: 12, total: 12 }, "Done"],
+  ];
+  for (const [tasks, column] of cached) expect(stage(specDriven(...ALL), tasks).column).toBe(column);
 });
 
 test("board columns: the lifecycle columns for every schema, Unknown only when needed", () => {

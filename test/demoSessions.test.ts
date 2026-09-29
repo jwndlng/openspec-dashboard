@@ -144,6 +144,11 @@ test("starting a session: validated like the dashboard, one per change, in memor
   expect(await refusal(api.openSession("nope", "idempotency-keys", "draft"))).toBe("404: unknown repository");
   expect(await refusal(api.openSession("6d44c1f8", "schema-registry", "implement"))).toBe("409: the repository's last scan failed");
 
+  // The sub-state decides too: a change in `Done` awaiting validation takes Validate, never Implement.
+  expect(await refusal(api.openSession("a71c02e9", "verify-rate-limit-headers", "implement"))).toBe('400: "implement" is not available for this change in its current stage');
+  const validating = await api.openSession("a71c02e9", "verify-rate-limit-headers", "validate");
+  expect(validating).toMatchObject({ state: "running", action: "validate", change: "verify-rate-limit-headers", agentName: "Demo Agent" });
+
   const started = await api.openSession("a71c02e9", "migrate-to-postgres-16", "implement");
   expect(started).toMatchObject({ state: "running", branch: "feat/migrate-to-postgres-16", agentName: "Demo Agent", worktreePath: "/home/demo/.openspec-dashboard/worktrees/a71c02e9/migrate-to-postgres-16" });
   expect((await api.openSession("a71c02e9", "migrate-to-postgres-16", "implement")).id).toBe(started.id);

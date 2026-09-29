@@ -2,8 +2,8 @@ import { createHash } from "node:crypto";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { basename, dirname, isAbsolute } from "node:path";
 import { z } from "zod";
-import { CLAUDE_PROFILE, defaultAgentSessions, FORMER_ARCHIVE_PROMPTS } from "../shared/agentDefaults.ts";
-import type { Config, RepoConfig } from "../shared/types.ts";
+import { CLAUDE_PROFILE, defaultAgentSessions, FORMER_PROMPTS } from "../shared/agentDefaults.ts";
+import type { Config, PromptKey, RepoConfig } from "../shared/types.ts";
 import { canonicalPath, configPath, dashboardHome, expandPath } from "./paths.ts";
 
 export const DEFAULT_PORT = 4711;
@@ -61,7 +61,14 @@ const agentProfileSchema = z.object({
   name: z.string().trim().min(1),
   command: commandSchema,
   prompts: z
-    .object({ draft: promptSchema.optional(), implement: promptSchema.optional(), archive: promptSchema.optional(), ship: shipPromptSchema.optional(), integrate: integratePromptSchema.optional() })
+    .object({
+      draft: promptSchema.optional(),
+      implement: promptSchema.optional(),
+      validate: promptSchema.optional(),
+      archive: promptSchema.optional(),
+      ship: shipPromptSchema.optional(),
+      integrate: integratePromptSchema.optional(),
+    })
     .default({}),
   resumeCommand: z.array(z.string().min(1).refine(noBypass, { message: BYPASS_MESSAGE })).min(1).optional(),
   unsetEnv: z.array(z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/)).optional(),
@@ -157,11 +164,18 @@ export function validateConfig(input: unknown): Config {
  * one and other profiles are the user's. Nothing is written here; the value reaches the file with the next save.
  */
 function upgradeFormerDefaults(config: Config): Config {
-  const agents = config.agentSessions.agents.map((agent) =>
-    agent.id === CLAUDE_PROFILE.id && agent.prompts.archive !== undefined && FORMER_ARCHIVE_PROMPTS.includes(agent.prompts.archive)
-      ? { ...agent, prompts: { ...agent.prompts, archive: CLAUDE_PROFILE.prompts.archive } }
-      : agent,
-  );
+  const agents = config.agentSessions.agents.map((agent) => {
+    if (agent.id !== CLAUDE_PROFILE.id) return agent;
+    const prompts = { ...agent.prompts };
+    let upgraded = false;
+    for (const [key, former] of Object.entries(FORMER_PROMPTS) as [PromptKey, readonly string[]][]) {
+      const saved = prompts[key];
+      if (saved === undefined || !former.includes(saved)) continue; // removed or edited: the user's
+      prompts[key] = CLAUDE_PROFILE.prompts[key];
+      upgraded = true;
+    }
+    return upgraded ? { ...agent, prompts } : agent;
+  });
   return { ...config, agentSessions: { ...config.agentSessions, agents } };
 }
 

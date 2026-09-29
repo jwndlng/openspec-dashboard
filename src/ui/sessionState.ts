@@ -15,7 +15,7 @@ export function agentForRepo(config: Config | null, repoId: string): AgentProfil
 }
 
 /** What the change's stage allows, narrowed to what this repository's agent has an opening prompt for. */
-export function startersFor(config: Config | null, card: Pick<ChangeSnapshot, "repoId" | "archived" | "artifacts" | "stage">): SessionAction[] {
+export function startersFor(config: Config | null, card: Pick<ChangeSnapshot, "repoId" | "archived" | "artifacts" | "stage" | "subState">): SessionAction[] {
   const agent = agentForRepo(config, card.repoId);
   if (!agent) return [];
   return availableActions(card).filter((action) => Boolean(agent.prompts[action]));

@@ -33,6 +33,8 @@ interface SampleChange {
   written?: Written;
   /** [done, total]; implies every artifact is written unless `written` says otherwise. */
   tasks?: [number, number];
+  /** Of `total`, how many are `- [~]`: finished by the agent, awaiting the user. Never part of `done`. */
+  awaiting?: number;
   /** Age of the last activity in days. */
   age: number;
   synced?: boolean;
@@ -147,7 +149,13 @@ export const DEMO_AGENT: AgentProfile = {
   id: "demo-agent",
   name: "Demo Agent",
   command: ["demo-agent", "{prompt}"],
-  prompts: { draft: "/opsx:ff {change}", implement: "/opsx:apply {change}", archive: "/opsx:archive {change}", integrate: "Set this project up for OpenSpec: run `openspec init` here and tell me what it created." },
+  prompts: {
+    draft: "/opsx:ff {change}",
+    implement: "/opsx:apply {change}",
+    validate: "/opsx:apply {change} — walk me through the tasks left to validate",
+    archive: "/opsx:archive {change}",
+    integrate: "Set this project up for OpenSpec: run `openspec init` here and tell me what it created.",
+  },
   resumeCommand: ["demo-agent", "--continue"],
 };
 
@@ -169,6 +177,8 @@ const REPOS: SampleRepo[] = [
       { name: "structured-error-codes", written: "specs", age: 1 },
       { name: "idempotency-keys", written: "proposal", age: 9 },
       { name: "deprecate-v1-auth", tasks: [12, 12], age: 3 },
+      // Code-complete, two checks only a person can make: `Done`, sub-state `validate`.
+      { name: "verify-rate-limit-headers", tasks: [11, 13], awaiting: 2, age: 0.5 },
       { name: "openapi-examples", tasks: [8, 8], age: 6, synced: true },
       { name: "graphql-gateway-spike", written: "none", age: 0.3 },
     ],
@@ -348,7 +358,7 @@ export function buildSample(now: number): Sample {
       const input = {
         archived: false,
         artifacts: artifacts(written),
-        tasks: c.tasks ? { done: c.tasks[0], total: c.tasks[1] } : null,
+        tasks: c.tasks ? { done: c.tasks[0], awaiting: c.awaiting ?? 0, total: c.tasks[1] } : null,
       };
       return {
         repoId: r.id,
@@ -366,7 +376,7 @@ export function buildSample(now: number): Sample {
       };
     });
     const archived: ChangeSnapshot[] = r.archived.map(([name, age, total]) => {
-      const input = { archived: true, artifacts: artifacts("planned"), tasks: { done: total, total } };
+      const input = { archived: true, artifacts: artifacts("planned"), tasks: { done: total, awaiting: 0, total } };
       return {
         repoId: r.id,
         name,

@@ -47,6 +47,14 @@ track.
   (with a bar of written artifacts) → Ready → Implementing → Done → Archived. Changes in git worktrees are included, so work shows
   up before it is merged. ([kanban-board](openspec/specs/kanban-board/spec.md),
   [change-scanner](openspec/specs/change-scanner/spec.md))
+- **Awaiting validation**: a task written `- [~]` in `tasks.md` means the agent finished it but a person still has to
+  confirm it — "check it in the browser", "try the packaged build". It counts towards the change being finished but
+  never towards `done`, so a change whose tasks are all `- [x]` or `- [~]` sits in **Done** with a **Validate** badge
+  and a bar like `13 + 2 awaiting / 15 Tasks`, and offers **Validate** instead of **Implement**. **Archive** is
+  offered for the whole `Done` column, so you can archive straight away; `openspec archive` will ask about the
+  leftovers, and that question is the validation. The dashboard only reads the marker: it never writes, ticks or
+  clears a checkbox in any repository — your agent does that, in its own session.
+  ([change-scanner](openspec/specs/change-scanner/spec.md), [kanban-board](openspec/specs/kanban-board/spec.md))
 - **Change details**: **Show details** on a card opens the change's proposal, design, specs and tasks in an overlay
   over the board; close it with `Escape` to get back to the board as you left it. Apply and start commands are run
   by hand or through an agent session. ([change-detail](openspec/specs/change-detail/spec.md))

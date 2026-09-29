@@ -11,7 +11,7 @@ interface Props {
   update: (patch: Partial<Config>) => void;
 }
 
-const ACTION_LABEL: Record<SessionAction, string> = { draft: "Draft artifacts", implement: "Implement", archive: "Archive" };
+const ACTION_LABEL: Record<SessionAction, string> = { draft: "Draft artifacts", implement: "Implement", validate: "Validate", archive: "Archive" };
 
 function AgentEditor({ agent, found, isDefault, canRemove, onChange, onRemove, onDefault }: { agent: AgentProfile; found?: AgentAvailability; isDefault: boolean; canRemove: boolean; onChange: (patch: Partial<AgentProfile>) => void; onRemove: () => void; onDefault: () => void }) {
   return (

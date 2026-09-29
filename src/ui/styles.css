@@ -543,9 +543,15 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: 
 
 /* Progress meter: thin, rounded ends, value in text tokens beside it. */
 .meter { display: flex; align-items: center; gap: 8px; }
-.meter .track { flex: 1; height: 4px; border-radius: 999px; background: var(--bg-surface); overflow: hidden; }
-.meter .fill { height: 100%; border-radius: 999px; background: var(--brand); }
+.meter .track { display: flex; flex: 1; height: 4px; border-radius: 999px; background: var(--bg-surface); overflow: hidden; }
+.meter .fill { flex: none; height: 100%; border-radius: 999px; background: var(--brand); }
 .meter.full .fill { background: var(--success); }
+/* Tasks the agent finished and a person has still to confirm: hatched, so the segment is never colour alone. */
+.meter.has-awaiting .fill { border-radius: 999px 0 0 999px; }
+.meter .awaiting {
+  flex: none; height: 100%; border-radius: 0 999px 999px 0;
+  background: repeating-linear-gradient(135deg, var(--warning) 0 2px, var(--warning-bg) 2px 5px);
+}
 .meter .value { font-family: var(--font-mono); font-size: 11px; color: var(--fg-subtle); min-width: 42px; text-align: right; }
 /* The card's value names its unit (`2/4 Artifacts`), so it sizes to its text. */
 .meter .value.unit { flex: none; min-width: 0; white-space: nowrap; }
@@ -1015,6 +1021,9 @@ body:has(.detail-overlay) { overflow: hidden; }
 .detail-head .spacer { flex: 1; }
 .detail-close { flex: none; font-size: 14px; line-height: 1; padding: 6px 10px; }
 .detail-meter.wide { width: 360px; max-width: 100%; margin-bottom: 20px; }
+.detail-meter .awaiting-note { margin: 8px 0 0; font-size: 12px; line-height: 1.5; color: var(--fg-subtle); }
+/* The third task state: neither ticked nor empty, and as inoperable as the other two. */
+.markdown li.task.awaiting > input[type="checkbox"] { accent-color: var(--warning); }
 .detail-tabs { display: flex; flex-wrap: wrap; gap: 4px; padding: 0 calc(var(--detail-pad) - 14px); background: var(--bg-section); border-bottom: 1px solid var(--border-light); }
 .detail-tab {
   display: inline-flex; align-items: center; gap: 8px; padding: 13px 14px 12px; font: inherit; font-size: 13px; font-weight: 500; cursor: pointer;

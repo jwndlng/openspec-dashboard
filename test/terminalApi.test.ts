@@ -93,6 +93,10 @@ test("session routes: open, duplicate, refusals, cross-site", async () => {
   expect((await post(`${http}/api/sessions`, { ...body, change: "no-such-change" })).status).toBe(404);
   expect((await post(`${http}/api/sessions`, { ...body, change: "../../etc" })).status).toBe(400);
   expect((await post(`${http}/api/sessions`, { ...body, action: "deploy" })).status).toBe(400);
+  // The route refuses on the sub-state as well: `validate` before `Done`, `implement` once the change is validating.
+  expect((await post(`${http}/api/sessions`, { ...body, action: "validate" })).status).toBe(400);
+  expect((await post(`${http}/api/sessions`, { ...body, change: "confirm-retention", action: "implement" })).status).toBe(400);
+  expect(h.manager.list().length).toBe(1); // still only the session opened above: nothing was started
   expect((await fetch(`${http}/api/sessions/${session.id}`, { method: "DELETE", headers: JSON_HEADERS })).status).toBe(409); // still running
   expect((await fetch(`${http}/api/sessions/${session.id}/terminal`)).status).toBe(403); // a plain GET without the page's Origin
   expect((await fetch(`${http}/api/sessions/${session.id}/terminal`, { headers: { origin: http } })).status).toBe(426); // right origin, but not a WebSocket
