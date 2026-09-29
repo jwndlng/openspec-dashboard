@@ -145,6 +145,8 @@ In a git repository a session MUST NOT run in the repository's main checkout. Be
 
 A tracked folder that holds an `openspec/` tree but is **not a git repository** is a supported repository, and its sessions SHALL run **in place**: the agent's working directory SHALL be the repository folder itself, no worktree SHALL be created, no branch SHALL be made, and no git command SHALL be run for the session. Whether a session runs in place SHALL be decided from the repository's own scan result, never by attempting a git command and reacting to its failure. An in-place session SHALL be recorded as such and MUST NOT carry a branch. The panel SHALL name the folder the agent runs in and SHALL state plainly that the agent edits the tracked folder directly, with no branch, no commit and no undo. Session starters MUST NOT be hidden or disabled because a repository is not a git repository.
 
+An **integration session** — the session started by **Integrate** for a repository that is not tracked and has no `openspec/` tree — is the second in-place case and the only one in a git repository. It SHALL run in place under exactly the rules of the paragraph above: the repository folder is the working directory, no worktree, no branch, no git command for the session, recorded as in place, with the same panel wording. The reason it does not get a worktree is that its whole purpose is to leave `openspec/config.yaml` in the checkout the user works in; on a branch in a worktree the marker would never appear where discovery looks. Whether a session runs in place SHALL still be decided from what the dashboard already knows about the folder, never by attempting a git command and reacting to its failure.
+
 #### Scenario: Two sessions in one repository
 - **WHEN** sessions are open for changes `audit-trail` and `upgrade-runtime` of the same repository
 - **THEN** they run in two different worktrees on two different branches and the main checkout's branch and `git status` are unchanged
@@ -176,6 +178,14 @@ A tracked folder that holds an `openspec/` tree but is **not a git repository** 
 #### Scenario: The panel names the folder for an in-place session
 - **WHEN** the panel of an in-place session is open
 - **THEN** it names the repository folder the agent runs in, shows no branch, and states that the agent edits that folder directly with no branch, no commit and no undo
+
+#### Scenario: An integration session runs in the checkout
+- **WHEN** the user activates **Integrate** for a git repository that has no `openspec/config.yaml`
+- **THEN** the agent starts with that repository folder as its working directory, no worktree and no branch are created, and the dashboard runs no git command for the session
+
+#### Scenario: The integration panel states the risk
+- **WHEN** the panel of an integration session is open
+- **THEN** it names the repository folder, shows no branch, and states that the agent edits that folder directly with no branch, no commit and no undo
 
 ### Requirement: Session lifecycle and control
 A session SHALL be `running` while its agent process lives, `exited` with the process's exit code once it has ended, or `failed` when the agent could not be started. At most one session per worktree may be running; a request to open another for the same worktree SHALL return the running one. Because archiving has a worktree of its own, an Archive session MAY run next to the change's other session. **End session** SHALL terminate the agent as closing its terminal window would (hang-up, then a forced kill if it does not exit). When the agent's profile has a resume command, an ended session SHALL offer **Resume**, which starts that command in the same worktree within the same session. Because a terminal cannot outlive the process that owns it, stopping the dashboard MUST end every agent, and sessions recorded as running at start-up MUST be shown as ended with that reason.
