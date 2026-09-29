@@ -226,8 +226,13 @@ export interface Config {
 
 export type SessionAction = "draft" | "implement" | "validate" | "archive";
 export const SESSION_ACTIONS: readonly SessionAction[] = ["draft", "implement", "validate", "archive"];
-/** `ship` is a prompt, not a starter: it asks the agent of an existing session to commit, push and open a pull request. */
-export type PromptKey = SessionAction | "ship";
+/**
+ * `ship` is a prompt, not a starter: it asks the agent of an existing session to commit, push and open a pull request.
+ * `integrate` is not a starter for a change either: it opens an integration session in a repository that does not use
+ * OpenSpec yet. Unlike every other prompt it carries no placeholder — the folder is the agent's working directory, so
+ * no text from the browser reaches the command line.
+ */
+export type PromptKey = SessionAction | "ship" | "integrate";
 /** Agent-neutral on purpose, so every profile can ship without being configured for it. */
 /** What Ship answers: the session, and whether the prompt was submitted. `false` means the agent of a running session
  *  did not show the typed prompt (it may be showing a menu), so Enter was not pressed and nothing was confirmed. */
@@ -309,6 +314,8 @@ interface SessionBase {
 /** A session started for one change of one repository, from a card's starter. */
 export interface ChangeSession extends SessionBase {
   console?: undefined;
+  integration?: undefined;
+  folder?: undefined;
   repoId: string;
   change: string;
   action: SessionAction;
@@ -320,6 +327,8 @@ export interface ChangeSession extends SessionBase {
  */
 export interface ConsoleSession extends SessionBase {
   console: true;
+  integration?: undefined;
+  folder?: undefined;
   repoId?: undefined;
   change?: undefined;
   action?: undefined;
@@ -328,15 +337,43 @@ export interface ConsoleSession extends SessionBase {
   inPlace?: undefined;
 }
 
-export type Session = ChangeSession | ConsoleSession;
+/**
+ * Setting a repository up for OpenSpec: the default agent in a git repository that is not tracked yet, run **in place**
+ * in its main checkout, because the point is to leave `openspec/config.yaml` where discovery looks for it. It belongs
+ * to no repository in the config, no change and no action; it has no branch, no worktree of its own, no work status,
+ * no Ship and no pull, and is never part of Open work or the activity log.
+ */
+export interface IntegrationSession extends SessionBase {
+  integration: true;
+  console?: undefined;
+  /** Canonical path of the repository being set up; the agent's working directory. */
+  folder: string;
+  repoId?: undefined;
+  change?: undefined;
+  action?: undefined;
+  branch?: undefined;
+  adopted?: undefined;
+  inPlace: true;
+}
+
+export type Session = ChangeSession | ConsoleSession | IntegrationSession;
 
 export function isConsole(session: Session): session is ConsoleSession {
   return session.console === true;
 }
 
+export function isIntegration(session: Session): session is IntegrationSession {
+  return session.integration === true;
+}
+
+/** A session that belongs to no repository and no change: the console and integrations. */
+export function isChangeless(session: Session): session is ConsoleSession | IntegrationSession {
+  return isConsole(session) || isIntegration(session);
+}
+
 /** Only the change sessions of a list: every view about repositories and changes starts here. */
 export function changeSessions(sessions: readonly Session[]): ChangeSession[] {
-  return sessions.filter((s): s is ChangeSession => !isConsole(s));
+  return sessions.filter((s): s is ChangeSession => !isChangeless(s));
 }
 
 export interface AgentAvailability {
@@ -345,6 +382,19 @@ export interface AgentAvailability {
   available: boolean;
   /** Resolved executable, when found. */
   path?: string;
+}
+
+/**
+ * Why **Integrate** cannot be offered at all — as opposed to for one folder. Shared so the disabled row, the refusal
+ * and the test all say the same thing. `undefined` means the action is available.
+ */
+export function integrateUnavailable(config: Config, agents: readonly AgentAvailability[]): string | undefined {
+  if (!config.agentSessions.enabled) return "agent sessions are disabled";
+  const agent = config.agentSessions.agents.find((a) => a.id === config.agentSessions.defaultAgent);
+  if (!agent) return "no agent is configured";
+  if (!agent.prompts.integrate) return `${agent.name} has no Integrate prompt configured`;
+  if (agents.find((a) => a.id === agent.id)?.available === false) return `${agent.name} was not found (${agent.command[0]})`;
+  return undefined;
 }
 
 /** Included unless explicitly switched off for this repository (the global switch is checked separately). */
@@ -375,9 +425,21 @@ export interface SameRemoteRepo {
 /** A discovery candidate. `sameRemoteAs` is information for the user and is dropped when the candidate is enabled. */
 export type DiscoveredRepo = RepoConfig & { sameRemoteAs?: SameRemoteRepo[] };
 
+/**
+ * A git repository under the roots that does not use OpenSpec yet: no `openspec/config.yaml`, not a linked worktree,
+ * not in the config, and not a container of a reported OpenSpec project. Offered for integration, never tracked.
+ */
+export interface IntegratableRepo {
+  id: string;
+  path: string;
+  name: string;
+}
+
 export interface DiscoverResult {
   /** Repositories found under the roots that are not in the config yet. Never persisted by discovery. */
   candidates: DiscoveredRepo[];
+  /** Git repositories under the roots that have no OpenSpec yet. Empty when there are none. */
+  integratable: IntegratableRepo[];
   errors: { root: string; message: string }[];
 }
 

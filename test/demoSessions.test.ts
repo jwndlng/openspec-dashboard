@@ -266,3 +266,55 @@ test("the demo console is refused while agent sessions are off", async () => {
   await api.saveConfig({ ...config, agentSessions: { ...config.agentSessions, enabled: false } });
   expect(await refusal(api.openConsole())).toBe("403: agent sessions are disabled");
 });
+
+test("integrating a repository in the demo: a recording in the folder itself, then a tracked repository with a board", async () => {
+  const { api, advance, terminal } = demo();
+  const { integratable, candidates } = await api.discover();
+  expect(integratable).toHaveLength(1);
+  const repo = integratable[0];
+  expect(repo).toMatchObject({ name: "sparrow-gateway", path: "/home/demo/work/sparrow-gateway" });
+  expect(candidates.some((c) => c.id === repo.id)).toBe(false); // it is not a candidate: it has no OpenSpec yet
+  expect((await api.state()).repos.some((r) => r.id === repo.id)).toBe(false);
+
+  const session = await api.startIntegration(repo.path);
+  expect(session).toMatchObject({ integration: true, inPlace: true, folder: repo.path, worktreePath: repo.path, state: "running" });
+  expect(session.branch).toBeUndefined();
+  expect((await api.startIntegration(repo.path)).id).toBe(session.id); // one at a time per folder
+
+  // No worktree of its own, and never part of open work.
+  const listed = await api.sessions();
+  expect(listed.worktrees.some((w) => w.path === repo.path)).toBe(false);
+  expect(openWork(listed.worktrees, listed.sessions).items.some((i) => i.key === session.id)).toBe(false);
+  expect(await refusal(api.shipSession(session.id))).toBe("409: this session is setting a repository up for OpenSpec, so it belongs to no change");
+  expect(await refusal(api.worktreeStatus(session.id))).toBe("409: this session is setting a repository up for OpenSpec, so it belongs to no change");
+
+  const view = terminal(session.id);
+  advance(1_000);
+  expect(view.text()).toContain("demo recording");
+  expect((await api.config()).repos.some((r) => r.id === repo.id)).toBe(false); // nothing yet: the recording is still running
+
+  advance(2_000); // the transcript stops at its question
+  view.connection.send({ type: "input", data: "claude, cursor\r" });
+  advance(20_000); // …and then runs to its end
+
+  expect(view.text()).toContain("openspec/config.yaml");
+  expect((await api.sessions()).sessions.find((s) => s.id === session.id)?.state).toBe("exited");
+  // The marker "appeared": it is a tracked, enabled repository with a board, and it is no longer offered.
+  expect((await api.config()).repos.find((r) => r.id === repo.id)).toMatchObject({ name: "sparrow-gateway", enabled: true });
+  expect((await api.discover()).integratable).toEqual([]);
+  const board = (await api.state()).repos.find((r) => r.id === repo.id);
+  expect(board?.changes.map((c) => c.name)).toEqual(["retry-budget-per-route", "drop-legacy-tls-ciphers"]);
+  view.connection.close();
+});
+
+test("the demo refuses an integration for anything but a repository that is waiting for one", async () => {
+  const { api } = demo();
+  const { integratable } = await api.discover();
+  expect(await refusal(api.startIntegration("/home/demo/work/atlas-api"))).toContain("404"); // already an OpenSpec project
+  expect(await refusal(api.startIntegration("/home/demo/elsewhere"))).toContain("404");
+
+  const config = await api.config();
+  await api.saveConfig({ ...config, agentSessions: { ...config.agentSessions, enabled: false } });
+  expect(await refusal(api.startIntegration(integratable[0].path))).toBe("403: agent sessions are disabled");
+  expect((await api.sessions()).sessions).toEqual([]);
+});

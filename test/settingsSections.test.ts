@@ -5,6 +5,7 @@ import { hrefWithQuery } from "../src/ui/url.ts";
 test("parseSection accepts known ids only", () => {
   expect(parseSection("?section=discovered", SECTION_IDS)).toBe("discovered");
   expect(parseSection("?q=x&section=shared-config", SECTION_IDS)).toBe("shared-config");
+  expect(parseSection("?section=integratable", SECTION_IDS)).toBe("integratable");
   expect(parseSection("?section=nope", SECTION_IDS)).toBeUndefined();
   expect(parseSection("", SECTION_IDS)).toBeUndefined();
   // A section that is not on the page right now is not a valid target.
@@ -33,7 +34,7 @@ test("a section becomes current when its start reaches the top of the view", () 
 });
 
 test("at the end of the scroll range the last section is current, however short it is", () => {
-  expect(currentSection(rects(-1500, -1300, -400, 300, 420, 600), true)).toBe("shared-config");
+  expect(currentSection(rects(-1500, -1300, -400, -200, 300, 420, 600), true)).toBe("shared-config");
 });
 
 test("one section is always current; none is when there are no sections", () => {

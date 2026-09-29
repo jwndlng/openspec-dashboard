@@ -3,7 +3,7 @@
 //
 // All of it is invented, like the rest of the sample (see sampleData.ts): every repository, change, branch and path
 // comes from the sample, and terminal output comes from the hand-written transcripts.
-import { availableActions, isConsole, type Config, type ConsoleSession, type Session, type SessionAction, type PromptResult, type SessionWorktree, type ShipResult, SHIPPABLE_WORK, type Snapshot, type WorkStatus, type Worktree } from "../../shared/types.ts";
+import { availableActions, isChangeless, isConsole, isIntegration, type ChangeSession, type Config, type ConsoleSession, type IntegrationSession, type Session, type SessionAction, type PromptResult, type SessionWorktree, type ShipResult, SHIPPABLE_WORK, type Snapshot, type WorkStatus, type Worktree } from "../../shared/types.ts";
 import { ApiError, type TerminalConnection, type TerminalHandlers } from "../api.ts";
 import { DEMO_AGENT, DEMO_ROOT } from "./sampleData.ts";
 import { type Clock, type Playback, type Position, playTranscript, positionAfter, TRANSCRIPTS, type TranscriptName, workAfter } from "./transcripts.ts";
@@ -19,6 +19,8 @@ export const sessionWorktreePath = (repoId: string, name: string) => `${DEMO_ROO
 /** The main console's default folder, as the dashboard would place it under the demo's home. */
 export const DEMO_CONSOLE_DIR = `${DEMO_ROOT.replace(/\/[^/]+$/, "")}/.openspec-dashboard/console`;
 const NOT_A_CHANGE = "this is the main console, which belongs to no change";
+const NOT_A_CHANGE_INTEGRATING = "this session is setting a repository up for OpenSpec, so it belongs to no change";
+const notAChange = (session: Session) => (isIntegration(session) ? NOT_A_CHANGE_INTEGRATING : NOT_A_CHANGE);
 
 interface Seed {
   repo: string;
@@ -65,10 +67,14 @@ export interface DemoSessionsOptions {
   now(): number;
   getConfig(): Config;
   getSnapshot(): Snapshot;
+  /** Repositories still waiting to be set up for OpenSpec; only these can be integrated. */
+  integratable(): { path: string }[];
+  /** The transcript reached its end, which in the demo is what the marker appearing means: track the repository. */
+  onIntegrated?(path: string): void;
   clock?: Clock;
 }
 
-export function createDemoSessions({ now, getConfig, getSnapshot, clock }: DemoSessionsOptions) {
+export function createDemoSessions({ now, getConfig, getSnapshot, integratable, onIntegrated, clock }: DemoSessionsOptions) {
   const iso = (ms: number) => new Date(ms).toISOString();
   const started = now();
   let counter = 0;
@@ -167,6 +173,8 @@ export function createDemoSessions({ now, getConfig, getSnapshot, clock }: DemoS
   };
 
   const end = (s: DemoSession, exitCode = 0) => {
+    // The transcript reached its end, which in the demo is the marker appearing: the repository becomes tracked.
+    if (isIntegration(s.session) && exitCode === 0 && s.session.state === "running") onIntegrated?.(s.session.folder);
     // what the transcript did to the worktree stays; the transcript itself is over
     s.work = workOf(s);
     s.workFrom = TRANSCRIPTS[s.transcript].length;
@@ -224,7 +232,7 @@ export function createDemoSessions({ now, getConfig, getSnapshot, clock }: DemoS
 
   const worktrees = (): SessionWorktree[] => [
     ...sessions
-      .filter((s): s is DemoSession & { session: Exclude<Session, ConsoleSession> } => !isConsole(s.session) && workOf(s).state !== "missing")
+      .filter((s): s is DemoSession & { session: ChangeSession } => !isChangeless(s.session) && workOf(s).state !== "missing")
       .map((s) => ({
         repoId: s.session.repoId,
         name: s.name,
@@ -302,6 +310,34 @@ export function createDemoSessions({ now, getConfig, getSnapshot, clock }: DemoS
       return created.session;
     },
 
+    /**
+     * Setting a repository up for OpenSpec: the demo agent in that folder, one at a time, playing the integrate
+     * recording. It has no worktree and no branch, exactly as the dashboard's does.
+     */
+    openIntegration(path: string): IntegrationSession {
+      requireEnabled();
+      if (!integratable().some((r) => r.path === path)) throw new ApiError(404, "this folder is not a repository waiting to be set up for OpenSpec");
+      const running = sessions.find((s) => isIntegration(s.session) && s.session.folder === path && s.session.state === "running")?.session;
+      if (running && isIntegration(running)) return running;
+      const at = now();
+      const session: IntegrationSession = {
+        id: `demo-${++counter}`,
+        integration: true,
+        folder: path,
+        agentId: DEMO_AGENT.id,
+        agentName: DEMO_AGENT.name,
+        state: "running",
+        worktreePath: path,
+        inPlace: true,
+        createdAt: iso(at),
+        updatedAt: iso(at),
+        lastOutputAt: iso(at),
+        resumable: true,
+      };
+      sessions.unshift({ name: path.split("/").pop() ?? path, transcript: "integrate", startedAtMs: at, position: { index: 0, waiting: false }, work: { state: "missing" }, workFrom: 0, lastActivityMs: at, session });
+      return session;
+    },
+
     /** The main console: one at a time, in the demo's console folder, playing the console recording. */
     openConsole(): ConsoleSession {
       requireEnabled();
@@ -346,7 +382,7 @@ export function createDemoSessions({ now, getConfig, getSnapshot, clock }: DemoS
 
     ship(id: string): ShipResult {
       const s = find(id);
-      if (isConsole(s.session)) throw new ApiError(409, NOT_A_CHANGE);
+      if (isChangeless(s.session)) throw new ApiError(409, notAChange(s.session));
       const work = workOf(s);
       if (!SHIPPABLE_WORK.includes(work.state)) throw new ApiError(409, `there is nothing to ship (${work.state})`);
       run(s, "ship");
@@ -356,7 +392,7 @@ export function createDemoSessions({ now, getConfig, getSnapshot, clock }: DemoS
     prompt(id: string, action: SessionAction): PromptResult {
       requireEnabled();
       const s = find(id);
-      if (isConsole(s.session)) throw new ApiError(409, NOT_A_CHANGE);
+      if (isChangeless(s.session)) throw new ApiError(409, notAChange(s.session));
       if (action === "archive" || s.session.action === "archive") throw new ApiError(400, "archiving runs in its own session");
       if (s.session.state !== "running") throw new ApiError(409, "the session is not running");
       // Sent with one activation, as in the dashboard: the recording's agent takes the prompt up straight away.
@@ -367,7 +403,7 @@ export function createDemoSessions({ now, getConfig, getSnapshot, clock }: DemoS
 
     status(id: string) {
       const s = find(id);
-      if (isConsole(s.session)) throw new ApiError(409, NOT_A_CHANGE);
+      if (isChangeless(s.session)) throw new ApiError(409, notAChange(s.session));
       const work = workOf(s);
       return { ...removable(work, s.session.adopted), work };
     },
@@ -382,7 +418,7 @@ export function createDemoSessions({ now, getConfig, getSnapshot, clock }: DemoS
         open?.handlers.onClose();
         playing.delete(id);
       }
-      if (!removeWorktree || isConsole(s.session)) return { session: s.session };
+      if (!removeWorktree || isChangeless(s.session)) return { session: s.session };
       const worktree = removable(workOf(s), s.session.adopted);
       if (worktree.removable) s.removed = true;
       return { session: s.session, worktree };
@@ -407,7 +443,7 @@ export function createDemoSessions({ now, getConfig, getSnapshot, clock }: DemoS
       sessions.splice(sessions.indexOf(s), 1);
       // the record is gone, the worktree is not: it is still reported, and its card keeps the work badge
       const work = workOf(s);
-      if (!isConsole(s.session) && work.state !== "missing" && !s.session.adopted) {
+      if (!isChangeless(s.session) && work.state !== "missing" && !s.session.adopted) {
         orphans.push({ repoId: s.session.repoId, name: s.name, path: s.session.worktreePath, change: s.session.change, action: s.session.action, branch: s.session.branch, work, lastActivityAt: iso(s.lastActivityMs) });
       }
       return { deleted: true };

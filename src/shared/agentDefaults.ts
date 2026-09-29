@@ -13,6 +13,13 @@ const VALIDATE_PROMPT = "/opsx:apply {change} — take its `- [~]` tasks one at 
 const ARCHIVE_PROMPT = "/opsx:archive {change} — sync the delta specs into openspec/specs first without asking me whether to sync, then archive; if they are already in sync, archive right away; tick off the tasks left for me to validate once I have confirmed them.";
 
 /**
+ * Integrate runs in the repository folder itself, so it names no change and carries no placeholder at all. Which tools
+ * OpenSpec is installed for is the agent's question to the user, not ours.
+ */
+const INTEGRATE_PROMPT =
+  "Set this project up for OpenSpec: run `openspec init` in this folder, ask me which tools to install it for, and tell me what it created when you are done.";
+
+/**
  * Earlier preconfigured prompts per starter; a saved config that still carries one verbatim is read as carrying the
  * current one for that starter. Per key, so upgrading one prompt never rewrites another.
  */
@@ -29,7 +36,7 @@ export const CLAUDE_PROFILE: AgentProfile = {
   id: "claude",
   name: "Claude Code",
   command: ["claude", "{prompt}"],
-  prompts: { draft: "/opsx:ff {change}", implement: IMPLEMENT_PROMPT, validate: VALIDATE_PROMPT, archive: ARCHIVE_PROMPT },
+  prompts: { draft: "/opsx:ff {change}", implement: IMPLEMENT_PROMPT, validate: VALIDATE_PROMPT, archive: ARCHIVE_PROMPT, integrate: INTEGRATE_PROMPT },
   resumeCommand: ["claude", "--continue"],
   // So the CLI's own login (a subscription) is used rather than an API key that happens to be exported.
   unsetEnv: ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"],

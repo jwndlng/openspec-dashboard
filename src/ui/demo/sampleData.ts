@@ -5,7 +5,7 @@
 // Ages are relative to `now`, so the published demo never looks abandoned. Column and stage are derived with the
 // same rules the scanner uses, so the sample cannot disagree with the board.
 import { deriveStage } from "../../shared/columns.ts";
-import type { ActivityEvent, AgentProfile, ArtifactStatus, ChangeSnapshot, CheckoutStatus, Config, RepoConfig, RepoSnapshot, SharedProfile, Snapshot, Worktree } from "../../shared/types.ts";
+import type { ActivityEvent, AgentProfile, ArtifactStatus, ChangeSnapshot, CheckoutStatus, Config, IntegratableRepo, RepoConfig, RepoSnapshot, SharedProfile, Snapshot, Worktree } from "../../shared/types.ts";
 import { summarizeWorkInProgress } from "../../shared/workInProgress.ts";
 
 /** Appears in the demo bundle only; test/demoBundle.test.ts uses it to tell the two bundles apart. */
@@ -63,6 +63,11 @@ interface SampleRepo {
   changes: SampleChange[];
   /** [name, archived days ago, task total] */
   archived: [string, number, number][];
+  /**
+   * A git repository under the roots that does not use OpenSpec yet. It is not tracked and not a candidate; Settings
+   * offers to set it up, and what is described here is what it looks like once that is done.
+   */
+  integratable?: true;
 }
 
 const CLEAN: CheckoutStatus = { modified: 0, untracked: 0, conflicts: 0 };
@@ -144,7 +149,13 @@ export const DEMO_AGENT: AgentProfile = {
   id: "demo-agent",
   name: "Demo Agent",
   command: ["demo-agent", "{prompt}"],
-  prompts: { draft: "/opsx:ff {change}", implement: "/opsx:apply {change}", validate: "/opsx:apply {change} — walk me through the tasks left to validate", archive: "/opsx:archive {change}" },
+  prompts: {
+    draft: "/opsx:ff {change}",
+    implement: "/opsx:apply {change}",
+    validate: "/opsx:apply {change} — walk me through the tasks left to validate",
+    archive: "/opsx:archive {change}",
+    integrate: "Set this project up for OpenSpec: run `openspec init` here and tell me what it created.",
+  },
   resumeCommand: ["demo-agent", "--continue"],
 };
 
@@ -302,12 +313,26 @@ const REPOS: SampleRepo[] = [
   },
 ];
 
-/** Found by discovery but not tracked, so Settings has something under "Discovered". */
+/** Found by discovery, a git repository, but with no OpenSpec yet: Settings offers to set it up. */
 const CANDIDATES: [string, string][] = [
   ["9a20e6b1", "pebble-cli"],
   ["b7f3108c", "tide-notifications"],
   ["53cd9e70", "playground/spec-experiments"],
 ];
+
+/** The repository Settings offers to integrate, and the small board it brings once it has been set up. */
+const INTEGRATABLE: SampleRepo = {
+  id: "c4e70f52",
+  name: "sparrow-gateway",
+  branch: "main",
+  updated: 0,
+  integratable: true,
+  changes: [
+    { name: "retry-budget-per-route", written: "proposal", age: 0 },
+    { name: "drop-legacy-tls-ciphers", written: "none", age: 0 },
+  ],
+  archived: [],
+};
 
 function repoPath(name: string): string {
   return `${DEMO_ROOT}/${name}`;
@@ -317,13 +342,17 @@ export interface Sample {
   snapshot: Snapshot;
   config: Config;
   candidates: RepoConfig[];
+  /** Repositories without OpenSpec, offered for integration; not tracked and not candidates. */
+  integratable: IntegratableRepo[];
+  /** What each of those looks like once it has been set up — the board it brings with it. */
+  integrated: RepoSnapshot[];
 }
 
 export function buildSample(now: number): Sample {
   const iso = (ageMs: number) => new Date(now - ageMs).toISOString();
   const day = (ageDays: number) => iso(ageDays * DAY).slice(0, 10);
 
-  const repos: RepoSnapshot[] = REPOS.map((r) => {
+  const repos: RepoSnapshot[] = [...REPOS, INTEGRATABLE].map((r) => {
     const open: ChangeSnapshot[] = r.changes.map((c) => {
       const written = c.written ?? "planned";
       const input = {
@@ -396,8 +425,11 @@ export function buildSample(now: number): Sample {
   } satisfies Config;
 
   const candidates = CANDIDATES.map(([id, name]) => ({ id, path: repoPath(name), name: name.split("/").pop() ?? name, enabled: false })) satisfies RepoConfig[];
+  // Kept out of the board and out of the activity log until the visitor integrates it: it is not an OpenSpec project yet.
+  const integrated = repos.filter((r) => r.id === INTEGRATABLE.id);
+  const integratable: IntegratableRepo[] = [{ id: INTEGRATABLE.id, path: repoPath(INTEGRATABLE.name), name: INTEGRATABLE.name }];
 
-  return { snapshot: { generatedAt: iso(0), repos }, config, candidates };
+  return { snapshot: { generatedAt: iso(0), repos: repos.filter((r) => r.id !== INTEGRATABLE.id) }, config, candidates, integratable, integrated };
 }
 
 const FLOW = ["Backlog", "Drafts", "Ready", "Implementing", "Done"];
