@@ -87,9 +87,10 @@ track.
 - It reads repositories with read-only git commands. Scanning, polling and discovery never write anything or contact
   a remote.
 - It writes to a repository only when you click something: **Pull** (the only network access, using git's own
-  credentials), **New change**, **Dismiss change** (deleting that change's directory), **applying shared config**,
-  creating or removing an **agent session's worktree**, and **Clean up** (removing worktrees and deleting merged local
-  branches you selected).
+  credentials) and, when you confirm **Resolve and pull**, removing the change files it created here that the incoming
+  commits already contain — a copy of anything that differs is kept under `~/.openspec-dashboard/` first; **New
+  change**, **Dismiss change** (deleting that change's directory), **applying shared config**, creating or removing an
+  **agent session's worktree**, and **Clean up** (removing worktrees and deleting merged local branches you selected).
   The full list is in the [dashboard-api spec](openspec/specs/dashboard-api/spec.md).
 - Its own state lives in `~/.openspec-dashboard/`.
 

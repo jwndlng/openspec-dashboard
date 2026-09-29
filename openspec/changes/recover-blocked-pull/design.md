@@ -57,7 +57,8 @@ confirmation sends back, so "unchanged since shown" is a comparison of ids, with
 ```ts
 interface PullBlockingFile { path: string; kind: "leftover" | "local-work"; differs?: boolean;
   incoming?: string; staged?: string; worktree?: string }
-interface PullResult { …; blocking?: PullBlockingFile[]; resolvable?: { upstream: string };  // upstream commit id
+interface PullResolve { upstream: string; files: PullBlockingFile[] }  // the claim, posted back unchanged
+interface PullResult { …; blocking?: PullBlockingFile[]; resolvable?: PullResolve;
   resolved?: { path: string; copy?: string }[]; hint?: string }
 ```
 `hint` carries the plain-language next step for refusals (commit or set aside / reconcile outside the dashboard).
@@ -72,8 +73,12 @@ A plain pull keeps accepting an empty body.
 3. For each differing leftover, copy to `~/.openspec-dashboard/pull-backups/<repo-id>/<UTC timestamp>/<path>`; when
    the staged blob differs from both the working tree and the incoming blob, also write it (`git cat-file blob`) as
    `<path>.staged`. Copy failure aborts before anything is removed.
-4. Hold every leftover's working-tree bytes in memory, then `git rm --cached --quiet -- <staged leftovers>` and unlink
-   every leftover file. Directories are left in place — the fast-forward refills them, and git ignores them if not.
+4. Hold every leftover's working-tree bytes (and mode) in memory, then unlink every leftover file and only then
+   `git rm --cached --quiet -- <staged leftovers>`. That order is what keeps the command force-free: while an edited
+   staged file is still on disk, `git rm --cached` refuses it ("staged content different from both the file and the
+   HEAD") and wants `-f`; once the file is gone it succeeds. Nothing is at risk from unlinking first — the bytes are
+   already in memory and everything that differs is already copied. Directories are left in place — the fast-forward
+   refills them, and git ignores them if not.
 5. `git -c core.hooksPath=/dev/null merge --ff-only --quiet <upstream>`.
 6. On failure: write each file back from memory, `git add -- <previously staged leftovers>`, return `refused` with
    git's reason and the copies. On success: `fast-forwarded` with `resolved`.
@@ -81,6 +86,11 @@ A plain pull keeps accepting an empty body.
 `git rm --cached` was chosen over `git reset -- <path>` (reset is on the forbidden list) and over `git rm -f`
 (a force flag, and it would delete the working-tree file before we held its bytes). `git stash` was rejected
 outright: it is forbidden, and it would also sweep up unrelated local work.
+
+A blocking file is also only a leftover when it is an ordinary file on both sides: the upstream blob's mode and, when
+staged, the index entry's mode must be `100644` or `100755`, and `lstat` must say the working-tree entry is a regular
+file. A symlink, a gitlink or a submodule at such a path is local work and is never removed. A mode of its own counts
+as "differs", so it costs a copy rather than a surprise.
 
 The repository id is used as a directory name only after mapping any character outside `[A-Za-z0-9._-]` to `_`.
 

@@ -591,6 +591,18 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: 
 
 /* ---- Pull ---- */
 .pull { display: inline-flex; align-items: center; gap: 6px; }
+/* A blocked pull has a list behind it: the badge becomes the way in, still reading as a badge. */
+.pull-badge-button { cursor: pointer; text-decoration: underline; text-decoration-style: dotted; text-underline-offset: 2px; font-family: inherit; }
+.pull-badge-button:hover, .pull-badge-button:focus-visible { border-color: var(--border-strong); color: var(--fg); }
+.pull-blocked { display: flex; flex-direction: column; gap: 10px; padding: 16px 20px 18px; }
+.pull-blocked .hint { margin: 0; font-size: 12px; }
+.pull-blocked-files { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; font-size: 12px; }
+.pull-blocked-files li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
+.pull-blocked-files .mono { overflow-wrap: anywhere; }
+.notice .pull-blocked-files { margin-top: 6px; }
+.pull-blocked-actions { display: flex; align-items: center; gap: 8px; }
+/* Inline in the end-session dialog: the surrounding dialog brings its own padding. */
+.dialog-body .pull-blocked { padding: 0; }
 .row-actions { text-align: right; white-space: nowrap; }
 .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 

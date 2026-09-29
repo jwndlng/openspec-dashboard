@@ -1,6 +1,6 @@
 import { ACTIVITY_KINDS, type ActivityKind } from "../shared/types.ts";
 import { MAX_PAGE, type ActivityLog, type PageQuery } from "./activity/log.ts";
-import type { CleanupSelection, Config, DiscoverResult, RepoConfig, RepoSnapshot, ScanTriggerResult, SharedConfigApplyResult, SharedConfigAssignment, SharedConfigPreview } from "../shared/types.ts";
+import type { CleanupSelection, Config, DiscoverResult, PullBlockingFile, PullResolve, RepoConfig, RepoSnapshot, ScanTriggerResult, SharedConfigApplyResult, SharedConfigAssignment, SharedConfigPreview } from "../shared/types.ts";
 import { applyCleanup, CleanupBusyError, previewCleanup } from "./cleanup.ts";
 import { changeDirFor, listArtifactFiles, readArtifactFile } from "./artifacts.ts";
 import { consoleFolderProblem } from "./sessions/consoleFolder.ts";
@@ -8,7 +8,7 @@ import { ConfigValidationError, saveConfig, validateConfig, validateIgnorePaths,
 import { createChange } from "./createChange.ts";
 import { dismissChange, DismissError, isDismissableName, previewDismiss } from "./dismissChange.ts";
 import { discoverRepos } from "./discover.ts";
-import { PullBusyError, pullAll, pullRepository } from "./pull.ts";
+import { MAX_BLOCKING_FILES, PullBusyError, pullAll, pullRepository, resolvePullRepository } from "./pull.ts";
 import type { Scanner } from "./scanner.ts";
 import { applyTo, EMPTY_SHARED_CONFIG, loadSharedConfig, previewFor, SharedConfigValidationError, saveSharedConfig } from "./sharedConfig.ts";
 import { SessionError, type SessionManager } from "./sessions/manager.ts";
@@ -426,12 +426,67 @@ function pullable(state: AppState): RepoConfig[] {
   return state.config.repos.filter((r) => r.enabled && scanned.get(r.id)?.ok === true && scanned.get(r.id)?.isGit === true);
 }
 
-/** The one route that contacts a remote and updates a main checkout — and only because the user asked for it. */
-async function postPull(state: AppState, repoId: string): Promise<Response> {
+const BLOB_ID = /^[0-9a-f]{40,64}$/;
+const MAX_PATH_LENGTH = 1024;
+
+/** A repository-relative path that can only mean one file inside the repository. */
+function safeRelativePath(value: unknown): value is string {
+  if (typeof value !== "string" || value === "" || value.length > MAX_PATH_LENGTH) return false;
+  if (value.includes("\0") || value.includes("\\") || value.startsWith("/") || /^[A-Za-z]:/.test(value)) return false;
+  return value.split("/").every((segment) => segment !== "" && segment !== "." && segment !== "..");
+}
+
+function blockingFile(value: unknown): PullBlockingFile | undefined {
+  if (typeof value !== "object" || value === null) return undefined;
+  const { path, kind, differs, incoming, staged, worktree } = value as Record<string, unknown>;
+  if (!safeRelativePath(path)) return undefined;
+  if (kind !== "leftover" && kind !== "local-work") return undefined;
+  if (differs !== undefined && typeof differs !== "boolean") return undefined;
+  for (const id of [incoming, staged, worktree]) if (id !== undefined && !(typeof id === "string" && BLOB_ID.test(id))) return undefined;
+  return { path, kind, differs: differs as boolean | undefined, incoming: incoming as string | undefined, staged: staged as string | undefined, worktree: worktree as string | undefined };
+}
+
+/**
+ * Shape only. Whether these paths really are unchanged change leftovers is decided by the pull action itself, which
+ * re-determines all of it: nothing here is trusted beyond being a well-formed claim.
+ */
+function pullResolve(value: unknown): PullResolve | undefined {
+  if (typeof value !== "object" || value === null) return undefined;
+  const { upstream, files } = value as Record<string, unknown>;
+  if (typeof upstream !== "string" || !BLOB_ID.test(upstream)) return undefined;
+  if (!Array.isArray(files) || files.length === 0 || files.length > MAX_BLOCKING_FILES) return undefined;
+  const parsed = files.map(blockingFile);
+  if (parsed.some((f) => f === undefined)) return undefined;
+  const paths = new Set(parsed.map((f) => (f as PullBlockingFile).path));
+  if (paths.size !== parsed.length) return undefined;
+  return { upstream, files: parsed as PullBlockingFile[] };
+}
+
+/**
+ * The one route that contacts a remote and updates a main checkout — and only because the user asked for it. With a
+ * `resolve` body it runs Resolve and pull instead, which fetches nothing and removes only what it re-proves.
+ */
+async function postPull(state: AppState, req: Request, repoId: string): Promise<Response> {
   const repo = pullable(state).find((r) => r.id === repoId);
   if (!repo) return json({ error: "not a tracked, successfully scanned git repository" }, 404);
+  // A plain pull still posts nothing at all, so an empty body is not an error.
+  const text = await req.text();
+  let resolve: PullResolve | undefined;
+  if (text.trim() !== "") {
+    let body: unknown;
+    try {
+      body = JSON.parse(text);
+    } catch {
+      return json({ error: "body must be JSON" }, 400);
+    }
+    const claim = typeof body === "object" && body !== null ? (body as Record<string, unknown>).resolve : undefined;
+    if (claim !== undefined) {
+      resolve = pullResolve(claim);
+      if (!resolve) return json({ error: "resolve must name an upstream commit and the blocking files exactly as they were offered" }, 400);
+    }
+  }
   try {
-    const result = await pullRepository(repo);
+    const result = resolve ? await resolvePullRepository(repo, resolve) : await pullRepository(repo);
     state.scanner.trigger();
     return json(result);
   } catch (err) {
@@ -575,7 +630,7 @@ export function createFetchHandler({ state, indexHtml }: AppOptions): (req: Requ
       if (req.method === "POST" && pathname === "/api/shared-config/apply") return postSharedConfigApply(state, req);
       if (req.method === "POST" && pathname === "/api/pull") return postPullAll(state);
       const pullOne = /^\/api\/repos\/([^/]+)\/pull$/.exec(pathname);
-      if (req.method === "POST" && pullOne) return postPull(state, decodeURIComponent(pullOne[1]));
+      if (req.method === "POST" && pullOne) return postPull(state, req, decodeURIComponent(pullOne[1]));
       const cleanupMatch = /^\/api\/repos\/([^/]+)\/cleanup$/.exec(pathname);
       if (cleanupMatch && req.method === "GET") return getCleanup(state, decodeURIComponent(cleanupMatch[1]));
       if (cleanupMatch && req.method === "POST") return postCleanup(state, req, decodeURIComponent(cleanupMatch[1]));

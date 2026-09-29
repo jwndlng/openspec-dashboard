@@ -26,7 +26,7 @@ bun test test/scanner.test.ts   # a single test file
 
 1. **Read-only towards tracked repositories, with enumerated exceptions.** The dashboard writes to a tracked
    repository only in response to an explicit user action, only to the paths enumerated in the "never writes"
-   requirement of `openspec/specs/dashboard-api/spec.md`, deletes nothing there beyond the worktrees, branches and change directories enumerated below, and runs a git
+   requirement of `openspec/specs/dashboard-api/spec.md`, deletes nothing there beyond the worktrees, branches, change directories and confirmed change leftovers enumerated below, and runs a git
    command that writes only where enumerated below. Today that list has seven entries: the managed sections of `openspec/config.yaml` (applying shared config profiles,
    `src/server/sharedConfig.ts`); for agent sessions, off by default, a session's git worktree, created with
    `git worktree add` (directory under `~/.openspec-dashboard/worktrees/`, never inside the repository's working tree)
@@ -34,8 +34,15 @@ bun test test/scanner.test.ts   # a single test file
    would be lost (`src/server/sessions/worktree.ts`); the **pull action** — `git fetch` of the repository's own
    remote, then a fast-forward-only `git merge` of the main checkout's upstream, with hooks disabled, never a merge
    commit, rebase, stash, reset, force or branch switch, and only fetching when the checkout is off its default branch,
-   has no upstream, has diverged or has overlapping local edits (`src/server/pull.ts`, the only place that contacts a
-   remote or changes a main checkout); and the **create-change action** — a new `openspec/changes/<name>/` directory
+   has no upstream, has diverged or has overlapping local edits — and, when a fast-forward is refused because
+   uncommitted files would be overwritten, listing those blocking files and, only when every one of them is a **change
+   leftover** (inside `openspec/changes/<name>/`, not in the current commit, only added locally, an ordinary file, and
+   present in the incoming commit) and only after the user confirmed **Resolve and pull** and the whole classification
+   was re-proved without fetching again, copying every leftover that differs under
+   `~/.openspec-dashboard/pull-backups/`, removing exactly those files from the working tree and, for the staged ones,
+   from the index with `git rm --cached` (never `-f`), then retrying the fast-forward and, if it is still refused,
+   writing them back and re-staging them with `git add -- <those paths>` (`src/server/pull.ts`, the only place that
+   contacts a remote or changes a main checkout); and the **create-change action** — a new `openspec/changes/<name>/` directory
    with the schema marker `.openspec.yaml` and, when the user typed one, `prompt.md`, written directly with an
    exclusive-create so two concurrent requests cannot both succeed, and never through git or the `openspec` CLI
    (`src/server/createChange.ts`, `POST /api/repos/<id>/changes`); and, once those files are written, **staging that
@@ -63,9 +70,11 @@ bun test test/scanner.test.ts   # a single test file
    the default agent in the console folder — `~/.openspec-dashboard/console/` or a folder the user configured, which is
    refused when it is, or lies inside, a tracked repository — with no worktree, no branch and no git command. With agent sessions disabled no process that can modify a repository is ever started. Scanning, polling, discovery, previews and saving settings
    write nothing to a repository. All other writes stay under `~/.openspec-dashboard/` (or `OPENSPEC_DASHBOARD_HOME`
-   in tests). Apart from the worktree commands, the pull action's `fetch` and `merge --ff-only`, the create-change
-   and dismissal `add` and the cleanup's `branch -D`, git is invoked only with the read-only subcommands listed in that spec. Adding a path or a subcommand means
-   changing that spec first.
+   in tests). Apart from the worktree commands, the pull action's `fetch`, `merge --ff-only`, leftover `rm --cached`
+   and restoring `add`, the create-change and dismissal `add` and the cleanup's `branch -D`, git is invoked only with
+   the read-only subcommands listed in that spec — among them `ls-tree`, `cat-file` and `hash-object` without `-w`,
+   which is how a leftover is told from the user's own work. Adding a path or a subcommand means changing that spec
+   first.
 2. **Loopback only.** The server binds `127.0.0.1`; there is no auth because nothing else can reach it.
 2a. **Mutating API routes are same-origin only.** Every non-GET `/api/` request passes `crossSiteRefusal` in
    `src/server/api.ts` (JSON content type, loopback host, own origin); the terminal WebSocket has `webSocketRefusal`. Loopback binding alone does not stop a web page

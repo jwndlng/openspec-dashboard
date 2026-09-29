@@ -44,6 +44,28 @@ export async function fixture(defaultName = "main"): Promise<Fixture> {
   return { base, remote, repo, other };
 }
 
+/**
+ * Adds a commit on the remote that puts `files` into `openspec/changes/<name>/` — what a change created here looks like
+ * once it has been merged upstream.
+ */
+export async function remoteChange(f: Fixture, name: string, files: Record<string, string>): Promise<void> {
+  git(f.other, "pull", "-q", "--ff-only");
+  const dir = join(f.other, "openspec", "changes", name);
+  await mkdir(dir, { recursive: true });
+  for (const [file, content] of Object.entries(files)) await writeFile(join(dir, file), content);
+  git(f.other, "add", "-A");
+  git(f.other, "commit", "-q", "-m", `add ${name}`);
+  git(f.other, "push", "-q");
+}
+
+/** What `createChange` leaves in the main checkout: the files, staged unless `stage` is false. */
+export async function localChange(f: Fixture, name: string, files: Record<string, string>, stage = true): Promise<void> {
+  const dir = join(f.repo, "openspec", "changes", name);
+  await mkdir(dir, { recursive: true });
+  for (const [file, content] of Object.entries(files)) await writeFile(join(dir, file), content);
+  if (stage) git(f.repo, "add", "--", `openspec/changes/${name}/`);
+}
+
 /** Adds `count` commits to the remote's default branch, each changing `file`. */
 export async function remoteCommits(f: Fixture, count: number, file = "app.txt"): Promise<void> {
   git(f.other, "pull", "-q", "--ff-only");

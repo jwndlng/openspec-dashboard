@@ -1,6 +1,8 @@
 import { expect, test } from "bun:test";
-import type { PullResult } from "../src/shared/types.ts";
-import { branchNotice, pullNeedsReport, pullOutcome } from "../src/ui/pullState.ts";
+import type { PullBlockingFile, PullResult } from "../src/shared/types.ts";
+import { PullBlockedList } from "../src/ui/pull.tsx";
+import { blockingNote, branchNotice, pullNeedsReport, pullOutcome, resolveSummary } from "../src/ui/pullState.ts";
+import { byTag, textOf } from "./vnode.ts";
 
 const result = (patch: Partial<PullResult>): PullResult => ({ repoId: "r", fetched: true, update: "up-to-date", branch: "main", upstream: "origin/main", defaultBranch: "main", ...patch });
 
@@ -36,4 +38,96 @@ test("the notice appears only off a known default branch, and says what it means
   expect(off?.long).toContain("Archived changes, specs and progress shown for this repository come from that branch and may be outdated");
   expect(off?.long).toContain("Changes that live in worktrees are read from their own checkouts and are not affected");
   expect(branchNotice({ defaultBranch: "trunk", onDefaultBranch: false })?.short).toBe("on a detached HEAD, not trunk");
+});
+
+const leftover = (path: string, differs = false): PullBlockingFile => ({ path, kind: "leftover", differs, incoming: "a".repeat(40), worktree: differs ? "b".repeat(40) : "a".repeat(40) });
+const work = (path: string): PullBlockingFile => ({ path, kind: "local-work" });
+const yaml = "openspec/changes/add-login/.openspec.yaml";
+const prompt = "openspec/changes/add-login/prompt.md";
+
+test("a blocked pull is told apart from any other refusal, and the file count is in the detail", () => {
+  const leftovers = pullOutcome(result({ update: "refused", reason: "Entry not uptodate", blocking: [leftover(yaml), leftover(prompt, true)], resolvable: { upstream: "c".repeat(40), files: [leftover(yaml)] } }));
+  expect(leftovers).toMatchObject({ label: "blocked by leftovers", tone: "warning" });
+  expect(leftovers.detail).toContain("2 uncommitted files the incoming commits also change");
+  expect(leftovers.detail).toContain("Resolve and pull can replace them");
+
+  const mixed = pullOutcome(result({ update: "refused", reason: "Your local changes would be overwritten", blocking: [work("src/app.ts"), leftover(yaml)] }));
+  expect(mixed).toMatchObject({ label: "blocked", tone: "warning" });
+  expect(mixed.detail).toContain("2 uncommitted files");
+  expect(mixed.detail).toContain("Your local changes would be overwritten");
+
+  expect(pullOutcome(result({ update: "refused", reason: "Entry not uptodate", blocking: [leftover(yaml)] })).detail).toContain("1 uncommitted file the");
+  // a resolve never fetches, so its refusal must not say it did
+  expect(pullOutcome(result({ fetched: false, update: "refused", reason: "the upstream moved on", blocking: [leftover(yaml)] })).detail).toStartWith("The checkout was left as it is:");
+  // an outcome with no blocking files reads exactly as it did before
+  expect(pullOutcome(result({ update: "refused", reason: "local and remote have diverged (1 ahead, 2 behind)" }))).toMatchObject({ label: "refused", detail: "Fetched, but the checkout was left as it is: local and remote have diverged (1 ahead, 2 behind)." });
+  // every blocked refusal still has to be put in front of the user
+  expect([true, true]).toEqual([pullNeedsReport(result({ update: "refused", blocking: [leftover(yaml)] })), pullNeedsReport(result({ fetched: false, update: "refused", blocking: [work("x")] }))]);
+});
+
+test("a fast-forward that replaced leftovers says so", () => {
+  expect(pullOutcome(result({ update: "fast-forwarded", commits: 1, resolved: [{ path: yaml }] })).detail).toContain("1 leftover file was replaced with the incoming version");
+  expect(pullOutcome(result({ update: "fast-forwarded", commits: 2, resolved: [{ path: yaml }, { path: prompt, copy: "/h/pull-backups/x/t/prompt.md" }] })).detail).toContain("2 leftover files were replaced");
+  expect(pullOutcome(result({ update: "fast-forwarded", commits: 2 })).detail).not.toContain("replaced");
+});
+
+test("each blocking file says what it is, and the confirmation says what it will do", () => {
+  expect(blockingNote(leftover(yaml))).toBe("leftover, the same as the incoming version");
+  expect(blockingNote(leftover(prompt, true))).toBe("leftover, differs from the incoming version — a copy will be kept");
+  expect(blockingNote(work("src/app.ts"))).toBe("your own uncommitted work — it is never touched");
+
+  expect(resolveSummary([leftover(yaml)])).toBe("Replaces 1 file with the version the incoming commits bring, then fast-forwards. Nothing differs, so no copy is needed.");
+  const two = resolveSummary([leftover(yaml), leftover(prompt, true)]);
+  expect(two).toContain("Replaces 2 files with the version the incoming commits bring");
+  expect(two).toContain("1 file differs; a copy of each is saved under ~/.openspec-dashboard/ first.");
+  expect(resolveSummary([leftover(yaml, true), leftover(prompt, true)])).toContain("2 files differ;");
+});
+
+test("the blocked list shows every file and offers the resolution exactly once", () => {
+  const claim = { upstream: "c".repeat(40), files: [leftover(yaml), leftover(prompt, true)] };
+  const view = PullBlockedList({ result: result({ update: "refused", reason: "Entry not uptodate", blocking: claim.files, resolvable: claim, hint: "Resolve and pull replaces them." }), running: false, onResolve: () => {} });
+  const text = textOf(view);
+  expect(text).toContain(yaml);
+  expect(text).toContain(prompt);
+  expect(text).toContain("leftover, the same as the incoming version");
+  expect(text).toContain("leftover, differs from the incoming version — a copy will be kept");
+  expect(text).toContain("Resolve and pull replaces them.");
+  expect(text).toContain("Replaces 2 files with the version the incoming commits bring");
+  const buttons = byTag(view, "button");
+  expect(buttons).toHaveLength(1);
+  expect(textOf(buttons[0])).toBe("Resolve and pull");
+  expect(buttons[0].props.disabled).toBe(false);
+
+  // the confirmation is what the offer said: the button hands back that claim unchanged
+  let handed: unknown;
+  const armed = PullBlockedList({ result: result({ update: "refused", blocking: claim.files, resolvable: claim }), running: false, onResolve: (c) => { handed = c; } });
+  (byTag(armed, "button")[0].props.onClick as () => void)();
+  expect(handed).toBe(claim);
+});
+
+test("local work among the blocking files is shown but never offered, and a running resolve disables the button", () => {
+  const mixed = PullBlockedList({ result: result({ update: "refused", reason: "would be overwritten", blocking: [work("src/app.ts"), leftover(yaml)], hint: "Commit or set aside the listed files, then pull again." }), running: false, onResolve: () => {} });
+  expect(textOf(mixed)).toContain("your own uncommitted work — it is never touched");
+  expect(textOf(mixed)).toContain("Commit or set aside the listed files");
+  expect(byTag(mixed, "button")).toHaveLength(0); // nothing to confirm
+
+  const claim = { upstream: "c".repeat(40), files: [leftover(yaml)] };
+  const busy = PullBlockedList({ result: result({ update: "refused", blocking: claim.files, resolvable: claim }), running: true, onResolve: () => {} });
+  expect(byTag(busy, "button")[0].props.disabled).toBe(true);
+  expect(textOf(byTag(busy, "button")[0])).toBe("Resolving…");
+});
+
+test("once resolved the same list becomes the outcome: what was replaced, and where the copies are", () => {
+  const copy = "/home/demo/.openspec-dashboard/pull-backups/r/2026-02-14T09-41-08-317Z/openspec/changes/add-login/prompt.md";
+  const done = PullBlockedList({ result: result({ fetched: false, update: "fast-forwarded", commits: 2, resolved: [{ path: yaml }, { path: prompt, copy }] }), running: false, onResolve: () => {} });
+  const text = textOf(done);
+  expect(text).toContain("2 leftover files were replaced with the incoming version");
+  expect(text).toContain(yaml);
+  expect(text).toContain(prompt);
+  expect(text).toContain(copy);
+  expect(text).toContain("A copy of the version that was here is kept at");
+  expect(byTag(done, "button")).toHaveLength(0); // nothing left to confirm
+
+  const noCopies = PullBlockedList({ result: result({ fetched: false, update: "fast-forwarded", commits: 1, resolved: [{ path: yaml }] }), running: false, onResolve: () => {} });
+  expect(textOf(noCopies)).not.toContain("kept at");
 });
