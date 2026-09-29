@@ -150,7 +150,7 @@ Each board card SHALL open the detail view for its change through its **Show det
 - **THEN** a new tab opens on that change's detail view
 
 ### Requirement: The detail view follows the regular refresh
-The detail view SHALL take the change's header information from the same snapshot the boards use and SHALL re-read the selected file's content on the same poll interval, so that ticking a task or editing an artifact on disk becomes visible without a manual reload. The selected artifact, the selected file, the raw toggle and the scroll position MUST NOT be reset by a refresh that does not change the content.
+The detail view SHALL take the change's header information from the same snapshot the boards use and SHALL re-read the selected file's content whenever that snapshot is renewed, so that ticking a task or editing an artifact on disk becomes visible without a manual reload. That is the poll interval while auto-refresh is off, the auto-refresh interval while one is chosen, and a manual Refresh in either case: the detail view SHALL NOT keep a refresh cadence of its own. The selected artifact, the selected file, the raw toggle and the scroll position MUST NOT be reset by a refresh that does not change the content, however often the refresh happens.
 
 #### Scenario: Task ticked on disk
 - **WHEN** a task is ticked in the repository while the tasks artifact is shown
@@ -163,6 +163,14 @@ The detail view SHALL take the change's header information from the same snapsho
 #### Scenario: Artifact added on disk
 - **WHEN** an artifact file is created in the repository while the detail view is open
 - **THEN** its tab becomes selectable after the next scan
+
+#### Scenario: The detail view follows auto-refresh
+- **WHEN** auto-refresh is `2s`, the detail view is open, and a task is ticked in the repository
+- **THEN** the checklist updates within about two seconds, without the user clicking Refresh
+
+#### Scenario: A fast cadence does not disturb reading
+- **WHEN** auto-refresh is `2s` and the user reads a long spec file that nobody is editing
+- **THEN** the selected artifact, the selected file, the raw toggle and the scroll position stay exactly as the user left them across every refresh
 
 ### Requirement: Empty and error states
 When the selected file cannot be read, the view SHALL show a message naming the file and the reason, and the rest of the view SHALL stay usable. When the file exceeds the server's size cap, the view SHALL say so and offer an action that copies the file's absolute path instead of the content. When a change has no artifact file at all, the view SHALL show its header with an explanation that nothing has been written yet.
