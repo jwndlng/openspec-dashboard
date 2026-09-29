@@ -845,6 +845,8 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: 
 .list .item .path { color: var(--fg-subtle); font-family: var(--font-mono); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .list .item.candidate { grid-template-columns: minmax(120px, 200px) 1fr auto; }
 .list .item.candidate .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* A repository waiting to be set up: the same row, with the refusal (when there is one) wrapping onto its own line. */
+.list .item.integratable .hint.danger { grid-column: 1 / -1; color: var(--danger); font-size: 11px; }
 .list .item.off .path, .list .item.off .name { color: var(--fg-disabled); }
 .savebar { position: sticky; bottom: 0; display: flex; gap: var(--gap-1); align-items: center; padding: var(--gap-1) var(--gap-2); background: var(--bg-section); border-top: 1px solid var(--border-light); }
 
@@ -860,6 +862,7 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: 
   .shared-config .profiles { grid-template-columns: 1fr; }
   .list .item { grid-template-columns: auto 1fr; }
   .list .item.candidate { grid-template-columns: 1fr auto; }
+  .list .item.integratable .row { grid-column: 1 / -1; }
   .list .item .path { grid-column: 1 / -1; }
 }
 
@@ -870,6 +873,8 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: 
 .session-head { display: flex; flex-direction: column; gap: 4px; padding: 4px var(--gap-1); border-bottom: 1px solid var(--border-light); }
 .session-head .hint { font-size: 12px; color: var(--fg-subtle); word-break: break-all; }
 .session-confirm { display: flex; flex-direction: column; gap: 6px; padding: var(--gap-1); border: 1px solid var(--warning-border); border-radius: var(--radius); background: var(--bg-raised); }
+/* An integration session edits a main checkout, so its panel says so above the terminal, not only once on the way in. */
+.in-place-note { font-size: 12px; }
 /* The agent's terminal fills the rest of the panel; the widget sizes itself to this box. */
 .session-terminal { flex: 1; min-height: 0; display: flex; flex-direction: column; background: var(--bg-base); }
 /* The terminal fills what the default responses leave; its ResizeObserver refits it when the row comes and goes. */

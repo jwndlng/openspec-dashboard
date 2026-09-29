@@ -15,7 +15,7 @@ export type Step =
   /** The agent's process ends. */
   | { exit: number; after?: number };
 
-export type TranscriptName = "draft" | "implement" | "implementAsking" | "archive" | "resume" | "ship" | "console";
+export type TranscriptName = "draft" | "implement" | "implementAsking" | "archive" | "resume" | "ship" | "console" | "integrate";
 
 const DIM = "\x1b[2m";
 const BOLD = "\x1b[1m";
@@ -149,6 +149,17 @@ export const TRANSCRIPTS: Record<TranscriptName, Step[]> = {
     { ask: `${GREEN}>${OFF} `, after: 400 },
     { out: say("This recording ends here."), after: 600 },
     { exit: 0, after: 1500 },
+  ],
+  integrate: [
+    { out: line(`${BOLD}demo-agent${OFF} ${DIM}· {path}${OFF}`) },
+    { out: line(), after: 300 },
+    { out: say("Setting this project up for OpenSpec. I will run `openspec init` here."), after: 700 },
+    { ask: `${GREEN}>${OFF} Install the tool files for which assistants? `, after: 500 },
+    { out: tool("Run openspec init"), after: 1100 },
+    { out: note("created openspec/config.yaml"), after: 900 },
+    { out: note("created openspec/specs/ and openspec/changes/"), after: 700 },
+    { out: say("Done. The dashboard will pick this project up now that the config file is there."), after: 900 },
+    { exit: 0, after: 1400 },
   ],
   ship: [
     { out: line(), after: 200 },

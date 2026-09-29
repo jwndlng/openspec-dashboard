@@ -3,7 +3,7 @@ import { defaultAgentSessions, defaultConfig, newRepoConfig, validateConfig } fr
 import { agentEnv, agentFor, launchCommand, openingPrompt } from "../src/server/sessions/agents.ts";
 import { Scrollback, sessionBranch, worktreeName } from "../src/server/sessions/manager.ts";
 import { CLAUDE_PROFILE, FORMER_ARCHIVE_PROMPTS } from "../src/shared/agentDefaults.ts";
-import { availableActions, type ChangeSession, type Session } from "../src/shared/types.ts";
+import { availableActions, integrateUnavailable, type AgentAvailability, type ChangeSession, type Session } from "../src/shared/types.ts";
 import { agentForRepo, NEEDS_YOU_AFTER_MS, parseArgLines, sessionBadge, sessionForChange, sessionsEnabledFor, silenceDuration, slugId, startersFor } from "../src/ui/sessionState.ts";
 import { fakeProfile } from "./sessionHelpers.ts";
 
@@ -55,6 +55,12 @@ test("profile validation", () => {
   expect(() => validateConfig(withAgents([{ ...ok, resumeCommand: ["claude", "--permission-mode", "bypassPermissions"] }], "other"))).toThrow(/bypass/);
   expect(() => validateConfig(withAgents([{ ...ok, prompts: { implement: "do it" } }], "other"))).toThrow(/must contain \{change\}/);
   expect(() => validateConfig(withAgents([{ ...ok, prompts: { implement: "{change} {branch}" } }], "other"))).toThrow(/only \{change\}/);
+  // Integrate names no change: the folder is the working directory, so no placeholder of any kind is substituted into it.
+  expect(validateConfig(withAgents([{ ...ok, prompts: { integrate: "set this project up" } }], "other")).agentSessions.agents[0].prompts.integrate).toBe("set this project up");
+  expect(() => validateConfig(withAgents([{ ...ok, prompts: { integrate: "set up {change}" } }], "other"))).toThrow(/no placeholder/);
+  expect(() => validateConfig(withAgents([{ ...ok, prompts: { integrate: "set up {prompt}" } }], "other"))).toThrow(/no placeholder/);
+  expect(() => validateConfig(withAgents([{ ...ok, prompts: { integrate: "set up --dangerously-skip-permissions" } }], "other"))).toThrow(/bypass/);
+  expect(validateConfig(withAgents([{ ...ok, prompts: {} }], "other")).agentSessions.agents[0].prompts.integrate).toBeUndefined();
   expect(() => validateConfig(withAgents([{ ...ok, id: "Bad Id" }], "other"))).toThrow(/lower-case/);
   expect(() => validateConfig({ ...withAgents([ok], "other"), repos: [{ ...newRepoConfig("/w/x", true), agent: { enabled: true, agentId: "nope" } }] })).toThrow(/unknown agent/);
 });
@@ -182,4 +188,19 @@ test("small helpers", () => {
   const sb = new Scrollback(10);
   for (const part of ["aaaa", "bbbb", "cccc", "dd"]) sb.push(new TextEncoder().encode(part));
   expect(new TextDecoder().decode(sb.bytes())).toBe("bbbbccccdd"); // oldest chunk dropped once over the limit
+});
+
+test("the Integrate row says why the action is unavailable, and offers it when nothing is in the way", () => {
+  const agent = fakeProfile({ prompts: { integrate: "set this project up" } });
+  const on = { ...base, agentSessions: { enabled: true, agents: [agent], defaultAgent: "fake" } };
+  const found: AgentAvailability[] = [{ id: "fake", name: "Fake Agent", available: true, path: "/usr/local/bin/fake" }];
+
+  expect(integrateUnavailable(on, found)).toBeUndefined();
+  expect(integrateUnavailable({ ...on, agentSessions: { ...on.agentSessions, enabled: false } }, found)).toBe("agent sessions are disabled");
+  expect(integrateUnavailable({ ...on, agentSessions: { ...on.agentSessions, defaultAgent: "gone" } }, found)).toBe("no agent is configured");
+  const noPrompt = { ...on, agentSessions: { ...on.agentSessions, agents: [fakeProfile()] } };
+  expect(integrateUnavailable(noPrompt, found)).toBe("Fake Agent has no Integrate prompt configured");
+  expect(integrateUnavailable(on, [{ ...found[0], available: false, path: undefined }])).toBe(`Fake Agent was not found (${agent.command[0]})`);
+  // Availability not known yet (the list has not been polled): the action is offered and the request decides.
+  expect(integrateUnavailable(on, [])).toBeUndefined();
 });

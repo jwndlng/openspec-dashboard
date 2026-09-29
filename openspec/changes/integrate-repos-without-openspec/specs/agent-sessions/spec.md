@@ -7,7 +7,13 @@ In a git repository a session MUST NOT run in the repository's main checkout. Be
 
 A tracked folder that holds an `openspec/` tree but is **not a git repository** is a supported repository, and its sessions SHALL run **in place**: the agent's working directory SHALL be the repository folder itself, no worktree SHALL be created, no branch SHALL be made, and no git command SHALL be run for the session. Whether a session runs in place SHALL be decided from the repository's own scan result, never by attempting a git command and reacting to its failure. An in-place session SHALL be recorded as such and MUST NOT carry a branch. The panel SHALL name the folder the agent runs in and SHALL state plainly that the agent edits the tracked folder directly, with no branch, no commit and no undo. Session starters MUST NOT be hidden or disabled because a repository is not a git repository.
 
-An **integration session** — the session that sets a git repository up for OpenSpec before it is tracked — SHALL also run in place, and is the only session that runs in place in a git repository: its working directory SHALL be that repository's own checkout, no worktree SHALL be created, no branch SHALL be made, and the dashboard SHALL run no git command for it. This is deliberate: the marker the dashboard looks for must land in the checkout the user works in, and scaffolding left on a branch of its own would leave the repository undiscoverable until someone merged it. Whether a session runs in place SHALL be decided from the discovery result — a git repository, not tracked, without `openspec/config.yaml` — never by attempting a git command and reacting to its failure. The session SHALL be recorded as in place and MUST NOT carry a branch, and the panel SHALL name the folder and state plainly that the agent edits that folder directly, with no branch, no commit and no undo. The dashboard MUST NOT stage, commit, switch a branch or otherwise write in that checkout itself.
+An **integration session** — the session started by **Integrate** for a repository that is not tracked and has no
+`openspec/` tree — is the second in-place case and the only one in a git repository. It SHALL run in place under
+exactly the rules of the paragraph above: the repository folder is the working directory, no worktree, no branch, no
+git command for the session, recorded as in place, with the same panel wording. The reason it does not get a worktree
+is that its whole purpose is to leave `openspec/config.yaml` in the checkout the user works in; on a branch in a
+worktree the marker would never appear where discovery looks. Whether a session runs in place SHALL still be decided
+from what the dashboard already knows about the folder, never by attempting a git command and reacting to its failure.
 
 #### Scenario: Two sessions in one repository
 - **WHEN** sessions are open for changes `audit-trail` and `upgrade-runtime` of the same repository
@@ -41,14 +47,10 @@ An **integration session** — the session that sets a git repository up for Ope
 - **WHEN** the panel of an in-place session is open
 - **THEN** it names the repository folder the agent runs in, shows no branch, and states that the agent edits that folder directly with no branch, no commit and no undo
 
-#### Scenario: Integration runs in the checkout
-- **WHEN** the user starts **Integrate** for a git repository under a scan root that has no `openspec/config.yaml`
-- **THEN** the agent's working directory is that repository's checkout, no worktree and no branch are created, and the dashboard runs no git command for the session
+#### Scenario: An integration session runs in the checkout
+- **WHEN** the user activates **Integrate** for a git repository that has no `openspec/config.yaml`
+- **THEN** the agent starts with that repository folder as its working directory, no worktree and no branch are created, and the dashboard runs no git command for the session
 
-#### Scenario: The panel states what an integration session touches
+#### Scenario: The integration panel states the risk
 - **WHEN** the panel of an integration session is open
-- **THEN** it names the repository's checkout, shows no branch, and states that the agent edits it directly with no branch, no commit and no undo
-
-#### Scenario: Integration leaves the checkout's branch alone
-- **WHEN** an integration session ends
-- **THEN** the checkout is on the branch it was on, and nothing was staged or committed by the dashboard
+- **THEN** it names the repository folder, shows no branch, and states that the agent edits that folder directly with no branch, no commit and no undo

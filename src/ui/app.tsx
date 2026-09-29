@@ -6,6 +6,7 @@ import { loadSeen, saveSeen, unseenLabel } from "./activityState.ts";
 import { api } from "./api.ts";
 import { ChangeDetail } from "./changeDetail.tsx";
 import { ConsoleButton, ConsoleOverlay } from "./console.tsx";
+import { IntegrationOverlay } from "./integrate.tsx";
 import { relTime } from "./format.ts";
 import { Kanban } from "./kanban.tsx";
 import { Overview } from "./overview.tsx";
@@ -36,6 +37,8 @@ export function App() {
   const [unseen, setUnseen] = useState(0);
   // The main console overlay. Not in the route: opening and closing it leaves the page (and its filters) as it was.
   const [consoleOpen, showConsole] = useState(false);
+  // The terminal of an integration started from Settings; same reasoning, and the same need to make the page inert.
+  const [integrationId, showIntegration] = useState<string>();
 
   useEffect(() => onRouteChange(() => setRoute(routeFromPath(currentPath()))), []);
 
@@ -138,7 +141,8 @@ export function App() {
   const boardRoute: Route = back ? routeFromPath(back.path) : route;
   // The overlay closes with the feature: nothing may be started while agent sessions are off.
   const consoleShown = consoleOpen && config?.agentSessions.enabled === true;
-  const overlayOpen = route.view === "change" || consoleShown;
+  const integrationShown = integrationId !== undefined && config?.agentSessions.enabled === true;
+  const overlayOpen = route.view === "change" || consoleShown || integrationShown;
 
   const ThemeIcon = THEME_ICON[themePref];
   const link = (path: string, label: ComponentChildren, active: boolean) => (
@@ -158,7 +162,7 @@ export function App() {
     <PullProvider onPulled={reloadSoon}>
     {/* Above both the page and the overlay: the detail view's Console tab reads sessions from here too, and the
         end-session dialog it opens must not sit inside the part that goes inert. */}
-    <SessionProvider config={config} snapshot={shown} consoleOpen={consoleShown} showConsole={showConsole}>
+    <SessionProvider config={config} snapshot={shown} consoleOpen={consoleShown} showConsole={showConsole} integrationId={integrationShown ? integrationId : undefined} showIntegration={showIntegration}>
     {/* Everything but the detail overlay: inert while it is open, so the board behind it takes no focus and no clicks. */}
     <div class="app" inert={overlayOpen} aria-hidden={overlayOpen ? "true" : undefined}>
       {/* The hero: the product's name, big, over a soft accent glow; below it the navigation, and — continuing the same
@@ -281,6 +285,7 @@ export function App() {
       />
     )}
     <ConsoleOverlay />
+    <IntegrationOverlay />
     </SessionProvider>
     </PullProvider>
   );

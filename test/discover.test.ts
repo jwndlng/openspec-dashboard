@@ -3,7 +3,7 @@ import { existsSync, realpathSync } from "node:fs";
 import { mkdir, rm, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { newRepoConfig } from "../src/server/config.ts";
-import { DEFAULT_MAX_DEPTH, discoverRepos, findOpenSpecRepos, toCandidates } from "../src/server/discover.ts";
+import { DEFAULT_MAX_DEPTH, discoverRepos, findOpenSpecRepos, toCandidates, toIntegratable } from "../src/server/discover.ts";
 import { normalizeRemote } from "../src/server/git.ts";
 import { tempDir } from "./helpers.ts";
 import { git } from "./sessionHelpers.ts";
@@ -29,7 +29,23 @@ beforeAll(async () => {
   await symlink(join(root, "prvt"), join(root, "prvt-link"));
   await repoAt("mirror", "repos", "alpha");
   await repoAt("mirror", "repos-extra", "app");
+
+  // Repositories that do not use OpenSpec yet, under a root of their own.
+  await plainRepoAt("plain", "beta-soc");
+  await mkdir(join(root, "plain", "notes"), { recursive: true }); // no git, no openspec: nothing to offer
+  await plainRepoAt("plain", "mono"); // a container: it holds an OpenSpec package
+  await repoAt("plain", "mono", "packages", "tools");
+  await mkdir(join(root, "plain", "beta-soc-wt"), { recursive: true }); // linked worktree: .git is a file
+  await writeFile(join(root, "plain", "beta-soc-wt", ".git"), "gitdir: /somewhere/.git/worktrees/beta-soc-wt\n");
 });
+
+/** A git repository that does not use OpenSpec: the thing this feature offers to set up. */
+async function plainRepoAt(...segments: string[]): Promise<string> {
+  const dir = join(root, ...segments);
+  await mkdir(dir, { recursive: true });
+  git(dir, "init", "-q", "-b", "main");
+  return dir;
+}
 
 /** A project that is its own git repository, optionally with an `origin`. */
 async function clone(origin: string | undefined, ...segments: string[]): Promise<string> {
@@ -90,7 +106,7 @@ test("ignore paths are skipped, by whole segments, however they are spelled", as
 });
 
 test("an ignored root yields no results and no error", async () => {
-  expect(await findOpenSpecRepos([join(root, "mirror")], DEFAULT_MAX_DEPTH, [join(root, "mirror")])).toEqual({ paths: [], errors: [] });
+  expect(await findOpenSpecRepos([join(root, "mirror")], DEFAULT_MAX_DEPTH, [join(root, "mirror")])).toEqual({ paths: [], integratable: [], errors: [] });
 });
 
 test("a tracked repo is not offered again under a symlinked spelling", async () => {
@@ -141,4 +157,43 @@ test("remote lookup leaves the repositories' git config untouched", async () => 
   const before = await Bun.file(join(dir, ".git", "config")).text();
   await discoverRepos([], [join(root, "readonly")]);
   expect(await Bun.file(join(dir, ".git", "config")).text()).toBe(before);
+});
+
+test("git repositories without OpenSpec are reported separately, containers and worktrees are not", async () => {
+  const { paths, integratable, errors } = await findOpenSpecRepos([join(root, "plain")]);
+  expect(errors).toEqual([]);
+  // the walk still descends into a plain git repository, so the package inside the monorepo is found as before
+  expect(paths).toEqual([join(root, "plain", "mono", "packages", "tools")]);
+  // `mono` holds that package, so it is a container; `notes` has no git and `beta-soc-wt` is a linked worktree
+  expect(integratable).toEqual([join(root, "plain", "beta-soc")]);
+});
+
+test("reporting integratable repositories leaves the candidates untouched", async () => {
+  const roots = [join(root, "prvt"), join(root, "acme"), join(root, "deep"), join(root, "plain")];
+  const { paths, integratable } = await findOpenSpecRepos(roots);
+  expect(paths).toEqual([join(root, "acme", "beta"), join(root, "plain", "mono", "packages", "tools"), join(root, "prvt", "alpha")]);
+  expect(integratable).toEqual([join(root, "plain", "beta-soc")]);
+});
+
+test("ignore paths and ignored directory names apply to integratable repositories too", async () => {
+  const ignored = await findOpenSpecRepos([join(root, "plain")], DEFAULT_MAX_DEPTH, [join(root, "plain", "beta-soc")]);
+  expect(ignored.integratable).toEqual([]);
+  expect(ignored.paths).toEqual([join(root, "plain", "mono", "packages", "tools")]); // the rest is unaffected
+});
+
+test("a tracked repository is in neither list", async () => {
+  const tracked = { ...newRepoConfig(join(root, "plain", "beta-soc"), true), name: "Beta SOC" };
+  const { candidates, integratable } = await discoverRepos([tracked], [join(root, "plain")]);
+  expect(integratable).toEqual([]);
+  expect(candidates.map((c) => c.path)).toEqual([join(root, "plain", "mono", "packages", "tools")]);
+});
+
+test("discovery reports integratable repositories with an id and a default name", async () => {
+  const { integratable } = await discoverRepos([], [join(root, "plain")]);
+  expect(integratable).toEqual([{ id: newRepoConfig(join(root, "plain", "beta-soc")).id, path: join(root, "plain", "beta-soc"), name: "beta-soc" }]);
+});
+
+test("toIntegratable drops configured repositories and sorts by path", () => {
+  const known = [newRepoConfig("/w/alpha", true), newRepoConfig("/w/beta", false)];
+  expect(toIntegratable(known, ["/w/zeta", "/w/alpha", "/w/beta", "/w/gamma"]).map((r) => r.path)).toEqual(["/w/gamma", "/w/zeta"]);
 });

@@ -6,6 +6,7 @@ import { ActivityLog } from "./activity/log.ts";
 import { readSnapshot } from "./cache.ts";
 import { loadConfig } from "./config.ts";
 import { Scanner } from "./scanner.ts";
+import { confirmIntegration } from "./integration.ts";
 import { SessionManager } from "./sessions/manager.ts";
 import { VERSION } from "./version.ts";
 
@@ -72,6 +73,8 @@ async function main(): Promise<void> {
     getConfig: () => state.config,
     getSnapshot: () => state.scanner.snapshot,
     onActivity: (session, what) => void activity.append([sessionEvent(session, state.config.repos.find((r) => r.id === session.repoId)?.name ?? session.repoId, what)]),
+    // The marker, not the agent's word: if `openspec/config.yaml` is there now, the repository becomes tracked.
+    onIntegrationEnded: (session) => void confirmIntegration(state, session.folder).catch(() => undefined),
   });
   await state.sessions.init();
   state.scanner.start();
