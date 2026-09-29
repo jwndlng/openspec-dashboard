@@ -68,7 +68,31 @@ function inlineToken(token: Token): ComponentChildren {
   }
 }
 
+/**
+ * `- [~]`: this project's third task state — the agent finished it, a person still has to confirm it. GitHub-flavoured
+ * Markdown knows only `[ ]` and `[x]`, so `marked` leaves the marker as text; it is recognised here instead.
+ */
+const AWAITING_MARKER = /^\[~\]\s+/;
+
+/** The marker off the item's first text token, so the task reads as its own words. */
+function withoutMarker(tokens: Token[]): Token[] {
+  const [first, ...rest] = tokens;
+  if (first?.type !== "text" && first?.type !== "paragraph") return tokens;
+  const text = first as Tokens.Text;
+  const inner = text.tokens?.length ? withoutMarker(text.tokens) : text.tokens;
+  return [{ ...text, text: text.text.replace(AWAITING_MARKER, ""), tokens: inner } as Token, ...rest];
+}
+
 function listItem(item: Tokens.ListItem): VNode {
+  if (!item.task && AWAITING_MARKER.test(item.text)) {
+    return (
+      <li class="task awaiting">
+        {/* Neither ticked nor empty, announced as mixed — and as inoperable as the other two: the dashboard never writes tasks.md. */}
+        <input type="checkbox" checked={false} indeterminate aria-checked="mixed" disabled />
+        {blocks(withoutMarker(item.tokens))}
+      </li>
+    );
+  }
   return <li class={item.task ? "task" : undefined}>{blocks(item.tokens)}</li>;
 }
 

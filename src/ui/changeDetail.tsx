@@ -42,10 +42,15 @@ export function resolveSelection(artifacts: ChangeArtifactEntry[], query: Pick<D
   return { artifactId: artifact.id, file: file.path };
 }
 
-/** Same line shape the scanner counts, so the checklist's label cannot disagree with the boxes below it. */
+/** Same line shape and the same three states the scanner counts, so the checklist's label cannot disagree with the boxes below it. */
 export function taskProgress(markdown: string): TaskProgress {
-  const boxes = markdown.match(/^\s*(?:[-*+]|\d+[.)])\s+\[[ xX]\]/gm) ?? [];
-  return { done: boxes.filter((b) => !b.endsWith("[ ]")).length, total: boxes.length };
+  const boxes = markdown.match(/^\s*(?:[-*+]|\d+[.)])\s+\[\s*[^\]\s]?\s*\]/gm) ?? [];
+  const state = (box: string) => box.slice(box.indexOf("[") + 1, box.lastIndexOf("]")).trim();
+  return {
+    done: boxes.filter((b) => state(b).toLowerCase() === "x").length,
+    awaiting: boxes.filter((b) => state(b) === "~").length,
+    total: boxes.length,
+  };
 }
 
 export function absoluteFilePath(changeDir: string, file: string): string {
@@ -354,7 +359,13 @@ export function FileContent({ state, raw, isTasks, rendered, filePath }: { state
     <>
       {progress && progress.total > 0 && (
         <div class="detail-meter wide">
-          <Meter done={progress.done} total={progress.total} />
+          <Meter done={progress.done} total={progress.total} awaiting={progress.awaiting} />
+          {(progress.awaiting ?? 0) > 0 && (
+            <p class="awaiting-note">
+              {progress.awaiting} {progress.awaiting === 1 ? "task awaits" : "tasks await"} your validation. Only you can tick those off — start <strong>Validate</strong> on
+              the card, or tell your agent in a session.
+            </p>
+          )}
         </div>
       )}
       {raw ? <pre class="detail-raw">{state.text}</pre> : rendered}

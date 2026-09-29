@@ -13,33 +13,33 @@
 
 ## 3. Starters
 
-- [ ] 3.1 Add `"validate"` to `SessionAction`, `SESSION_ACTIONS` and `PromptKey`, and change `availableActions` so `Done` + `validate` offers `validate` and `archive`, `Done` + `complete` offers `archive`, and `implement` is no longer offered in `Done` (design D4); verify with unit tests over each stage/sub-state pair, including that `implement` is absent from a validating change.
-- [ ] 3.2 Refuse a start whose action is not available for the change's stage **and sub-state** in `src/server/sessions/manager.ts` and the session route in `src/server/api.ts`; verify with API tests that `validate` on an `Implementing` change and `implement` on a validating change are both refused with a reason and start no process.
-- [ ] 3.3 Check `nextStepFor` and `startersFor` in `src/ui/sessionState.ts` need no change beyond the new action, and that an agent without a Validate prompt shows only **Archive**; verify with tests in `test/sessionPrompt.test.ts`.
+- [x] 3.1 Add `"validate"` to `SessionAction`, `SESSION_ACTIONS` and `PromptKey`, and change `availableActions` so `Done` + `validate` offers `validate` and `archive`, `Done` + `complete` offers `archive`, and `implement` is no longer offered in `Done` (design D4); verify with unit tests over each stage/sub-state pair, including that `implement` is absent from a validating change.
+- [x] 3.2 Refuse a start whose action is not available for the change's stage **and sub-state** in `src/server/sessions/manager.ts` and the session route in `src/server/api.ts`; verify with API tests that `validate` on an `Implementing` change and `implement` on a validating change are both refused with a reason and start no process.
+- [x] 3.3 Check `nextStepFor` and `startersFor` in `src/ui/sessionState.ts` need no change beyond the new action, and that an agent without a Validate prompt shows only **Archive**; verify with tests in `test/sessionPrompt.test.ts`.
 
 ## 4. Prompts and migration
 
-- [ ] 4.1 In `src/shared/agentDefaults.ts`, add the one-line Validate prompt and reword the Implement and Archive prompts per design D5, keeping each a single line; verify with a test asserting each is one line, contains `{change}` and says what D5 requires.
-- [ ] 4.2 Replace `FORMER_ARCHIVE_PROMPTS` with a per-key `FORMER_PROMPTS`, seeded with the former Archive prompts plus today's Archive and Implement texts, and generalise the upgrade in `src/server/config.ts` to run per prompt key (design D5); verify with tests in `test/config.test.ts`: a verbatim former Archive prompt upgrades, an edited Implement prompt is kept while Archive upgrades, a removed prompt stays removed, and a non-`claude` profile is never touched.
-- [ ] 4.3 Add the fourth prompt field to `src/ui/agentSettings.tsx`, ordered Draft, Implement, Validate, Archive; verify with a test that saving an empty Validate field removes the key.
+- [x] 4.1 In `src/shared/agentDefaults.ts`, add the one-line Validate prompt and reword the Implement and Archive prompts per design D5, keeping each a single line; verify with a test asserting each is one line, contains `{change}` and says what D5 requires.
+- [x] 4.2 Replace `FORMER_ARCHIVE_PROMPTS` with a per-key `FORMER_PROMPTS`, seeded with the former Archive prompts plus today's Archive and Implement texts, and generalise the upgrade in `src/server/config.ts` to run per prompt key (design D5); verify with tests in `test/config.test.ts`: a verbatim former Archive prompt upgrades, an edited Implement prompt is kept while Archive upgrades, a removed prompt stays removed, and a non-`claude` profile is never touched.
+- [x] 4.3 Add the fourth prompt field to `src/ui/agentSettings.tsx`, ordered Draft, Implement, Validate, Archive; verify with a test that saving an empty Validate field removes the key.
 
 ## 5. Board and detail view
 
-- [ ] 5.1 Render the **Validate** badge (`warning` role) on cards with `tasks.awaiting > 0`, never for an archived change, in `src/ui/` card rendering plus `src/ui/styles.css`; verify with tests in `test/boardMarks.test.ts` and `test/cardProgress.test.ts`.
-- [ ] 5.2 Give the task progress bar its third segment and the `13 + 2 awaiting / 15 Tasks` label, tooltip and accessible name, and prove a change with `awaiting: 0` or no `awaiting` renders exactly as before (design D6); verify with tests in `test/cardProgress.test.ts` including the accessible name and the unchanged two-part case.
-- [ ] 5.3 Render the checklist's third state in `src/ui/changeDetail.tsx` as an indeterminate, `aria-checked="mixed"`, still-disabled checkbox, with a line saying how many tasks await validation; verify with tests in `test/changeDetail.test.ts` that the three states render distinctly, that clicking any of them sends nothing, and by opening the detail view in `bun run dev` against a scratch repository with a `- [~]` task.
-- [ ] 5.4 Confirm the `Done` column count, the highlighted count and every "to archive" count include validating changes; verify with tests in `test/overview.test.ts` and `test/workInProgress.test.ts`.
+- [x] 5.1 Render the **Validate** badge (`warning` role) on cards with `tasks.awaiting > 0`, never for an archived change, in `src/ui/` card rendering plus `src/ui/styles.css`; verify with tests in `test/boardMarks.test.ts` and `test/cardProgress.test.ts`.
+- [x] 5.2 Give the task progress bar its third segment and the `13 + 2 awaiting / 15 Tasks` label, tooltip and accessible name, and prove a change with `awaiting: 0` or no `awaiting` renders exactly as before (design D6); verify with tests in `test/cardProgress.test.ts` including the accessible name and the unchanged two-part case.
+- [~] 5.3 Render the checklist's third state in `src/ui/changeDetail.tsx` as an indeterminate, `aria-checked="mixed"`, still-disabled checkbox, with a line saying how many tasks await validation; verify with tests in `test/changeDetail.test.ts` that the three states render distinctly, that clicking any of them sends nothing, and by opening the detail view in `bun run dev` against a scratch repository with a `- [~]` task.
+- [x] 5.4 Confirm the `Done` column count, the highlighted count and every "to archive" count include validating changes; verify with tests in `test/overview.test.ts` and `test/workInProgress.test.ts`.
 
 ## 6. Demo
 
-- [ ] 6.1 Add a change in `Done` with awaiting tasks and a Validate prompt on the demo agent to `src/ui/demo/sampleData.ts`, and let the simulated starter validation use stage **and** sub-state; verify with tests in `test/demoData.test.ts` and `test/demoSessions.test.ts` that the card shows the badge, that **Validate** starts a simulated session and that **Implement** on it is refused.
+- [x] 6.1 Add a change in `Done` with awaiting tasks and a Validate prompt on the demo agent to `src/ui/demo/sampleData.ts`, and let the simulated starter validation use stage **and** sub-state; verify with tests in `test/demoData.test.ts` and `test/demoSessions.test.ts` that the card shows the badge, that **Validate** starts a simulated session and that **Implement** on it is refused.
 
 ## 7. Documentation
 
-- [ ] 7.1 Document the `- [~]` marker and the `Done`/Validate sub-state in `README.md` (lifecycle section) and note in `CLAUDE.md` that the dashboard still never writes `tasks.md`; verify by reading both against the proposal's non-goals.
+- [x] 7.1 Document the `- [~]` marker and the `Done`/Validate sub-state in `README.md` (lifecycle section) and note in `CLAUDE.md` that the dashboard still never writes `tasks.md`; verify by reading both against the proposal's non-goals.
 
 ## 8. Validation
 
-- [ ] 8.1 Run `bun run check`; verify it passes.
-- [ ] 8.2 Run `bun run build` and exercise `dist/openspec-dashboard` against a scratch repository holding a change with `- [~]` tasks: the card sits in `Done` with the **Validate** badge and the three-part bar, **Validate** and **Archive** are the offered starters, **Implement** is not, and the detail view's checklist shows the third state (invariant: the product build, not only `bun run dev`).
-- [ ] 8.3 Confirm on a repository with no `- [~]` anywhere that the board, counts and starters are unchanged from `main`.
+- [x] 8.1 Run `bun run check`; verify it passes.
+- [~] 8.2 Run `bun run build` and exercise `dist/openspec-dashboard` against a scratch repository holding a change with `- [~]` tasks: the card sits in `Done` with the **Validate** badge and the three-part bar, **Validate** and **Archive** are the offered starters, **Implement** is not, and the detail view's checklist shows the third state (invariant: the product build, not only `bun run dev`).
+- [x] 8.3 Confirm on a repository with no `- [~]` anywhere that the board, counts and starters are unchanged from `main`.

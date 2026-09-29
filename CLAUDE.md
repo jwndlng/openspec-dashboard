@@ -62,7 +62,9 @@ bun test test/scanner.test.ts   # a single test file
    own permission prompts. The same holds for the **main console** (`openConsole`, `src/server/sessions/consoleFolder.ts`):
    the default agent in the console folder — `~/.openspec-dashboard/console/` or a folder the user configured, which is
    refused when it is, or lies inside, a tracked repository — with no worktree, no branch and no git command. With agent sessions disabled no process that can modify a repository is ever started. Scanning, polling, discovery, previews and saving settings
-   write nothing to a repository. All other writes stay under `~/.openspec-dashboard/` (or `OPENSPEC_DASHBOARD_HOME`
+   write nothing to a repository. In particular `tasks.md` is never written: the dashboard reads the three checkbox
+   states (`[x]`, `[~]` — finished, awaiting the user's confirmation — and `[ ]`) and shows them; only the agent, in its
+   own session under its own permission prompts, ticks a box or writes a `- [~]`. All other writes stay under `~/.openspec-dashboard/` (or `OPENSPEC_DASHBOARD_HOME`
    in tests). Apart from the worktree commands, the pull action's `fetch` and `merge --ff-only`, the create-change
    and dismissal `add` and the cleanup's `branch -D`, git is invoked only with the read-only subcommands listed in that spec. Adding a path or a subcommand means
    changing that spec first.

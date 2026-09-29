@@ -3,7 +3,10 @@ import { expect, test } from "bun:test";
 import { boardColumns } from "../src/shared/columns.ts";
 import { summarizeWorkInProgress } from "../src/shared/workInProgress.ts";
 import { checkoutMarkers } from "../src/ui/checkoutMarkers.ts";
-import { buildSample, DEMO_ROOT } from "../src/ui/demo/sampleData.ts";
+import { availableActions } from "../src/shared/types.ts";
+import { buildSample, DEMO_AGENT, DEMO_ROOT } from "../src/ui/demo/sampleData.ts";
+import { meterText } from "../src/ui/kanban.tsx";
+import { startersFor } from "../src/ui/sessionState.ts";
 import { wipIndicator } from "../src/ui/overviewState.ts";
 import { looksLikeRealHome } from "./helpers.ts";
 
@@ -113,4 +116,22 @@ test("the sample shows worktree-agnostic changes: one that lives in a worktree a
     const active = repo.changes.filter((c) => !c.archived).map((c) => c.name);
     expect(new Set(active).size).toBe(active.length);
   }
+});
+
+test("the demo shows a change in Done awaiting validation, with a Validate prompt on its agent", () => {
+  const validating = changes.filter((c) => (c.tasks?.awaiting ?? 0) > 0);
+  expect(validating.length).toBeGreaterThan(0);
+  for (const c of validating) {
+    expect([c.name, c.column, c.subState]).toEqual([c.name, "Done", "validate"]);
+    // Awaiting is never folded into done: the card must not claim a verification nobody did.
+    expect(c.tasks!.done + c.tasks!.awaiting!).toBe(c.tasks!.total);
+    expect(c.tasks!.done).toBeLessThan(c.tasks!.total);
+    expect(availableActions(c)).toEqual(["validate", "archive"]);
+  }
+  // The starters are only offered because the demo's agent has a prompt for each.
+  expect(DEMO_AGENT.prompts.validate).toBeDefined();
+  expect(startersFor({ ...sample.config, repos: sample.config.repos }, { ...validating[0] })).toEqual(["validate", "archive"]);
+  // The card's bar names the awaiting count in words, not by colour alone.
+  const { done, awaiting, total } = validating[0].tasks!;
+  expect(meterText(done, total, "tasks", awaiting)).toContain(`${awaiting} awaiting validation`);
 });

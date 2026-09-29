@@ -292,10 +292,11 @@ export function OpenWork() {
   );
 }
 
-const STARTER_LABEL: Record<SessionAction, string> = { draft: "Draft artifacts", implement: "Implement", archive: "Archive" };
+const STARTER_LABEL: Record<SessionAction, string> = { draft: "Draft artifacts", implement: "Implement", validate: "Validate", archive: "Archive" };
 const STARTER_HINT: Record<SessionAction, string> = {
   draft: "Start an agent in a terminal to write this change's missing artifacts",
   implement: "Start an agent in a terminal to implement this change's tasks",
+  validate: "Start an agent in a terminal to walk you through this change's tasks awaiting validation",
   archive: "Start an agent in a terminal to sync the specs and archive this completed change",
 };
 

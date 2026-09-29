@@ -26,7 +26,8 @@ export async function readSnapshot(): Promise<Snapshot | null> {
 export function rederive(snapshot: Snapshot): Snapshot {
   const repos = snapshot.repos.map((repo) => ({
     ...repo,
-    changes: repo.changes.map((c) => ({ ...c, ...deriveStage({ archived: Boolean(c.archived), artifacts: c.artifacts ?? [], tasks: c.tasks ?? null }) })),
+    // `subState` is dropped first: it is derived, and a stage without one must not keep a cached value.
+    changes: repo.changes.map(({ subState, ...c }) => ({ ...c, ...deriveStage({ archived: Boolean(c.archived), artifacts: c.artifacts ?? [], tasks: c.tasks ?? null }) })),
   }));
   return { ...snapshot, repos };
 }
