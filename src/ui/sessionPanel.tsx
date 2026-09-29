@@ -9,7 +9,7 @@ import { api, type TerminalMessage } from "./api.ts";
 import { cdCommand } from "./format.ts";
 import { DEFAULT_QUICK_REPLIES, NOT_SUBMITTED_NOTICE, replyHint, replyMessage, type QuickReply } from "./quickReplies.ts";
 import { nextStepFor, sessionBadge, startersFor, workBadge, worktreeOfSession } from "./sessionState.ts";
-import { SessionBadgeView, useSessionUi } from "./sessions.tsx";
+import { SessionBadgeView, SessionControls, useSessionUi } from "./sessions.tsx";
 
 export function Copy({ text, label }: { text: string; label: string }) {
   const [done, setDone] = useState(false);
@@ -235,25 +235,34 @@ export function useTerminalGeneration(session: Session | undefined): number {
   return generation;
 }
 
-export function ConsolePanel({ session, worktree }: { session?: ChangeSession; worktree?: SessionWorktree }) {
+/**
+ * The Console tab's body. `of` is the change the tab belongs to, which is the only thing left to go on when the change
+ * has neither a session nor a worktree — the tab exists before any agent has run, and then its job is to offer the
+ * starters rather than to explain itself away.
+ */
+export function ConsolePanel({ session, worktree, of }: { session?: ChangeSession; worktree?: SessionWorktree; of?: { repoId: string; change: string } }) {
   const ui = useSessionUi();
   const [error, setError] = useState<string>();
   // An agent that was started again (Resume, Ship — from here or from the end-session dialog) gets a fresh terminal view.
   const generation = useTerminalGeneration(session);
 
   const badge = session ? sessionBadge(session) : undefined;
-  const repo = ui.config?.repos.find((r) => r.id === session?.repoId);
+  const repoId = session?.repoId ?? worktree?.repoId ?? of?.repoId;
+  const change = session?.change ?? worktree?.change ?? of?.change;
+  const repo = ui.config?.repos.find((r) => r.id === repoId);
   // An in-place session runs in the repository folder, which is not a worktree: nothing git-derived applies to it.
   const tree = worktreeOfSession(session, ui.worktrees) ?? (session ? undefined : worktree);
   const work = tree && workBadge(tree, ui.sessions);
   const shippable = session !== undefined && tree !== undefined && SHIPPABLE_WORK.includes(tree.work.state);
   const merged = tree?.work.state === "merged";
-  // The change's next step, offered here only when it would go into this very terminal.
-  const card = session && ui.snapshot?.repos.find((r) => r.id === session.repoId)?.changes.find((c) => c.name === session.change && !c.archived);
+  // The change as the snapshot has it: what both the next steps and the empty state's starters are decided from.
+  const card = repoId && change ? ui.snapshot?.repos.find((r) => r.id === repoId)?.changes.find((c) => c.name === change && !c.archived) : undefined;
   const nextSteps =
     session && card
       ? startersFor(ui.config, card).filter((action) => nextStepFor(ui.sessions, session.repoId, session.change, action).promptSessionId === session.id)
       : [];
+  // Nothing has ever run for this change: the tab says so and offers the openings, which is why it exists at all.
+  const untouched = !session && !tree;
 
   const act = async (fn: () => Promise<unknown>) => {
     try {
@@ -267,7 +276,7 @@ export function ConsolePanel({ session, worktree }: { session?: ChangeSession; w
 
   const path = session?.worktreePath ?? tree?.path;
   return (
-    <section class="console-pane" aria-label={`Agent console ${session?.change ?? tree?.change ?? ""}`}>
+    <section class="console-pane" aria-label={`Agent console ${change ?? ""}`}>
       <header class="session-head">
         <div class="row">
           {session && <span class="hint">{session.agentName}</span>}
@@ -351,6 +360,15 @@ export function ConsolePanel({ session, worktree }: { session?: ChangeSession; w
       </header>
       {session ? (
         <TerminalView key={`${session.id}:${generation}`} sessionId={session.id} running={session.state === "running"} onExit={ui.refresh} />
+      ) : untouched ? (
+        <div class="console-empty">
+          <p class="detail-hint">No agent has worked on this change yet. Start one here and its terminal takes this tab.</p>
+          {card && (
+            <div class="console-starters">
+              <SessionControls card={card} />
+            </div>
+          )}
+        </div>
       ) : (
         <div class="console-empty">
           <p class="detail-hint">

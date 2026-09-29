@@ -34,8 +34,28 @@ export function sessionsForChange(sessions: ChangeSession[], repoId: string, cha
 }
 
 /**
+ * What a card offers about its change's sessions: the sessions to show a badge for, and the starters to offer beside
+ * them. While any of the change's sessions runs the badge stands in for the starters and there are none — the badge
+ * opens the terminal, which is where the next step and **End session** live. A badge that is not running is the failure
+ * case `sessionsForChange` keeps, so it comes with the starters and the next attempt stays one activation away.
+ *
+ * Pure, because this is the rule the card and the console's empty state must agree on, and a component that uses hooks
+ * cannot be asserted on without a renderer.
+ */
+export function cardSessionControls(
+  config: Config | null,
+  sessions: ChangeSession[],
+  card: Pick<ChangeSnapshot, "repoId" | "name" | "archived" | "artifacts" | "stage" | "subState">,
+): { shown: ChangeSession[]; starters: SessionAction[] } {
+  if (!sessionsEnabledFor(config, card.repoId)) return { shown: [], starters: [] };
+  const shown = sessionsForChange(sessions, card.repoId, card.name);
+  return { shown, starters: shown.some((s) => s.state === "running") ? [] : startersFor(config, card) };
+}
+
+/**
  * Where a starter goes: into the change's running session (the prompt is typed there), or into a new session.
- * Archive always gets its own, and nothing is typed into an archive session.
+ * Archive always gets its own, and nothing is typed into an archive session. Only the console's next-step buttons ask:
+ * a card offers no starter while a session runs (see `cardSessionControls`).
  */
 export function nextStepFor(sessions: ChangeSession[], repoId: string, change: string, action: SessionAction): { promptSessionId?: string; blocked?: boolean } {
   const running = sessions.filter((s) => s.repoId === repoId && s.change === change && s.state === "running");
@@ -60,12 +80,23 @@ export function consoleSession(sessions: ChangeSession[], wanted: string | undef
 }
 
 /**
- * Whether a change gets a Console tab at all. A worktree counts even without a session record, and outlives the change
- * itself — which is why a change the snapshot no longer carries is shown rather than reported as not found.
+ * Whether a change has a console with something in it: a session record, or a worktree — which counts even without one
+ * and outlives the change itself, and is why a change the snapshot no longer carries is shown rather than reported as
+ * not found. Not the same question as `consoleTabAvailable`: this one has to stay narrow, or every name that is in no
+ * snapshot would render an empty console frame instead of "not found".
  */
 export function consoleAvailable(config: Config | null, sessions: ChangeSession[], worktrees: SessionWorktree[], repoId: string, change: string): boolean {
   if (!sessionsEnabledFor(config, repoId)) return false;
   return sessions.some((s) => s.repoId === repoId && s.change === change) || worktrees.some((w) => w.repoId === repoId && w.change === change);
+}
+
+/**
+ * Whether a change gets a Console tab, and its card the console quick link: one question, asked per repository, because
+ * the tab now exists before any agent has run — with nothing to show it offers the change's starters. Deliberately
+ * independent of the change: the way into a terminal is in the same place on every card.
+ */
+export function consoleTabAvailable(config: Config | null, repoId: string): boolean {
+  return sessionsEnabledFor(config, repoId);
 }
 
 export type EndSeverity = "plain" | "notice" | "danger";

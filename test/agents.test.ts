@@ -4,7 +4,7 @@ import { agentEnv, agentFor, launchCommand, openingPrompt } from "../src/server/
 import { Scrollback, sessionBranch, worktreeName } from "../src/server/sessions/manager.ts";
 import { CLAUDE_PROFILE, FORMER_PROMPTS } from "../src/shared/agentDefaults.ts";
 import { availableActions, integrateUnavailable, type AgentAvailability, type ChangeSession, type Session } from "../src/shared/types.ts";
-import { agentForRepo, NEEDS_YOU_AFTER_MS, parseArgLines, sessionBadge, sessionForChange, sessionsEnabledFor, silenceDuration, slugId, startersFor } from "../src/ui/sessionState.ts";
+import { agentForRepo, cardSessionControls, NEEDS_YOU_AFTER_MS, parseArgLines, sessionBadge, sessionForChange, sessionsEnabledFor, silenceDuration, slugId, startersFor } from "../src/ui/sessionState.ts";
 import { fakeProfile } from "./sessionHelpers.ts";
 
 const base = defaultConfig();
@@ -136,6 +136,54 @@ test("starters: stage decides, narrowed to the prompts the agent has", () => {
 });
 
 const session = (patch: Partial<ChangeSession>): ChangeSession => ({ id: "s", repoId: "r", change: "c", action: "implement", agentId: "fake", agentName: "Fake Agent", state: "running", worktreePath: "/w/wt", branch: "feat/c", createdAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-01T00:00:00Z", resumable: true, ...patch });
+
+test("a card shows the running session's badge instead of a starter, and a failed one's badge beside it", () => {
+  const repo = newRepoConfig("/w/demo-ops", true);
+  const cfg = { ...base, repos: [repo], agentSessions: { enabled: true, agents: [fakeProfile()], defaultAgent: "fake" } };
+  const card = { repoId: repo.id, name: "c", artifacts: [{ id: "a0", status: "done" as const }], stage: "ready" as const };
+  const mine = (patch: Partial<ChangeSession>) => session({ repoId: repo.id, change: "c", ...patch });
+
+  // No session: the stage's starter, and nothing to show a badge for.
+  expect(cardSessionControls(cfg, [], card)).toEqual({ shown: [], starters: ["implement"] });
+
+  // A running session stands in for the starter, whatever its terminal is doing — the badge's words differ, the rule
+  // does not, so no button appears and vanishes as the terminal falls silent.
+  const printing = cardSessionControls(cfg, [mine({ lastOutputAt: "2026-01-01T00:00:00Z" })], card);
+  expect(printing.starters).toEqual([]);
+  expect(printing.shown.map((s) => s.id)).toEqual(["s"]);
+  const silent = cardSessionControls(cfg, [mine({ lastOutputAt: "2020-01-01T00:00:00Z" })], card);
+  expect(silent.starters).toEqual([]);
+  expect(sessionBadge(silent.shown[0]).label).toContain("may need you");
+
+  // Failed or badly ended and nothing running: the badge is shown and the starter stays, so a retry is one click away.
+  for (const patch of [{ state: "failed" as const, error: "no such file" }, { state: "exited" as const, exitCode: 3 }]) {
+    const after = cardSessionControls(cfg, [mine(patch)], card);
+    expect(after.starters).toEqual(["implement"]);
+    expect(after.shown).toHaveLength(1);
+  }
+  // A clean exit is not worth a badge, and leaves the starter on its own.
+  expect(cardSessionControls(cfg, [mine({ state: "exited", exitCode: 0 })], card)).toEqual({ shown: [], starters: ["implement"] });
+
+  // An archive session running next to the change's own one still counts as running: no starter.
+  expect(cardSessionControls(cfg, [mine({ id: "arch", action: "archive" })], { ...card, stage: "done" }).starters).toEqual([]);
+
+  // Another change's session is none of this card's business.
+  expect(cardSessionControls(cfg, [session({ repoId: repo.id, change: "other" })], card)).toEqual({ shown: [], starters: ["implement"] });
+
+  // `subState` has to reach `availableActions` through here, or a change awaiting confirmation would never offer
+  // Validate on its card. The stock fake agent has no validate prompt, so one that has is what shows the difference.
+  const done = { ...card, stage: "done" as const, subState: "validate" as const };
+  const validating = { ...cfg, agentSessions: { ...cfg.agentSessions, agents: [fakeProfile({ prompts: { validate: "v {change}", archive: "a {change}" } })] } };
+  expect(cardSessionControls(validating, [], done).starters).toEqual(["validate", "archive"]);
+  expect(cardSessionControls(validating, [], { ...done, subState: undefined }).starters).toEqual(["archive"]);
+  // And a running session still takes the starters' place, Validate included.
+  expect(cardSessionControls(validating, [mine({})], done).starters).toEqual([]);
+
+  // Feature off, or the repository switched off: no badge and no starter, as before.
+  for (const off of [{ ...cfg, agentSessions: { ...cfg.agentSessions, enabled: false } }, { ...cfg, repos: [{ ...repo, agent: { enabled: false } }] }]) {
+    expect(cardSessionControls(off, [mine({})], card)).toEqual({ shown: [], starters: [] });
+  }
+});
 
 test("badges are honest about what a terminal can tell", () => {
   const now = Date.parse("2026-01-01T01:00:00Z");
