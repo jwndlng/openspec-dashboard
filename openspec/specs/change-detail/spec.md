@@ -124,14 +124,18 @@ The detail view SHALL offer a toggle that shows the selected file's source text 
 - **THEN** that file is also shown as raw source
 
 ### Requirement: Tasks are shown as a read-only checklist
-When the tasks artifact is selected, its task list SHALL be rendered as checkboxes reflecting each task's ticked state, together with the same `done/total` progress the card shows. The checkboxes MUST NOT be operable: the dashboard MUST NOT write a change to the repository from this view.
+When the tasks artifact is selected, its task list SHALL be rendered as checkboxes reflecting each task's state, together with the same progress the card shows. A task SHALL be drawn in one of three states: **done**, ticked; **awaiting validation** (`- [~]`), a third state that is neither ticked nor empty and is announced as mixed rather than as done or not done; and **open**, empty. Where any task awaits validation, the view SHALL say in words how many do. The checkboxes MUST NOT be operable in any state: the dashboard MUST NOT write a change to the repository from this view.
 
 #### Scenario: Checklist
 - **WHEN** the tasks artifact has 12 tasks of which 4 are ticked
 - **THEN** 12 checkboxes are shown with the first-ticked 4 checked and `4/12` is shown
 
+#### Scenario: Awaiting validation
+- **WHEN** the tasks artifact has 15 tasks of which 13 are ticked and 2 are `- [~]`
+- **THEN** 15 checkboxes are shown, the 2 awaiting ones are drawn in the third state and announced as mixed, and the view says that 2 tasks await validation
+
 #### Scenario: Not editable
-- **WHEN** the user clicks a checkbox in the tasks view
+- **WHEN** the user clicks a checkbox in the tasks view, in any of the three states
 - **THEN** nothing is sent to the server and the repository is unchanged
 
 ### Requirement: Navigation between board and detail view
