@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import type { ChangeSession, Session, SessionWorktree, WorkStatus } from "../src/shared/types.ts";
-import { consoleAvailable, consoleSession, consoleSessions, endSeverity, pullOffer, endWarning, nextStepFor, openWork, sessionsForChange, staleAge, workBadge, worktreeForChange, worktreeOfSession, worktreeRemovalPossible } from "../src/ui/sessionState.ts";
+import { consoleAvailable, consoleSession, consoleSessions, consoleTabAvailable, endSeverity, pullOffer, endWarning, nextStepFor, openWork, sessionsForChange, staleAge, workBadge, worktreeForChange, worktreeOfSession, worktreeRemovalPossible } from "../src/ui/sessionState.ts";
 
 const NOW = Date.parse("2026-09-21T12:00:00Z");
 const ago = (hours: number) => new Date(NOW - hours * 3_600_000).toISOString();
@@ -180,6 +180,24 @@ test("a change gets a console when it has a session or a worktree, and a worktre
   // Feature off: no console anywhere, whatever is lying around.
   expect(consoleAvailable(off, s, w, "r", "add-x")).toBe(false);
   expect(consoleAvailable(null, s, w, "r", "add-x")).toBe(false);
+});
+
+test("the Console tab exists per repository, before any agent has run — which is not what consoleAvailable answers", () => {
+  const cfg = { agentSessions: { enabled: true }, repos: [{ id: "r", enabled: true }] } as never;
+  const off = { agentSessions: { enabled: false }, repos: [{ id: "r", enabled: true }] } as never;
+  const excluded = { agentSessions: { enabled: true }, repos: [{ id: "r", enabled: false }] } as never;
+
+  // The one case the two predicates differ in, and the reason there are two: a change nothing has ever run for still
+  // gets the tab (it offers the starters), while `consoleAvailable` stays false so a name in no snapshot is "not found".
+  expect(consoleTabAvailable(cfg, "r")).toBe(true);
+  expect(consoleAvailable(cfg, [], [], "r", "add-x")).toBe(false);
+
+  // Where they agree: the feature off, the repository switched off, no config at all, another repository.
+  for (const config of [off, excluded, null]) {
+    expect(consoleTabAvailable(config, "r")).toBe(false);
+    expect(consoleAvailable(config, [sess("a")], [wt("add-x", { state: "uncommitted", count: 1 })], "r", "add-x")).toBe(false);
+  }
+  expect(consoleTabAvailable(cfg, "elsewhere")).toBe(false);
 });
 
 test("a session in a folder without git has no worktree, so no work status, no Ship and nothing to remove", () => {

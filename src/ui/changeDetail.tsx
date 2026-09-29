@@ -9,7 +9,7 @@ import { CopyButton, Meter } from "./kanban.tsx";
 import { renderMarkdown } from "./markdown.tsx";
 import { backTarget, CONSOLE_TAB, type DetailQuery, parseDetailQuery, repoPath, serializeDetailQuery } from "./routes.ts";
 import { ConsolePanel, ConsoleSessionList } from "./sessionPanel.tsx";
-import { consoleAvailable, consoleSession, consoleSessions } from "./sessionState.ts";
+import { consoleAvailable, consoleSession, consoleSessions, consoleTabAvailable } from "./sessionState.ts";
 import { useSessionUi, WorkStatus } from "./sessions.tsx";
 import { isComplete } from "../shared/columns.ts";
 import { promptBody } from "./boardMarks.ts";
@@ -407,7 +407,11 @@ export function ChangeDetail({
   // have one — that is what keeps an interrupted archive session reachable once its change is gone from the board.
   const sessions = useMemo(() => consoleSessions(ui.sessions, repoId, changeName), [ui.sessions, repoId, changeName]);
   const worktrees = useMemo(() => ui.worktrees.filter((w) => w.repoId === repoId && w.change === changeName), [ui.worktrees, repoId, changeName]);
-  const hasConsole = consoleAvailable(ui.config, ui.sessions, ui.worktrees, repoId, changeName);
+  // Two questions, deliberately not one (see `sessionState.ts`): the tab exists for every change of a repository agent
+  // sessions apply to, while `hasWork` — a session or a worktree — is what makes a change the snapshot has lost worth a
+  // frame instead of "not found".
+  const hasConsole = consoleTabAvailable(ui.config, repoId);
+  const hasWork = consoleAvailable(ui.config, ui.sessions, ui.worktrees, repoId, changeName);
   const shownSession = consoleSession(sessions, query.session);
   const shownWorktree = worktrees.find((w) => w.path === shownSession?.worktreePath) ?? (shownSession ? undefined : worktrees[0]);
 
@@ -472,7 +476,7 @@ export function ChangeDetail({
 
   // The change is gone from the snapshot but its worktree is not: show the frame with a working Console tab rather
   // than "not found", so the work left in that worktree stays reachable.
-  if (snapshot && repo && !change && hasConsole) {
+  if (snapshot && repo && !change && hasWork) {
     return (
       <DetailOverlay label={label} onClose={close} panelRef={panel}>
         <DetailHeader repo={repo} change={{ name: changeName }} from={query.from} onClose={close} />
@@ -527,7 +531,7 @@ export function ChangeDetail({
         )}
         <section class="detail-content">
           {onConsole ? (
-            <ConsolePanel session={shownSession} worktree={shownWorktree} />
+            <ConsolePanel session={shownSession} worktree={shownWorktree} of={{ repoId, change: changeName }} />
           ) : (
             <>
           {file && (

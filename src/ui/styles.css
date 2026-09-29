@@ -513,13 +513,12 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: 
 @media (prefers-reduced-motion: no-preference) {
   .card:hover { transform: translateY(-2px); }
 }
-/* The name owns the card's width; the session status and console link get a line of their own below it. */
-.card-top { display: flex; flex-direction: column; align-items: stretch; gap: 6px; min-width: 0; }
+/* The name and its age own the card's width apart from the console link's slot at the top right; `min-width: 0` on the
+   title is what makes the name wrap inside what that slot leaves instead of pushing it out of the card. */
+.card-top { display: flex; align-items: flex-start; gap: 8px; min-width: 0; }
 .card .name { min-width: 0; font-family: var(--font-mono); font-size: 13px; font-weight: 600; line-height: 19px; color: var(--fg-heading); word-break: break-word; text-transform: none; letter-spacing: 0; }
-.card-title { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.card-title { flex: 1; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .card-title .age { font-family: var(--font-mono); font-size: 11px; color: var(--fg-subtle); }
-.card-status { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-start; gap: 4px; }
-.card-status:empty { display: none; }
 /* The quick way into a change's agent console; neutral, since blue on the board means a running agent. */
 .card .console-link {
   flex: none; display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 20px;
@@ -538,6 +537,8 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: 
 .card .show-details:focus-visible { outline: 2px solid var(--brand); outline-offset: 1px; color: var(--brand-fg); }
 .card .meta { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding-top: 9px; border-top: 1px solid var(--border-light); }
 .card .meta > * { min-width: 0; }
+/* The running session's badge stands in for the starter here, so it sits on the starter's line and at its height. */
+.card .meta .session-badge { padding-block: 3px; }
 /* The age is quiet text, not a chip. */
 .card .warn-text { color: var(--warning); font-size: 11px; }
 
@@ -939,13 +940,7 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: 
   to { background-position: -50% 0; }
 }
 
-/* ---- The end-session dialog, and the close control on a running badge ---- */
-.session-chip { display: inline-flex; align-items: stretch; gap: 2px; }
-.badge-x {
-  padding: 0 5px; cursor: pointer; font: inherit; font-size: 10px; line-height: 16px; color: var(--fg-subtle);
-  background: var(--bg-section); border: 1px solid var(--border-light); border-radius: var(--radius-sm);
-}
-.badge-x:hover, .badge-x:focus-visible { color: var(--danger); border-color: var(--danger-border); }
+/* ---- The end-session dialog ---- */
 .end-overlay { z-index: 30; }
 .end-dialog { width: min(520px, 100%); }
 .btn.danger { color: var(--danger); border-color: var(--danger-border); background: var(--danger-bg); }
@@ -1117,6 +1112,8 @@ body:has(.detail-overlay) { overflow: hidden; }
 .console-head .hint { font-size: 12px; color: var(--fg-subtle); }
 .detail > .main-console { flex: 1; min-height: 0; border-left: none; }
 .console-empty .mono { font-size: 11px; word-break: break-all; }
+/* The starters of a change no agent has worked on yet: the tab's only offer, so it gets room under the explanation. */
+.console-starters { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 14px; }
 .console-sessions .console-session { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 10px 12px; }
 .console-session .console-session-what { font-weight: 600; }
 .console-session.on { background: var(--info-bg, var(--bg-surface)); border-color: var(--info-border); color: var(--fg-heading); }

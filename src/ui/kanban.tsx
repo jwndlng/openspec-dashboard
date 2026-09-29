@@ -17,7 +17,7 @@ import { assignRepoHues, groupByRepo, newChangeTargets, recentArchived } from ".
 import { columnKind } from "./boardMarks.ts";
 import { IconChevronRight, IconPlus, IconTerminal } from "./icons.tsx";
 import { SessionControls, useSessionUi } from "./sessions.tsx";
-import { consoleAvailable } from "./sessionState.ts";
+import { consoleTabAvailable } from "./sessionState.ts";
 import { boardFrom, changePath, CONSOLE_TAB, repoPath, serializeDetailQuery } from "./routes.ts";
 import { currentQuery, followInApp, href, navigate, replaceQuery } from "./url.ts";
 
@@ -105,8 +105,9 @@ export function ChangeCard({ card, now, from }: { card: Card; now: number; from:
   const validating = !card.archived && (card.tasks?.awaiting ?? 0) > 0;
   const progress = cardProgress(card);
   const link = cardLink(card, from);
-  // Only what an overview needs: the name and the last update, under them its session state, progress, the next step.
-  // Branch, worktree, work status, prompt and completed phases are in the detail view.
+  // Only what an overview needs: the name and the last update, under them the progress, then the footer with the
+  // session state and the next step. The console link keeps the top right corner, the same on every card, so the way
+  // into a terminal never moves. Branch, worktree, work status, prompt and completed phases are in the detail view.
   return (
     <article class="card">
       <div class="card-top">
@@ -116,10 +117,7 @@ export function ChangeCard({ card, now, from }: { card: Card; now: number; from:
             {card.archived ? `archived ${card.archived}` : `updated ${relTime(card.lastActivityAt, now)} ago`}
           </span>
         </div>
-        <span class="card-status">
-          <SessionControls card={card} part="status" />
-          <ConsoleLink card={card} from={from} />
-        </span>
+        <ConsoleLink card={card} from={from} />
       </div>
       {progress && <Meter {...progress} showUnit />}
       <div class="meta">
@@ -134,7 +132,7 @@ export function ChangeCard({ card, now, from }: { card: Card; now: number; from:
             ⚠ error
           </span>
         ))}
-        <SessionControls card={card} part="starters" />
+        <SessionControls card={card} />
         <a class="show-details" href={href(link.path, undefined, link.query)} onClick={(e) => followInApp(e, link.path, link.query)} aria-label={`Show details of ${card.name}`}>
           Show details
           <IconChevronRight size={12} />
@@ -150,12 +148,13 @@ export function consoleTarget(card: Pick<Card, "repoId" | "name">, from: string)
 }
 
 /**
- * A quick way into the change's agent console: its detail view opened on the Console tab. Only when the change has a
- * session or a session worktree, which is when that tab exists.
+ * A quick way into the change's agent console: its detail view opened on the Console tab. Drawn whenever agent sessions
+ * apply to the card's repository — before any agent has run, where the tab offers the starters — so that every card
+ * carries it in the same corner and the way into a terminal is never somewhere else.
  */
-function ConsoleLink({ card, from }: { card: Card; from: string }) {
+export function ConsoleLink({ card, from }: { card: Card; from: string }) {
   const ui = useSessionUi();
-  if (!consoleAvailable(ui.config, ui.sessions, ui.worktrees, card.repoId, card.name)) return null;
+  if (!consoleTabAvailable(ui.config, card.repoId)) return null;
   const { path, query } = consoleTarget(card, from);
   return (
     <a class="console-link" href={href(path, undefined, query)} onClick={(e) => followInApp(e, path, query)} aria-label={`Open the agent console of ${card.name}`} title="Open the agent console">

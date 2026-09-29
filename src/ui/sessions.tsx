@@ -6,7 +6,7 @@ import { changeSessions, isConsole, isIntegration, type AgentAvailability, type 
 import { api } from "./api.ts";
 import { cdCommand, relTime } from "./format.ts";
 import { assignRepoHues, repoTint } from "./repoGroups.ts";
-import { agentForRepo, openWork, type SessionBadge, nextStepFor, sessionBadge, sessionsForChange, sessionsEnabledFor, startersFor, workBadge, worktreeForChange } from "./sessionState.ts";
+import { agentForRepo, cardSessionControls, openWork, type SessionBadge, nextStepFor, sessionBadge, sessionsEnabledFor, workBadge, worktreeForChange } from "./sessionState.ts";
 import { boardFrom, changePath, CONSOLE_TAB, parseDetailQuery, routeFromPath, serializeDetailQuery } from "./routes.ts";
 import { currentPath, currentQuery, navigate } from "./url.ts";
 
@@ -317,63 +317,50 @@ const STARTER_HINT: Record<SessionAction, string> = {
   archive: "Start an agent in a terminal to sync the specs and archive this completed change",
 };
 
-/** Rendered inside a card. Shows nothing at all unless the feature is on and the card's repository has not been switched off. */
 /**
- * A card's session controls. `part` splits them for the card's layout: `status` is the session badge (working, quiet,
- * may need you, failed) beside the change name, `starters` the next-step buttons in its footer. Without `part`, both
- * plus the worktree's work status. The card leaves the work status to the detail view (see `WorkStatus`).
+ * A change's session state and its next step, in one place so the two can never disagree: the session badge (working,
+ * may need you, failed) and the starters. Rendered in a card's footer, and in the Console tab of a change no agent has
+ * worked on yet. Shows nothing at all unless the feature is on and the repository has not been switched off.
+ *
+ * While any of the change's sessions runs, the badge stands in for the starters and nothing else is offered: the badge
+ * opens the terminal, which is where the next step and **End session** live. A badge that is not running is the failure
+ * case, so it keeps its starters — the next attempt stays one activation away. The work status is the detail view's
+ * (see `WorkStatus`), never a card's.
  */
-export function SessionControls({ card, part }: { card: Pick<ChangeSnapshot, "repoId" | "name" | "archived" | "artifacts" | "stage">; part?: "status" | "starters" }) {
+export function SessionControls({ card }: { card: Pick<ChangeSnapshot, "repoId" | "name" | "archived" | "artifacts" | "stage"> }) {
   const ui = useSessionUi();
   const [starting, setStarting] = useState<SessionAction>();
   const [failure, setFailure] = useState<string>();
   if (!sessionsEnabledFor(ui.config, card.repoId)) return null;
 
-  const worktree = worktreeForChange(ui.worktrees, card.repoId, card.name);
-  const shown = sessionsForChange(ui.sessions, card.repoId, card.name);
+  const { shown, starters } = cardSessionControls(ui.config, ui.sessions, card);
   const agent = agentForRepo(ui.config, card.repoId);
   const found = ui.agents.find((a) => a.id === agent?.id);
   const unavailable = found && !found.available ? `${found.name} was not found on this machine — check its command in Settings` : undefined;
-  const status = part !== "starters";
-  const starters = part !== "status";
   return (
     <>
-      {status && shown.map((session) => (
-        <span class="session-chip" key={session.id}>
-          <SessionBadgeView badge={sessionBadge(session)} onClick={() => ui.openPanel(session.id)} />
-          {session.state === "running" && (
-            <button type="button" class="badge-x" aria-label={`End the session for ${session.change}`} title="End this session…" onClick={() => ui.requestEnd(session.id)}>
-              ✕
-            </button>
-          )}
-        </span>
+      {shown.map((session) => (
+        <SessionBadgeView key={session.id} badge={sessionBadge(session)} onClick={() => ui.openPanel(session.id)} />
       ))}
-      {part === undefined && worktree && <WorkBadge worktree={worktree} />}
-      {starters && startersFor(ui.config, card).map((action) => {
-        // The change's running session is sent the next step; only archiving always starts its own.
-        const step = nextStepFor(ui.sessions, card.repoId, card.name, action);
-        if (step.blocked) return null;
-        const intoRunning = step.promptSessionId !== undefined;
-        const blockedBy = intoRunning ? undefined : unavailable;
-        return (
-          <button
-            type="button"
-            class="btn sm session-start"
-            key={action}
-            title={blockedBy ?? (intoRunning ? `Sends the “${STARTER_LABEL[action]}” prompt to the running session` : `${STARTER_HINT[action]} (${agent?.name})`)}
-            disabled={Boolean(blockedBy) || starting !== undefined}
-            onClick={async () => {
-              setStarting(action);
-              setFailure(undefined);
-              setFailure(await ui.start(card.repoId, card.name, action));
-              setStarting(undefined);
-            }}
-          >
-            {starting === action ? "Starting…" : `${intoRunning ? "↳" : "▶"} ${STARTER_LABEL[action]}`}
-          </button>
-        );
-      })}
-      {starters && failure && (
+      {starters.map((action) => (
+        // Always an opening, never a prompt into a running session: there is no starter here while one runs.
+        <button
+          type="button"
+          class="btn sm session-start"
+          key={action}
+          title={unavailable ?? `${STARTER_HINT[action]} (${agent?.name})`}
+          disabled={Boolean(unavailable) || starting !== undefined}
+          onClick={async () => {
+            setStarting(action);
+            setFailure(undefined);
+            setFailure(await ui.start(card.repoId, card.name, action));
+            setStarting(undefined);
+          }}
+        >
+          {starting === action ? "Starting…" : `▶ ${STARTER_LABEL[action]}`}
+        </button>
+      ))}
+      {failure && (
         <span class="notice danger session-failure" role="status">
           {failure}
         </span>
