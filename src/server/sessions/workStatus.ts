@@ -1,23 +1,47 @@
 // What became of the work in a session's worktree (design.md D1, D2). Read-only git, never a remote: `merged` is as
 // of the user's last fetch. Worktree directories are listed themselves, because they outlive session records.
-import { readdir, stat } from "node:fs/promises";
+import { mkdir, readdir, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
-import type { ChangeSession, RepoConfig, SessionAction, SessionWorktree, WorkStatus } from "../../shared/types.ts";
-import { worktreesDir } from "../paths.ts";
+import { CONFLICTABLE_WORK, type ChangeSession, type RepoConfig, type SessionAction, type SessionWorktree, type WorkConflicts, type WorkStatus } from "../../shared/types.ts";
+import { mergeScratchDir, worktreesDir } from "../paths.ts";
 
 const ENV = { GIT_TERMINAL_PROMPT: "0", GIT_OPTIONAL_LOCKS: "0" };
 const MAX_COMPARED_FILES = 500;
+/** Conflicting paths reported per worktree; the rest is summarised as `truncated`. */
+export const MAX_CONFLICT_FILES = 50;
 /** One path segment; also what `POST /api/worktrees/remove` accepts. */
 export const WORKTREE_NAME = /^[a-z0-9][a-z0-9._-]*$/;
 
-async function git(cwd: string, args: string[]): Promise<{ ok: boolean; out: string }> {
+async function run(cwd: string, args: string[], env: Record<string, string> = {}): Promise<{ code: number; out: string }> {
   try {
-    const proc = Bun.spawn(["git", ...args], { cwd, stdout: "pipe", stderr: "ignore", stdin: "ignore", env: { ...process.env, ...ENV } });
+    const proc = Bun.spawn(["git", ...args], { cwd, stdout: "pipe", stderr: "ignore", stdin: "ignore", env: { ...process.env, ...ENV, ...env } });
     const out = await new Response(proc.stdout).text();
-    return { ok: (await proc.exited) === 0, out: out.trim() };
+    return { code: await proc.exited, out: out.trim() };
   } catch {
-    return { ok: false, out: "" };
+    return { code: -1, out: "" };
   }
+}
+
+async function git(cwd: string, args: string[]): Promise<{ ok: boolean; out: string }> {
+  const { code, out } = await run(cwd, args);
+  return { ok: code === 0, out };
+}
+
+/**
+ * The object store the conflict check writes into, with the layout git expects of an object directory. Made on every
+ * check rather than remembered: a recursive mkdir of an existing directory is a cheap no-op next to spawning git, and
+ * remembering it would hand back a path that has since been emptied or removed.
+ */
+export async function ensureMergeScratch(): Promise<string> {
+  const dir = mergeScratchDir();
+  await mkdir(join(dir, "info"), { recursive: true });
+  await mkdir(join(dir, "pack"), { recursive: true });
+  return dir;
+}
+
+/** Start-up housekeeping: the merges of previous runs are of no use to anyone. */
+export async function pruneMergeScratch(): Promise<void> {
+  await rm(mergeScratchDir(), { recursive: true, force: true }).catch(() => undefined);
 }
 
 async function isDirectory(path: string): Promise<boolean> {
@@ -49,6 +73,36 @@ export async function contentIsInBase(cwd: string, base: string, ref = "HEAD"): 
   return (await git(cwd, ["diff", "--quiet", base, ref, "--", ...files])).ok;
 }
 
+/**
+ * Whether merging `ref` into `base` would conflict, and where (design D1). `git merge-tree --write-tree` runs git's own
+ * merge in memory — exit 0 is a clean merge, exit 1 is a conflict, anything else means the question could not be asked.
+ *
+ * Its one side effect is the tree it writes, so its object directory is pointed at the dashboard's scratch store and
+ * the repository's own objects are offered only as an alternate: git reads everything it needs and writes nothing into
+ * the tracked repository. No working tree, index or ref is involved, and nothing is fetched — so the answer is about
+ * the base as of the user's last fetch.
+ *
+ * `undefined` means "no answer": an old git without `--write-tree`, an unreadable base, anything. Never an error.
+ */
+export async function readConflicts(worktreePath: string, base: string, ref = "HEAD"): Promise<WorkConflicts | undefined> {
+  const common = await git(worktreePath, ["rev-parse", "--path-format=absolute", "--git-common-dir"]);
+  if (!common.ok || !common.out) return undefined;
+  const scratch = await ensureMergeScratch().catch(() => undefined);
+  if (!scratch) return undefined;
+  const { code, out } = await run(worktreePath, ["merge-tree", "--write-tree", "--name-only", base, ref], {
+    GIT_OBJECT_DIRECTORY: scratch,
+    GIT_ALTERNATE_OBJECT_DIRECTORIES: join(common.out, "objects"),
+  });
+  if (code === 0) return undefined; // merges cleanly
+  if (code !== 1) return undefined; // too old, bad base, or no answer for any other reason
+  // stdout is the merged tree's OID, then the conflicting paths, then a blank line and informational text.
+  const [, ...rest] = out.split("\n");
+  const files = rest.slice(0, rest.indexOf("") === -1 ? undefined : rest.indexOf("")).filter(Boolean);
+  if (files.length === 0) return undefined; // conflicting exit without a path is no answer we can show
+  const capped = files.slice(0, MAX_CONFLICT_FILES);
+  return { base, files: capped, ...(files.length > capped.length ? { truncated: true } : {}) };
+}
+
 export async function readWorkStatus(repoPath: string, worktreePath: string): Promise<{ work: WorkStatus; branch?: string; lastCommitAt?: string }> {
   const inside = (await isDirectory(worktreePath)) ? await git(worktreePath, ["rev-parse", "--is-inside-work-tree"]) : { ok: false, out: "" };
   if (!inside.ok || inside.out !== "true") return { work: { state: "missing" } };
@@ -61,9 +115,16 @@ export async function readWorkStatus(repoPath: string, worktreePath: string): Pr
   const branch = branchRef.ok && branchRef.out ? branchRef.out : undefined;
   const common = { branch, lastCommitAt: lastCommit.ok && lastCommit.out ? lastCommit.out : undefined };
   const label = base && /^[0-9a-f]{40}$/.test(base) ? "the main checkout" : base;
+  // Only where there is work the base lacks, and always against the branch's last commit — git merges commits, so a
+  // dirty worktree's conflict is still a statement about what is committed.
+  const withConflicts = async (work: WorkStatus): Promise<WorkStatus> => {
+    if (!base || !CONFLICTABLE_WORK.includes(work.state)) return work;
+    const conflicts = await readConflicts(worktreePath, base);
+    return conflicts ? { ...work, conflicts: { ...conflicts, base: label ?? conflicts.base } } : work;
+  };
   if (!status.ok) return { ...common, work: { state: "missing" } };
   const dirty = status.out ? status.out.split("\n").length : 0;
-  if (dirty > 0) return { ...common, work: { state: "uncommitted", count: dirty, base: label } };
+  if (dirty > 0) return { ...common, work: await withConflicts({ state: "uncommitted", count: dirty, base: label }) };
 
   const ahead = base ? await git(worktreePath, ["rev-list", "--count", `${base}..HEAD`]) : { ok: false, out: "" };
   const aheadOfBase = ahead.ok ? Number(ahead.out) : undefined;
@@ -75,8 +136,8 @@ export async function readWorkStatus(repoPath: string, worktreePath: string): Pr
 
   const upstream = await git(worktreePath, ["rev-list", "--count", "@{u}..HEAD"]);
   const unpushed = upstream.ok ? Number(upstream.out) : (aheadOfBase ?? 1);
-  if (unpushed > 0) return { ...common, work: { state: "unpushed", count: unpushed, base: label } };
-  return { ...common, work: { state: "pushed", base: label } };
+  if (unpushed > 0) return { ...common, work: await withConflicts({ state: "unpushed", count: unpushed, base: label }) };
+  return { ...common, work: await withConflicts({ state: "pushed", base: label }) };
 }
 
 /** The inverse of `worktreeName` in the manager, for worktrees whose session record is gone. */

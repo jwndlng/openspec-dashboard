@@ -1,6 +1,8 @@
 import { expect, test } from "bun:test";
 import type { ChangeSession, Session, SessionWorktree, WorkStatus } from "../src/shared/types.ts";
-import { consoleAvailable, consoleSession, consoleSessions, consoleTabAvailable, endSeverity, pullOffer, endWarning, nextStepFor, openWork, sessionsForChange, staleAge, workBadge, worktreeForChange, worktreeOfSession, worktreeRemovalPossible } from "../src/ui/sessionState.ts";
+import { ConflictBadge } from "../src/ui/sessions.tsx";
+import { byTag, textOf } from "./vnode.ts";
+import { conflictBadge, consoleAvailable, consoleSession, consoleSessions, consoleTabAvailable, endSeverity, pullOffer, endWarning, nextStepFor, openWork, resolvable, sessionsForChange, staleAge, workBadge, worktreeForChange, worktreeOfSession, worktreeRemovalPossible } from "../src/ui/sessionState.ts";
 
 const NOW = Date.parse("2026-09-21T12:00:00Z");
 const ago = (hours: number) => new Date(NOW - hours * 3_600_000).toISOString();
@@ -233,4 +235,65 @@ test("a session in a folder without git has no worktree, so no work status, no S
   // Ending it offers no pull either: the pull action only runs in a git repository.
   expect(pullOffer({ isGit: false, ok: true }, undefined)).toEqual({ offered: false, preselected: false });
   expect(pullOffer({ isGit: true, ok: true }, { state: "merged" })).toEqual({ offered: true, preselected: true });
+});
+
+test("the conflict badge names the base, the files and how fresh the answer is", () => {
+  const one = conflictBadge(wt("a", { state: "pushed", base: "origin/main", conflicts: { base: "origin/main", files: ["src/router/table.ts"] } }));
+  expect(one).toMatchObject({ icon: "⚠", label: "conflicts with origin/main", tone: "warning" });
+  expect(one?.title).toContain("no longer merges into origin/main");
+  expect(one?.title).toContain("as of your last fetch"); // the caveat is never dropped (design D4)
+  expect(one?.title).toContain("Pull to refresh the base.");
+  expect(one?.title).toContain("1 file: src/router/table.ts");
+
+  const two = conflictBadge(wt("a", { state: "unpushed", count: 2, base: "origin/main", conflicts: { base: "origin/main", files: ["a.ts", "b.ts"] } }));
+  expect(two?.title).toContain("2 files: a.ts, b.ts");
+
+  const many = conflictBadge(wt("a", { state: "pushed", base: "origin/main", conflicts: { base: "origin/main", files: ["a.ts", "b.ts"], truncated: true } }));
+  expect(many?.title).toContain("2+ files");
+  expect(many?.title).toContain(", and more");
+});
+
+test("no conflict signal, no badge — whatever the work state is", () => {
+  for (const work of [
+    { state: "pushed", base: "origin/main" },
+    { state: "merged", base: "origin/main" },
+    { state: "clean" },
+    { state: "missing" },
+  ] as WorkStatus[]) {
+    expect(conflictBadge(wt("a", work))).toBeUndefined();
+  }
+  expect(conflictBadge(undefined)).toBeUndefined();
+});
+
+test("Resolve conflicts is offered only for a change session with a conflicting worktree", () => {
+  const session = { id: "s", state: "running" } as Session;
+  const conflicting = wt("a", { state: "pushed", base: "origin/main", conflicts: { base: "origin/main", files: ["a.ts"] } });
+  expect(resolvable(session, conflicting)).toBe(true);
+
+  // An ended session can still be asked: the agent is started again in the worktree.
+  expect(resolvable({ ...session, state: "exited" } as Session, conflicting)).toBe(true);
+
+  expect(resolvable(session, wt("a", { state: "pushed", base: "origin/main" }))).toBe(false); // merges cleanly
+  expect(resolvable(session, wt("a", { state: "merged", base: "origin/main" }))).toBe(false);
+  expect(resolvable(session, undefined)).toBe(false);
+  expect(resolvable(undefined, conflicting)).toBe(false);
+  // An in-place session has no branch, and the console belongs to no change.
+  expect(resolvable({ ...session, inPlace: true } as Session, conflicting)).toBe(false);
+  expect(resolvable({ ...session, console: true } as unknown as Session, conflicting)).toBe(false);
+});
+
+test("the rendered conflict badge carries the warning tone, the explanation and a decorative icon", () => {
+  const conflicting = wt("a", { state: "pushed", base: "origin/main", conflicts: { base: "origin/main", files: ["src/router/table.ts"] } });
+  const node = ConflictBadge({ worktree: conflicting });
+  const spans = byTag(node, "span");
+  expect(spans[0].props.class).toBe("badge warning");
+  expect(String(spans[0].props.title)).toContain("no longer merges into origin/main");
+  expect(String(spans[0].props.title)).toContain("as of your last fetch");
+  // Text, never colour alone; the glyph is decoration and stays out of the accessible name.
+  expect(textOf(node)).toContain("conflicts with origin/main");
+  expect(spans[1].props["aria-hidden"]).toBe("true");
+
+  // A branch that merges renders nothing at all.
+  expect(ConflictBadge({ worktree: wt("a", { state: "pushed", base: "origin/main" }) })).toBeNull();
+  expect(ConflictBadge({ worktree: undefined })).toBeNull();
 });

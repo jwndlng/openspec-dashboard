@@ -1,5 +1,5 @@
 // Pure helpers for the agent-session UI; free of DOM access at import time so they can be unit-tested.
-import { availableActions, repoAgentEnabled, SHIPPABLE_WORK, type AgentProfile, type ChangeSnapshot, type Config, type RepoSnapshot, type ChangeSession, changeSessions, type ConsoleSession, type Session, type SessionAction, type SessionWorktree, type WorkStatus } from "../shared/types.ts";
+import { availableActions, isChangeless, repoAgentEnabled, SHIPPABLE_WORK, type AgentProfile, type ChangeSnapshot, type Config, type RepoSnapshot, type ChangeSession, changeSessions, type ConsoleSession, type Session, type SessionAction, type SessionWorktree, type WorkStatus } from "../shared/types.ts";
 
 /** Session starters are shown when the feature is on, for every tracked repository that has not been switched off. */
 export function sessionsEnabledFor(config: Config | null, repoId: string): boolean {
@@ -220,6 +220,35 @@ export function workBadge(worktree: SessionWorktree, sessions: readonly Session[
   if (state === "pushed") return { label: `⇡ pushed${tail}`, tone: stale ? "warning" : "branch", title: `pushed, but not in ${base ?? "the default branch"} as of your last fetch${waiting}` };
   if (state === "merged") return { label: "✓ merged", tone: "success", title: `merged into ${base ?? "the default branch"} as of your last fetch — the worktree can be removed` };
   return undefined;
+}
+
+/**
+ * The conflict badge, beside the work badge rather than replacing it: "pushed" and "no longer merges" are two different
+ * facts about the same branch, and the user needs both. Warning, not danger: nothing is lost, the branch needs work.
+ *
+ * The wording always carries the freshness caveat, because the base is whatever the user last fetched (design D4).
+ */
+export function conflictBadge(worktree: SessionWorktree | undefined): SessionBadge | undefined {
+  const conflicts = worktree?.work.conflicts;
+  if (!conflicts) return undefined;
+  const count = conflicts.files.length;
+  const listed = conflicts.truncated ? `${count}+ files` : plural(count, "file");
+  const names = conflicts.files.join(", ");
+  return {
+    icon: "⚠",
+    label: `conflicts with ${conflicts.base}`,
+    tone: "warning",
+    title: `this branch no longer merges into ${conflicts.base} as of your last fetch — ${listed}: ${names}${conflicts.truncated ? ", and more" : ""}. Pull to refresh the base.`,
+  };
+}
+
+/**
+ * Whether Resolve conflicts is offered. The same predicate the server refuses by, expressed where the control lives —
+ * an in-place session has no branch, and a worktree with no conflict signal has nothing to resolve.
+ */
+export function resolvable(session: Session | undefined, worktree: SessionWorktree | undefined): boolean {
+  if (!session || isChangeless(session) || session.inPlace) return false;
+  return worktree?.work.conflicts !== undefined;
 }
 
 /** The worktree a card stands for: the change's own one; its archive worktree only matters once that holds work. */

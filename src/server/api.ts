@@ -243,6 +243,7 @@ async function sessionRoutes(state: AppState, req: Request, url: URL, server?: S
     } else if (req.method === "POST") {
       if (sub === "resume") return json(await sessions.resume(id));
       if (sub === "ship") return json(await sessions.ship(id));
+      if (sub === "resolve-conflicts") return json(await sessions.resolveConflicts(id));
       if (sub === "prompt") return json(await sessions.prompt(id, await readJson(req)));
       if (sub === "close") return json(await sessions.close(id, { removeWorktree: (await readJson(req)).removeWorktree === true }));
     }

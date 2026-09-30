@@ -15,7 +15,7 @@ export type Step =
   /** The agent's process ends. */
   | { exit: number; after?: number };
 
-export type TranscriptName = "draft" | "implement" | "implementAsking" | "validate" | "archive" | "resume" | "ship" | "console" | "integrate";
+export type TranscriptName = "draft" | "implement" | "implementAsking" | "validate" | "archive" | "resume" | "ship" | "resolveConflicts" | "console" | "integrate";
 
 const DIM = "\x1b[2m";
 const BOLD = "\x1b[1m";
@@ -175,6 +175,25 @@ export const TRANSCRIPTS: Record<TranscriptName, Step[]> = {
     { out: note("created openspec/specs/ and openspec/changes/"), after: 700 },
     { out: say("Done. The dashboard will pick this project up now that the config file is there."), after: 900 },
     { exit: 0, after: 1400 },
+  ],
+  // The dashboard hands over the prompt; everything after it is the agent's own doing, as in the real thing.
+  resolveConflicts: [
+    { out: line(), after: 200 },
+    { out: line(`${GREEN}>${OFF} The branch for {change} no longer merges into the default branch. Bring it up to date and resolve the conflicts.`), after: 500 },
+    { out: line(), after: 300 },
+    { out: tool("Run git fetch and git rebase onto the default branch"), after: 1400 },
+    { out: note("2 conflicts: src/router/table.ts, src/router/table.test.ts"), after: 1800 },
+    { out: tool("Read src/router/table.ts"), after: 1200 },
+    { out: say("Both sides added a route to the same table. Keeping both, in the order the default branch has."), after: 2200 },
+    { out: tool("Edit src/router/table.ts"), after: 1300 },
+    { out: tool("Edit src/router/table.test.ts"), after: 1100 },
+    { out: tool("Run the checks"), after: 1500 },
+    { out: note("lint, types and tests pass"), after: 2200 },
+    { out: tool("Run git rebase --continue"), after: 1200 },
+    { out: tool("Run git push --force-with-lease"), after: 1600, work: { state: "pushed", base: "origin/main" } },
+    { out: note("{branch} merges cleanly again"), after: 1200 },
+    { out: say("Conflicts resolved. The pull request is mergeable — I have not merged it."), after: 800 },
+    { exit: 0, after: 1500 },
   ],
   ship: [
     { out: line(), after: 200 },

@@ -78,8 +78,12 @@ bun test test/scanner.test.ts   # a single test file
    in tests). Apart from the worktree commands, the pull action's `fetch`, `merge --ff-only`, leftover `rm --cached`
    and restoring `add`, the create-change and dismissal `add` and the cleanup's `branch -D`, git is invoked only with
    the read-only subcommands listed in that spec — among them `ls-tree`, `cat-file` and `hash-object` without `-w`,
-   which is how a leftover is told from the user's own work. Adding a path or a subcommand means changing that spec
-   first.
+   which is how a leftover is told from the user's own work, and `merge-tree --write-tree`, which answers whether a
+   session's branch still merges into its base. That last one is the only read-only subcommand that writes anything at
+   all: it puts the tree it merges into an object database, so it is always invoked with `GIT_OBJECT_DIRECTORY` pointed
+   at a scratch store under `~/.openspec-dashboard/` and the repository's own objects offered only as
+   `GIT_ALTERNATE_OBJECT_DIRECTORIES` — it reads everything and writes nothing into the repository, and it is never
+   given a working tree, an index or a ref. Adding a path or a subcommand means changing that spec first.
 2. **Loopback only.** The server binds `127.0.0.1`; there is no auth because nothing else can reach it.
 2a. **Mutating API routes are same-origin only.** Every non-GET `/api/` request passes `crossSiteRefusal` in
    `src/server/api.ts` (JSON content type, loopback host, own origin); the terminal WebSocket has `webSocketRefusal`. Loopback binding alone does not stop a web page
@@ -133,7 +137,12 @@ bun test test/scanner.test.ts   # a single test file
 - **Work status** (`workStatus.ts`) is read per worktree *directory* — directories outlive session records — with
   read-only git and no network, so `merged` means "as of the user's last fetch"; squash merges are recognised by
   comparing the content of the files the branch touched. The dashboard never commits, pushes or calls `gh`: **Ship** only
-  hands the agent a prompt (`prompts.ship`, else `DEFAULT_SHIP_PROMPT`).
+  hands the agent a prompt (`prompts.ship`, else `DEFAULT_SHIP_PROMPT`). A status that holds work the base lacks also
+  carries a **conflict signal** — whether the branch still merges into that base, and which files clash — computed with
+  `merge-tree` as invariant 1 describes, and as stale as the last fetch, which the UI says. **Resolve conflicts** is the
+  second prompt-only action, shaped exactly like Ship (`prompts.resolveConflicts`, else
+  `DEFAULT_RESOLVE_CONFLICTS_PROMPT`): the dashboard merges, rebases, checks out, commits and pushes nothing for it —
+  it hands over the prompt and re-derives what came of it from git, never from what the agent said.
 - Tests never start a real agent or use the network: `test/fixtures/fake-agent.ts` is a tiny interactive program run in
   real pseudo-terminals and temp git repositories.
 - Anything here must also work in the compiled binary (`bun run build`), not just under `bun run`.

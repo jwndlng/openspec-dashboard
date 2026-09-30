@@ -94,6 +94,9 @@ export function describe(event: ActivityEvent): string {
       return event.exitCode === undefined || event.exitCode === 0 ? "session ended" : `session ended (exit ${event.exitCode})`;
     case "session-shipped":
       return event.submitted === false ? "ship requested — typed, not sent" : "ship requested";
+    case "session-conflicts-resolve":
+      // What was handed over, not what came of it: the outcome is re-read from git, never taken from the agent.
+      return event.submitted === false ? "conflict resolution requested — typed, not sent" : "conflict resolution requested";
   }
 }
 

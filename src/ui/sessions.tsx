@@ -6,7 +6,7 @@ import { changeSessions, isConsole, isIntegration, type AgentAvailability, type 
 import { api } from "./api.ts";
 import { cdCommand, relTime } from "./format.ts";
 import { assignRepoHues, repoTint } from "./repoGroups.ts";
-import { agentForRepo, cardSessionControls, openWork, type SessionBadge, nextStepFor, sessionBadge, sessionsEnabledFor, workBadge, worktreeForChange } from "./sessionState.ts";
+import { agentForRepo, cardSessionControls, conflictBadge, openWork, type SessionBadge, nextStepFor, sessionBadge, sessionsEnabledFor, workBadge, worktreeForChange } from "./sessionState.ts";
 import { boardFrom, changePath, CONSOLE_TAB, parseDetailQuery, routeFromPath, serializeDetailQuery } from "./routes.ts";
 import { currentPath, currentQuery, navigate } from "./url.ts";
 
@@ -369,10 +369,34 @@ export function SessionControls({ card }: { card: Pick<ChangeSnapshot, "repoId" 
   );
 }
 
-/** The work status of a change's session worktree, for the detail view's header; nothing when there is none to show. */
+/**
+ * "This branch no longer merges." Hook-free on purpose: it is rendered in two places and is the one piece of this
+ * feature's markup worth asserting on without a renderer. Nothing when the branch merges, or could not be checked.
+ */
+export function ConflictBadge({ worktree }: { worktree: SessionWorktree | undefined }) {
+  const badge = conflictBadge(worktree);
+  if (!badge) return null;
+  return (
+    <span class={`badge ${badge.tone}`} title={badge.title}>
+      <span aria-hidden="true">{badge.icon} </span>
+      {badge.label}
+    </span>
+  );
+}
+
+/**
+ * The work status of a change's session worktree, for the detail view's header; nothing when there is none to show.
+ * A conflicting branch says so here too, but the control to do something about it stays in the panel, where the agent is.
+ */
 export function WorkStatus({ repoId, name }: { repoId: string; name: string }) {
   const ui = useSessionUi();
   if (!sessionsEnabledFor(ui.config, repoId)) return null;
   const worktree = worktreeForChange(ui.worktrees, repoId, name);
-  return worktree ? <WorkBadge worktree={worktree} /> : null;
+  if (!worktree) return null;
+  return (
+    <>
+      <WorkBadge worktree={worktree} />
+      <ConflictBadge worktree={worktree} />
+    </>
+  );
 }

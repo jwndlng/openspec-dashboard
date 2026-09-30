@@ -140,3 +140,31 @@ test("a broken activity callback never fails a scan", async () => {
   const snapshot: Snapshot = await scanner.trigger().done;
   expect(snapshot.repos).toHaveLength(1);
 });
+
+test("resolving conflicts is reported as its own kind, with whether the prompt was submitted", async () => {
+  const reported: { session: ChangeSession; what: SessionActivity }[] = [];
+  const h = await harness();
+  const manager = h.newManager({ onActivity: (session, what) => reported.push({ session, what }), submitTimings: { echoTimeoutMs: 600, settleMs: 20 } });
+  try {
+    const s = await manager.open({ repoId: h.repoId, change: "upgrade-runtime", action: "implement" });
+    await waitFor(() => manager.get(s.id).state === "running", "the agent");
+
+    // Same line on both sides, so the branch no longer merges into the base.
+    await writeFile(join(s.worktreePath, "shared.txt"), "branch side\n");
+    git(s.worktreePath, "add", "-A");
+    git(s.worktreePath, "commit", "-q", "-m", "branch edit");
+    await writeFile(join(h.repoPath, "shared.txt"), "main side\n");
+    git(h.repoPath, "add", "-A");
+    git(h.repoPath, "commit", "-q", "-m", "main edit");
+
+    await manager.resolveConflicts(s.id);
+    await waitFor(() => reported.some((r) => r.what.kind === "session-conflicts-resolve"), "the report");
+    expect(reported.map((r) => r.what.kind)).toEqual(["session-started", "session-conflicts-resolve"]);
+    expect(reported[1].what).toEqual({ kind: "session-conflicts-resolve", submitted: true });
+
+    const event = sessionEvent(reported[1].session, "demo-ops", reported[1].what, new Date("2026-09-21T09:00:00.000Z"));
+    expect(event).toMatchObject({ v: 1, kind: "session-conflicts-resolve", change: "upgrade-runtime", repoId: h.repoId, repoName: "demo-ops", submitted: true });
+  } finally {
+    await manager.shutdown();
+  }
+});
