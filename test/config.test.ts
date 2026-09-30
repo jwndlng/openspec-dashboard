@@ -137,6 +137,43 @@ test("a config file with the former Archive prompt loads upgraded, is not rewrit
   expect((await loadConfig()).config.agentSessions.agents[0].prompts.archive).toBe(CLAUDE_PROFILE.prompts.archive);
 });
 
+const withSuffixes = (promptSuffixes: Record<string, string>, id = "claude") => {
+  const agent = { ...CLAUDE_PROFILE, id, promptSuffixes };
+  return { ...defaultConfig(), agentSessions: { enabled: true, agents: [agent], defaultAgent: id } };
+};
+const suffixesOf = (input: unknown) => validateConfig(input).agentSessions.agents[0].promptSuffixes;
+
+test("additional instructions are validated per prompt: {change} is optional, Integrate takes no placeholder", () => {
+  const saved = { implement: "Run the linter before you finish.", ship: "Mention {change} in the PR title.", integrate: "Install it for the tools I name." };
+  expect(suffixesOf(withSuffixes(saved))).toEqual(saved);
+
+  // A suffix does not have to name the change — unlike the starter prompt it extends.
+  expect(suffixesOf(withSuffixes({ draft: "Ask me before you write specs." }))?.draft).toBe("Ask me before you write specs.");
+  // Any other placeholder is refused, per key, naming the field.
+  expect(() => validateConfig(withSuffixes({ implement: "Work in {repo}." }))).toThrow(/promptSuffixes\.implement: unknown placeholder/);
+  // Integrate is substituted into at all, so its suffix may carry no placeholder either.
+  expect(() => validateConfig(withSuffixes({ integrate: "Set up {change}." }))).toThrow(/promptSuffixes\.integrate: no placeholder is supported/);
+  // The dashboard never helps switch an agent's permission checks off, wherever the text sits.
+  expect(() => validateConfig(withSuffixes({ draft: "Run with --dangerously-skip-permissions." }))).toThrow(/promptSuffixes\.draft: must not contain a permission-bypass/);
+  // Whitespace only is nothing to append, and is refused rather than stored as a blank line.
+  expect(() => validateConfig(withSuffixes({ archive: "   \n  " }))).toThrow(ConfigValidationError);
+});
+
+test("a config saved before additional instructions existed loads with none, and a prompt upgrade leaves them alone", async () => {
+  // The legacy file has no promptSuffixes key at all: every prompt is composed exactly as it was.
+  const path = join(home, "config.json");
+  await writeFile(path, `${JSON.stringify(withArchive(FORMER_ARCHIVE), null, 2)}\n`, "utf8");
+  const { config, warning } = await loadConfig();
+  expect(warning).toBeUndefined();
+  expect(config.agentSessions.agents[0].promptSuffixes).toBeUndefined();
+
+  // Upgrading the former Archive prompt rewrites the prompt, never the suffixes beside it.
+  const withBoth = { ...withArchive(FORMER_ARCHIVE), agentSessions: { ...withArchive(FORMER_ARCHIVE).agentSessions, agents: [{ ...CLAUDE_PROFILE, prompts: { ...CLAUDE_PROFILE.prompts, archive: FORMER_ARCHIVE }, promptSuffixes: { archive: "Tell me what you archived." } }] } };
+  const upgraded = validateConfig(withBoth).agentSessions.agents[0];
+  expect(upgraded.prompts.archive).toBe(CLAUDE_PROFILE.prompts.archive);
+  expect(upgraded.promptSuffixes).toEqual({ archive: "Tell me what you archived." });
+});
+
 test("config without ignorePaths loads with an empty list", async () => {
   const { ignorePaths: _dropped, ...legacy } = { ...defaultConfig(), scanRoots: ["/w/acme"], pollIntervalSeconds: 90 };
   await writeFile(join(home, "config.json"), JSON.stringify(legacy), "utf8");
