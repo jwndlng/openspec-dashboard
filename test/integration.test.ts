@@ -117,6 +117,15 @@ test("Integrate is refused, without starting anything, for every reason it can b
   for (const each of [off, noPrompt, missing, h, tracked]) expect(each.sessions.list()).toEqual([]);
 });
 
+test("Integrate's additional instructions are appended to its prompt, as one argument", async () => {
+  const h = await harness({ agent: withIntegrate({ promptSuffixes: { integrate: "  Ask me which tools first.\n  Then stop.  " } }) });
+  const { session } = await startIntegration(h, { path: h.folder });
+  const view = await watch(h.sessions, session.id);
+  await waitFor(() => view.text().includes("fake-agent ready"), "agent start");
+  // Composed, collapsed to one line, and still exactly one argument.
+  expect(view.text()).toContain(`args=${JSON.stringify([`${INTEGRATE} Ask me which tools first. Then stop.`])}`);
+});
+
 test("Integrate runs the agent in the repository folder: no worktree, no branch, and not change work", async () => {
   const h = await harness();
   const { session, created } = await startIntegration(h, { path: h.folder });

@@ -80,6 +80,28 @@ test("prompt refusals: stage, archive, unknown action, not running, feature off"
   expect(await refused("implement")).toBe(409);
 });
 
+test("the next step carries the profile's additional instructions for that action", async () => {
+  const h = await harness({ agent: { promptSuffixes: { implement: "Run the linter before you finish." } } });
+  managers.push(h.manager);
+  const s = await h.manager.open({ repoId: h.repoId, change: "upgrade-runtime", action: "implement" });
+  const seen = await watch(h.manager, s.id);
+  await waitFor(() => seen.text().includes("fake-agent ready"), "the agent");
+  // The opening prompt already carried it, as one argument.
+  expect(seen.text()).toContain("implement upgrade-runtime Run the linter before you finish.");
+
+  expect((await h.manager.prompt(s.id, { action: "implement" })).submitted).toBe(true);
+  await waitFor(() => seen.text().includes("you said: implement upgrade-runtime Run the linter before you finish."), "the composed prompt the agent received");
+});
+
+test("additional instructions for an action with no prompt leave it unavailable, and are sent nowhere", async () => {
+  const h = await harness({ agent: { prompts: { draft: "draft {change}" }, promptSuffixes: { implement: "Run the linter before you finish." } } });
+  managers.push(h.manager);
+  // Implement is available for the fixture's change, but the agent has no Implement prompt: the suffix does not stand in for one.
+  expect(h.manager.open({ repoId: h.repoId, change: "upgrade-runtime", action: "implement" })).rejects.toThrow(/no "implement" prompt configured/);
+  expect(h.manager.list()).toHaveLength(0);
+  expect(startersFor(h.config, changeOf(h, "upgrade-runtime"))).toEqual([]);
+});
+
 test("a draft session takes the implement prompt once the change is ready, and records it", async () => {
   const h = await harness();
   managers.push(h.manager);

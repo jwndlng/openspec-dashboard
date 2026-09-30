@@ -9,7 +9,7 @@ import { isCleaningUp } from "../cleanup.ts";
 import { isDismissing } from "../dismissChange.ts";
 import { worktreesDir } from "../paths.ts";
 import { CHANGE_NAME } from "../source.ts";
-import { agentEnv, agentFor, availability, defaultAgentOf, launchCommand, launchWithoutPrompt, openingPrompt, shipPrompt } from "./agents.ts";
+import { agentEnv, agentFor, availability, defaultAgentOf, integratePrompt, launchCommand, launchWithoutPrompt, openingPrompt, shipPrompt } from "./agents.ts";
 import { consoleFolderProblem, prepareConsoleFolder } from "./consoleFolder.ts";
 import type { SessionActivity } from "../activity/events.ts";
 import { SessionStore } from "./store.ts";
@@ -255,7 +255,7 @@ export class SessionManager {
     if (running) return { session: running, created: false };
     const agent = defaultAgentOf(config);
     if (!agent) throw new SessionError(503, "no agent is configured");
-    const prompt = agent.prompts.integrate;
+    const prompt = integratePrompt(agent);
     if (!prompt) throw new SessionError(400, `${agent.name} has no Integrate prompt configured`);
     if (!Bun.which(agent.command[0])) throw new SessionError(503, `${agent.name} was not found (${agent.command[0]}); install it or change its command in Settings`);
     const now = new Date().toISOString();
