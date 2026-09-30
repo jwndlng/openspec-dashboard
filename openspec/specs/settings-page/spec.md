@@ -6,7 +6,7 @@ Defines the structure of the Settings page: the list of sections, the section na
 ## Requirements
 
 ### Requirement: Settings is one page made of named sections
-The Settings page SHALL present all settings on a single page as an ordered list of sections, each with a stable identifier and a label: Workspace roots (`roots`), Tracked repositories (`tracked`), Discovered (`discovered`), Scanning (`scanning`), Agent sessions (`agents`) and Shared OpenSpec config (`shared-config`). All sections that apply SHALL be rendered at the same time; navigating between them MUST NOT unmount a section, discard unsaved edits, or change what the save bar and the "unsaved changes" indicator cover. The navigation and the sections SHALL be produced from the same list, so that every section shown has exactly one navigation entry and every navigation entry has a section.
+The Settings page SHALL present all settings on a single page as an ordered list of sections, each with a stable identifier and a label: Workspace roots (`roots`), Tracked repositories (`tracked`), Discovered (`discovered`), Scanning (`scanning`), Agent sessions (`agents`), Shared OpenSpec config (`shared-config`) and Environment (`environment`). Environment SHALL be the last section: it reports on the machine rather than configuring anything, and it is where the environment indicator outside Settings links to. All sections that apply SHALL be rendered at the same time; navigating between them MUST NOT unmount a section, discard unsaved edits, or change what the save bar and the "unsaved changes" indicator cover. The navigation and the sections SHALL be produced from the same list, so that every section shown has exactly one navigation entry and every navigation entry has a section.
 
 #### Scenario: Unsaved edits survive navigation
 - **WHEN** the user changes the poll interval without saving and then uses the navigation to go to Workspace roots and back to Scanning
@@ -19,6 +19,14 @@ The Settings page SHALL present all settings on a single page as an ordered list
 #### Scenario: Find in page covers everything
 - **WHEN** the user searches the page for a repository name with the browser's find function while at the top of Settings
 - **THEN** matches in any section are found, because all sections are present in the page
+
+#### Scenario: Environment comes last
+- **WHEN** Settings is opened
+- **THEN** the last navigation entry and the last section are Environment, and the first section is still Workspace roots
+
+#### Scenario: Environment does not join the draft
+- **WHEN** the user opens the Environment section and asks for a fresh report without editing anything else
+- **THEN** the save bar shows no unsaved changes
 
 ### Requirement: A section navigation is shown beside the sections
 On viewports wider than 720px the Settings page SHALL show a navigation to the left of the sections, listing every section in page order and starting level with the first section. Settings SHALL scroll as one page: the navigation and the sections SHALL share a single scroll area that spans the full width below the top bar, so that scrolling works wherever the pointer is. The navigation SHALL move along with the content beside the current section: while the current section's start is in view the navigation SHALL be level with it; once that start has scrolled above the view, the navigation SHALL stay in view level with the top of the visible area until it reaches the end of that section, with which it then moves; it SHALL never extend below the last section. When the current section changes the navigation SHALL glide to its new place; while scrolling within one section it SHALL keep pace with the content without lagging behind. It SHALL NOT be pinned to the top of the page independently of the sections. Activating an entry SHALL bring the start of that section to the top of the visible area and move keyboard focus to that section, so that the next Tab press reaches the section's first control. When the page is scrolled back to its very top, the navigation SHALL be visible again, level with the first section. Scrolling SHALL be animated only when the user has not requested reduced motion. The save bar SHALL remain visible and unchanged.
@@ -79,7 +87,7 @@ The navigation SHALL mark exactly one entry as current: the section occupying th
 - **THEN** the last entry is current throughout the scroll, without intermediate entries becoming current
 
 ### Requirement: Navigation entries show counts that matter
-The "Tracked repositories" entry SHALL show the number of enabled and the total number of tracked repositories in the current draft. The "Discovered" entry SHALL show the number of discovered repositories that are not tracked, SHALL be visually emphasised when that number is greater than zero, and SHALL show a pending indicator instead of a number while discovery is running. Emphasis MUST NOT rely on colour alone. The counts SHALL always equal the numbers shown in the corresponding section headings.
+The "Tracked repositories" entry SHALL show the number of enabled and the total number of tracked repositories in the current draft. The "Discovered" entry SHALL show the number of discovered repositories that are not tracked, SHALL be visually emphasised when that number is greater than zero, and SHALL show a pending indicator instead of a number while discovery is running. The "Environment" entry SHALL show the number of checks in the latest report whose status is neither `ok` nor `not-needed`, SHALL be visually emphasised when that number is greater than zero, and SHALL show a pending indicator instead of a number while the report is being computed and nothing instead of a number when no report could be loaded. Emphasis MUST NOT rely on colour alone. The counts SHALL always equal the numbers shown in the corresponding section headings.
 
 #### Scenario: New repositories to enable
 - **WHEN** discovery finds 3 repositories that are not tracked
@@ -92,6 +100,14 @@ The "Tracked repositories" entry SHALL show the number of enabled and the total 
 #### Scenario: Nothing to enable
 - **WHEN** no untracked repositories are found
 - **THEN** the "Discovered" entry shows `0` without emphasis
+
+#### Scenario: Two environment problems
+- **WHEN** the latest report has one `problem`, one `warning` and the rest `ok` or `not-needed`
+- **THEN** the "Environment" entry shows `2` and is emphasised, and the Environment section heading says the same number
+
+#### Scenario: A healthy environment
+- **WHEN** every check in the latest report is `ok` or `not-needed`
+- **THEN** the "Environment" entry shows `0` without emphasis
 
 ### Requirement: Sections can be linked to
 The current section SHALL be reflected in the URL as the query parameter `section` holding the section identifier, updated without adding browser history entries and without discarding other query parameters. Opening Settings with a valid `section` parameter SHALL show that section at the top of the visible area once it is available; an unknown identifier SHALL be ignored and Settings SHALL open at the top. This SHALL work the same in the locally served dashboard and in the demo build, whose route is carried in the URL fragment. Navigation entries SHALL be real links that can be opened in a new tab.
