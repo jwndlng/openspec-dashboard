@@ -593,3 +593,44 @@ be unchanged.
 #### Scenario: Foreign origin
 - **WHEN** a page on another origin posts to `/api/repos/<id>/changes/<name>/dismiss`
 - **THEN** the response is `403` and nothing is deleted
+
+### Requirement: Cleanup endpoints
+`GET /api/repos/<id>/cleanup` SHALL return the repository's cleanup preview as specified in the `repository-cleanup`
+capability: the base branch, and the lists of worktrees, stale worktree records and branches, each item with whether
+it is removable and otherwise the reason it is kept; each branch item SHALL carry the commit it points to and, when it
+is checked out in a worktree, that worktree's path. `POST /api/repos/<id>/cleanup` with
+`{ "worktrees": [<path>, …], "prune": <boolean>, "branches": [{ "name", "commit" }, …] }` SHALL apply that selection
+under the cleanup rules and return one outcome per requested item, then trigger a rescan of the repository. Both
+routes SHALL accept only a repository that is configured, enabled, a git repository and whose last scan succeeded;
+otherwise the response is `404` (unknown) or `409` (not eligible) and no git command is run. The repository's path
+MUST come from the config, never from the request. A worktree path in the request that is not a linked worktree of
+that repository, and a branch name that is not a valid local branch name of that repository, SHALL be reported as kept
+with a reason and never passed to a removal; a malformed body SHALL be refused with `400` and nothing removed. A second
+`POST` for a repository whose cleanup is still running SHALL be refused with `409`. The `POST` route is subject to the
+same-origin protection. Neither route depends on agent sessions being enabled.
+
+#### Scenario: Preview
+- **WHEN** `GET /api/repos/<id>/cleanup` is called for a repository with one merged worktree
+- **THEN** the response lists that worktree as removable and its branch as removable with its commit
+
+#### Scenario: Foreign path
+- **WHEN** `POST /api/repos/<id>/cleanup` names the worktree path `/tmp/elsewhere`, which is not a worktree of that
+  repository
+- **THEN** the response reports it as kept because it is not a worktree of the repository, and no git write command is
+  run for it
+
+#### Scenario: Option-like branch name
+- **WHEN** the request names the branch `--all`
+- **THEN** it is reported as kept as an invalid branch name and no branch is deleted
+
+#### Scenario: Disabled repository
+- **WHEN** either route is called for a disabled repository
+- **THEN** the response is `409` and no git command is run
+
+#### Scenario: Concurrent cleanup
+- **WHEN** a second `POST` arrives while a cleanup of the same repository is running
+- **THEN** the response is `409` and the first cleanup's outcome is unaffected
+
+#### Scenario: Foreign origin
+- **WHEN** a page on another origin posts to `/api/repos/<id>/cleanup`
+- **THEN** the response is `403` and nothing is removed
