@@ -245,7 +245,7 @@ Within every column, including the expanded `Archived` column, the board SHALL g
 - **THEN** the 25 most recently archived changes are shown, grouped by repository, with each group's cards in archive-date descending order, and the column header still reports the total of `96`
 
 ### Requirement: Each repository has its own stable colour
-The board SHALL assign every repository in the snapshot a colour derived deterministically from its repository id, without any configuration. The assignment SHALL be computed over all repositories in the snapshot, independent of the active filters, so that the same set of tracked repositories always yields the same colours across reloads, scans and filter changes. Repositories tracked at the same time SHALL receive distinct colours for up to 19 repositories. The colours a repository can be assigned SHALL exclude the hues the status roles and the brand accent own: every assignable repository hue SHALL differ from every one of those hues by at least 12°, so a repository is never shown in a colour that means "running", "uncommitted", "complete", "needs attention" or "error". The repository colour SHALL be shown on the repository's group header, which encloses its cards, on its entry in the repository filter menu and on its active-filter tag, and on each agent session tab in the dock's tab strip — as an accent on the tab and on the repository name it shows. A session tab whose repository is not in the current snapshot SHALL be shown without a repository colour. The repository colour on a tab MUST NOT replace or obscure the marks that say which sessions are shown and which tab is focused; those marks SHALL stay distinguishable from every assignable repository colour. The colour SHALL adapt to the active theme so that repository-coloured text keeps a contrast ratio of at least 4.5:1 against its background in every supported theme, including the background of the dock's tab strip and of a tab whose session is shown. Colour MUST NOT be the only cue: wherever a repository colour is shown, the repository name SHALL be shown with it. The error styling of a repository's filter menu entry SHALL take precedence over its repository colour.
+The board SHALL assign every repository in the snapshot a colour derived deterministically from its repository id, without any configuration. The assignment SHALL be computed over all repositories in the snapshot, independent of the active filters, so that the same set of tracked repositories always yields the same colours across reloads, scans and filter changes. Repositories tracked at the same time SHALL receive distinct colours for up to 19 repositories. The colours a repository can be assigned SHALL exclude the hues the status roles and the brand accent own: every assignable repository hue SHALL differ from every one of those hues by at least 12°, so a repository is never shown in a colour that means "running", "uncommitted", "complete", "needs attention", "error" or "console". The repository colour SHALL be shown on the repository's group header, which encloses its cards, on its entry in the repository filter menu and on its active-filter tag, and on each entry of the Open work list — as an accent on the entry and on the repository name it shows. An entry whose repository is not in the current snapshot SHALL be shown without a repository colour. The repository colour on an entry MUST NOT replace or obscure its live session badge, which SHALL stay distinguishable from every assignable repository colour. The colour SHALL adapt to the active theme so that repository-coloured text keeps a contrast ratio of at least 4.5:1 against its background in every supported theme, including the background of the Open work list. Colour MUST NOT be the only cue: wherever a repository colour is shown, the repository name SHALL be shown with it. The error styling of a repository's filter menu entry SHALL take precedence over its repository colour.
 
 #### Scenario: Distinct colours
 - **WHEN** 17 repositories are tracked
@@ -263,25 +263,25 @@ The board SHALL assign every repository in the snapshot a colour derived determi
 - **WHEN** repository `beta-soc` has cards in three columns
 - **THEN** its group headers, around all of its cards, and its filter menu entry all use the same colour, each alongside the name `beta-soc`
 
-#### Scenario: Session tabs carry the repository colour
-- **WHEN** the dock shows tabs for sessions of `beta-soc` and of `alpha-infra`
-- **THEN** each tab shows its repository's accent and its repository name in that repository's colour, the same colour that repository's cards and group headers use, and both tabs still show the repository name as text
+#### Scenario: Open work entries carry the repository colour
+- **WHEN** the Open work list holds entries for sessions of `beta-soc` and of `alpha-infra`
+- **THEN** each entry shows its repository's accent and its repository name in that repository's colour, the same colour that repository's group headers use, and both entries still show the repository name as text
 
-#### Scenario: Filtering the board does not recolour a tab
-- **WHEN** the user filters the board to `alpha-infra` only while a `beta-soc` session is in the tab strip
-- **THEN** the `beta-soc` tab keeps the colour it had with no filter applied
+#### Scenario: Filtering the board does not recolour an entry
+- **WHEN** the user filters the board to `alpha-infra` only while a `beta-soc` session is in the Open work list
+- **THEN** the `beta-soc` entry keeps the colour it had with no filter applied
 
-#### Scenario: Shown and focused marks survive the tint
-- **WHEN** a tinted tab's session has a pane in the dock and its tab is the focused one
-- **THEN** the tab still shows the mark that says its session is shown and the marking of the focused tab, both distinguishable from the repository colour
+#### Scenario: The live badge survives the tint
+- **WHEN** a tinted Open work entry is for a running session and carries its live badge
+- **THEN** the badge stays distinguishable from the repository colour and still reads as text
 
 #### Scenario: Session of an untracked repository
-- **WHEN** a session's repository is switched off in Settings while its tab is in the strip
-- **THEN** that tab is shown without a repository colour and stays readable
+- **WHEN** a session's repository is switched off in Settings while its entry is in the Open work list
+- **THEN** that entry is shown without a repository colour and stays readable
 
 #### Scenario: Theme change
 - **WHEN** the user switches from the dark to the light theme
-- **THEN** each repository keeps the same hue, and repository-coloured text remains legible (contrast ≥ 4.5:1) on the light backgrounds, on the board and in the dock's tab strip
+- **THEN** each repository keeps the same hue, and repository-coloured text remains legible (contrast ≥ 4.5:1) on the light backgrounds, on the board and in the Open work list
 
 #### Scenario: Repository in error
 - **WHEN** a tracked repository failed to scan
@@ -289,7 +289,7 @@ The board SHALL assign every repository in the snapshot a colour derived determi
 
 #### Scenario: No repository wears a status colour
 - **WHEN** 19 repositories are tracked
-- **THEN** every assigned hue is at least 12° away from each of the status role hues and from the brand accent
+- **THEN** every assigned hue is at least 12° away from each of the status role hues, from the brand accent and from the console accent
 
 ### Requirement: Repository groups are visually distinct
 On a board showing more than one repository, each repository group SHALL be rendered as an enclosing panel that contains its group header and all of its cards. The panel SHALL have a background that differs from the column background and is tinted with the repository's colour, and a border in the same tint. The repository name in the group header SHALL be rendered in bold. The vertical distance between two adjacent groups SHALL be larger than the distance between two adjacent cards within a group. Cards SHALL remain visually distinguishable from the panel they sit on. The panel tint SHALL be derived from the repository colour and theme tokens so that it adapts to every supported theme, and repository-coloured text shown on the panel SHALL keep a contrast ratio of at least 4.5:1 against the panel background in every supported theme.
@@ -388,92 +388,66 @@ A card whose latest session failed to start or ended with an error SHALL show th
 - **WHEN** agent sessions are disabled
 - **THEN** no card shows a starter, a session badge or a console link
 
-### Requirement: Session panel
-The board SHALL show agent sessions in a dock at the bottom of the window that spans its full width, addressable in the URL so that it survives reload and working in both routing modes. For each session shown it SHALL present the change, repository, agent, worktree path and branch and the session's state; the session's terminal, coloured from the dashboard's theme tokens and rendered without loading anything from the network; and the actions End session or Clean up (with the remove-worktree confirmation when removal is safe), Resume when available, Delete record for an ended session, and "Copy cd" for the worktree. The page SHALL reserve the dock's height below its content so that no part of the board is hidden behind it. The dock's height SHALL be adjustable by dragging its top edge and by keyboard, within limits that keep both the board and a terminal usable, and SHALL be remembered in the browser; the dock SHALL offer maximising and collapsing to its tab strip. Hiding a session, collapsing the dock or closing it MUST NOT end any session, and the board MUST stay usable above the dock. When no session is shown and none is running there SHALL be no dock.
+### Requirement: Open work lists running sessions and unshipped work
+While agent sessions are enabled the top bar SHALL show an "Open work" control. Now that each terminal lives in its
+change's detail view, this list is the only view of agent activity that spans repositories, so it SHALL cover both the
+agents running and the work they left behind.
 
-#### Scenario: Deep link
-- **WHEN** the user reloads the page while a session panel is open
-- **THEN** the same session's terminal is shown again, including its earlier output
+Its count SHALL be the number of running sessions plus the number of worktrees that hold unshipped work with no session
+running; it SHALL be hidden only when there is neither of those and no merged worktree either. Opening it SHALL list,
+across all repositories, first every running session — oldest first — each with repository, change, the session's
+action, agent, branch, its live session badge, the work-status badge of its worktree when there is one, and how long
+ago it started; and then every worktree whose work is `uncommitted`, `unpushed`, `pushed` or `merged` and whose session
+is not running, stale ones first and merged ones last, each with repository, change, branch, status and age.
 
-#### Scenario: Hiding the panel
-- **WHEN** the user closes the panel while the agent is working
-- **THEN** the agent keeps running and the card keeps showing the session badge
+Sessions SHALL be listed by session and not by worktree, so that a session running in place — in a tracked folder that
+is not a git repository, which has no worktree — is listed like any other. A worktree SHALL be listed at most once, and
+a running session's own worktree SHALL count as that session rather than a second time as unshipped.
 
-#### Scenario: Nothing hidden behind the dock
-- **WHEN** the dock is open and the user scrolls the board to its end
-- **THEN** the last cards are fully visible above the dock
+Worktrees without a session record, and worktrees of archived or vanished changes, SHALL be listed: no card offers
+them, and this list is the only way to reach them. An entry with a session SHALL open its change's
+detail view on the Console tab with that session shown, and close the list; an entry without one SHALL offer copying a
+`cd` command and, after confirmation, removal when that is safe. The list SHALL update as sessions start and end,
+without a reload.
 
-#### Scenario: Height is remembered
-- **WHEN** the user drags the dock to a new height and reloads the page
-- **THEN** the dock opens at that height
+#### Scenario: Running sessions are listed first
+- **WHEN** five sessions are running and two worktrees hold unpushed work with no session
+- **THEN** the control shows the count 7 and the list has the five running sessions first, oldest first, each with its
+  action, agent and live badge, and the two worktrees after them
 
-#### Scenario: Collapsed
-- **WHEN** the user collapses the dock while two sessions run
-- **THEN** only the tab strip remains at the bottom, both sessions keep running, and selecting a tab expands the dock with that session
+#### Scenario: A session running in place
+- **WHEN** a session runs in a tracked folder that is not a git repository, so it has no worktree
+- **THEN** it is listed with its repository, change and live badge like any other running session
 
-### Requirement: Open work list
-While agent sessions are enabled the top bar SHALL show an "Open work" control with the number of agent sessions that are currently running, across all repositories; it SHALL be hidden when no session is running. Opening it SHALL list exactly those running sessions — oldest first — each with repository, change, the session's action, agent, branch, its live session badge, the work-status badge of its worktree when there is one, and how long ago it started. Sessions that have ended or failed, worktrees without a session record and worktrees of archived or vanished changes MUST NOT be listed, whatever their work status. Activating an entry SHALL show that session's panel, following the same rule as selecting its tab, and close the list. The list SHALL update as sessions start and end, without a reload.
+#### Scenario: Opening a running session
+- **WHEN** the user activates a running session's entry
+- **THEN** that change's detail view opens on its Console tab with that session's terminal and its earlier output, and
+  the list closes
 
-#### Scenario: Only running sessions are listed
-- **WHEN** one session is running for `add-login`, a session for `fix-parser` has ended with 2 unpushed commits in its worktree, and an orphaned worktree of `audit-trail` holds uncommitted files
-- **THEN** the control reads `Open work 1` and its list shows only `add-login`
+#### Scenario: A worktree counted once
+- **WHEN** a running session's own worktree holds three uncommitted files
+- **THEN** it appears once, as that running session, and the count does not also count it as unshipped
 
-#### Scenario: A session that ends leaves the list
-- **WHEN** the list shows a running session and that session's agent exits
-- **THEN** the entry disappears from the list and the count drops, and the card still shows the worktree's work-status badge
+#### Scenario: Stale worktrees are listed first
+- **WHEN** a worktree has had unpushed commits for two days and no session runs in it
+- **THEN** it is listed first among the work left behind — after every running session, before the unshipped worktrees
+  that are not stale and before the merged ones — with its age and its staleness stated as text
 
-#### Scenario: Stale worktrees stay out
-- **WHEN** a worktree has had unpushed commits for two days, no session is running in it and its session record still exists
-- **THEN** it does not appear in the Open work list, and its card's badge is still highlighted as stale
+#### Scenario: A session that ends leaves the running rows
+- **WHEN** the list shows a running session and that session's agent exits with unpushed commits in its worktree
+- **THEN** the entry leaves the running rows and its worktree takes a place among the work left behind, so the count
+  does not drop, and the change's detail header still shows the worktree's work-status badge
 
 #### Scenario: Archive worktree of an archived change
-- **WHEN** the archive worktree of a change that is already archived holds a commit that is not pushed and no session runs in it
-- **THEN** it does not appear in the Open work list
-
-#### Scenario: Opening an entry
-- **WHEN** the user activates the entry of a running session that is not shown in the dock
-- **THEN** its panel is shown as if its tab had been selected, and the list closes
+- **WHEN** the archive worktree of a change that is already archived holds a commit that is not pushed
+- **THEN** it appears in the Open work list although no card offers it, and opening it shows its Console tab
 
 #### Scenario: Nothing open
-- **WHEN** worktrees with uncommitted, unpushed, pushed or merged work exist but no session is running
+- **WHEN** no session runs and no session worktree holds anything
 - **THEN** the top bar shows no Open work control
 
-### Requirement: The session panel shows work status and offers Ship
-The session panel SHALL show the work status of the session's worktree and a Ship button while that status is `uncommitted`, `unpushed` or `pushed`, naming what it will do. For `merged` the panel SHALL suggest removing the worktree, and the clean-up dialog SHALL preselect removal.
-
-#### Scenario: Ship from the panel
-- **WHEN** the user presses Ship on an ended session with uncommitted work
-- **THEN** the agent starts in the terminal with the Ship prompt
-
-#### Scenario: Merged
-- **WHEN** the panel is opened for a session whose worktree is `merged`
-- **THEN** Ship is not offered and removal of the worktree is suggested
-
-### Requirement: The dock shows up to three sessions side by side
-The dock SHALL show one, two or three sessions next to each other in panes of equal width, each with its own header, actions, terminal and default responses, and MUST NOT show more than three at once. The tab strip SHALL list every running session, however many, plus shown sessions that have ended, and SHALL mark, as text or shape as well as colour, which sessions are currently shown. Selecting a tab whose session is not shown SHALL open it in a new pane while fewer than three are shown, and otherwise replace the pane that last had the keyboard focus; selecting a tab whose session is shown SHALL move the keyboard focus to its terminal. Each pane SHALL have a control that removes it from the dock without ending its session; removing the last pane collapses the dock. Opening a session from a card, from Open work or by starting one follows the same rule as selecting its tab. The URL SHALL carry the shown sessions in pane order, and a URL naming a single session SHALL open one pane; sessions in the URL that do not exist are ignored, and no more than the first three are shown. Typing, default responses and next-step prompts MUST reach only the session of the pane they were used in.
-
-#### Scenario: Three at once, more in tabs
-- **WHEN** five sessions are running and three of them are shown
-- **THEN** three terminals are visible side by side and the tab strip lists all five, marking the three that are shown
-
-#### Scenario: Fourth session replaces the focused pane
-- **WHEN** three sessions are shown, the keyboard focus is in the second pane, and the user selects the tab of a fourth session
-- **THEN** the second pane shows the fourth session, the other two panes are unchanged, and the replaced session keeps running
-
-#### Scenario: Pane closed
-- **WHEN** the user removes one of two panes
-- **THEN** the remaining pane takes the full width and the removed session keeps running and stays in the tab strip
-
-#### Scenario: Deep link with several sessions
-- **WHEN** the page is loaded with two session ids in the URL
-- **THEN** both terminals are shown in that order with their earlier output
-
-#### Scenario: Input stays in its pane
-- **WHEN** two sessions are shown and the user presses a default response in the first pane
-- **THEN** only the first session's terminal receives it
-
 ### Requirement: The running session badge shows activity through motion
-The session badge of a running session whose terminal is not quiet SHALL be animated wherever it is shown (cards and the session panel): its dot pulses and a lighter colour sweeps across its label, in a loop of about two seconds that never hides the label or reduces its contrast below that of the static badge. The `quiet`, ended and failed badges, work-status badges and every other badge MUST NOT be animated, so that motion means exactly "an agent is working now". The animation MUST be decorative only: the label still reads `running`, the dot is hidden from assistive technology, and status remains conveyed by text as well as colour. When the user prefers reduced motion (`prefers-reduced-motion: reduce`) the badge MUST be static and look as it did without this requirement. Colours MUST come from the theme tokens so that both themes apply.
+The session badge of a running session whose terminal is not quiet SHALL be animated wherever it is shown (cards, the Open work list and the Console tab): its dot pulses and a lighter colour sweeps across its label, in a loop of about two seconds that never hides the label or reduces its contrast below that of the static badge. The `quiet`, ended and failed badges, work-status badges and every other badge MUST NOT be animated, so that motion means exactly "an agent is working now". The animation MUST be decorative only: the label still reads `running`, the dot is hidden from assistive technology, and status remains conveyed by text as well as colour. When the user prefers reduced motion (`prefers-reduced-motion: reduce`) the badge MUST be static and look as it did without this requirement. Colours MUST come from the theme tokens so that both themes apply.
 
 #### Scenario: Running
 - **WHEN** a change has a running session that printed something within the last minute
@@ -501,17 +475,6 @@ Ending a session SHALL be offered from the Console tab and nowhere else, and SHA
 #### Scenario: The board does not end sessions
 - **WHEN** a session is running and the user looks for a way to end it on the board
 - **THEN** no card offers one, and the way to it is the change's Console tab
-
-### Requirement: The session panel has a tab per running session
-The session panel SHALL show a tab strip with every running session across repositories — repository, change and its live badge — plus the session currently shown when it has ended. Selecting a tab SHALL show that session's terminal with its earlier output and update the URL; it MUST NOT end, restart or otherwise affect any session. Tabs SHALL be keyboard-operable and expose the selected one to assistive technology. With a single session the strip MAY be omitted.
-
-#### Scenario: Switching
-- **WHEN** two sessions are running and the user selects the other tab
-- **THEN** the other session's terminal is shown including its earlier output, both sessions keep running, and reloading the page shows the same tab
-
-#### Scenario: Session ends while shown
-- **WHEN** the session shown ends
-- **THEN** its tab stays until the user selects another or hides the panel
 
 ### Requirement: Cards offer Show details
 Each card SHALL offer a **Show details** action that opens its change's detail view, carrying the board it sits on and that board's filters so the detail view can lead back to them. The action SHALL be a link: opening it in a new tab or window SHALL land on the same detail view, and activating it with the keyboard SHALL open the detail view in the current tab.
@@ -545,25 +508,6 @@ Each card SHALL offer a **Show details** action that opens its change's detail v
 #### Scenario: No console, no link
 - **WHEN** agent sessions are disabled, or the card's repository is excluded from them
 - **THEN** its card shows no console quick link
-
-### Requirement: Session tabs read as tabs
-Every tab in the dock's tab strip SHALL be drawn as a tab of its own — with a background and an outline that set it apart from the strip behind it — whether or not its session is shown, and a tab's repository accent SHALL sit on the tab's own edge. A tab whose session is shown SHALL differ from a tab whose session is not shown by shape as well as by the existing mark and by colour. The focused tab SHALL be marked more strongly than the other shown tabs, in a way that does not rely on colour alone and is distinguishable from every assignable repository colour. The strip SHALL leave enough room that a tab's mark, repository name, change name and badge sit on one line with space around them, and the space the page reserves for a collapsed dock SHALL equal the strip's height. The tabs SHALL keep the content, order, marks, repository colours, legibility and keyboard behaviour the other requirements give them.
-
-#### Scenario: A tab that is not shown
-- **WHEN** two sessions are running and only one of them is shown
-- **THEN** the other session's tab has its own visible background and outline against the strip, with its repository accent on the tab's edge
-
-#### Scenario: Shown and not shown differ in shape
-- **WHEN** one session is shown and another is not
-- **THEN** the shown tab is visibly joined to the panes below the strip and the other tab is not, in addition to their ▣ and ▢ marks
-
-#### Scenario: Focused tab among shown tabs
-- **WHEN** three sessions are shown and the keyboard focus is in the second pane
-- **THEN** the second pane's tab carries a stronger marking than the other two shown tabs — more than a change of colour — and that marking stays visible on a tab with a repository colour
-
-#### Scenario: Collapsed dock
-- **WHEN** the dock is collapsed to its tab strip
-- **THEN** every tab is fully visible and no part of the board is hidden behind the strip
 
 ### Requirement: Cards show only what an overview needs
 A card SHALL show only what an overview needs: the change name in monospace, the relative age of `lastActivityAt` under it (e.g. `updated 3d ago`, or the archive date for an archived change), a progress bar, a console quick link in the card's top right corner, and a footer carrying the change's session status and next-step starter as the "Cards offer session starters and show session state" requirement gives them, together with **Show details**.
