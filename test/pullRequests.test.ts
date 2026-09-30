@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
-import { mkdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { pullRequestsCachePath } from "../src/server/paths.ts";
 import { githubRepoFromRemote, parsePullRequest, PullRequests, type RepoTarget, summarizeChecks } from "../src/server/pullRequests.ts";
@@ -246,9 +246,14 @@ test("a list longer than the limit is marked as truncated and cut to the limit",
 test("gh missing, not signed in, a failure and a timeout each get their own reason", async () => {
   const targets: RepoTarget[] = [{ id: "alpha", path: await repoAt("alpha-failing", ALPHA), isGit: true }];
 
-  // Not on PATH at all: nothing is started and every repository says so.
+  // Not on PATH at all: nothing is started and every repository says so. PATH is narrowed to a directory holding only
+  // `git`, which reading `origin` still needs: emptying PATH would hide git too, and on some platforms an empty PATH
+  // falls back to a default search path where the machine's real `gh` would be found.
   const savedPath = process.env.PATH;
-  process.env.PATH = "";
+  const onlyGit = await tempDir("osd-no-gh-");
+  const realGit = Bun.which("git");
+  if (realGit) await symlink(realGit, join(onlyGit, "git"));
+  process.env.PATH = onlyGit;
   try {
     const missing = (await newStore().refresh(targets, { force: true })).repos[0];
     expect(missing.status).toBe("unavailable");

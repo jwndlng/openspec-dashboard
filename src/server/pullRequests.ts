@@ -12,7 +12,7 @@ import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import type { PullRequest, PullRequestsResponse, RepoPullRequests } from "../shared/types.ts";
 import { normalizeRemote, originUrl } from "./git.ts";
-import { dashboardHome, pullRequestsCachePath } from "./paths.ts";
+import { dashboardHome, pullRequestsCachePath, whichOnPath } from "./paths.ts";
 import { maskCredentials } from "./pull.ts";
 
 /** A list younger than this is not fetched again unless the user asks for it explicitly. */
@@ -108,6 +108,9 @@ export function ghReason(stderr: string): string {
  * repository. Credentials stay entirely with `gh`; the dashboard never sees them.
  */
 async function runGh(args: string[], timeoutMs = GH_TIMEOUT_MS): Promise<GhRun> {
+  // Looked up explicitly rather than left to the spawn: with no `gh` on PATH some platforms fall back to a default
+  // search path and would find another one, and the spec wants "not installed" decided before any process starts.
+  if (!whichOnPath("gh")) return { ok: false, out: "", err: "gh is not on PATH", timedOut: false, missing: true };
   const cwd = dashboardHome();
   await mkdir(cwd, { recursive: true }).catch(() => undefined);
   const env = { ...process.env, GH_PROMPT_DISABLED: "1", GH_NO_UPDATE_NOTIFIER: "1", GH_SPINNER_DISABLED: "1", NO_COLOR: "1" };
@@ -348,6 +351,8 @@ export class PullRequests {
       }
     } finally {
       this.rounds--;
+      // The last refresh out ends the round, so the next one queries afresh.
+      if (this.rounds === 0) this.inFlight.clear();
     }
     return this.list(targets);
   }
@@ -386,11 +391,15 @@ export class PullRequests {
     }
   }
 
-  /** One GitHub repository, at most once at a time. */
+  /**
+   * One GitHub repository, at most once per round. The entry is kept until the round ends rather than dropped when the
+   * query settles: a refresh that joins a round whose query has already finished must see that result instead of
+   * querying the same repository again, which is what "a second refresh joins the running one" means.
+   */
   private queryOnce(github: string): Promise<void> {
     const running = this.inFlight.get(github);
     if (running) return running;
-    const done = this.query(github).finally(() => this.inFlight.delete(github));
+    const done = this.query(github);
     this.inFlight.set(github, done);
     return done;
   }
