@@ -63,9 +63,11 @@ None. The console changes where it lives, not what a session is.
 - `src/ui/changeDetail.tsx`, `src/ui/routes.ts` — the Console tab, its session selection in `DetailQuery`, and the
   focus-aware `Escape` handling.
 - `src/ui/styles.css` — the `.session-dock` / `.dock-*` / `.session-tabs` blocks go; the Console tab and its panel take
-  `--info` and `--info-border`; the terminal needs a bounded `min-height: 0` box inside the overlay's flex column.
+  `--info` and `--info-border`; the terminal needs a bounded `min-height: 0` box inside the overlay's flex column, and
+  `.console-pane` must itself be a column flex container or that `flex: 1` resolves against nothing.
 - `test/dockGeometry.test.ts` is removed with the dock; `test/changeDetail.test.ts` and `test/workStatusUi.test.ts`
-  grow the new behaviour. No new colour token, so `test/repoContrast.test.ts` is unaffected.
+  grow the new behaviour. No new colour token, but `test/repoContrast.test.ts` gains `--info` among the hues a
+  repository may not wear, and `test/consoleLayout.test.ts` is added for the terminal's box.
 - `README.md` — the wording and screenshots that describe the dock.
 - No server, API, config or dependency change: the terminal WebSocket, the session records and every guard stay as
   they are. The demo gets the new behaviour for free.
@@ -75,10 +77,23 @@ None. The console changes where it lives, not what a session is.
 - `review-open-work-menu` **narrowed** the Open work list to running sessions only, on the reasoning that unshipped
   worktrees were reachable from their cards and from the dock's tab strip. Removing the dock takes one of those away,
   and a worktree whose change has left the board never had a card — so this change **widens** the list again: running
-  sessions first, exactly as that change specified them, then the worktrees it excluded. Its delta must be archived
-  before this one, so that the requirement this modifies is the one it left. Its narrowing of *sessions* is kept; only
-  its exclusion of worktrees is reversed, and the reason is stated in the requirement itself.
+  sessions first, exactly as that change specified them, then the worktrees it excluded. It has since been archived
+  (`openspec/changes/archive/2026-09-23-review-open-work-menu`), so the requirement this change works against is the
+  narrowed one it left. Its narrowing of *sessions* is kept; only its exclusion of worktrees is reversed.
+
+  That reversal retires four of that requirement's scenarios, one of them (`Stale worktrees stay out`) outright, so
+  `Open work list` is **REMOVED** with a `Reason` naming all four and the new behaviour is **ADDED** as
+  `Open work lists running sessions and unshipped work`. A `MODIFIED` block replaces a requirement whole, so it cannot
+  say that a scenario dies on purpose — keeping the old title over the opposite outcome would leave a false scenario in
+  the main spec. This follows `refactor-design`, which retired `Visual design follows the dashboard token set` the same
+  way.
 - `sessions-in-non-git-repos` added sessions that run **in place**, in a tracked folder that is no git repository and
   therefore has no worktree. That is why the Open work list is built from sessions rather than from worktrees here: a
   worktree-keyed list would silently drop those sessions, and this list is the only place that can find them. The
   Console tab shows an in-place session like any other, minus Ship, work status and worktree removal.
+- `refactor-design` **took the work-status badge off the card** and put it in the detail view's header, and its
+  `Migration` already states that activating it opens the Console tab. So this change's `MODIFIED` block for
+  `Cards show the work status of their change's worktree` had nothing left to modify — that requirement is gone from
+  `kanban-board` — and it is dropped from the delta; the behaviour it asked for is already in `change-detail`'s
+  "Detail header shows the change's state". In the UI that badge is `WorkStatus` (`src/ui/sessions.tsx`), rendered by
+  the detail header and by Open work rows, never by a card.

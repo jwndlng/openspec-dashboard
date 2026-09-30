@@ -85,7 +85,7 @@ After a successful create the repository SHALL be rescanned and the new change S
 
 #### Scenario: Create without prompt
 - **WHEN** the user submits `add-audit-trail` with no prompt
-- **THEN** `openspec/changes/add-audit-trail/` exists with a `.openspec.yaml` and no `prompt.md`, and the change appears in the `New` column after the rescan
+- **THEN** `openspec/changes/add-audit-trail/` exists with a `.openspec.yaml` and no `prompt.md`, and the change appears in the `Backlog` column after the rescan
 
 #### Scenario: Create with prompt
 - **WHEN** the user submits `add-audit-trail` with the prompt "Log every mutation to the audit table"
@@ -182,7 +182,7 @@ The form opened from the combined board SHALL show a project dropdown before the
 
 #### Scenario: Create in the chosen project
 - **WHEN** the user chooses `beta-soc`, types `add-audit-trail` and submits
-- **THEN** `POST /api/repos/<beta-soc id>/changes` is sent with `{ "name": "add-audit-trail" }`, the form closes, and after the rescan the change appears in `beta-soc`'s group of the `New` column without a page reload
+- **THEN** `POST /api/repos/<beta-soc id>/changes` is sent with `{ "name": "add-audit-trail" }`, the form closes, and after the rescan the change appears in `beta-soc`'s group of the `Backlog` column without a page reload
 
 #### Scenario: Refusal keeps the choice
 - **WHEN** the user submits `add-audit-trail` into `beta-soc` and a change with that name already exists there

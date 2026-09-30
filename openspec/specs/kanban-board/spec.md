@@ -5,36 +5,34 @@ Defines the Kanban board UI: how changes map to columns, what cards display, fil
 
 ## Requirements
 
-### Requirement: Board columns are derived from schema and implementation state
-The board SHALL place each change in exactly one column, where a column names the last step of the lifecycle that is complete. Using, in order: `Archived` if the change is archived; `Synced` if `tasks.total > 0`, `tasks.done == tasks.total` and the change's delta specs are synced into the main specs (a change without delta specs counts as synced); `Done` if `tasks.total > 0` and `tasks.done == tasks.total`; `Implementing` if `tasks.done > 0`; `Ready` if every artifact is done (ready to apply, nothing ticked yet); `Unknown` if the change's artifacts could not be read; otherwise, taking the schema's artifacts in display order, `New` if the first artifact is not done, else the display name of the last artifact of the longest leading run of done artifacts.
+### Requirement: Board columns follow the lifecycle phases
+The board SHALL place each change in exactly one column, where a column names the phase of the lifecycle the change is in. Using, in order: `Archived` if the change is archived; `Done` if `tasks.total > 0` and `tasks.done == tasks.total`, whether or not the change's delta specs are already synced into the main specs; `Implementing` if `tasks.done > 0`; `Ready` if every artifact is done (ready to apply, nothing ticked yet); `Unknown` if the change's artifacts could not be read; `Backlog` if no artifact is done; otherwise `Drafts` (at least one artifact is done and at least one is not). Which artifacts are done, and in which order they were written, SHALL NOT matter beyond that: every schema's artifacts count alike.
 
-Display order SHALL be the schema's own artifact order, except that for the `spec-driven` schema it SHALL be `proposal`, `design`, `specs`, `tasks` (artifacts not named there follow in schema order). Column order SHALL be `New`, then the artifact columns of the majority schema followed by any additional artifact columns of other schemas, each schema omitting its last artifact in display order (completing it means every artifact is done, which is `Ready`), then `Ready`, `Implementing`, `Done`, `Synced`, `Archived`. Apart from the display-order exception, columns MUST NOT be hardcoded to the `spec-driven` schema.
-
-A change in `Synced` SHALL be treated as complete wherever a change in `Done` is: the completion badge on its card, the highlighted column count, and every "to archive" count.
+The board SHALL show the columns `Backlog`, `Drafts`, `Ready`, `Implementing`, `Done`, `Archived`, in that order, on the combined board and on every repository board, whether or not a column holds a change; `Unknown` SHALL be shown between `Drafts` and `Ready` only while at least one change on that board is in it. Columns MUST NOT depend on the schemas the tracked changes use: there SHALL be no column per artifact and no `Synced` column.
 
 #### Scenario: Brand-new change
-- **WHEN** a change directory exists and its `proposal` artifact is not done
-- **THEN** it appears in the `New` column
+- **WHEN** a change directory exists and none of its artifacts is done
+- **THEN** it appears in the `Backlog` column
+
+#### Scenario: Change with a prompt only
+- **WHEN** a change has a `prompt.md` and none of its artifacts is done
+- **THEN** it appears in the `Backlog` column
 
 #### Scenario: Change with proposal only
-- **WHEN** a `spec-driven` change has `proposal: done` and `design` and `specs` not done
-- **THEN** it appears in the `Proposal` column
-
-#### Scenario: Design written
-- **WHEN** a `spec-driven` change has `proposal` and `design` done and `specs` not done
-- **THEN** it appears in the `Design` column
+- **WHEN** a `spec-driven` change has `proposal: done` and `design`, `specs` and `tasks` not done
+- **THEN** it appears in the `Drafts` column
 
 #### Scenario: Specs written before design
-- **WHEN** a `spec-driven` change has `proposal` and `specs` done and `design` not done
-- **THEN** it appears in the `Proposal` column, because `design` precedes `specs` in display order
+- **WHEN** a `spec-driven` change has `proposal` and `specs` done and `design` and `tasks` not done
+- **THEN** it appears in the `Drafts` column
 
-#### Scenario: Specs written, tasks not yet
-- **WHEN** a `spec-driven` change has `proposal`, `design` and `specs` done and `tasks` not done
-- **THEN** it appears in the `Specs` column
+#### Scenario: Only a later artifact written
+- **WHEN** a `spec-driven` change has `specs` done and `proposal` not done
+- **THEN** it appears in the `Drafts` column, not in `Backlog`
 
-#### Scenario: Ready to apply
-- **WHEN** all artifacts are done and `tasks` is `done: 0, total: 12`
-- **THEN** it appears in `Ready` showing `0/12`
+#### Scenario: The column count covers both sub-states
+- **WHEN** the `Done` column holds three complete changes and two awaiting validation
+- **THEN** its header count is `5` and every "to archive" count is `5`
 
 #### Scenario: First task ticked
 - **WHEN** all artifacts are done and `tasks` is `done: 1, total: 12`
@@ -48,13 +46,13 @@ A change in `Synced` SHALL be treated as complete wherever a change in `Done` is
 - **WHEN** `tasks` is `done: 12, total: 12`, the change is not archived, and its delta specs are not yet reflected in the main specs
 - **THEN** it appears in the `Done` column
 
-#### Scenario: Synced, waiting to be archived
+#### Scenario: Complete and synced, not yet archived
 - **WHEN** `tasks` is `done: 12, total: 12`, the change is not archived, and its delta specs are reflected in the main specs
-- **THEN** it appears in the `Synced` column with the completion badge and counts towards "to archive"
+- **THEN** it appears in the `Done` column, counts towards "to archive", and is offered **Archive** like any other change in `Done`
 
-#### Scenario: Complete change without delta specs
-- **WHEN** `tasks` is `done: 5, total: 5` and the change has no delta spec files
-- **THEN** it appears in the `Synced` column
+#### Scenario: Archived after syncing
+- **WHEN** a change whose specs were synced is archived
+- **THEN** it appears in the `Archived` column
 
 #### Scenario: All artifacts done but tasks file empty
 - **WHEN** all artifacts are done and `tasks` is `done: 0, total: 0`
@@ -62,19 +60,19 @@ A change in `Synced` SHALL be treated as complete wherever a change in `Done` is
 
 #### Scenario: Column list for the spec-driven schema
 - **WHEN** every tracked change uses the `spec-driven` schema
-- **THEN** the board shows the columns `New`, `Proposal`, `Design`, `Specs`, `Ready`, `Implementing`, `Done`, `Synced`, `Archived`, with no `Tasks` column
+- **THEN** the board shows the columns `Backlog`, `Drafts`, `Ready`, `Implementing`, `Done`, `Archived`, and no `Proposal`, `Design`, `Specs`, `Tasks` or `Synced` column
 
-#### Scenario: Another schema keeps its own order
-- **WHEN** every tracked change uses a schema whose artifacts are `brief`, `plan`, `checklist` in that order
-- **THEN** the board shows `New`, `Brief`, `Plan`, `Ready`, `Implementing`, `Done`, `Synced`, `Archived`
+#### Scenario: Another schema gets the same columns
+- **WHEN** every tracked change uses a schema whose artifacts are `brief`, `plan`, `checklist`, and one change has `brief` done
+- **THEN** the board shows `Backlog`, `Drafts`, `Ready`, `Implementing`, `Done`, `Archived`, and that change is in `Drafts`
 
 #### Scenario: Lifecycle columns are always present
-- **WHEN** no change is new, ready to apply or synced
-- **THEN** the board still shows empty `New`, `Ready` and `Synced` columns in their positions
+- **WHEN** no change is in the backlog, being drafted or ready to apply
+- **THEN** the board still shows empty `Backlog`, `Drafts` and `Ready` columns in their positions
 
 #### Scenario: Unreadable change
 - **WHEN** a change's artifacts could not be read
-- **THEN** it appears in the `Unknown` column, not in `New`
+- **THEN** it appears in the `Unknown` column, between `Drafts` and `Ready`, not in `Backlog`
 
 ### Requirement: Board filters
 The board SHALL provide filters for repository (multi-select), free-text search over change name and repository name, stale threshold (hide changes with activity within N days, default off), and a toggle to hide the `Archived` column. Filters SHALL apply instantly on the client and persist in the URL query string.
@@ -113,6 +111,12 @@ The `Archived` column SHALL be presented like every other column: always open, w
 ### Requirement: Board refreshes from the snapshot
 The board SHALL fetch `GET /api/state` on load, re-fetch on the poll interval, and provide a Refresh button that calls `POST /api/scan` and re-fetches when complete. The header SHALL show the snapshot's `generatedAt` and per-repo error indicators for repos with `ok: false`.
 
+Beside the Refresh button the dashboard SHALL offer an auto-refresh control with exactly the choices `Off`, `2s`, `5s` and `10s`. While an interval is chosen, the dashboard SHALL repeat on that interval what the Refresh button does — trigger a scan and take the resulting snapshot — so that the data shown is re-read from the repositories and not merely the same snapshot fetched again. `Off` SHALL be the initial choice for a user who has never chosen one, and the control SHALL name the interval in force, so the user can always see whether the dashboard is refreshing itself.
+
+The choice SHALL be remembered for the browser it was made in and SHALL survive a reload; it SHALL NOT be written to the dashboard's configuration, SHALL NOT change `pollIntervalSeconds`, and SHALL NOT be shared with another browser or machine. When the choice cannot be stored, it SHALL still apply for the current page session.
+
+An automatic refresh SHALL NOT overlap another refresh: while a refresh is in flight, whether the user started it or the interval did, the due tick SHALL be dropped rather than queued, and the next tick SHALL be timed from the refresh that finished, so that an interval shorter than a scan cannot make scans pile up. While the page is hidden no tick SHALL run; the interval SHALL resume when the page becomes visible again. A failed automatic refresh SHALL be reported like a failed manual one and MUST NOT stop the interval. Auto-refresh SHALL drive nothing but the scan and the re-fetch: it MUST NOT trigger the pull action, which stays bound to the user's explicit request.
+
 #### Scenario: Manual refresh
 - **WHEN** the user clicks Refresh
 - **THEN** a scan is triggered and the board updates with the new snapshot without a page reload
@@ -120,6 +124,46 @@ The board SHALL fetch `GET /api/state` on load, re-fetch on the poll interval, a
 #### Scenario: Repo in error
 - **WHEN** a tracked repo failed to scan
 - **THEN** a warning indicator with the error message is visible in the header
+
+#### Scenario: Auto-refresh is off until chosen
+- **WHEN** the dashboard is opened by a user who has never used the auto-refresh control
+- **THEN** the control shows `Off`, no scan is triggered by a timer, and the board still re-fetches the snapshot on the poll interval as before
+
+#### Scenario: Choosing an interval
+- **WHEN** the user chooses `5s`
+- **THEN** about every five seconds a scan is triggered and the board and the `updated` age follow the new snapshot, without the user clicking anything
+
+#### Scenario: The choice is remembered for this browser
+- **WHEN** the user chooses `2s` and reloads the page
+- **THEN** auto-refresh is still `2s`, and the dashboard's configured poll interval is unchanged
+
+#### Scenario: Another browser is unaffected
+- **WHEN** the user has chosen `2s` in one browser and opens the dashboard in a different browser
+- **THEN** auto-refresh there is `Off`
+
+#### Scenario: Turning it off
+- **WHEN** auto-refresh is `10s` and the user chooses `Off`
+- **THEN** no further scan is triggered by the timer, and Refresh still works
+
+#### Scenario: A scan slower than the interval
+- **WHEN** auto-refresh is `2s` and a scan takes six seconds
+- **THEN** no second scan is started while the first is running, and the next one is timed from the first one finishing
+
+#### Scenario: Refreshing by hand while auto-refresh runs
+- **WHEN** the user clicks Refresh while an automatic refresh is in flight
+- **THEN** no second concurrent scan is started, and the board still ends up on the newest snapshot
+
+#### Scenario: Hidden tab
+- **WHEN** auto-refresh is `2s` and the user switches to another tab for ten minutes
+- **THEN** no scan is triggered while the page is hidden, and one refresh happens when the user comes back
+
+#### Scenario: A failing scan does not stop the interval
+- **WHEN** an automatic refresh fails
+- **THEN** the error is shown in the header the same way a failed manual refresh is, and the next tick is still attempted
+
+#### Scenario: Auto-refresh never pulls
+- **WHEN** auto-refresh has been running at `2s` for an hour
+- **THEN** no repository has been fetched from or merged, because only a scan was triggered
 
 ### Requirement: Status labels use a semantic colour palette
 Every label the board paints in a colour SHALL draw that colour from a fixed set of semantic roles, and each role SHALL
@@ -185,7 +229,7 @@ Within every column, including the expanded `Archived` column, the board SHALL g
 - **THEN** the column shows a group `alpha` with count `2` containing `a1` then `a2`, followed by a group `beta` with count `1` containing `b1`, and the column count is `3`
 
 #### Scenario: Same group order across columns
-- **WHEN** repositories `zeta` and `Alpha` both have cards in `Design` and in `Done`
+- **WHEN** repositories `zeta` and `Alpha` both have cards in `Drafts` and in `Done`
 - **THEN** the `Alpha` group is above the `zeta` group in both columns
 
 #### Scenario: No empty groups
@@ -572,6 +616,18 @@ The branch badge in the repository board header MUST NOT extend beyond its conta
 - **WHEN** the repository board's current branch is `feat/introduce-tenant-quota-enforcement` and it does not fit
 - **THEN** its badge shows the beginning, an ellipsis and `quota-enforcement`, stays inside the header, and presents the full name on hover and to a screen reader
 
+#### Scenario: Awaiting validation
+- **WHEN** a change in `Done` has `tasks` `done: 13, awaiting: 2, total: 15`
+- **THEN** its card shows a **Validate** badge and a progress bar labelled `13 + 2 awaiting / 15 Tasks`, whose accessible name says thirteen tasks are done, two await validation and none are open
+
+#### Scenario: Awaiting segment is not the only cue
+- **WHEN** a screen reader reads a card awaiting validation
+- **THEN** it reads the **Validate** badge and a progress label naming the awaiting count, without relying on the segment's colour
+
+#### Scenario: No awaiting tasks
+- **WHEN** a change has `tasks` `done: 4, awaiting: 0, total: 12`
+- **THEN** its card shows no **Validate** badge and a two-part bar labelled `4/12 Tasks`
+
 ### Requirement: Visual design follows the grey and indigo token set
 The UI SHALL define its colours as two token sets sharing the same token names: a dark set (neutral dark grey backgrounds ascending from `#26272b` for the page to `#4b4c51` for the most elevated surface, light enough that the edges between surfaces and every border stay visible; indigo brand `#6366f1`) and a light set (slate backgrounds from `#f8fafc`, with white raised surfaces, indigo brand `#4f46e5`). In the dark theme the background tokens SHALL be near-neutral greys, in the light theme slate greys with at most a slight cool tint; the indigo brand SHALL be used only as an accent (focus, active state, primary actions, progress) and MUST NOT be the resting colour of panel or card borders, nor the colour of any status label; highlighting the border of the card or control under the pointer is an active state and MAY use it. Borders SHALL be neutral: translucent white in the dark theme and translucent slate in the light theme. Both themes SHALL share Inter for text, JetBrains Mono for identifiers, one radius scale (small controls, fields and cards, panels and columns — rounder the larger the element) and one set of shadow tokens, with fonts bundled locally. Component styles MUST reference colour, radius and shadow tokens only and MUST NOT contain literal colour values. In both themes, text and status colours SHALL have a contrast ratio of at least 4.5:1 against the backgrounds they are rendered on, and so SHALL the text of a filled primary button against that button. The token set SHALL keep the status roles, the brand accent and the repository colours in three disjoint colour ranges, so that no status label can be mistaken for a repository accent or for the accent, and no repository can be shown in a colour that means a status. The UI MUST render correctly without network access, and any icon SHALL be drawn from inline markup, be decorative only, and sit beside text that says the same thing — with one exception, the card's console quick link, whose icon carries its meaning in a tooltip and an accessible name.
 
@@ -635,11 +691,15 @@ The combined board SHALL show a header band above its filter row. It SHALL hold 
 - **THEN** the repository header is drawn as the band and shows the open and to-archive counts of `alpha-infra`, and the filter row holds no counts and no **New change** button
 
 ### Requirement: Column headers mark the lifecycle stage
-Every column header SHALL show a small lifecycle marker before the column name, followed by the name and the column count in a pill. The marker's colour SHALL mean the kind of column: neutral for `New` and the artifact columns, the brand accent for `Ready` and `Implementing`, the `success` role for `Done` and `Synced`, a muted neutral for `Archived`, and the `warning` role for `Unknown`. The marker SHALL be decorative only and hidden from assistive technology: the column name SHALL remain the cue. The existing highlighting of the `Done` and `Synced` counts and the `Archived` column's `25 of <total>` count SHALL be kept.
+Every column header SHALL show a small lifecycle marker before the column name, followed by the name and the column count in a pill. The marker's colour SHALL mean the kind of column: neutral for `Backlog` and `Drafts`, the brand accent for `Ready` and `Implementing`, the `success` role for `Done`, a muted neutral for `Archived`, and the `warning` role for `Unknown`. The marker SHALL be decorative only and hidden from assistive technology: the column name SHALL remain the cue. The existing highlighting of the `Done` count and the `Archived` column's `25 of <total>` count SHALL be kept. Each lifecycle column's name SHALL carry a tooltip saying what it holds.
 
 #### Scenario: Markers along the lifecycle
-- **WHEN** the board shows the columns `New`, `Proposal`, `Design`, `Specs`, `Ready`, `Implementing`, `Done`, `Synced`, `Archived`
-- **THEN** `New`, `Proposal`, `Design` and `Specs` carry a neutral marker, `Ready` and `Implementing` an accent marker, `Done` and `Synced` a success marker, and `Archived` a muted one
+- **WHEN** the board shows the columns `Backlog`, `Drafts`, `Ready`, `Implementing`, `Done`, `Archived`
+- **THEN** `Backlog` and `Drafts` carry a neutral marker, `Ready` and `Implementing` an accent marker, `Done` a success marker, and `Archived` a muted one
+
+#### Scenario: Column hints
+- **WHEN** the user hovers the `Drafts` column name
+- **THEN** a tooltip says that the column holds changes with some but not all artifacts written
 
 #### Scenario: Marker is not the only cue
 - **WHEN** a screen reader reads a column header
@@ -680,7 +740,7 @@ Wherever a board or the overview offers actions for what it shows — **New chan
 - **THEN** the action area wraps below the title and counts as one group, and every action in it stays fully visible
 
 ### Requirement: The dashboard opens with a hero header
-Every view SHALL open with a hero header. It SHALL show the product mark and the title `OpenSpec Dashboard` in large type, at least 32px and growing with the window up to 56px, with a one-line tagline under it. The status corner (Open work, scan errors, the theme control, the last-update age and Refresh) SHALL sit in the hero's top-right corner, and the main navigation as large tabs, each with an icon beside its name, SHALL sit below the title. The current view's header band and filter bar SHALL continue on the hero's ground, a soft accent glow with a faint dot grid that fades out before the board, so that title, navigation, view header and filters read as one header; a line SHALL close the hero off from the board. The hero's decoration SHALL be drawn from theme tokens, be purely decorative, and SHALL NOT reduce the contrast of any text in it below the rules of the token set. On narrow windows the status corner SHALL move below the title and the title SHALL shrink, without horizontal scrolling.
+Every view SHALL open with a hero header. It SHALL show the product mark and the title `OpenSpec Dashboard` in large type, at least 32px and growing with the window up to 56px, with a one-line tagline under it. The status corner (Open work, scan errors, the theme control, the last-update age, Refresh and the auto-refresh control) SHALL sit in the hero's top-right corner, and the main navigation as large tabs, each with an icon beside its name, SHALL sit below the title. The auto-refresh control SHALL stand next to Refresh, at the same control size as the rest of the corner, and SHALL carry an accessible name saying it sets the auto-refresh interval. The current view's header band and filter bar SHALL continue on the hero's ground, a soft accent glow with a faint dot grid that fades out before the board, so that title, navigation, view header and filters read as one header; a line SHALL close the hero off from the board. The hero's decoration SHALL be drawn from theme tokens, be purely decorative, and SHALL NOT reduce the contrast of any text in it below the rules of the token set. On narrow windows the status corner SHALL move below the title and the title SHALL shrink, without horizontal scrolling.
 
 #### Scenario: Hero on the combined board
 - **WHEN** the combined board is opened in a 1920px wide window
@@ -694,8 +754,16 @@ Every view SHALL open with a hero header. It SHALL show the product mark and the
 - **WHEN** the window is 720px wide
 - **THEN** the title is smaller but still the largest text on the page, the status corner sits below it, and nothing scrolls horizontally
 
+#### Scenario: Auto-refresh sits with Refresh
+- **WHEN** the status corner is shown
+- **THEN** the auto-refresh control stands beside Refresh, shows the interval in force, and is reachable by keyboard with a name that says what it sets
+
+#### Scenario: Auto-refresh on every view
+- **WHEN** auto-refresh is `5s` and the user moves from the board to Activity
+- **THEN** the control still shows `5s` and the dashboard keeps refreshing on that interval
+
 ### Requirement: The product has its own mark
-The dashboard SHALL show its own product mark instead of a generic icon: a ring of four arcs — the four stages of a change — fading behind a leading arc that ends in a bright dot, around a small rounded square, on a rounded accent-gradient tile. The mark in the page SHALL be drawn in the theme's accent tokens and be hidden from assistive technology, as the product name stands beside it. The page SHALL carry the same mark as its favicon, embedded in the page itself so no request is made for it.
+The dashboard SHALL show its own product mark instead of a generic icon: a drafting drawing of a change travelling through its artifacts — a rounded square framed by faint dashed construction lines that overshoot it, a short tick at each corner-radius centre, a small hub in the middle, and four circular nodes centred on the square's four edges, each carrying a glyph: an arrow for the proposal at the top, a document for the spec on the right, a triangle for the delta at the bottom and a prompt for the code on the left. The mark in the page SHALL be a line drawing on the page's own ground, with its strokes in the theme's accent text colour and its nodes and hub filled with the page background, drawn from theme tokens only so that it stays legible in every supported theme, and SHALL be hidden from assistive technology, as the product name stands beside it. The page SHALL carry the same mark as its favicon, embedded in the page itself so no request is made for it. Because a favicon is shown at 16–32px and cannot follow the page's theme, it SHALL draw the mark on a filled rounded square in fixed colours and MAY leave out the construction lines and ticks; the square, the hub and the four nodes with their glyphs SHALL be the same as in the page.
 
 #### Scenario: Favicon without a request
 - **WHEN** the dashboard is opened offline
@@ -703,7 +771,15 @@ The dashboard SHALL show its own product mark instead of a generic icon: a ring 
 
 #### Scenario: One mark
 - **WHEN** the favicon and the mark in the hero are compared
-- **THEN** they are the same drawing
+- **THEN** they show the same square, hub and four nodes with the same glyphs in the same places
+
+#### Scenario: Mark in both themes
+- **WHEN** the theme is switched between dark and light
+- **THEN** the mark in the hero is redrawn in that theme's accent and background colours, and its nodes, glyphs and square stay clearly visible against the hero's ground
+
+#### Scenario: Mark is decorative
+- **WHEN** a screen reader reads the hero
+- **THEN** it reads `OpenSpec Dashboard` and nothing for the mark
 
 ### Requirement: The board fits half a screen
 The board SHALL offer two layouts of the same columns and cards: **Lanes**, the columns side by side, and **Stack**, each column a full-width section whose repository groups (or, on a repository board, cards) flow in a grid, with the page scrolling vertically so the hero scrolls away. By default the layout SHALL follow the window: **Stack** below 1280px wide, **Lanes** otherwise, switching live as the window is resized. A **Lanes**/**Stack** switch in the filter bar SHALL mark the layout on screen and SHALL make an explicit choice that overrides the default and persists in the URL (`layout=lanes` or `layout=stack`); an unknown value SHALL mean the default. The layout SHALL NOT be a filter: it changes no card or count, and **Clear filters** keeps it. In **Lanes**, a column without cards SHALL shrink to a slim rail that still shows its name and count, and lanes SHALL be narrower on windows narrower than 1600px. Grouping, minimizing, counts, the archived bound and every card's content SHALL be the same in both layouts.
@@ -717,8 +793,8 @@ The board SHALL offer two layouts of the same columns and cards: **Lanes**, the 
 - **THEN** the columns are shown side by side, the URL holds `layout=lanes`, and a reload keeps lanes
 
 #### Scenario: Empty lane
-- **WHEN** the `Design` column has no cards in the lanes layout
-- **THEN** it is a slim rail showing `Design` and `0`, and the other lanes get the width
+- **WHEN** the `Drafts` column has no cards in the lanes layout
+- **THEN** it is a slim rail showing `Drafts` and `0`, and the other lanes get the width
 
 #### Scenario: Clearing filters keeps the layout
 - **WHEN** the board holds `layout=stack` and a text search and the user activates **Clear filters**

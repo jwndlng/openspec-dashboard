@@ -28,8 +28,8 @@ The dashboard SHALL show a projects overview at `/` listing every repository tha
 Each row SHALL show the repository name, the number of non-archived changes in each board stage column (using the same column list and order as the combined board, excluding `Archived`), the total of non-archived changes, the number of changes that are complete but not archived, and the relative age of the repository's last update. Zero counts SHALL be rendered as a neutral placeholder rather than `0`. The to-archive count SHALL be conveyed with text and not by colour alone. A repository with no non-archived changes SHALL be shown de-emphasised with the text "no open changes". A repository whose last scan failed SHALL show a warning indicator exposing the error message while still showing its retained counts.
 
 #### Scenario: Row content
-- **WHEN** repository `alpha-infra` has 1 change in `Specs`, 9 in `Implementing`, 2 in `Done`, 40 archived, and was last updated 1 day ago
-- **THEN** its row shows `1` under Specs, `9` under Implementing, `2` under Done, an open total of `12`, a to-archive count of `2`, and `1d ago`
+- **WHEN** repository `alpha-infra` has 1 change in `Drafts`, 9 in `Implementing`, 2 in `Done`, 40 archived, and was last updated 1 day ago
+- **THEN** its row shows `1` under Drafts, `9` under Implementing, `2` under Done, an open total of `12`, a to-archive count of `2`, and `1d ago`
 
 #### Scenario: Repository without open changes
 - **WHEN** a repository has only archived changes
@@ -101,16 +101,16 @@ The overview SHALL be sorted by last updated, newest first, by default. The user
 - **WHEN** the tiles layout is shown and the user picks "Open" in the sort control
 - **THEN** the tiles are ordered by open count, highest first, and the URL contains `sort=open`
 
-### Requirement: Drill down to a repository board
-Activating a repository row SHALL navigate to `/repo/<repoId>` without a page reload, and the repository name SHALL be a real link so it can be opened in a new tab. The repository board SHALL show only that repository's changes, SHALL derive its columns from that repository's changes alone, and SHALL NOT show the repository filter. The search, stale and hide-archived filters SHALL remain available and persist in the URL. The archived column, card actions and refresh behaviour SHALL be the same as on the combined board. Opening `/repo/<repoId>` directly SHALL work.
+### Requirement: Repository rows open the repository's board
+Activating a repository row SHALL navigate to `/repo/<repoId>` without a page reload, and the repository name SHALL be a real link so it can be opened in a new tab. The repository board SHALL show only that repository's changes, SHALL show the same lifecycle columns as the combined board, and SHALL NOT show the repository filter. The search, stale and hide-archived filters SHALL remain available and persist in the URL. The archived column, card actions and refresh behaviour SHALL be the same as on the combined board. Opening `/repo/<repoId>` directly SHALL work.
 
 #### Scenario: Drill down
 - **WHEN** the user clicks the row for `beta-soc`
 - **THEN** the URL becomes `/repo/<id of beta-soc>` and only `beta-soc` changes are shown in Kanban columns
 
-#### Scenario: Columns follow the repository's schema
+#### Scenario: Same columns for every schema
 - **WHEN** most repositories use `spec-driven` but repository `gamma-lab` uses a schema whose artifacts are `brief` and `plan`
-- **THEN** the board for `gamma-lab` shows `Brief` and `Plan` as its artifact columns and not the `spec-driven` ones
+- **THEN** the board for `gamma-lab` shows `Backlog`, `Drafts`, `Ready`, `Implementing`, `Done` and `Archived`, and no `Brief` or `Plan` column
 
 #### Scenario: Deep link
 - **WHEN** the user opens `/repo/<id>?stale=14` in a new tab
@@ -233,7 +233,7 @@ The overview SHALL offer two layouts of the same repositories, `Table` and `Tile
 - **THEN** the table is shown
 
 #### Scenario: Tile content
-- **WHEN** repository `alpha-infra` has 1 change in `Specs`, 9 in `Implementing`, 2 in `Done`, was last updated 1 day ago, and has a clean main checkout on `main` plus a worktree on `feat/report` with 4 uncommitted items
+- **WHEN** repository `alpha-infra` has 1 change in `Drafts`, 9 in `Implementing`, 2 in `Done`, was last updated 1 day ago, and has a clean main checkout on `main` plus a worktree on `feat/report` with 4 uncommitted items
 - **THEN** its tile shows those stage counts, an open total of `12`, a to-archive count of `2`, `1d ago`, the indicator `1 worktree · 1 uncommitted`, and the checkout summary `1 worktree · 2 branches active`, whose tooltip names `main` as the main checkout and `feat/report` as a worktree
 
 #### Scenario: Drill down from a tile
@@ -269,3 +269,33 @@ The projects overview SHALL open with a header band like the boards': the title 
 #### Scenario: Overview band
 - **WHEN** six repositories are tracked with 36 open changes, 5 of them to archive
 - **THEN** the band reads `Projects` with `Tracked 6`, `Open 36` and `To archive 5`, and **Pull all** stands in its action area
+
+### Requirement: Overview shows open pull requests per repository
+The projects overview SHALL show, for each repository, the number of open pull requests from the cached pull-request list of the `pull-requests` capability: as a column in the table layout and as a labelled figure on each tile. The figure SHALL link to `/pull-requests?repo=<id>` without opening the repository's board, and its tooltip SHALL say how many of them await review from the signed-in user and when the list was fetched. A repository whose list was never fetched, is unavailable or failed without an earlier list SHALL show a neutral placeholder whose tooltip gives the reason. The overview MUST NOT contact GitHub, neither on load nor on any interaction other than following the link.
+
+#### Scenario: Counts from the cache
+- **WHEN** the cached list of `alpha-infra` has 3 open pull requests, one awaiting the user's review, fetched 1 hour ago
+- **THEN** its row shows `3`, and the tooltip says one awaits the user's review and that the list is 1 hour old
+
+#### Scenario: Never fetched
+- **WHEN** pull requests were never fetched
+- **THEN** every row shows the placeholder, whose tooltip says the list has not been fetched yet, and no `gh` process is started
+
+#### Scenario: Following the count
+- **WHEN** the user activates the count of `beta-soc`
+- **THEN** the Pull requests view opens filtered to `beta-soc`
+
+### Requirement: Repository board lists the repository's pull requests
+The repository board header SHALL offer a **pull requests** control reading `<n> open PRs` from the cached list, or a neutral text when there is no list, that opens a dialog with that repository's pull requests laid out as in the Pull requests view, its fetch time, its unavailable or failed reason when there is one, a Refresh control, and a link to `/pull-requests?repo=<id>`. Opening the dialog SHALL refresh the repository's list when it is older than five minutes or was never fetched, under the rules of the `pull-requests` capability; the board itself MUST NOT contact GitHub. The control SHALL NOT be offered for a repository that is not a git repository.
+
+#### Scenario: Opening the dialog
+- **WHEN** the user activates `2 open PRs` on the board of `alpha-infra`, whose list is 10 minutes old
+- **THEN** the dialog shows the 2 cached pull requests at once, refreshes the list, and shows the result
+
+#### Scenario: Not on GitHub
+- **WHEN** the repository's `origin` is not on `github.com`
+- **THEN** the dialog says the repository is not on GitHub and no `gh` process is started
+
+#### Scenario: Non-git repository
+- **WHEN** the tracked repository is not a git repository
+- **THEN** its board header offers no pull requests control
