@@ -57,6 +57,21 @@ The detail view SHALL show, above the artifacts: the change name in monospace, t
 - **WHEN** the detail view is open for an archived change
 - **THEN** its artifacts are shown like any other change's, and the header shows its archive date
 
+### Requirement: Detail header marks an active copy left behind next to its archive
+The detail header of a change archived in the main checkout (or, in a repository without git, in the tracked folder) whose other checkouts include the main checkout SHALL show a warning badge, as text plus colour, stating that an active copy is left in the main checkout and naming that copy's column. Its tooltip SHALL name the leftover directory `openspec/changes/<name>/`, say that it usually holds files that were never committed and stayed behind when the archive arrived, and say that removing that directory clears the badge. The dashboard MUST NOT offer to remove it. The badge SHALL NOT be shown for an active change, for a pending archive (whose own badge applies), or for an archive without such a leftover, whose header MUST look as before. The board SHALL show such a change as one card, in `Archived`, like any other archived change.
+
+#### Scenario: Leftover active copy
+- **WHEN** `audit-trail` is archived in the main checkout and a leftover `openspec/changes/audit-trail/` in the main checkout would be in `Done`
+- **THEN** exactly one `audit-trail` card is on the board, in `Archived`, and its detail header shows a warning badge saying an active copy in `Done` is left in the main checkout, whose tooltip names `openspec/changes/audit-trail/` and says that removing it clears the badge
+
+#### Scenario: Ordinary archive
+- **WHEN** a change is archived in the main checkout and no active copy of it is left there
+- **THEN** its detail header shows no such badge
+
+#### Scenario: Pending archive
+- **WHEN** `audit-trail` is archived only in a worktree on `chore/archive-audit-trail` and still `Implementing` in the main checkout
+- **THEN** its detail header shows the pending-archive badge and not the leftover badge
+
 ### Requirement: Artifacts are browsable as tabs
 The detail view SHALL show one tab per artifact of the change's schema, in the schema's artifact order, labelled with the artifact's display name. Each tab SHALL show the artifact's state (`done`, `ready` or `blocked`). A tab whose artifact has no file yet SHALL NOT be selectable; selecting it SHALL be impossible and its state SHALL be readable from the tab.
 
@@ -124,14 +139,18 @@ The detail view SHALL offer a toggle that shows the selected file's source text 
 - **THEN** that file is also shown as raw source
 
 ### Requirement: Tasks are shown as a read-only checklist
-When the tasks artifact is selected, its task list SHALL be rendered as checkboxes reflecting each task's ticked state, together with the same `done/total` progress the card shows. The checkboxes MUST NOT be operable: the dashboard MUST NOT write a change to the repository from this view.
+When the tasks artifact is selected, its task list SHALL be rendered as checkboxes reflecting each task's state, together with the same progress the card shows. A task SHALL be drawn in one of three states: **done**, ticked; **awaiting validation** (`- [~]`), a third state that is neither ticked nor empty and is announced as mixed rather than as done or not done; and **open**, empty. Where any task awaits validation, the view SHALL say in words how many do. The checkboxes MUST NOT be operable in any state: the dashboard MUST NOT write a change to the repository from this view.
 
 #### Scenario: Checklist
 - **WHEN** the tasks artifact has 12 tasks of which 4 are ticked
 - **THEN** 12 checkboxes are shown with the first-ticked 4 checked and `4/12` is shown
 
+#### Scenario: Awaiting validation
+- **WHEN** the tasks artifact has 15 tasks of which 13 are ticked and 2 are `- [~]`
+- **THEN** 15 checkboxes are shown, the 2 awaiting ones are drawn in the third state and announced as mixed, and the view says that 2 tasks await validation
+
 #### Scenario: Not editable
-- **WHEN** the user clicks a checkbox in the tasks view
+- **WHEN** the user clicks a checkbox in the tasks view, in any of the three states
 - **THEN** nothing is sent to the server and the repository is unchanged
 
 ### Requirement: Navigation between board and detail view
@@ -150,7 +169,7 @@ Each board card SHALL open the detail view for its change through its **Show det
 - **THEN** a new tab opens on that change's detail view
 
 ### Requirement: The detail view follows the regular refresh
-The detail view SHALL take the change's header information from the same snapshot the boards use and SHALL re-read the selected file's content on the same poll interval, so that ticking a task or editing an artifact on disk becomes visible without a manual reload. The selected artifact, the selected file, the raw toggle and the scroll position MUST NOT be reset by a refresh that does not change the content.
+The detail view SHALL take the change's header information from the same snapshot the boards use and SHALL re-read the selected file's content whenever that snapshot is renewed, so that ticking a task or editing an artifact on disk becomes visible without a manual reload. That is the poll interval while auto-refresh is off, the auto-refresh interval while one is chosen, and a manual Refresh in either case: the detail view SHALL NOT keep a refresh cadence of its own. The selected artifact, the selected file, the raw toggle and the scroll position MUST NOT be reset by a refresh that does not change the content, however often the refresh happens.
 
 #### Scenario: Task ticked on disk
 - **WHEN** a task is ticked in the repository while the tasks artifact is shown
@@ -163,6 +182,14 @@ The detail view SHALL take the change's header information from the same snapsho
 #### Scenario: Artifact added on disk
 - **WHEN** an artifact file is created in the repository while the detail view is open
 - **THEN** its tab becomes selectable after the next scan
+
+#### Scenario: The detail view follows auto-refresh
+- **WHEN** auto-refresh is `2s`, the detail view is open, and a task is ticked in the repository
+- **THEN** the checklist updates within about two seconds, without the user clicking Refresh
+
+#### Scenario: A fast cadence does not disturb reading
+- **WHEN** auto-refresh is `2s` and the user reads a long spec file that nobody is editing
+- **THEN** the selected artifact, the selected file, the raw toggle and the scroll position stay exactly as the user left them across every refresh
 
 ### Requirement: Empty and error states
 When the selected file cannot be read, the view SHALL show a message naming the file and the reason, and the rest of the view SHALL stay usable. When the file exceeds the server's size cap, the view SHALL say so and offer an action that copies the file's absolute path instead of the content. When a change has no artifact file at all, the view SHALL show its header with an explanation that nothing has been written yet.

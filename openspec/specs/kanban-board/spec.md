@@ -5,76 +5,40 @@ Defines the Kanban board UI: how changes map to columns, what cards display, fil
 
 ## Requirements
 
-### Requirement: Board columns are derived from schema and implementation state
-The board SHALL place each change in exactly one column, where a column names the last step of the lifecycle that is complete. Using, in order: `Archived` if the change is archived; `Synced` if `tasks.total > 0`, `tasks.done == tasks.total` and the change's delta specs are synced into the main specs (a change without delta specs counts as synced); `Done` if `tasks.total > 0` and `tasks.done == tasks.total`; `Implementing` if `tasks.done > 0`; `Ready` if every artifact is done (ready to apply, nothing ticked yet); `Unknown` if the change's artifacts could not be read; otherwise, taking the schema's artifacts in display order, `New` if the first artifact is not done, else the display name of the last artifact of the longest leading run of done artifacts.
+### Requirement: Board columns follow the lifecycle phases
+The board SHALL place each change in exactly one column, where a column names the phase of the lifecycle the change is in. Using, in order: `Archived` if the change is archived; `Done` if `tasks.total > 0` and every task is settled — `tasks.done + tasks.awaiting == tasks.total` — whether or not the change's delta specs are already synced into the main specs; `Implementing` if at least one task is settled; `Ready` if every artifact is done (ready to apply, nothing ticked yet); `Unknown` if the change's artifacts could not be read; `Backlog` if no artifact is done; otherwise `Drafts` (at least one artifact is done and at least one is not). Which artifacts are done, and in which order they were written, SHALL NOT matter beyond that: every schema's artifacts count alike.
 
-Display order SHALL be the schema's own artifact order, except that for the `spec-driven` schema it SHALL be `proposal`, `design`, `specs`, `tasks` (artifacts not named there follow in schema order). Column order SHALL be `New`, then the artifact columns of the majority schema followed by any additional artifact columns of other schemas, each schema omitting its last artifact in display order (completing it means every artifact is done, which is `Ready`), then `Ready`, `Implementing`, `Done`, `Synced`, `Archived`. Apart from the display-order exception, columns MUST NOT be hardcoded to the `spec-driven` schema.
+A change in `Done` SHALL additionally carry one sub-state: `validate` when `tasks.awaiting > 0` — the work is finished but a person still has to confirm it — and `complete` otherwise. The sub-state SHALL be derived from the snapshot alone, exactly like the column. It SHALL NOT be a column: `Done` holds both, the column's count SHALL be the whole column, and every "to archive" count SHALL keep counting both, because a change awaiting validation can be archived.
 
-A change in `Synced` SHALL be treated as complete wherever a change in `Done` is: the completion badge on its card, the highlighted column count, and every "to archive" count.
+The board SHALL show the columns `Backlog`, `Drafts`, `Ready`, `Implementing`, `Done`, `Archived`, in that order, on the combined board and on every repository board, whether or not a column holds a change; `Unknown` SHALL be shown between `Drafts` and `Ready` only while at least one change on that board is in it. Columns MUST NOT depend on the schemas the tracked changes use: there SHALL be no column per artifact, no `Synced` column and no `Validate` column.
 
-#### Scenario: Brand-new change
-- **WHEN** a change directory exists and its `proposal` artifact is not done
-- **THEN** it appears in the `New` column
+#### Scenario: Every task ticked
+- **WHEN** a change has `tasks` `done: 12, awaiting: 0, total: 12` and is not archived
+- **THEN** it appears in `Done` with the sub-state `complete`
 
-#### Scenario: Change with proposal only
-- **WHEN** a `spec-driven` change has `proposal: done` and `design` and `specs` not done
-- **THEN** it appears in the `Proposal` column
+#### Scenario: Awaiting validation
+- **WHEN** a change has `tasks` `done: 13, awaiting: 2, total: 15` and is not archived
+- **THEN** it appears in `Done` with the sub-state `validate`
 
-#### Scenario: Design written
-- **WHEN** a `spec-driven` change has `proposal` and `design` done and `specs` not done
-- **THEN** it appears in the `Design` column
+#### Scenario: Awaiting validation with nothing ticked
+- **WHEN** a change has `tasks` `done: 0, awaiting: 9, total: 9`
+- **THEN** it appears in `Done` with the sub-state `validate`
 
-#### Scenario: Specs written before design
-- **WHEN** a `spec-driven` change has `proposal` and `specs` done and `design` not done
-- **THEN** it appears in the `Proposal` column, because `design` precedes `specs` in display order
+#### Scenario: Still implementing
+- **WHEN** a change has `tasks` `done: 13, awaiting: 1, total: 15`
+- **THEN** it appears in `Implementing`, because a task is still open
 
-#### Scenario: Specs written, tasks not yet
-- **WHEN** a `spec-driven` change has `proposal`, `design` and `specs` done and `tasks` not done
-- **THEN** it appears in the `Specs` column
+#### Scenario: First task left for validation
+- **WHEN** all artifacts are done and a change has `tasks` `done: 0, awaiting: 1, total: 12`
+- **THEN** it appears in `Implementing`, not in `Ready`
 
-#### Scenario: Ready to apply
-- **WHEN** all artifacts are done and `tasks` is `done: 0, total: 12`
-- **THEN** it appears in `Ready` showing `0/12`
+#### Scenario: The column count covers both sub-states
+- **WHEN** the `Done` column holds three complete changes and two awaiting validation
+- **THEN** its header count is `5` and every "to archive" count is `5`
 
-#### Scenario: First task ticked
-- **WHEN** all artifacts are done and `tasks` is `done: 1, total: 12`
-- **THEN** it appears in `Implementing` showing `1/12`
-
-#### Scenario: Tasks ticked while an artifact is still open
-- **WHEN** `design` is not done and `tasks` is `done: 2, total: 12`
-- **THEN** it appears in `Implementing`
-
-#### Scenario: Complete but not synced
-- **WHEN** `tasks` is `done: 12, total: 12`, the change is not archived, and its delta specs are not yet reflected in the main specs
-- **THEN** it appears in the `Done` column
-
-#### Scenario: Synced, waiting to be archived
-- **WHEN** `tasks` is `done: 12, total: 12`, the change is not archived, and its delta specs are reflected in the main specs
-- **THEN** it appears in the `Synced` column with the completion badge and counts towards "to archive"
-
-#### Scenario: Complete change without delta specs
-- **WHEN** `tasks` is `done: 5, total: 5` and the change has no delta spec files
-- **THEN** it appears in the `Synced` column
-
-#### Scenario: All artifacts done but tasks file empty
-- **WHEN** all artifacts are done and `tasks` is `done: 0, total: 0`
-- **THEN** it appears in `Ready` with a "no tasks" warning badge
-
-#### Scenario: Column list for the spec-driven schema
-- **WHEN** every tracked change uses the `spec-driven` schema
-- **THEN** the board shows the columns `New`, `Proposal`, `Design`, `Specs`, `Ready`, `Implementing`, `Done`, `Synced`, `Archived`, with no `Tasks` column
-
-#### Scenario: Another schema keeps its own order
-- **WHEN** every tracked change uses a schema whose artifacts are `brief`, `plan`, `checklist` in that order
-- **THEN** the board shows `New`, `Brief`, `Plan`, `Ready`, `Implementing`, `Done`, `Synced`, `Archived`
-
-#### Scenario: Lifecycle columns are always present
-- **WHEN** no change is new, ready to apply or synced
-- **THEN** the board still shows empty `New`, `Ready` and `Synced` columns in their positions
-
-#### Scenario: Unreadable change
-- **WHEN** a change's artifacts could not be read
-- **THEN** it appears in the `Unknown` column, not in `New`
+#### Scenario: Validate is not a column
+- **WHEN** changes awaiting validation are on the board
+- **THEN** the board shows the columns `Backlog`, `Drafts`, `Ready`, `Implementing`, `Done`, `Archived` and no `Validate` column
 
 ### Requirement: Board filters
 The board SHALL provide filters for repository (multi-select), free-text search over change name and repository name, stale threshold (hide changes with activity within N days, default off), and a toggle to hide the `Archived` column. Filters SHALL apply instantly on the client and persist in the URL query string.
@@ -113,6 +77,12 @@ The `Archived` column SHALL be presented like every other column: always open, w
 ### Requirement: Board refreshes from the snapshot
 The board SHALL fetch `GET /api/state` on load, re-fetch on the poll interval, and provide a Refresh button that calls `POST /api/scan` and re-fetches when complete. The header SHALL show the snapshot's `generatedAt` and per-repo error indicators for repos with `ok: false`.
 
+Beside the Refresh button the dashboard SHALL offer an auto-refresh control with exactly the choices `Off`, `2s`, `5s` and `10s`. While an interval is chosen, the dashboard SHALL repeat on that interval what the Refresh button does — trigger a scan and take the resulting snapshot — so that the data shown is re-read from the repositories and not merely the same snapshot fetched again. `Off` SHALL be the initial choice for a user who has never chosen one, and the control SHALL name the interval in force, so the user can always see whether the dashboard is refreshing itself.
+
+The choice SHALL be remembered for the browser it was made in and SHALL survive a reload; it SHALL NOT be written to the dashboard's configuration, SHALL NOT change `pollIntervalSeconds`, and SHALL NOT be shared with another browser or machine. When the choice cannot be stored, it SHALL still apply for the current page session.
+
+An automatic refresh SHALL NOT overlap another refresh: while a refresh is in flight, whether the user started it or the interval did, the due tick SHALL be dropped rather than queued, and the next tick SHALL be timed from the refresh that finished, so that an interval shorter than a scan cannot make scans pile up. While the page is hidden no tick SHALL run; the interval SHALL resume when the page becomes visible again. A failed automatic refresh SHALL be reported like a failed manual one and MUST NOT stop the interval. Auto-refresh SHALL drive nothing but the scan and the re-fetch: it MUST NOT trigger the pull action, which stays bound to the user's explicit request.
+
 #### Scenario: Manual refresh
 - **WHEN** the user clicks Refresh
 - **THEN** a scan is triggered and the board updates with the new snapshot without a page reload
@@ -120,6 +90,46 @@ The board SHALL fetch `GET /api/state` on load, re-fetch on the poll interval, a
 #### Scenario: Repo in error
 - **WHEN** a tracked repo failed to scan
 - **THEN** a warning indicator with the error message is visible in the header
+
+#### Scenario: Auto-refresh is off until chosen
+- **WHEN** the dashboard is opened by a user who has never used the auto-refresh control
+- **THEN** the control shows `Off`, no scan is triggered by a timer, and the board still re-fetches the snapshot on the poll interval as before
+
+#### Scenario: Choosing an interval
+- **WHEN** the user chooses `5s`
+- **THEN** about every five seconds a scan is triggered and the board and the `updated` age follow the new snapshot, without the user clicking anything
+
+#### Scenario: The choice is remembered for this browser
+- **WHEN** the user chooses `2s` and reloads the page
+- **THEN** auto-refresh is still `2s`, and the dashboard's configured poll interval is unchanged
+
+#### Scenario: Another browser is unaffected
+- **WHEN** the user has chosen `2s` in one browser and opens the dashboard in a different browser
+- **THEN** auto-refresh there is `Off`
+
+#### Scenario: Turning it off
+- **WHEN** auto-refresh is `10s` and the user chooses `Off`
+- **THEN** no further scan is triggered by the timer, and Refresh still works
+
+#### Scenario: A scan slower than the interval
+- **WHEN** auto-refresh is `2s` and a scan takes six seconds
+- **THEN** no second scan is started while the first is running, and the next one is timed from the first one finishing
+
+#### Scenario: Refreshing by hand while auto-refresh runs
+- **WHEN** the user clicks Refresh while an automatic refresh is in flight
+- **THEN** no second concurrent scan is started, and the board still ends up on the newest snapshot
+
+#### Scenario: Hidden tab
+- **WHEN** auto-refresh is `2s` and the user switches to another tab for ten minutes
+- **THEN** no scan is triggered while the page is hidden, and one refresh happens when the user comes back
+
+#### Scenario: A failing scan does not stop the interval
+- **WHEN** an automatic refresh fails
+- **THEN** the error is shown in the header the same way a failed manual refresh is, and the next tick is still attempted
+
+#### Scenario: Auto-refresh never pulls
+- **WHEN** auto-refresh has been running at `2s` for an hour
+- **THEN** no repository has been fetched from or merged, because only a scan was triggered
 
 ### Requirement: Status labels use a semantic colour palette
 Every label the board paints in a colour SHALL draw that colour from a fixed set of semantic roles, and each role SHALL
@@ -524,17 +534,49 @@ Every tab in the dock's tab strip SHALL be drawn as a tab of its own — with a 
 - **THEN** every tab is fully visible and no part of the board is hidden behind the strip
 
 ### Requirement: Cards show only what an overview needs
-A card SHALL show only what an overview needs: the change name in monospace, the relative age of `lastActivityAt` under it (e.g. `updated 3d ago`, or the archive date for an archived change), the change's session status beside the name as the "Cards offer session starters and show session state" requirement gives it, a progress bar with `done/total` when tasks exist, and a footer with the next-step starter and **Show details**, and — when the change has a console — the console quick link beside its session status. A card SHALL additionally show the `no tasks` warning and an error mark for any other warning the snapshot carries. A card SHALL NOT show the repository name — on the combined board every card sits in its repository's group, whose header names it, and a repository board names it in its header — nor the branch badge, the checkouts holding the change, the worktree's work status, the prompt, how long the change has been complete, or which artifacts are written: the change's detail view shows those (change-detail: "Detail header shows the change's state"), and the column says how far the change has come.
+A card SHALL show only what an overview needs: the change name in monospace, the relative age of `lastActivityAt` under it (e.g. `updated 3d ago`, or the archive date for an archived change), the change's session status as the "Cards offer session starters and show session state" requirement gives it, a progress bar, and a footer with the next-step starter and **Show details**, and — when the change has a console — the console quick link beside its session status.
+
+The change name and its age SHALL have the full width of the card's top to themselves: nothing SHALL sit beside them, so the name wraps only when it is longer than the card is wide. The session status and the console quick link SHALL sit together on their own line directly below the age and above the progress bar; a card with neither SHALL show no such line and no space for one. **Show details** SHALL have the same height and text size as the next-step starter button in the footer, so the two sit on the footer's line as a pair; at rest it keeps its quieter look than the starter. The progress bar SHALL be, for a change in `Drafts`, the drafting progress: the number of the change's artifacts that are done out of all of its schema's artifacts, labelled `done/total Artifacts`, with a tooltip and accessible name that say it counts artifacts (e.g. `2 of 4 artifacts written`); for any other change with tasks (`tasks.total > 0`), the task progress labelled `done/total Tasks`, with a tooltip and accessible name that say it counts tasks. Both bars SHALL share one shape and style; the word after the count is what tells them apart at a glance. A card in `Backlog`, and a card outside `Drafts` without tasks, SHALL show no progress bar. A card SHALL additionally show the `no tasks` warning and an error mark for any other warning the snapshot carries. A card SHALL NOT show the repository name — on the combined board every card sits in its repository's group, whose header names it, and a repository board names it in its header — nor the branch badge, the checkouts holding the change, the worktree's work status, the prompt, how long the change has been complete, whether its specs are synced, or which artifacts are written: the change's detail view shows those (change-detail: "Detail header shows the change's state"), and the column and the progress bar say how far the change has come.
+
+A card whose change has `tasks.awaiting > 0` SHALL additionally show a **Validate** badge in the `warning` role, and its task progress bar SHALL have three parts: the done tasks filled, the awaiting tasks as a distinct unfinished segment between the filled part and the remainder, and the open tasks empty. Its label SHALL name the awaiting count in words rather than by colour alone (e.g. `13 + 2 awaiting / 15 Tasks`), and the tooltip and accessible name SHALL say how many tasks are done, how many await validation and how many are open. With `tasks.awaiting` zero or absent the bar and its label SHALL be exactly as they are without this requirement. The badge SHALL NOT be shown for an archived change.
 
 The branch badge in the repository board header MUST NOT extend beyond its container at any width. A branch name that fits SHALL be shown in full; one that does not SHALL be shortened in the middle with an ellipsis so that both its beginning and its end remain readable, with the branch glyph visible and the full name as its tooltip and accessible name.
 
 #### Scenario: Card content
 - **WHEN** a change `cloud-deployment` in repo `demo-ops` has `tasks 30/30`, last activity 12 days ago and a branch match `feat/cloud-deployment`, and is shown on the combined board
-- **THEN** the card sits in the `demo-ops` group and shows `cloud-deployment`, `updated 12d ago`, a full progress bar labelled `30/30` and **Show details**, and shows neither `demo-ops`, the branch, nor a completion badge
+- **THEN** the card sits in the `demo-ops` group and shows `cloud-deployment`, `updated 12d ago`, a full progress bar labelled `30/30 Tasks` and **Show details**, and shows neither `demo-ops`, the branch, nor a completion badge
+
+#### Scenario: Drafting progress
+- **WHEN** a `spec-driven` change has `proposal` and `design` done and `specs` and `tasks` not done
+- **THEN** its card in `Drafts` shows a progress bar half filled and labelled `2/4 Artifacts`, whose tooltip and accessible name read `2 of 4 artifacts written`
+
+#### Scenario: Drafting progress for another schema
+- **WHEN** a change of a schema with the artifacts `brief`, `plan`, `checklist` has `brief` done
+- **THEN** its card in `Drafts` shows a drafting progress bar labelled `1/3 Artifacts`
+
+#### Scenario: Backlog card has no bar
+- **WHEN** a change in `Backlog` has a `tasks.md` that is not written yet
+- **THEN** its card shows no progress bar
+
+#### Scenario: Task progress replaces drafting progress
+- **WHEN** a change moves from `Drafts` to `Ready` with `tasks` `done: 0, total: 12`
+- **THEN** its card shows the task progress bar labelled `0/12 Tasks`, whose tooltip says it counts tasks, and no drafting progress
 
 #### Scenario: Card with a running session
 - **WHEN** a change in `Implementing` has a session whose agent is waiting for the user
-- **THEN** its card shows the session's status beside the name, the task progress, and the next step in its footer
+- **THEN** its card shows the change name and its age, under them the session's status, then the task progress, and the next step in its footer
+
+#### Scenario: Session status does not squeeze the name
+- **WHEN** the change `introduce-tenant-quota-enforcement` has a running session and a session worktree, and its name fits the card's width on one line
+- **THEN** its card shows the whole name on one line, with the session badge and the console quick link on the line below the age
+
+#### Scenario: No session, no status line
+- **WHEN** a change has neither a session nor a session worktree
+- **THEN** its card goes straight from the age to the progress bar, with no empty line between them
+
+#### Scenario: Show details matches the starter
+- **WHEN** a card in `Ready` offers **▶ Implement** and **Show details** in its footer
+- **THEN** both are drawn with the same height and the same text size
 
 #### Scenario: Details live in the detail view
 - **WHEN** a change has a `prompt.md`, a worktree with uncommitted files and all of its artifacts written
@@ -543,6 +585,18 @@ The branch badge in the repository board header MUST NOT extend beyond its conta
 #### Scenario: Long branch name in the repository header
 - **WHEN** the repository board's current branch is `feat/introduce-tenant-quota-enforcement` and it does not fit
 - **THEN** its badge shows the beginning, an ellipsis and `quota-enforcement`, stays inside the header, and presents the full name on hover and to a screen reader
+
+#### Scenario: Awaiting validation
+- **WHEN** a change in `Done` has `tasks` `done: 13, awaiting: 2, total: 15`
+- **THEN** its card shows a **Validate** badge and a progress bar labelled `13 + 2 awaiting / 15 Tasks`, whose accessible name says thirteen tasks are done, two await validation and none are open
+
+#### Scenario: Awaiting segment is not the only cue
+- **WHEN** a screen reader reads a card awaiting validation
+- **THEN** it reads the **Validate** badge and a progress label naming the awaiting count, without relying on the segment's colour
+
+#### Scenario: No awaiting tasks
+- **WHEN** a change has `tasks` `done: 4, awaiting: 0, total: 12`
+- **THEN** its card shows no **Validate** badge and a two-part bar labelled `4/12 Tasks`
 
 ### Requirement: Visual design follows the grey and indigo token set
 The UI SHALL define its colours as two token sets sharing the same token names: a dark set (neutral dark grey backgrounds ascending from `#26272b` for the page to `#4b4c51` for the most elevated surface, light enough that the edges between surfaces and every border stay visible; indigo brand `#6366f1`) and a light set (slate backgrounds from `#f8fafc`, with white raised surfaces, indigo brand `#4f46e5`). In the dark theme the background tokens SHALL be near-neutral greys, in the light theme slate greys with at most a slight cool tint; the indigo brand SHALL be used only as an accent (focus, active state, primary actions, progress) and MUST NOT be the resting colour of panel or card borders, nor the colour of any status label; highlighting the border of the card or control under the pointer is an active state and MAY use it. Borders SHALL be neutral: translucent white in the dark theme and translucent slate in the light theme. Both themes SHALL share Inter for text, JetBrains Mono for identifiers, one radius scale (small controls, fields and cards, panels and columns — rounder the larger the element) and one set of shadow tokens, with fonts bundled locally. Component styles MUST reference colour, radius and shadow tokens only and MUST NOT contain literal colour values. In both themes, text and status colours SHALL have a contrast ratio of at least 4.5:1 against the backgrounds they are rendered on, and so SHALL the text of a filled primary button against that button. The token set SHALL keep the status roles, the brand accent and the repository colours in three disjoint colour ranges, so that no status label can be mistaken for a repository accent or for the accent, and no repository can be shown in a colour that means a status. The UI MUST render correctly without network access, and any icon SHALL be drawn from inline markup, be decorative only, and sit beside text that says the same thing — with one exception, the card's console quick link, whose icon carries its meaning in a tooltip and an accessible name.
@@ -652,7 +706,7 @@ Wherever a board or the overview offers actions for what it shows — **New chan
 - **THEN** the action area wraps below the title and counts as one group, and every action in it stays fully visible
 
 ### Requirement: The dashboard opens with a hero header
-Every view SHALL open with a hero header. It SHALL show the product mark and the title `OpenSpec Dashboard` in large type, at least 32px and growing with the window up to 56px, with a one-line tagline under it. The status corner (Open work, scan errors, the theme control, the last-update age and Refresh) SHALL sit in the hero's top-right corner, and the main navigation as large tabs, each with an icon beside its name, SHALL sit below the title. The current view's header band and filter bar SHALL continue on the hero's ground, a soft accent glow with a faint dot grid that fades out before the board, so that title, navigation, view header and filters read as one header; a line SHALL close the hero off from the board. The hero's decoration SHALL be drawn from theme tokens, be purely decorative, and SHALL NOT reduce the contrast of any text in it below the rules of the token set. On narrow windows the status corner SHALL move below the title and the title SHALL shrink, without horizontal scrolling.
+Every view SHALL open with a hero header. It SHALL show the product mark and the title `OpenSpec Dashboard` in large type, at least 32px and growing with the window up to 56px, with a one-line tagline under it. The status corner (Open work, scan errors, the theme control, the last-update age, Refresh and the auto-refresh control) SHALL sit in the hero's top-right corner, and the main navigation as large tabs, each with an icon beside its name, SHALL sit below the title. The auto-refresh control SHALL stand next to Refresh, at the same control size as the rest of the corner, and SHALL carry an accessible name saying it sets the auto-refresh interval. The current view's header band and filter bar SHALL continue on the hero's ground, a soft accent glow with a faint dot grid that fades out before the board, so that title, navigation, view header and filters read as one header; a line SHALL close the hero off from the board. The hero's decoration SHALL be drawn from theme tokens, be purely decorative, and SHALL NOT reduce the contrast of any text in it below the rules of the token set. On narrow windows the status corner SHALL move below the title and the title SHALL shrink, without horizontal scrolling.
 
 #### Scenario: Hero on the combined board
 - **WHEN** the combined board is opened in a 1920px wide window
@@ -665,6 +719,14 @@ Every view SHALL open with a hero header. It SHALL show the product mark and the
 #### Scenario: Narrow window
 - **WHEN** the window is 720px wide
 - **THEN** the title is smaller but still the largest text on the page, the status corner sits below it, and nothing scrolls horizontally
+
+#### Scenario: Auto-refresh sits with Refresh
+- **WHEN** the status corner is shown
+- **THEN** the auto-refresh control stands beside Refresh, shows the interval in force, and is reachable by keyboard with a name that says what it sets
+
+#### Scenario: Auto-refresh on every view
+- **WHEN** auto-refresh is `5s` and the user moves from the board to Activity
+- **THEN** the control still shows `5s` and the dashboard keeps refreshing on that interval
 
 ### Requirement: The product has its own mark
 The dashboard SHALL show its own product mark instead of a generic icon: a ring of four arcs — the four stages of a change — fading behind a leading arc that ends in a bright dot, around a small rounded square, on a rounded accent-gradient tile. The mark in the page SHALL be drawn in the theme's accent tokens and be hidden from assistive technology, as the product name stands beside it. The page SHALL carry the same mark as its favicon, embedded in the page itself so no request is made for it.
