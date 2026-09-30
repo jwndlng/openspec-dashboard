@@ -8,6 +8,10 @@ Lets the user read one change's OpenSpec artifacts inside the dashboard — its 
 ### Requirement: Change detail route
 The UI SHALL provide a client-side route `/repo/<repoId>/change/<changeName>` that shows exactly one change of one tracked repository, for active and archived changes alike. The repository id and the change name SHALL be URL-encoded in the path and decoded when the route is parsed. A path that cannot be decoded, or that names a repository or change absent from the current snapshot, SHALL render a "not found" state that names what was asked for and offers a link to the projects overview; it MUST NOT render a blank page or throw.
 
+A change that the snapshot does not carry but that has a session or a session worktree — the archive worktree of a
+change that is already archived, or a worktree adopted from disk — SHALL NOT be treated as not found: the route SHALL
+render the detail view with its Console tab, and say in place of the artifacts that the change has none to read here.
+
 The route SHALL work in both routing modes the UI supports (path routing on the dashboard server, hash routing on static hosting).
 
 #### Scenario: Opening a change
@@ -19,8 +23,12 @@ The route SHALL work in both routing modes the UI supports (path routing on the 
 - **THEN** the detail view is shown with its archived state, like any other change
 
 #### Scenario: Unknown change
-- **WHEN** the user opens the detail route for a change name that is not in the snapshot
+- **WHEN** the user opens the detail route for a change name that is not in the snapshot and has no session or worktree
 - **THEN** a "not found" message naming the repository and the change is shown together with a link back to the overview
+
+#### Scenario: Change gone, session left
+- **WHEN** the user opens the detail route for the archive worktree of a change the snapshot no longer carries
+- **THEN** the view is shown with a working `Console` tab and an explanation that there are no artifacts to read
 
 #### Scenario: Hash routing
 - **WHEN** the UI runs in hash routing mode and the user opens `index.html#/repo/<id>/change/cloud-deployment`
@@ -137,6 +145,63 @@ a new session, disabled with an explanation when the repository's agent is not f
 - **WHEN** a change has no session and the repository's agent executable is not found
 - **THEN** the Console tab's starters are disabled and say that the agent was not found
 
+### Requirement: The console tab selects among the change's sessions
+A change MAY have more than one session at a time — its own session and the session of its archive worktree run in
+separate worktrees. When it has more than one, the Console tab SHALL list them with their action, branch and live
+state, most recent first, and show the selected one; with a single session the list MAY be omitted. The most recently
+active session SHALL be selected by default.
+
+The selected session SHALL be part of the URL, so the console can be linked to and survives a reload, alongside the
+selected tab. A URL naming a session the change does not have SHALL fall back to the default selection without an
+error. Typing, default responses and next-step prompts MUST reach only the selected session.
+
+#### Scenario: Two sessions
+- **WHEN** a change has a running Implement session and a running Archive session
+- **THEN** the Console tab lists both with their branch and state and shows the more recently active one
+
+#### Scenario: Selection is linkable
+- **WHEN** the user selects the Console tab and its second session and reloads the page
+- **THEN** the same tab and the same session are shown again, with that session's earlier output
+
+#### Scenario: Stale session in the URL
+- **WHEN** a URL names a session id the change does not have
+- **THEN** the Console tab opens on the change's most recently active session and no error is reported
+
+#### Scenario: Input reaches only the selected session
+- **WHEN** the change has two sessions and the user activates a default response
+- **THEN** only the selected session's terminal receives it
+
+### Requirement: The console tab shows work status and offers Ship
+The Console tab SHALL show the work status of the selected session's worktree and a Ship button while that status is
+`uncommitted`, `unpushed` or `pushed`, naming what it will do. For `merged` it SHALL suggest removing the worktree, and
+the clean-up dialog SHALL preselect removal.
+
+#### Scenario: Ship from the console
+- **WHEN** the user presses Ship on the Console tab of an ended session with uncommitted work
+- **THEN** the agent starts in the terminal with the Ship prompt
+
+#### Scenario: Merged
+- **WHEN** the Console tab is opened for a session whose worktree is `merged`
+- **THEN** Ship is not offered and removal of the worktree is suggested
+
+### Requirement: The console tab reads as a console
+The Console tab and the panel below it SHALL carry the dashboard's informational accent — the blue the token set
+already owns — on the tab itself and on the panel's frame and header, so the console is recognisable as a different
+kind of surface from the artifact tabs, which keep their existing colours. The accent SHALL come from the theme tokens
+so that both themes apply, and MUST NOT be the only cue: the tab keeps its label `Console`.
+
+The accent MUST NOT be a colour that means "running", "uncommitted", "complete", "needs attention" or "error", and MUST
+NOT be a colour a repository can be assigned.
+
+#### Scenario: Console tab stands out
+- **WHEN** the detail view is open on the Console tab
+- **THEN** the tab and the panel's frame carry the informational accent while the artifact tabs keep theirs, and the
+  tab still reads `Console`
+
+#### Scenario: Both themes
+- **WHEN** the user switches from the dark to the light theme with the Console tab open
+- **THEN** the accent follows the theme and the tab's label keeps a contrast ratio of at least 4.5:1
+
 ### Requirement: Artifacts are browsable as tabs
 The detail view SHALL show one tab per artifact of the change's schema, in the schema's artifact order, labelled with the artifact's display name, and — when agent sessions apply to the change's repository — the Console tab after them. Each artifact tab SHALL show the artifact's state (`done`, `ready` or `blocked`). An artifact tab whose artifact has no file yet SHALL NOT be selectable; selecting it SHALL be impossible and its state SHALL be readable from the tab.
 
@@ -242,7 +307,7 @@ Each board card SHALL open the detail view for its change through its **Show det
 - **THEN** a new tab opens on that change's detail view
 
 ### Requirement: The detail view follows the regular refresh
-The detail view SHALL take the change's header information from the same snapshot the boards use and SHALL re-read the selected file's content whenever that snapshot is renewed, so that ticking a task or editing an artifact on disk becomes visible without a manual reload. That is the poll interval while auto-refresh is off, the auto-refresh interval while one is chosen, and a manual Refresh in either case: the detail view SHALL NOT keep a refresh cadence of its own. The selected artifact, the selected file, the raw toggle and the scroll position MUST NOT be reset by a refresh that does not change the content, however often the refresh happens.
+The detail view SHALL take the change's header information from the same snapshot the boards use and SHALL re-read the selected file's content whenever that snapshot is renewed, so that ticking a task or editing an artifact on disk becomes visible without a manual reload. That is the poll interval while auto-refresh is off, the auto-refresh interval while one is chosen, and a manual Refresh in either case: the detail view SHALL NOT keep a refresh cadence of its own. The selected artifact, the selected file, the selected session, the raw toggle and the scroll position MUST NOT be reset by a refresh that does not change the content, however often the refresh happens. A refresh MUST NOT detach, restart or clear the terminal of the Console tab.
 
 #### Scenario: Task ticked on disk
 - **WHEN** a task is ticked in the repository while the tasks artifact is shown
@@ -251,6 +316,10 @@ The detail view SHALL take the change's header information from the same snapsho
 #### Scenario: Refresh keeps the view
 - **WHEN** a poll returns unchanged content while the user is reading the third spec file
 - **THEN** the same file stays selected and the view does not jump
+
+#### Scenario: Refresh keeps the terminal
+- **WHEN** a poll completes while the Console tab is shown
+- **THEN** the terminal keeps its output, its scroll position and its connection
 
 #### Scenario: Artifact added on disk
 - **WHEN** an artifact file is created in the repository while the detail view is open

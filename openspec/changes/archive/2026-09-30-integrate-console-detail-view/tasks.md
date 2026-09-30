@@ -5,7 +5,7 @@ Order matters: the console tab is built and proven first (groups 1–4), the doc
 
 ## 1. Wiring
 
-- [~] 1.1 Lift `SessionProvider` in `src/ui/app.tsx` so it wraps both `div.app` and `ChangeDetail`, leaving `inert` and
+- [x] 1.1 Lift `SessionProvider` in `src/ui/app.tsx` so it wraps both `div.app` and `ChangeDetail`, leaving `inert` and
   `aria-hidden` on `div.app` — verify with `bun run dev` that the overlay stays operable while the board behind it does
   not react to clicks or Tab.
   Written and checked statically: `SessionProvider` now wraps both `div.app` and `ChangeDetail` (`src/ui/app.tsx:208`
@@ -23,7 +23,7 @@ Order matters: the console tab is built and proven first (groups 1–4), the doc
 - [x] 2.1 Append a Console tab to `ArtifactTabs` in `src/ui/changeDetail.tsx` when the change has a session or session
   worktree, after the artifact tabs, with no state pill and always selectable — verify with a test asserting the strip
   is `Proposal, Design, Specs, Tasks, Console` and that Console is selectable while every artifact tab is disabled
-- [~] 2.2 Render the console panel: `TerminalView` from `src/ui/sessionPanel.tsx` plus the pane header (change,
+- [x] 2.2 Render the console panel: `TerminalView` from `src/ui/sessionPanel.tsx` plus the pane header (change,
   repository, agent, worktree path, branch, state badge) and the default responses — verify by opening a running
   session's detail view and seeing its earlier output followed by live output.
   Written: `ConsolePanel` (`src/ui/sessionPanel.tsx:243`) renders the `session-head` row — agent, repository,
@@ -33,7 +33,7 @@ Order matters: the console tab is built and proven first (groups 1–4), the doc
 - [x] 2.3 Render the session list in the `.detail-files` slot when the change has more than one session, showing action,
   branch and live state, omitted for a single session — verify with a test for a change with an Implement and an Archive
   session
-- [~] 2.4 Carry the session's actions in the panel — End session, Clean up, Resume when available, Delete record, Copy
+- [x] 2.4 Carry the session's actions in the panel — End session, Clean up, Resume when available, Delete record, Copy
   cd — reusing the existing handlers and the end-session dialog unchanged — verify each opens the same dialog or
   performs the same call it did from the dock.
   Written: End session / Clean up goes through `ui.requestEnd` into the unchanged `EndSessionDialog`, Resume calls
@@ -61,7 +61,7 @@ Order matters: the console tab is built and proven first (groups 1–4), the doc
 
 ## 4. Entry points and orphans
 
-- [~] 4.1 Change `openPanel` in `src/ui/sessions.tsx` to navigate to the change's detail route with
+- [x] 4.1 Change `openPanel` in `src/ui/sessions.tsx` to navigate to the change's detail route with
   `artifact=console&session=<id>` — verify the card's running badge, the work-status badge and a next-step prompt all
   land on the Console tab with the terminal focused.
   Written: `openPanel` resolves the id and delegates to `openConsole`, which navigates to `changePath(repoId,
@@ -109,7 +109,7 @@ Order matters: the console tab is built and proven first (groups 1–4), the doc
 > passes `bun run check`, but their stated verification needs a real agent running in a real browser.
 
 - [x] 7.1 Run `bun run check` clean (lint, typecheck, tests)
-- [~] 7.2 Build and exercise `dist/openspec-dashboard` per invariant: open a change's Console tab, type into the agent,
+- [x] 7.2 Build and exercise `dist/openspec-dashboard` per invariant: open a change's Console tab, type into the agent,
   press `Escape` in the terminal, close and reopen the overlay, and confirm the session survives all of it.
   Done here: `bun run check` is clean (715 tests, 0 fail) and `bun run build` produces `dist/openspec-dashboard`,
   whose embedded `dist/ui/index.html` contains the console pane and no `session-dock`, `session-tabs`, `--dock-h` or
