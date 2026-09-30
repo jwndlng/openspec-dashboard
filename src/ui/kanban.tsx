@@ -17,7 +17,7 @@ import { assignRepoHues, groupByRepo, newChangeTargets, recentArchived } from ".
 import { columnKind } from "./boardMarks.ts";
 import { IconChevronRight, IconPlus, IconTerminal } from "./icons.tsx";
 import { SessionControls, useSessionUi } from "./sessions.tsx";
-import { consoleTabAvailable } from "./sessionState.ts";
+import { archivePending, consoleTabAvailable } from "./sessionState.ts";
 import { boardFrom, changePath, CONSOLE_TAB, repoPath, serializeDetailQuery } from "./routes.ts";
 import { currentQuery, followInApp, href, navigate, replaceQuery } from "./url.ts";
 
@@ -378,6 +378,7 @@ export function initialFilters(query: string, repoId: string | undefined): Filte
  */
 export function Kanban({ snapshot, config, repoId, query, onReload }: { snapshot: Snapshot | null; config: Config | null; repoId?: string; query?: string; onReload?: () => void }) {
   const [filters, setFiltersState] = useState<Filters>(() => initialFilters(query ?? currentQuery(), repoId));
+  const { worktrees } = useSessionUi();
   const layout = resolveLayout(filters.layout, useNarrowWindow());
   const now = Date.now();
 
@@ -429,9 +430,12 @@ export function Kanban({ snapshot, config, repoId, query, onReload }: { snapshot
   const [creating, setCreating] = useState<{ preselected?: string } | null>(null);
 
   const stats = { open: visible.filter((c) => !c.archived).length, toArchive: cards.filter((c) => isComplete(c.stage)).length };
+  // The Archived column's candidates: with Hide merged on, only archives that still have to be pushed or merged.
+  const archivedCards = visible.filter((c) => c.column === "Archived" && (!filters.hideMerged || archivePending(c, worktrees)));
   // What the columns on screen hold: archived cards only while their column is shown, and at most its bound.
-  const archivedVisible = visible.filter((c) => c.column === "Archived").length;
-  const showing = visible.length - archivedVisible + (filters.hideArchived ? 0 : Math.min(archivedVisible, ARCHIVED_LIMIT));
+  const archivedVisible = archivedCards.length;
+  const nonArchived = visible.filter((c) => c.column !== "Archived").length;
+  const showing = nonArchived + (filters.hideArchived ? 0 : Math.min(archivedVisible, ARCHIVED_LIMIT));
 
   if (snapshot && snapshot.repos.length === 0) return <NoRepos config={config} />;
   if (snapshot && single && repos.length === 0) return <RepoNotFound />;
@@ -482,8 +486,8 @@ export function Kanban({ snapshot, config, repoId, query, onReload }: { snapshot
           }
           if (filters.hideArchived) return null;
           // A regular column, but bounded to the most recent archives; the header still reports the total.
-          const recent = recentArchived(inColumn, ARCHIVED_LIMIT);
-          const countLabel = recent.length < inColumn.length ? `${recent.length} of ${inColumn.length}` : undefined;
+          const recent = recentArchived(archivedCards, ARCHIVED_LIMIT);
+          const countLabel = recent.length < archivedCards.length ? `${recent.length} of ${archivedCards.length}` : undefined;
           return <Column key={label} label={label} cards={recent} now={now} showRepo={!single} from={from} countLabel={countLabel} groups={groupControls} />;
         })}
       </div>

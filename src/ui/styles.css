@@ -364,6 +364,8 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: 
 }
 .switch-control.on .switch { background: var(--brand-strong); }
 .switch-control.on .switch::after { transform: translateX(12px); background: var(--on-brand); }
+.switch-control:disabled { color: var(--fg-disabled); cursor: default; }
+.switch-control:disabled .switch { opacity: 0.5; }
 /* The Repositories menu. */
 .menu { position: relative; }
 .menu-list {

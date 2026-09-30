@@ -228,6 +228,17 @@ export function worktreeForChange(worktrees: SessionWorktree[], repoId: string, 
   return mine.find((w) => SHIPPABLE_WORK.includes(w.work.state)) ?? mine.find((w) => w.work.state === "merged");
 }
 
+/**
+ * An archived change that still has to be pushed or merged: its agent worktree holds unshipped work, or its archive is
+ * only in a linked worktree that is not known to be merged. Everything else — the main checkout holds the archive, or
+ * there is no git — is wrapped up. From local git only, so "merged" is as of the user's last fetch or pull.
+ */
+export function archivePending(card: Pick<ChangeSnapshot, "repoId" | "name" | "checkout">, worktrees: readonly SessionWorktree[]): boolean {
+  const mine = worktrees.filter((w) => w.repoId === card.repoId && w.change === card.name);
+  if (mine.some((w) => SHIPPABLE_WORK.includes(w.work.state))) return true;
+  return card.checkout?.isMain === false && !mine.some((w) => w.work.state === "merged");
+}
+
 /** One row of the Open work list: a running session, or a worktree that still holds something. */
 export interface OpenWorkItem {
   key: string;

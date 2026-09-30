@@ -61,8 +61,11 @@ interface SampleRepo {
   error?: string;
   warnings?: string[];
   changes: SampleChange[];
-  /** [name, archived days ago, task total] */
-  archived: [string, number, number][];
+  /**
+   * [name, archived days ago, task total, worktree branch]. With a branch — one of `worktrees` — the archive exists only
+   * in that worktree and the main checkout does not hold it yet: it still has to be pushed or merged.
+   */
+  archived: [string, number, number, string?][];
   /**
    * A git repository under the roots that does not use OpenSpec yet. It is not tracked and not a candidate; Settings
    * offers to set it up, and what is described here is what it looks like once that is done.
@@ -168,6 +171,7 @@ const REPOS: SampleRepo[] = [
     worktrees: [
       ["feat/add-rate-limiting", "uncommitted"],
       ["fix/flaky-health-check", "never-pushed"],
+      ["chore/archive-request-id-propagation", "ahead"],
     ],
     changes: [
       // proposed on main, being implemented in a worktree: one card, led by the worktree's copy
@@ -184,7 +188,8 @@ const REPOS: SampleRepo[] = [
     ],
     archived: [
       ["add-health-endpoint", 4, 6],
-      ["request-id-propagation", 8, 11],
+      // archived in its worktree, committed there but not pushed yet
+      ["request-id-propagation", 8, 11, "chore/archive-request-id-propagation"],
       ["split-billing-module", 15, 27],
       ["cache-user-lookups", 22, 9],
       ["rotate-signing-keys", 31, 13],
@@ -226,6 +231,7 @@ const REPOS: SampleRepo[] = [
       ["chore/upgrade-terraform", "clean"],
       ["spike/bisect-slow-plan", "detached"],
       ["feat/abandoned-dns-module", "stale"],
+      ["chore/archive-enable-vpc-flow-logs", "clean"],
     ],
     updated: 26,
     warnings: ["openspec/config.yaml: unknown key `defaults` ignored"],
@@ -240,7 +246,8 @@ const REPOS: SampleRepo[] = [
       { name: "shrink-staging-cluster", tasks: [9, 9], age: 16, synced: true },
     ],
     archived: [
-      ["enable-vpc-flow-logs", 6, 10],
+      // archived and pushed in its worktree, waiting for the pull request to be merged
+      ["enable-vpc-flow-logs", 6, 10, "chore/archive-enable-vpc-flow-logs"],
       ["migrate-state-backend", 12, 19],
       ["harden-bastion-access", 20, 16],
       ["alerting-on-cert-expiry", 28, 7],
@@ -375,7 +382,7 @@ export function buildSample(now: number): Sample {
         ...deriveStage(input),
       };
     });
-    const archived: ChangeSnapshot[] = r.archived.map(([name, age, total]) => {
+    const archived: ChangeSnapshot[] = r.archived.map(([name, age, total, branch]) => {
       const input = { archived: true, artifacts: artifacts("planned"), tasks: { done: total, awaiting: 0, total } };
       return {
         repoId: r.id,
@@ -386,6 +393,7 @@ export function buildSample(now: number): Sample {
         created: day(age + 20),
         archived: day(age),
         lastActivityAt: iso(age * DAY),
+        ...(branch ? { checkout: { path: worktreePath(r, branch), branch, isMain: false } } : {}),
         ...deriveStage(input),
       };
     });
