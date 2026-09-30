@@ -24,7 +24,7 @@
 
 - [x] 5.1 Add `dismissPreview(repoId, name)` and `dismissChange(repoId, name, fingerprint)` to the `Api` interface and HTTP implementation in `src/ui/api.ts`; verify `bun run typecheck` fails until the demo implements them (task 6.1).
 - [x] 5.2 Build `src/ui/dismissChange.tsx`: the confirmation dialog with change and repository names, the file list marked restorable / lost for good, the loss warning, kept worktree copies, the staged/not-committed note, Cancel focused, **Dismiss change** disabled while loading or dismissing, refusal reason with **Show current state**; verify with a vnode test (as in `test/cleanupUi.test.ts`) for the warning, the copies note and the refusal state.
-- [~] 5.3 Add **Dismiss change** to `DetailHeader` in `src/ui/changeDetail.tsx` (eligibility from the snapshot, disabled with a tooltip for worktree-only changes, hidden for archived/gone changes), keep the overlay's `Escape` for the open confirmation, close to the board after success unless the change is still in the snapshot, and show the dismissed/staged notice; add styles to `src/ui/styles.css`; verify with a test of the eligibility helper and in `bun run dev` against a scratch repository that cancelling changes nothing and confirming removes the card.
+- [x] 5.3 Add **Dismiss change** to `DetailHeader` in `src/ui/changeDetail.tsx` (eligibility from the snapshot, disabled with a tooltip for worktree-only changes, hidden for archived/gone changes), keep the overlay's `Escape` for the open confirmation, close to the board after success unless the change is still in the snapshot, and show the dismissed/staged notice; add styles to `src/ui/styles.css`; verify with a test of the eligibility helper and in `bun run dev` against a scratch repository that cancelling changes nothing and confirming removes the card.
 
 ## 6. Demo
 
@@ -36,5 +36,5 @@
 
 ## 8. Verification
 
-- [~] 8.1 Run `bun run check` and `bun run build`; verify both succeed and that `dist/openspec-dashboard` (the product build, not only the demo) shows **Dismiss change** in a detail view and dismisses a change in a scratch repository, leaving its removal staged.
+- [x] 8.1 Run `bun run check` and `bun run build`; verify both succeed and that `dist/openspec-dashboard` (the product build, not only the demo) shows **Dismiss change** in a detail view and dismisses a change in a scratch repository, leaving its removal staged.
 - [x] 8.2 Run `openspec validate dismiss-task --strict` and verify it reports the change as valid.
