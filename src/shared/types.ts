@@ -199,6 +199,9 @@ export interface AgentProfile {
   command: string[];
   /** Opening prompt per session starter; `{change}` is the only placeholder. A starter without a prompt is not offered. */
   prompts: Partial<Record<PromptKey, string>>;
+  /** Additional instructions appended to the prompt of the same key, composed as one line. Never a prompt of its own:
+   *  a key without a prompt stays unavailable and its text is sent nowhere — except `ship`, which has a default. */
+  promptSuffixes?: Partial<Record<PromptKey, string>>;
   /** Continues this agent's latest conversation in the same directory, e.g. ["claude", "--continue"]. */
   resumeCommand?: string[];
   /** Environment variables removed for the agent, e.g. API keys so a CLI's own login is used. */

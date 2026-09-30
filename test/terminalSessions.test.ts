@@ -123,11 +123,12 @@ test("a command without a prompt placeholder gets the prompt typed into it", asy
   expect(view.text()).toContain("args=[]");
 });
 
-test("one running session per change; archive gets its own worktree and branch; resume continues in place", async () => {
+test("one open session per change; an Archive that opens one gets its own worktree and branch; resume continues in place", async () => {
   const h = track(await harness());
   const a = await h.manager.open({ repoId: h.repoId, change: "upgrade-runtime", action: "implement" });
   expect((await h.manager.open({ repoId: h.repoId, change: "upgrade-runtime", action: "implement" })).id).toBe(a.id);
 
+  // A change with no session of its own: Archive opens one, and that is still where the archive worktree comes from.
   const arch = await h.manager.open({ repoId: h.repoId, change: "configurable-builder", action: "archive" });
   expect(arch).toMatchObject({ branch: "chore/archive-configurable-builder" });
   expect(arch.worktreePath.endsWith("archive-configurable-builder")).toBe(true);
@@ -181,9 +182,11 @@ test("a change awaiting validation starts a Validate session and refuses Impleme
   const s = await h.manager.open({ repoId: h.repoId, change: "confirm-retention", action: "validate" });
   expect(s).toMatchObject({ state: "running", action: "validate", change: "confirm-retention" });
   await expect(h.manager.open({ repoId: h.repoId, change: "confirm-retention", action: "implement" })).rejects.toMatchObject({ status: 400 });
-  // Archive is offered for the whole Done column, validating or not, and gets its own worktree.
+  // Archive is offered for the whole Done column, validating or not — but this change already has a session, so it
+  // is that session Archive comes back with, and its prompt goes in through `prompt`, not through a second console.
   const arch = await h.manager.open({ repoId: h.repoId, change: "confirm-retention", action: "archive" });
-  expect(arch).toMatchObject({ state: "running", action: "archive" });
+  expect(arch.id).toBe(s.id);
+  expect(existsSync(join(worktreesDir(), h.repoId, "archive-confirm-retention"))).toBe(false);
 });
 
 test("a crash is recorded; shutdown ends agents; a restarted dashboard knows nothing is running", async () => {

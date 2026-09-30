@@ -1,8 +1,9 @@
 // Settings section for agent sessions. Off by default; turning it on lets you start an agent CLI in a terminal for a
 // change, so the section says plainly what that means. An agent is just a command line and its opening prompts.
+import { Fragment } from "preact";
 import { useEffect, useState } from "preact/hooks";
 import { CLAUDE_PROFILE } from "../shared/agentDefaults.ts";
-import { DEFAULT_SHIP_PROMPT, repoAgentEnabled, SESSION_ACTIONS, type AgentAvailability, type AgentProfile, type AgentSessionsConfig, type Config, type RepoConfig, type Session, type SessionAction, type Shortcut } from "../shared/types.ts";
+import { DEFAULT_SHIP_PROMPT, repoAgentEnabled, SESSION_ACTIONS, type AgentAvailability, type AgentProfile, type AgentSessionsConfig, type Config, type PromptKey, type RepoConfig, type Session, type SessionAction, type Shortcut } from "../shared/types.ts";
 import { api } from "./api.ts";
 import { addShortcut, moveShortcut, removeShortcut, restoredShortcuts } from "./quickReplies.ts";
 import { parseArgLines, slugId } from "./sessionState.ts";
@@ -14,7 +15,15 @@ interface Props {
 
 const ACTION_LABEL: Record<SessionAction, string> = { draft: "Draft artifacts", implement: "Implement", validate: "Validate", archive: "Archive" };
 
-function AgentEditor({ agent, found, isDefault, canRemove, onChange, onRemove, onDefault }: { agent: AgentProfile; found?: AgentAvailability; isDefault: boolean; canRemove: boolean; onChange: (patch: Partial<AgentProfile>) => void; onRemove: () => void; onDefault: () => void }) {
+/** Exported for the tests: one profile's fields, hook-free so they can be rendered without a DOM. */
+export function AgentEditor({ agent, found, isDefault, canRemove, onChange, onRemove, onDefault }: { agent: AgentProfile; found?: AgentAvailability; isDefault: boolean; canRemove: boolean; onChange: (patch: Partial<AgentProfile>) => void; onRemove: () => void; onDefault: () => void }) {
+  /** Additional instructions for one prompt; an empty field is stored as absent, as a removed prompt is. */
+  const setSuffix = (key: PromptKey, value: string) => {
+    const promptSuffixes = { ...agent.promptSuffixes };
+    if (value.trim()) promptSuffixes[key] = value;
+    else delete promptSuffixes[key];
+    onChange({ promptSuffixes: Object.keys(promptSuffixes).length ? promptSuffixes : undefined });
+  };
   return (
     <details class="agent-card" open={isDefault}>
       <summary>
@@ -35,21 +44,30 @@ function AgentEditor({ agent, found, isDefault, canRemove, onChange, onRemove, o
           <textarea class="input mono" rows={Math.max(2, agent.command.length)} value={agent.command.join("\n")} onInput={(e) => onChange({ command: parseArgLines(e.currentTarget.value) })} />
         </label>
         {SESSION_ACTIONS.map((action) => (
-          <label class="check grow" key={action}>
-            {ACTION_LABEL[action]}
-            <input
-              class="input mono grow"
-              placeholder="no prompt — this starter is not offered"
-              value={agent.prompts[action] ?? ""}
-              onInput={(e) => {
-                const prompts = { ...agent.prompts };
-                const value = e.currentTarget.value;
-                if (value.trim()) prompts[action] = value;
-                else delete prompts[action];
-                onChange({ prompts });
-              }}
-            />
-          </label>
+          <Fragment key={action}>
+            <label class="check grow">
+              {ACTION_LABEL[action]}
+              <input
+                class="input mono grow"
+                placeholder="no prompt — this starter is not offered"
+                value={agent.prompts[action] ?? ""}
+                onInput={(e) => {
+                  const prompts = { ...agent.prompts };
+                  const value = e.currentTarget.value;
+                  if (value.trim()) prompts[action] = value;
+                  else delete prompts[action];
+                  onChange({ prompts });
+                }}
+              />
+            </label>
+            <label class="agent-tools">
+              <span class="hint">
+                Additional {ACTION_LABEL[action]} instructions (optional): appended to that prompt as one line, and only when it is set — this text alone does not offer the
+                starter. <code>{"{change}"}</code> may be used.
+              </span>
+              <input class="input mono" placeholder="nothing is appended" value={agent.promptSuffixes?.[action] ?? ""} onInput={(e) => setSuffix(action, e.currentTarget.value)} />
+            </label>
+          </Fragment>
         ))}
         <label class="agent-tools">
           <span class="hint">
@@ -72,6 +90,13 @@ function AgentEditor({ agent, found, isDefault, canRemove, onChange, onRemove, o
         </label>
         <label class="agent-tools">
           <span class="hint">
+            Additional <strong>Ship</strong> instructions (optional): appended as one line to the Ship prompt above — or to the default shown there, so a standing instruction
+            about pull requests needs no prompt of its own. <code>{"{change}"}</code> may be used.
+          </span>
+          <textarea class="input mono" rows={2} placeholder="nothing is appended" value={agent.promptSuffixes?.ship ?? ""} onInput={(e) => setSuffix("ship", e.currentTarget.value)} />
+        </label>
+        <label class="agent-tools">
+          <span class="hint">
             Integrate prompt (optional): what <strong>Integrate</strong> asks this agent in a repository that does not use OpenSpec yet. It runs in that repository's folder, so
             it takes <strong>no placeholder at all</strong> — nothing from this page becomes part of the command line. Empty means this agent offers no Integrate action.
           </span>
@@ -87,6 +112,19 @@ function AgentEditor({ agent, found, isDefault, canRemove, onChange, onRemove, o
               else delete prompts.integrate;
               onChange({ prompts });
             }}
+          />
+        </label>
+        <label class="agent-tools">
+          <span class="hint">
+            Additional <strong>Integrate</strong> instructions (optional): appended as one line to the Integrate prompt above, and only when it is set. Like that prompt they take{" "}
+            <strong>no placeholder at all</strong>.
+          </span>
+          <textarea
+            class="input mono"
+            rows={2}
+            placeholder="nothing is appended"
+            value={agent.promptSuffixes?.integrate ?? ""}
+            onInput={(e) => setSuffix("integrate", e.currentTarget.value)}
           />
         </label>
         <label class="agent-tools">
