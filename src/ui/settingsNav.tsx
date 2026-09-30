@@ -11,6 +11,10 @@ export interface SettingsSection {
   count?: string;
   /** Something here is waiting for the user (e.g. repositories to enable). */
   attention?: boolean;
+  /** Appended to the count while `attention`, e.g. Discovered's "3 new". */
+  countNote?: string;
+  /** Tooltip on the count while `attention`. */
+  countTitle?: string;
   content: ComponentChildren;
 }
 
@@ -210,8 +214,8 @@ export function SettingsNav({ sections, current, onJump }: { sections: SettingsS
             >
               <span class="label">{s.label}</span>
               {s.count !== undefined && (
-                <span class="count" title={s.attention ? "waiting to be enabled" : undefined}>
-                  {s.attention ? `${s.count} new` : s.count}
+                <span class="count" title={s.attention ? s.countTitle : undefined}>
+                  {s.attention && s.countNote ? `${s.count} ${s.countNote}` : s.count}
                 </span>
               )}
             </a>

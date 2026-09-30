@@ -3,6 +3,8 @@ import { availableName, nameHints } from "../shared/nameHints.ts";
 import { integrateUnavailable, type Config, type DiscoveredRepo, type DiscoverResult, type IntegratableRepo, type RepoConfig, type Snapshot } from "../shared/types.ts";
 import { AgentSettings } from "./agentSettings.tsx";
 import { api, ApiError } from "./api.ts";
+import { EnvironmentPanel } from "./environment.tsx";
+import { environmentAttention, environmentCount, type EnvironmentState } from "./environmentState.ts";
 import { useSessionUi } from "./sessions.tsx";
 import { SettingsNav, type SettingsSection, SettingsSections, useSectionNav } from "./settingsNav.tsx";
 import { SharedConfigPanel } from "./sharedConfig.tsx";
@@ -13,9 +15,13 @@ interface Props {
   onSaved: (config: Config) => void;
   /** Something changed that the next scan will pick up (shared config saved or applied). */
   onRescan: () => void;
+  /** The latest environment report, owned by the app shell: the hero reads the same one. */
+  environment: EnvironmentState;
+  /** **Re-check**: asks for a fresh report. Nothing about it belongs to the page's draft. */
+  onRecheckEnvironment: () => void;
 }
 
-export function Settings({ config, snapshot, onSaved, onRescan }: Props) {
+export function Settings({ config, snapshot, onSaved, onRescan, environment, onRecheckEnvironment }: Props) {
   const [draft, setDraft] = useState<Config | null>(config);
   const [dirty, setDirty] = useState(false);
   const [newRoot, setNewRoot] = useState("");
@@ -75,7 +81,7 @@ export function Settings({ config, snapshot, onSaved, onRescan }: Props) {
 
   // Hooks first: the ids are all the hook needs, and they are known before the draft is.
   const scroller = useRef<HTMLDivElement>(null);
-  const sectionIds = draft ? ["roots", "tracked", "discovered", "integratable", "scanning", "agents", ...(config ? ["shared-config"] : [])] : [];
+  const sectionIds = draft ? ["roots", "tracked", "discovered", "integratable", "scanning", "agents", ...(config ? ["shared-config"] : []), "environment"] : [];
   const nav = useSectionNav(scroller, sectionIds);
 
   if (!draft) return <div class="settings">Loading…</div>;
@@ -255,6 +261,8 @@ export function Settings({ config, snapshot, onSaved, onRescan }: Props) {
       label: "Discovered",
       count: discovering ? "…" : String(newCandidates.length),
       attention: !discovering && newCandidates.length > 0,
+      countNote: "new",
+      countTitle: "waiting to be enabled",
       content: (
         <section class="panel">
           <h2>Discovered · {newCandidates.length} not tracked{discovering ? " · discovering…" : ""}</h2>
@@ -360,6 +368,16 @@ export function Settings({ config, snapshot, onSaved, onRescan }: Props) {
     { id: "agents", label: "Agent sessions", content: <AgentSettings draft={draft} update={update} /> },
     // Works on the saved config, not the draft above: it has its own save and only ever targets tracked repositories.
     ...(config ? [{ id: "shared-config", label: "Shared OpenSpec config", content: <SharedConfigPanel config={config} snapshot={snapshot} onApplied={onRescan} /> }] : []),
+    // Last: it configures nothing, and it is where the hero's environment indicator links to. Outside the draft, so
+    // re-checking never marks the page as having unsaved changes.
+    {
+      id: "environment",
+      label: "Environment",
+      count: environmentCount(environment),
+      attention: environmentAttention(environment),
+      countTitle: "checks that need attention",
+      content: <EnvironmentPanel state={environment} onRecheck={onRecheckEnvironment} />,
+    },
   ];
 
   return (

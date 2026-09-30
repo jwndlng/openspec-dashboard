@@ -1,5 +1,6 @@
 // Agent profiles (design.md D16): an agent is a command line plus opening prompts. Nothing here knows any vendor.
 import { DEFAULT_RESOLVE_CONFLICTS_PROMPT, DEFAULT_SHIP_PROMPT, type AgentAvailability, type AgentProfile, type Config, type PromptKey, type RepoConfig, type SessionAction } from "../../shared/types.ts";
+import { whichOnPath } from "../paths.ts";
 import { CHANGE_NAME } from "../source.ts";
 
 export function agentFor(config: Config, repo: RepoConfig): AgentProfile | undefined {
@@ -9,7 +10,7 @@ export function agentFor(config: Config, repo: RepoConfig): AgentProfile | undef
 
 export function availability(config: Config): AgentAvailability[] {
   return config.agentSessions.agents.map((agent) => {
-    const path = Bun.which(agent.command[0]) ?? undefined;
+    const path = whichOnPath(agent.command[0]);
     return { id: agent.id, name: agent.name, available: path !== undefined, path };
   });
 }

@@ -8,6 +8,7 @@ import { ConfigValidationError, saveConfig, validateConfig, validateIgnorePaths,
 import { createChange } from "./createChange.ts";
 import { dismissChange, DismissError, isDismissableName, previewDismiss } from "./dismissChange.ts";
 import { discoverRepos } from "./discover.ts";
+import { environmentReport } from "./environment.ts";
 import { confirmPendingIntegrations, startIntegration } from "./integration.ts";
 import { MAX_BLOCKING_FILES, PullBusyError, pullAll, pullRepository, resolvePullRepository } from "./pull.ts";
 import type { Scanner } from "./scanner.ts";
@@ -638,6 +639,11 @@ export function createFetchHandler({ state, indexHtml }: AppOptions): (req: Requ
       if (artifactMatch) return artifactRoutes(state, url, artifactMatch);
       if (req.method === "POST" && pathname === "/api/worktrees/remove") return postWorktreeRemove(state, req);
       if (req.method === "GET" && pathname === "/api/state") return json(state.scanner.snapshot);
+      // Read-only and local (openspec/specs/environment-check): no network, nothing in a tracked repository.
+      // `force` is what **Re-check** sends: the user just changed the machine, which no cache key can see.
+      if (req.method === "GET" && pathname === "/api/environment") {
+        return json(await environmentReport(state.config, state.scanner.snapshot, { force: url.searchParams.get("force") === "1" }));
+      }
       if (req.method === "GET" && pathname === "/api/activity") return getActivity(state, url);
       if (req.method === "GET" && pathname === "/api/config") return json(state.config);
       if (req.method === "PUT" && pathname === "/api/config") return putConfig(state, req);

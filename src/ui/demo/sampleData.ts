@@ -6,12 +6,14 @@
 // same rules the scanner uses, so the sample cannot disagree with the board.
 import { DEFAULT_SHORTCUTS } from "../../shared/agentDefaults.ts";
 import { deriveStage } from "../../shared/columns.ts";
-import type { ActivityEvent, AgentProfile, ArtifactStatus, ChangeSnapshot, CheckoutStatus, Config, IntegratableRepo, RepoConfig, RepoSnapshot, SharedProfile, Shortcut, Snapshot, Worktree } from "../../shared/types.ts";
+import type { ActivityEvent, AgentProfile, ArtifactStatus, ChangeSnapshot, CheckoutStatus, Config, EnvironmentCheck, EnvironmentReport, IntegratableRepo, RepoConfig, RepoSnapshot, SharedProfile, Shortcut, Snapshot, Worktree } from "../../shared/types.ts";
 import { summarizeWorkInProgress } from "../../shared/workInProgress.ts";
 
 /** Appears in the demo bundle only; test/demoBundle.test.ts uses it to tell the two bundles apart. */
 export const DEMO_MARKER = "openspec-dashboard-demo-build";
 export const DEMO_ROOT = "/home/demo/work";
+/** The fictional user's home the sample paths sit under; test/demoData.test.ts allows /home/demo and nothing else. */
+export const DEMO_HOME = "/home/demo";
 
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
@@ -439,6 +441,45 @@ export function buildSample(now: number): Sample {
   const integratable: IntegratableRepo[] = [{ id: INTEGRATABLE.id, path: repoPath(INTEGRATABLE.name), name: INTEGRATABLE.name }];
 
   return { snapshot: { generatedAt: iso(0), repos: repos.filter((r) => r.id !== INTEGRATABLE.id) }, config, candidates, integratable, integrated };
+}
+
+/** Made-up locations: the demo never looks at the visitor's machine, so nothing here is found, it is written down. */
+const DEMO_TOOL_PATHS: Record<string, string> = {
+  git: "/usr/bin/git",
+  openspec: `${DEMO_HOME}/.bun/bin/openspec`,
+  gh: "/usr/local/bin/gh",
+};
+
+/**
+ * The demo's environment report: every check passes, and the checks the configuration makes unnecessary read as
+ * `not-needed`, exactly as in the dashboard. Derived from the config the visitor is looking at, so switching agent
+ * sessions off in the demo's Settings changes it the same way. Nothing is started, looked up or read for it.
+ */
+export function demoEnvironment(config: Config, now: number): EnvironmentReport {
+  const sessions = config.agentSessions.enabled;
+  const off = "not needed while agent sessions are off";
+  const needed = (check: EnvironmentCheck): EnvironmentCheck => (sessions ? check : { id: check.id, label: check.label, status: "not-needed", found: off });
+  const checks: EnvironmentCheck[] = [
+    { id: "dashboard-home", label: "Dashboard home", status: "ok", found: `writable: ${DEMO_HOME}/.openspec-dashboard` },
+    { id: "git", label: "git", status: "ok", found: DEMO_TOOL_PATHS.git },
+    needed({ id: "git-identity", label: "Git committer identity", status: "ok", found: "Demo User, configured for this user" }),
+    { id: "openspec-cli", label: "OpenSpec CLI", status: "ok", found: DEMO_TOOL_PATHS.openspec },
+    ...config.agentSessions.agents.map((agent) =>
+      needed({
+        id: `agent:${agent.id}`,
+        label: `Agent: ${agent.name}${agent.id === config.agentSessions.defaultAgent ? " (default)" : ""}`,
+        status: "ok",
+        found: `${DEMO_HOME}/.local/bin/${agent.command[0]}`,
+      }),
+    ),
+    needed({ id: "github-cli", label: "GitHub CLI", status: "ok", found: `${DEMO_TOOL_PATHS.gh}, credentials configured in ${DEMO_HOME}/.config/gh/hosts.yml` }),
+  ];
+  return {
+    checkedAt: new Date(now).toISOString(),
+    status: "ok",
+    checks,
+    ...(sessions ? { caveat: "GitHub credentials are only checked for being configured — whether they are still valid is known when the agent uses them." } : {}),
+  };
 }
 
 const FLOW = ["Backlog", "Drafts", "Ready", "Implementing", "Done"];
