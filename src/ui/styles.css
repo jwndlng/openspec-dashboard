@@ -899,7 +899,7 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: 
 .in-place-note { font-size: 12px; }
 /* The agent's terminal fills the rest of the panel; the widget sizes itself to this box. */
 .session-terminal { flex: 1; min-height: 0; display: flex; flex-direction: column; background: var(--bg-base); }
-/* The terminal fills what the default responses leave; its ResizeObserver refits it when the row comes and goes. */
+/* The terminal fills what the shortcut row leaves; its ResizeObserver refits it when the row comes and goes. */
 .session-terminal-area { position: relative; flex: 1; min-height: 0; }
 .session-terminal-host { position: absolute; inset: 14px 8px 14px var(--detail-pad, 12px); }
 .session-unsent { flex: none; display: flex; align-items: flex-start; gap: 6px; margin: 6px 8px 0; }
@@ -917,6 +917,8 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: 
 .agent-card .agent-fields { margin-top: var(--gap-1); }
 .agent-repo { display: grid; grid-template-columns: minmax(140px, 220px) 1fr; gap: 4px var(--gap-1); align-items: center; padding: 4px 6px; }
 .agent-repo .path { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-mono); font-size: 11px; }
+.agent-shortcut { display: grid; grid-template-columns: minmax(120px, 200px) 1fr auto; gap: 4px var(--gap-1); align-items: center; padding: 4px 6px; }
+@media (max-width: 720px) { .agent-shortcut { grid-template-columns: 1fr; } }
 .agent-tools { display: flex; flex-direction: column; gap: 4px; }
 .agent-tools textarea { resize: vertical; }
 .open-work { position: relative; }

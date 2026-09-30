@@ -4,10 +4,10 @@
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
 import { useEffect, useRef, useState } from "preact/hooks";
-import { SHIPPABLE_WORK, type ChangeSession, type Session, type SessionAction, type SessionWorktree } from "../shared/types.ts";
+import { SHIPPABLE_WORK, type ChangeSession, type Session, type SessionAction, type SessionWorktree, type Shortcut } from "../shared/types.ts";
 import { api, type TerminalMessage } from "./api.ts";
 import { cdCommand } from "./format.ts";
-import { DEFAULT_QUICK_REPLIES, NOT_SUBMITTED_NOTICE, replyHint, replyMessage, type QuickReply } from "./quickReplies.ts";
+import { NOT_SUBMITTED_NOTICE, shortcutHint, shortcutMessage, visibleShortcuts } from "./quickReplies.ts";
 import { nextStepFor, sessionBadge, startersFor, workBadge, worktreeOfSession } from "./sessionState.ts";
 import { SessionBadgeView, SessionControls, useSessionUi } from "./sessions.tsx";
 
@@ -42,31 +42,31 @@ function terminalTheme(el: HTMLElement) {
   };
 }
 
-/** How long a typed-only response stays inert after a click, so a double click types it once. */
-const REPLY_GUARD_MS = 600;
-/** A submitted response stays inert until the server answers; this only covers an answer that never comes. */
+/** A sent shortcut stays inert until the server answers; this only covers an answer that never comes. */
 const SUBMIT_GUARD_MS = 10_000;
 /** How long the "typed but not sent" notice stays before it dismisses itself. */
 const UNSENT_NOTICE_MS = 12_000;
 
 /**
- * One session's terminal plus its default responses. Used by a change's Console tab and by the main console; it knows
- * nothing about repositories or changes.
+ * One session's terminal plus the configured shortcuts. Used by a change's Console tab and by the main console; it knows
+ * nothing about repositories or changes, which is why every session is offered the same shortcuts.
  */
 export function TerminalView({ sessionId, running, onExit }: { sessionId: string; running: boolean; onExit: () => void }) {
   const host = useRef<HTMLDivElement>(null);
   const [status, setStatus] = useState<"connecting" | "open" | "closed">("connecting");
-  // The effect below owns the terminal and its socket; the default responses reach them through this ref.
+  // The effect below owns the terminal and its socket; the shortcuts reach them through this ref.
   const live = useRef<{ send: (message: TerminalMessage) => void; focus: () => void }>();
   // The ref is the guard (it holds within one tick, where state would still be stale); the state only greys the button.
   const guard = useRef(new Set<string>());
   const [guarded, setGuarded] = useState<readonly string[]>([]);
 
-  // A default response goes to the server as `submit`: typed, and sent with Enter only once the agent has shown it.
-  // The server answers this socket with `submitted`; until then the clicked response stays inert.
+  // A shortcut goes to the server as `submit`: its prompt is typed, and sent with Enter only once the agent has shown
+  // it. The server answers this socket with `submitted`; until then the activated shortcut stays inert.
   const pending = useRef<string[]>([]);
   // Text went into this terminal on the user's behalf (a next step): put the keyboard back where the agent is.
-  const { focusTick, unsentId, reportUnsent } = useSessionUi();
+  const { config, focusTick, unsentId, reportUnsent } = useSessionUi();
+  // The shortcuts are the user's, the same for every session; an empty list means the row is not shown at all.
+  const shortcuts = visibleShortcuts(config, running, status === "open");
   useEffect(() => {
     if (focusTick.tick > 0 && focusTick.id === sessionId) live.current?.focus();
   }, [focusTick, sessionId]);
@@ -75,21 +75,18 @@ export function TerminalView({ sessionId, running, onExit }: { sessionId: string
     guard.current.delete(id);
     setGuarded([...guard.current]);
   };
-  const reply = (r: QuickReply) => {
-    if (guard.current.has(r.id)) return;
-    guard.current.add(r.id);
+  const sendShortcut = (shortcut: Shortcut) => {
+    if (guard.current.has(shortcut.id)) return;
+    guard.current.add(shortcut.id);
     setGuarded([...guard.current]);
     if (unsentId === sessionId) reportUnsent(undefined); // another pane's notice is not this pane's to clear
-    live.current?.send(replyMessage(r));
+    live.current?.send(shortcutMessage(shortcut));
     live.current?.focus();
-    if (r.submit) pending.current.push(r.id);
-    setTimeout(
-      () => {
-        pending.current = pending.current.filter((id) => id !== r.id);
-        release(r.id);
-      },
-      r.submit ? SUBMIT_GUARD_MS : REPLY_GUARD_MS,
-    );
+    pending.current.push(shortcut.id);
+    setTimeout(() => {
+      pending.current = pending.current.filter((id) => id !== shortcut.id);
+      release(shortcut.id);
+    }, SUBMIT_GUARD_MS);
   };
   // Answers arrive in the order the submissions were made (the server runs them one after another).
   const onSubmitted = useRef<(ok: boolean) => void>(() => {});
@@ -168,15 +165,15 @@ export function TerminalView({ sessionId, running, onExit }: { sessionId: string
           </button>
         </div>
       )}
-      {running && status === "open" && (
-        // biome-ignore lint/a11y/useSemanticElements: a fieldset would bring legend/border styling the response row does not want
+      {shortcuts.length > 0 && (
+        // biome-ignore lint/a11y/useSemanticElements: a fieldset would bring legend/border styling the shortcut row does not want
         <div class="session-replies" role="group" aria-labelledby={`replies-${sessionId}`}>
           <span id={`replies-${sessionId}`} class="hint session-replies-label">
             Shortcuts:
           </span>
-          {DEFAULT_QUICK_REPLIES.map((r) => (
-            <button key={r.id} type="button" class="btn sm" title={replyHint(r)} disabled={guarded.includes(r.id)} onClick={() => reply(r)}>
-              {r.label}
+          {shortcuts.map((shortcut) => (
+            <button key={shortcut.id} type="button" class="btn sm" title={shortcutHint(shortcut)} disabled={guarded.includes(shortcut.id)} onClick={() => sendShortcut(shortcut)}>
+              {shortcut.title}
             </button>
           ))}
         </div>
