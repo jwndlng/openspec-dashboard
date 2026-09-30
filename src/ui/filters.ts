@@ -10,10 +10,12 @@ export interface Filters {
   q: string;
   staleDays: number;
   hideArchived: boolean;
+  /** Keep only archived changes that still have to be pushed or merged. On by default: only `merged=1` turns it off. */
+  hideMerged: boolean;
   layout: BoardLayout;
 }
 
-export const EMPTY_FILTERS: Filters = { repos: [], q: "", staleDays: 0, hideArchived: false, layout: "auto" };
+export const EMPTY_FILTERS: Filters = { repos: [], q: "", staleDays: 0, hideArchived: false, hideMerged: true, layout: "auto" };
 
 /** Below this window width, `auto` stacks the columns. */
 export const STACK_BELOW_PX = 1280;
@@ -31,6 +33,7 @@ export function parseFilters(search: string): Filters {
     q: p.get("q") ?? "",
     staleDays: Number.isFinite(stale) && stale > 0 ? Math.floor(stale) : 0,
     hideArchived: p.get("archived") === "0",
+    hideMerged: p.get("merged") !== "1",
     layout: p.get("layout") === "lanes" || p.get("layout") === "stack" ? (p.get("layout") as BoardLayout) : "auto",
   };
 }
@@ -41,6 +44,7 @@ export function serializeFilters(f: Filters): string {
   if (f.q) p.set("q", f.q);
   if (f.staleDays > 0) p.set("stale", String(f.staleDays));
   if (f.hideArchived) p.set("archived", "0");
+  if (!f.hideMerged) p.set("merged", "1");
   if (f.layout !== "auto") p.set("layout", f.layout);
   const s = p.toString();
   return s ? `?${s}` : "";
@@ -82,5 +86,5 @@ export function activeTags(filters: Filters, repos: { id: string; name: string }
 
 /** Whether any filter differs from the defaults. */
 export function hasActiveFilters(f: Filters): boolean {
-  return f.q !== "" || f.repos.length > 0 || f.staleDays > 0 || f.hideArchived;
+  return f.q !== "" || f.repos.length > 0 || f.staleDays > 0 || f.hideArchived || !f.hideMerged;
 }
