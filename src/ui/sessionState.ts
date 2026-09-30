@@ -22,8 +22,9 @@ export function startersFor(config: Config | null, card: Pick<ChangeSnapshot, "r
 }
 
 /**
- * The sessions a card shows: every running one (archiving may run next to the change's other session), otherwise the
- * most recent one if it did not end cleanly.
+ * The sessions a card shows: the running one (a change has at most one), otherwise the most recent one if it did not
+ * end cleanly. A list, not a single session, because records from before the one-session-per-change rule may still
+ * show two running for one change until they end.
  */
 export function sessionsForChange(sessions: ChangeSession[], repoId: string, change: string): ChangeSession[] {
   const mine = sessions.filter((s) => s.repoId === repoId && s.change === change).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
@@ -53,14 +54,13 @@ export function cardSessionControls(
 }
 
 /**
- * Where a starter goes: into the change's running session (the prompt is typed there), or into a new session.
- * Archive always gets its own, and nothing is typed into an archive session. Only the console's next-step buttons ask:
- * a card offers no starter while a session runs (see `cardSessionControls`).
+ * Where a starter goes: into the change's running session (the prompt is typed there), or into a new session. The
+ * action does not enter into it — one change has one console, and every action the stage allows is sent to it,
+ * Archive included. Only the console's next-step buttons ask: a card offers no starter while a session runs (see
+ * `cardSessionControls`).
  */
-export function nextStepFor(sessions: ChangeSession[], repoId: string, change: string, action: SessionAction): { promptSessionId?: string; blocked?: boolean } {
-  const running = sessions.filter((s) => s.repoId === repoId && s.change === change && s.state === "running");
-  if (action === "archive") return { blocked: running.some((s) => s.action === "archive") };
-  return { promptSessionId: running.find((s) => s.action !== "archive")?.id };
+export function nextStepFor(sessions: ChangeSession[], repoId: string, change: string): { promptSessionId?: string } {
+  return { promptSessionId: sessions.find((s) => s.repoId === repoId && s.change === change && s.state === "running")?.id };
 }
 
 /** When a session was last doing something: what it printed, else what happened to the record. */

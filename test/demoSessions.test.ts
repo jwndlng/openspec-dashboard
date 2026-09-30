@@ -217,7 +217,12 @@ test("deleting a record leaves its worktree reported; resume and next-step promp
   expect(sent.submitted).toBe(true); // one activation sends it, as in the dashboard
   advance(2000);
   expect(view.text()).toContain("/opsx:apply versioned-api-reference"); // the agent took it up
-  expect(await refusal(api.promptSession(pushed.id, "archive"))).toBe("400: archiving runs in its own session");
+  // Archive is a next step like any other now: into the same session, never a second console for the change.
+  const archiving = await api.promptSession(pushed.id, "archive");
+  expect([archiving.id, archiving.submitted, archiving.action]).toEqual([pushed.id, true, "archive"]);
+  advance(2000);
+  expect(view.text()).toContain("/opsx:archive versioned-api-reference");
+  expect(changeSessions((await api.sessions()).sessions).filter((s) => s.change === "versioned-api-reference" && s.state === "running")).toHaveLength(1);
 });
 
 test("switching sessions off hides them; nothing else breaks; callers cannot reach into the demo's state", async () => {

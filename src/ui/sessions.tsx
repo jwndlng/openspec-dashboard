@@ -134,7 +134,7 @@ export function SessionProvider({
   const start = useCallback(
     async (repoId: string, change: string, action: SessionAction) => {
       try {
-        const into = nextStepFor(sessions, repoId, change, action).promptSessionId;
+        const into = nextStepFor(sessions, repoId, change).promptSessionId;
         const session = into ? await api.promptSession(into, action) : await api.openSession(repoId, change, action);
         if (into) {
           // Sent under the rules for text sent on the user's behalf: say so when the agent never showed it.
@@ -343,7 +343,7 @@ export function SessionControls({ card }: { card: Pick<ChangeSnapshot, "repoId" 
         <SessionBadgeView key={session.id} badge={sessionBadge(session)} onClick={() => ui.openPanel(session.id)} />
       ))}
       {starters.map((action) => (
-        // Always an opening, never a prompt into a running session: there is no starter here while one runs.
+        // Always an opening: a card offers no starter while a session runs, so `start` never types into one from here.
         <button
           type="button"
           class="btn sm session-start"

@@ -58,17 +58,15 @@ test("the open work list holds the running sessions, oldest first", () => {
   expect(openWork([], [], NOW).items).toEqual([]);
 });
 
-test("a starter goes into the change's running session; archive always gets its own", () => {
+test("every starter goes into the change's running session, whatever either of them is", () => {
   const draft = sess("d", { action: "draft" });
-  expect(nextStepFor([draft], "r", "add-x", "implement")).toEqual({ promptSessionId: "d" });
-  expect(nextStepFor([draft], "r", "add-x", "archive")).toEqual({ blocked: false });
-  expect(nextStepFor([sess("d", { state: "exited" })], "r", "add-x", "implement")).toEqual({ promptSessionId: undefined });
+  expect(nextStepFor([draft], "r", "add-x")).toEqual({ promptSessionId: "d" });
+  // Archive is no longer the exception, and a session started as Archive is a target like any other.
   const arch = sess("ar", { action: "archive" });
-  expect(nextStepFor([arch], "r", "add-x", "implement")).toEqual({ promptSessionId: undefined }); // never typed into an archive session
-  expect(nextStepFor([arch], "r", "add-x", "archive")).toEqual({ blocked: true });
-  expect(nextStepFor([draft], "r", "other", "implement")).toEqual({ promptSessionId: undefined });
-  expect(nextStepFor([draft], "r", "add-x", "validate")).toEqual({ promptSessionId: "d" }); // `validate` takes the default path
-  expect(nextStepFor([arch], "r", "add-x", "validate")).toEqual({ promptSessionId: undefined });
+  expect(nextStepFor([arch], "r", "add-x")).toEqual({ promptSessionId: "ar" });
+  expect(nextStepFor([sess("d", { state: "exited" })], "r", "add-x")).toEqual({ promptSessionId: undefined });
+  expect(nextStepFor([draft], "r", "other")).toEqual({ promptSessionId: undefined });
+  expect(nextStepFor([], "r", "add-x")).toEqual({ promptSessionId: undefined });
 });
 
 test("a card shows every running session, else the latest one that went wrong", () => {
