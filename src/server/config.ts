@@ -103,6 +103,26 @@ const agentProfileSchema = z.object({
   unsetEnv: z.array(z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/)).optional(),
 });
 
+// A shortcut's prompt is typed into a running agent's terminal, so it has to be one line: a newline would submit the
+// text past the echo check that decides about Enter (server/sessions/submit.ts). The title only ever reaches a control.
+const isSingleLine = (value: string) =>
+  ![...value].some((char) => {
+    const code = char.charCodeAt(0);
+    return code < 32 || code === 127;
+  });
+
+const shortcutSchema = z.object({
+  id: z.string().regex(/^[a-z0-9][a-z0-9-]{0,31}$/, { message: "lower-case letters, digits and dashes" }),
+  title: z.string().trim().min(1).max(40, { message: "a title has to fit on a control: at most 40 characters" }),
+  prompt: z
+    .string()
+    .trim()
+    .min(1)
+    .max(2000)
+    .refine(isSingleLine, { message: "must be a single line without control characters" })
+    .refine(noBypass, { message: BYPASS_MESSAGE }),
+});
+
 // Older configs carried Claude-specific keys here (claudePath, commands, allowedTools, …); unknown keys are dropped.
 export { defaultAgentSessions };
 
@@ -113,12 +133,17 @@ const agentSessionsSchema = z
     defaultAgent: z.string().default(() => defaultAgentSessions().defaultAgent),
     // Shape only: a config whose console folder was deleted since must still load. Saving checks the folder itself.
     consoleDir: absolutePath.optional(),
+    // Absent means a config saved before shortcuts were configurable: it carries the shipped ones. An empty list is the
+    // user's own decision and is kept — the dashboard never adds a shortcut back.
+    shortcuts: z.array(shortcutSchema).default(() => defaultAgentSessions().shortcuts),
   })
   .default({})
   .superRefine((cfg, ctx) => {
     const ids = cfg.agents.map((a) => a.id);
     if (new Set(ids).size !== ids.length) ctx.addIssue({ code: "custom", path: ["agents"], message: "agent ids must be unique" });
     if (!ids.includes(cfg.defaultAgent)) ctx.addIssue({ code: "custom", path: ["defaultAgent"], message: "must be the id of a configured agent" });
+    const shortcutIds = cfg.shortcuts.map((s) => s.id);
+    if (new Set(shortcutIds).size !== shortcutIds.length) ctx.addIssue({ code: "custom", path: ["shortcuts"], message: "shortcut ids must be unique" });
   });
 
 const repoSchema = z.object({

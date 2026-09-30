@@ -208,12 +208,27 @@ export interface AgentProfile {
   unsetEnv?: string[];
 }
 
+/**
+ * One shortcut of the agent console: a control that types a prepared prompt into the running agent. The title is what
+ * the control reads and is never sent; the prompt is what the agent receives, exactly as written — one line, with no
+ * placeholder, because a shortcut is offered in every session, including those that belong to no change.
+ */
+export interface Shortcut {
+  id: string;
+  /** What the control reads. Never sent to the agent. */
+  title: string;
+  /** Typed into the agent's terminal exactly as written; one line, no placeholder. */
+  prompt: string;
+}
+
 export interface AgentSessionsConfig {
   enabled: boolean;
   agents: AgentProfile[];
   defaultAgent: string;
   /** Where the main console's agent runs; absent means `~/.openspec-dashboard/console/`. Never inside a tracked repository. */
   consoleDir?: string;
+  /** The console's shortcuts, in the order they are offered. Empty means no shortcuts are offered at all. */
+  shortcuts: Shortcut[];
 }
 
 export interface Config {

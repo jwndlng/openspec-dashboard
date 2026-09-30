@@ -3,8 +3,9 @@
 import { Fragment } from "preact";
 import { useEffect, useState } from "preact/hooks";
 import { CLAUDE_PROFILE } from "../shared/agentDefaults.ts";
-import { DEFAULT_SHIP_PROMPT, repoAgentEnabled, SESSION_ACTIONS, type AgentAvailability, type AgentProfile, type AgentSessionsConfig, type Config, type PromptKey, type RepoConfig, type Session, type SessionAction } from "../shared/types.ts";
+import { DEFAULT_SHIP_PROMPT, repoAgentEnabled, SESSION_ACTIONS, type AgentAvailability, type AgentProfile, type AgentSessionsConfig, type Config, type PromptKey, type RepoConfig, type Session, type SessionAction, type Shortcut } from "../shared/types.ts";
 import { api } from "./api.ts";
+import { addShortcut, moveShortcut, removeShortcut, restoredShortcuts } from "./quickReplies.ts";
 import { parseArgLines, slugId } from "./sessionState.ts";
 
 interface Props {
@@ -147,6 +148,67 @@ export function AgentEditor({ agent, found, isDefault, canRemove, onChange, onRe
   );
 }
 
+/**
+ * The shortcuts of the agent console: what its controls read and what each one types into the running agent. The two are
+ * independent, so a one-word control can carry several sentences; the prompt is sent exactly as written, which is why it
+ * is one line and takes no placeholder.
+ */
+function ShortcutEditor({ shortcuts, onChange }: { shortcuts: Shortcut[]; onChange: (shortcuts: Shortcut[]) => void }) {
+  const patch = (id: string, fields: Partial<Shortcut>) => onChange(shortcuts.map((s) => (s.id === id ? { ...s, ...fields } : s)));
+  const add = () => onChange(addShortcut(shortcuts));
+  return (
+    <>
+      <h2>Shortcuts</h2>
+      <p class="hint">
+        The controls beside a session's terminal. The <strong>title</strong> is what the control reads; the{" "}
+        <strong>prompt</strong> is what the agent receives, typed exactly as written — <strong>one line, no placeholder</strong>, because a shortcut is offered in every session,
+        including those that belong to no change. A shortcut is only ever typed and confirmed the way any text sent for you is: at a selection menu nothing is confirmed. Remove
+        them all and the row disappears.
+      </p>
+      <div class="list">
+        {shortcuts.map((shortcut, i) => (
+          <div class="agent-shortcut" key={shortcut.id}>
+            <input class="input" aria-label={`Title of shortcut ${i + 1}`} placeholder="Title" value={shortcut.title} onInput={(e) => patch(shortcut.id, { title: e.currentTarget.value })} />
+            <input
+              class="input mono"
+              aria-label={`Prompt of shortcut ${i + 1}`}
+              placeholder="what the agent receives"
+              value={shortcut.prompt}
+              onInput={(e) => patch(shortcut.id, { prompt: e.currentTarget.value })}
+            />
+            <span class="row">
+              <button type="button" class="btn sm ghost" aria-label={`Move ${shortcut.title} earlier`} disabled={i === 0} onClick={() => onChange(moveShortcut(shortcuts, i, -1))}>
+                ↑
+              </button>
+              <button
+                type="button"
+                class="btn sm ghost"
+                aria-label={`Move ${shortcut.title} later`}
+                disabled={i === shortcuts.length - 1}
+                onClick={() => onChange(moveShortcut(shortcuts, i, 1))}
+              >
+                ↓
+              </button>
+              <button type="button" class="btn sm ghost" aria-label={`Remove ${shortcut.title}`} onClick={() => onChange(removeShortcut(shortcuts, shortcut.id))}>
+                Remove
+              </button>
+            </span>
+          </div>
+        ))}
+        {shortcuts.length === 0 && <span class="hint">No shortcuts — a session's terminal shows no shortcut row.</span>}
+      </div>
+      <div class="row">
+        <button type="button" class="btn sm" onClick={add}>
+          + Add shortcut
+        </button>
+        <button type="button" class="btn sm ghost" onClick={() => onChange(restoredShortcuts())}>
+          Restore defaults
+        </button>
+      </div>
+    </>
+  );
+}
+
 export function AgentSettings({ draft, update }: Props) {
   const [found, setFound] = useState<AgentAvailability[]>([]);
   const [sessions, setSessions] = useState<Session[]>([]);
@@ -221,6 +283,8 @@ export function AgentSettings({ draft, update }: Props) {
             </button>
           )}
         </div>
+
+        <ShortcutEditor shortcuts={settings.shortcuts} onChange={(shortcuts) => set({ shortcuts })} />
 
         <h2>Console</h2>
         <label class="agent-tools">

@@ -4,8 +4,9 @@
 //
 // Ages are relative to `now`, so the published demo never looks abandoned. Column and stage are derived with the
 // same rules the scanner uses, so the sample cannot disagree with the board.
+import { DEFAULT_SHORTCUTS } from "../../shared/agentDefaults.ts";
 import { deriveStage } from "../../shared/columns.ts";
-import type { ActivityEvent, AgentProfile, ArtifactStatus, ChangeSnapshot, CheckoutStatus, Config, IntegratableRepo, RepoConfig, RepoSnapshot, SharedProfile, Snapshot, Worktree } from "../../shared/types.ts";
+import type { ActivityEvent, AgentProfile, ArtifactStatus, ChangeSnapshot, CheckoutStatus, Config, IntegratableRepo, RepoConfig, RepoSnapshot, SharedProfile, Shortcut, Snapshot, Worktree } from "../../shared/types.ts";
 import { summarizeWorkInProgress } from "../../shared/workInProgress.ts";
 
 /** Appears in the demo bundle only; test/demoBundle.test.ts uses it to tell the two bundles apart. */
@@ -421,7 +422,7 @@ export function buildSample(now: number): Sample {
     pollIntervalSeconds: 60,
     port: 4711,
     // On by default, so the session features show without setup. The agent is fictional; nothing is ever started.
-    agentSessions: { enabled: true, agents: [structuredClone(DEMO_AGENT)], defaultAgent: DEMO_AGENT.id },
+    agentSessions: { enabled: true, agents: [structuredClone(DEMO_AGENT)], defaultAgent: DEMO_AGENT.id, shortcuts: structuredClone(DEFAULT_SHORTCUTS) as Shortcut[] },
   } satisfies Config;
 
   const candidates = CANDIDATES.map(([id, name]) => ({ id, path: repoPath(name), name: name.split("/").pop() ?? name, enabled: false })) satisfies RepoConfig[];

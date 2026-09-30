@@ -4,7 +4,7 @@ import { realpathSync } from "node:fs";
 import { mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { ConfigValidationError, defaultAgentSessions, defaultConfig, loadConfig, newRepoConfig, repoId, saveConfig, validateConfig, validateIgnorePaths } from "../src/server/config.ts";
-import { CLAUDE_PROFILE, FORMER_PROMPTS } from "../src/shared/agentDefaults.ts";
+import { CLAUDE_PROFILE, DEFAULT_SHORTCUTS, FORMER_PROMPTS } from "../src/shared/agentDefaults.ts";
 import { tempDir, useTempHome } from "./helpers.ts";
 
 let home: string;
@@ -135,6 +135,68 @@ test("a config file with the former Archive prompt loads upgraded, is not rewrit
   await saveConfig(config);
   expect(JSON.parse(await readFile(path, "utf8")).agentSessions.agents[0].prompts.archive).toBe(CLAUDE_PROFILE.prompts.archive);
   expect((await loadConfig()).config.agentSessions.agents[0].prompts.archive).toBe(CLAUDE_PROFILE.prompts.archive);
+});
+
+const withShortcuts = (shortcuts: unknown) => {
+  const cfg = defaultConfig();
+  return { ...cfg, agentSessions: { ...cfg.agentSessions, shortcuts } };
+};
+const shortcutsOf = (input: unknown) => validateConfig(input).agentSessions.shortcuts;
+const refuse = (input: unknown) => expect(() => validateConfig(input)).toThrow(ConfigValidationError);
+
+test("a config that does not mention shortcuts carries the shipped ones; an empty list is the user's own", () => {
+  const { agentSessions, ...noAgentSessions } = defaultConfig();
+  const { shortcuts: _none, ...withoutShortcuts } = agentSessions;
+  expect(shortcutsOf({ ...noAgentSessions, agentSessions: withoutShortcuts })).toEqual([...DEFAULT_SHORTCUTS]);
+  expect(shortcutsOf(noAgentSessions)).toEqual([...DEFAULT_SHORTCUTS]);
+  expect(shortcutsOf(withShortcuts([]))).toEqual([]);
+});
+
+test("a saved shortcut list is carried through unchanged: no default is ever added back", () => {
+  const mine = [
+    { id: "ship", title: "Ship it", prompt: "Commit the work, push the branch and open a pull request; ask me before force-pushing." },
+    { id: "review", title: "Review", prompt: "Review your own diff and list what you would change." },
+  ];
+  expect(shortcutsOf(withShortcuts(mine))).toEqual(mine);
+  expect(shortcutsOf(withShortcuts(structuredClone(DEFAULT_SHORTCUTS).slice(0, 1)))).toEqual([DEFAULT_SHORTCUTS[0]]);
+});
+
+test("a shortcut's title and prompt are validated where every other prompt is", () => {
+  const ok = { id: "ship", title: "Ship it", prompt: "Open a pull request." };
+  expect(shortcutsOf(withShortcuts([ok]))).toEqual([ok]);
+  // Trimmed on the way in, like the agent name and the starter prompts.
+  expect(shortcutsOf(withShortcuts([{ ...ok, title: "  Ship it  ", prompt: "  Open a pull request.  " }]))).toEqual([ok]);
+
+  refuse(withShortcuts([{ ...ok, title: "" }]));
+  refuse(withShortcuts([{ ...ok, title: "   " }]));
+  refuse(withShortcuts([{ ...ok, title: "x".repeat(41) }]));
+  refuse(withShortcuts([{ ...ok, prompt: "" }]));
+  // A newline would submit the text past the echo check that decides about Enter.
+  refuse(withShortcuts([{ ...ok, prompt: "First line\nSecond line" }]));
+  refuse(withShortcuts([{ ...ok, prompt: "tab\tseparated" }]));
+  refuse(withShortcuts([{ ...ok, prompt: "x".repeat(2001) }]));
+  // The dashboard does not help switch off an agent's permission checks, here as anywhere else.
+  refuse(withShortcuts([{ ...ok, prompt: "Run it with --dangerously-skip-permissions" }]));
+  refuse(withShortcuts([{ ...ok, id: "Ship It" }]));
+  refuse(withShortcuts([ok, { ...ok, title: "Again" }])); // duplicate ids
+  refuse(withShortcuts([{ title: "No id", prompt: "x" }]));
+  refuse(withShortcuts("not a list"));
+});
+
+test("a config file without shortcuts loads with the shipped ones and is not rewritten by loading", async () => {
+  const path = join(home, "config.json");
+  const { agentSessions, ...rest } = defaultConfig();
+  const { shortcuts: _none, ...withoutShortcuts } = agentSessions;
+  const saved = `${JSON.stringify({ ...rest, agentSessions: withoutShortcuts }, null, 2)}\n`;
+  await writeFile(path, saved, "utf8");
+  const { config, warning } = await loadConfig();
+  expect(warning).toBeUndefined();
+  expect(config.agentSessions.shortcuts).toEqual([...DEFAULT_SHORTCUTS]);
+  expect(await readFile(path, "utf8")).toBe(saved);
+  // Saving writes them; emptying the list and saving keeps it empty across a reload.
+  await saveConfig({ ...config, agentSessions: { ...config.agentSessions, shortcuts: [] } });
+  expect(JSON.parse(await readFile(path, "utf8")).agentSessions.shortcuts).toEqual([]);
+  expect((await loadConfig()).config.agentSessions.shortcuts).toEqual([]);
 });
 
 const withSuffixes = (promptSuffixes: Record<string, string>, id = "claude") => {

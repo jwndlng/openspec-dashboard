@@ -3,7 +3,7 @@ import { existsSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { type AppState, createFetchHandler } from "../src/server/api.ts";
-import { defaultConfig, newRepoConfig } from "../src/server/config.ts";
+import { defaultAgentSessions, defaultConfig, newRepoConfig } from "../src/server/config.ts";
 import { confirmIntegration, confirmPendingIntegrations, startIntegration, type IntegrationState } from "../src/server/integration.ts";
 import { worktreesDir } from "../src/server/paths.ts";
 import { Scanner } from "../src/server/scanner.ts";
@@ -50,7 +50,7 @@ async function harness(overrides: { enabled?: boolean; agent?: AgentProfile; rep
     ...defaultConfig(),
     scanRoots: [root],
     repos: overrides.repos ?? [],
-    agentSessions: { enabled: overrides.enabled ?? true, agents: [agent], defaultAgent: agent.id },
+    agentSessions: { ...defaultAgentSessions(), enabled: overrides.enabled ?? true, agents: [agent], defaultAgent: agent.id },
   };
   const snapshot: Snapshot = { generatedAt: new Date().toISOString(), repos: [] };
   const h = { config, folder, root, scans: 0 } as Harness;
