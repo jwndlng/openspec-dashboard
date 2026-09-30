@@ -4,8 +4,9 @@
 //
 // Ages are relative to `now`, so the published demo never looks abandoned. Column and stage are derived with the
 // same rules the scanner uses, so the sample cannot disagree with the board.
+import { DEFAULT_SHORTCUTS } from "../../shared/agentDefaults.ts";
 import { deriveStage } from "../../shared/columns.ts";
-import type { ActivityEvent, AgentProfile, ArtifactStatus, ChangeSnapshot, CheckoutStatus, Config, EnvironmentCheck, EnvironmentReport, IntegratableRepo, RepoConfig, RepoSnapshot, SharedProfile, Snapshot, Worktree } from "../../shared/types.ts";
+import type { ActivityEvent, AgentProfile, ArtifactStatus, ChangeSnapshot, CheckoutStatus, Config, EnvironmentCheck, EnvironmentReport, IntegratableRepo, RepoConfig, RepoSnapshot, SharedProfile, Shortcut, Snapshot, Worktree } from "../../shared/types.ts";
 import { summarizeWorkInProgress } from "../../shared/workInProgress.ts";
 
 /** Appears in the demo bundle only; test/demoBundle.test.ts uses it to tell the two bundles apart. */
@@ -63,8 +64,11 @@ interface SampleRepo {
   error?: string;
   warnings?: string[];
   changes: SampleChange[];
-  /** [name, archived days ago, task total] */
-  archived: [string, number, number][];
+  /**
+   * [name, archived days ago, task total, worktree branch]. With a branch — one of `worktrees` — the archive exists only
+   * in that worktree and the main checkout does not hold it yet: it still has to be pushed or merged.
+   */
+  archived: [string, number, number, string?][];
   /**
    * A git repository under the roots that does not use OpenSpec yet. It is not tracked and not a candidate; Settings
    * offers to set it up, and what is described here is what it looks like once that is done.
@@ -170,6 +174,7 @@ const REPOS: SampleRepo[] = [
     worktrees: [
       ["feat/add-rate-limiting", "uncommitted"],
       ["fix/flaky-health-check", "never-pushed"],
+      ["chore/archive-request-id-propagation", "ahead"],
     ],
     changes: [
       // proposed on main, being implemented in a worktree: one card, led by the worktree's copy
@@ -186,7 +191,8 @@ const REPOS: SampleRepo[] = [
     ],
     archived: [
       ["add-health-endpoint", 4, 6],
-      ["request-id-propagation", 8, 11],
+      // archived in its worktree, committed there but not pushed yet
+      ["request-id-propagation", 8, 11, "chore/archive-request-id-propagation"],
       ["split-billing-module", 15, 27],
       ["cache-user-lookups", 22, 9],
       ["rotate-signing-keys", 31, 13],
@@ -228,6 +234,7 @@ const REPOS: SampleRepo[] = [
       ["chore/upgrade-terraform", "clean"],
       ["spike/bisect-slow-plan", "detached"],
       ["feat/abandoned-dns-module", "stale"],
+      ["chore/archive-enable-vpc-flow-logs", "clean"],
     ],
     updated: 26,
     warnings: ["openspec/config.yaml: unknown key `defaults` ignored"],
@@ -242,7 +249,8 @@ const REPOS: SampleRepo[] = [
       { name: "shrink-staging-cluster", tasks: [9, 9], age: 16, synced: true },
     ],
     archived: [
-      ["enable-vpc-flow-logs", 6, 10],
+      // archived and pushed in its worktree, waiting for the pull request to be merged
+      ["enable-vpc-flow-logs", 6, 10, "chore/archive-enable-vpc-flow-logs"],
       ["migrate-state-backend", 12, 19],
       ["harden-bastion-access", 20, 16],
       ["alerting-on-cert-expiry", 28, 7],
@@ -377,7 +385,7 @@ export function buildSample(now: number): Sample {
         ...deriveStage(input),
       };
     });
-    const archived: ChangeSnapshot[] = r.archived.map(([name, age, total]) => {
+    const archived: ChangeSnapshot[] = r.archived.map(([name, age, total, branch]) => {
       const input = { archived: true, artifacts: artifacts("planned"), tasks: { done: total, awaiting: 0, total } };
       return {
         repoId: r.id,
@@ -388,6 +396,7 @@ export function buildSample(now: number): Sample {
         created: day(age + 20),
         archived: day(age),
         lastActivityAt: iso(age * DAY),
+        ...(branch ? { checkout: { path: worktreePath(r, branch), branch, isMain: false } } : {}),
         ...deriveStage(input),
       };
     });
@@ -423,7 +432,7 @@ export function buildSample(now: number): Sample {
     pollIntervalSeconds: 60,
     port: 4711,
     // On by default, so the session features show without setup. The agent is fictional; nothing is ever started.
-    agentSessions: { enabled: true, agents: [structuredClone(DEMO_AGENT)], defaultAgent: DEMO_AGENT.id },
+    agentSessions: { enabled: true, agents: [structuredClone(DEMO_AGENT)], defaultAgent: DEMO_AGENT.id, shortcuts: structuredClone(DEFAULT_SHORTCUTS) as Shortcut[] },
   } satisfies Config;
 
   const candidates = CANDIDATES.map(([id, name]) => ({ id, path: repoPath(name), name: name.split("/").pop() ?? name, enabled: false })) satisfies RepoConfig[];

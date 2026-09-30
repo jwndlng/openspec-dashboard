@@ -3,7 +3,7 @@ import { existsSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { type AppState, createFetchHandler } from "../src/server/api.ts";
-import { defaultConfig, newRepoConfig } from "../src/server/config.ts";
+import { defaultAgentSessions, defaultConfig, newRepoConfig } from "../src/server/config.ts";
 import { confirmIntegration, confirmPendingIntegrations, startIntegration, type IntegrationState } from "../src/server/integration.ts";
 import { worktreesDir } from "../src/server/paths.ts";
 import { Scanner } from "../src/server/scanner.ts";
@@ -50,7 +50,7 @@ async function harness(overrides: { enabled?: boolean; agent?: AgentProfile; rep
     ...defaultConfig(),
     scanRoots: [root],
     repos: overrides.repos ?? [],
-    agentSessions: { enabled: overrides.enabled ?? true, agents: [agent], defaultAgent: agent.id },
+    agentSessions: { ...defaultAgentSessions(), enabled: overrides.enabled ?? true, agents: [agent], defaultAgent: agent.id },
   };
   const snapshot: Snapshot = { generatedAt: new Date().toISOString(), repos: [] };
   const h = { config, folder, root, scans: 0 } as Harness;
@@ -115,6 +115,15 @@ test("Integrate is refused, without starting anything, for every reason it can b
   await expect(startIntegration(tracked, { path: tracked.config.repos[0].path })).rejects.toMatchObject({ status: 404 });
 
   for (const each of [off, noPrompt, missing, h, tracked]) expect(each.sessions.list()).toEqual([]);
+});
+
+test("Integrate's additional instructions are appended to its prompt, as one argument", async () => {
+  const h = await harness({ agent: withIntegrate({ promptSuffixes: { integrate: "  Ask me which tools first.\n  Then stop.  " } }) });
+  const { session } = await startIntegration(h, { path: h.folder });
+  const view = await watch(h.sessions, session.id);
+  await waitFor(() => view.text().includes("fake-agent ready"), "agent start");
+  // Composed, collapsed to one line, and still exactly one argument.
+  expect(view.text()).toContain(`args=${JSON.stringify([`${INTEGRATE} Ask me which tools first. Then stop.`])}`);
 });
 
 test("Integrate runs the agent in the repository folder: no worktree, no branch, and not change work", async () => {

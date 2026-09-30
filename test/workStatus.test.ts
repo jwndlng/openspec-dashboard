@@ -164,6 +164,23 @@ test("ship types the prompt into a running agent, and starts an ended one again 
   await waitFor(() => seen.text().includes('args=["--resumed"]') && seen.text().split("you said: ship upgrade-runtime now").length === 3, "resume command plus typed prompt");
 });
 
+test("ship submits the default prompt plus the profile's additional Ship instructions", async () => {
+  // The case the feature exists for: a standing instruction about pull requests, without restating the whole prompt.
+  const extra = "Add the checklist from CONTRIBUTING.md to the PR body.";
+  const h = await harness({ agent: { promptSuffixes: { ship: `  ${extra}\n  Then tell me the URL.  ` } } });
+  managers.push(h.manager);
+  const composed = `${DEFAULT_SHIP_PROMPT} ${extra} Then tell me the URL.`;
+  expect(shipPrompt(h.config.agentSessions.agents[0], "upgrade-runtime")).toBe(composed);
+
+  const s = await h.manager.open({ repoId: h.repoId, change: "upgrade-runtime", action: "implement" });
+  const seen = await watch(h.manager, s.id);
+  await waitFor(() => seen.text().includes("fake-agent ready"), "the agent");
+  await writeFile(join(s.worktreePath, "work.txt"), "x");
+
+  expect((await h.manager.ship(s.id)).submitted).toBe(true);
+  await waitFor(() => seen.text().includes(`you said: ${composed}`), "the composed ship prompt");
+});
+
 test("ship into a running agent that shows a menu is typed, not confirmed, and says so", async () => {
   const h = await harness({ agent: { command: [FAKE_AGENT, "--menu", "{prompt}"] } });
   const manager = h.newManager({ submitTimings: { echoTimeoutMs: 600, settleMs: 20 } });

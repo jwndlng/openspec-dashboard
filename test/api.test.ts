@@ -49,6 +49,19 @@ test("invalid config is rejected and unchanged", async () => {
   expect(state.config.pollIntervalSeconds).toBe(60);
 });
 
+test("shortcuts are saved and served back; a multi-line prompt is refused and changes nothing", async () => {
+  const shortcuts = [{ id: "ship", title: "Ship it", prompt: "Commit the work, push the branch and open a pull request." }];
+  const withShortcuts = (list: unknown) => ({ ...defaultConfig(), agentSessions: { ...defaultConfig().agentSessions, shortcuts: list } });
+  expect((await send("/api/config", "PUT", JSON.stringify(withShortcuts(shortcuts)))).status).toBe(200);
+  expect((await (await fetch(`${base}/api/config`)).json()).agentSessions.shortcuts).toEqual(shortcuts);
+
+  const bad = withShortcuts([{ ...shortcuts[0], prompt: "First line\nSecond line" }]);
+  const res = await send("/api/config", "PUT", JSON.stringify(bad));
+  expect(res.status).toBe(400);
+  expect((await res.json()).issues.join(" ")).toContain("shortcuts");
+  expect(state.config.agentSessions.shortcuts).toEqual(shortcuts);
+});
+
 test("enabling a repo persists and triggers a scan that populates state", async () => {
   const repo = newRepoConfig(join(FIXTURES, "demo-ops"), true);
   const res = await send("/api/config", "PUT", JSON.stringify({ ...defaultConfig(), repos: [repo] }));

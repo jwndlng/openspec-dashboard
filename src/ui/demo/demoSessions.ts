@@ -393,8 +393,9 @@ export function createDemoSessions({ now, getConfig, getSnapshot, integratable, 
       requireEnabled();
       const s = find(id);
       if (isChangeless(s.session)) throw new ApiError(409, notAChange(s.session));
-      if (action === "archive" || s.session.action === "archive") throw new ApiError(400, "archiving runs in its own session");
       if (s.session.state !== "running") throw new ApiError(409, "the session is not running");
+      // Every action reaches the change's one session, Archive included; `open` already returns that session for any
+      // action, so the recording has no way to show two consoles for one change either.
       // Sent with one activation, as in the dashboard: the recording's agent takes the prompt up straight away.
       s.session.action = action;
       run(s, action);

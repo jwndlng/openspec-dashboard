@@ -9,7 +9,7 @@ import { isCleaningUp } from "../cleanup.ts";
 import { isDismissing } from "../dismissChange.ts";
 import { worktreesDir } from "../paths.ts";
 import { CHANGE_NAME } from "../source.ts";
-import { agentEnv, agentFor, availability, defaultAgentOf, launchCommand, launchWithoutPrompt, openingPrompt, shipPrompt } from "./agents.ts";
+import { agentEnv, agentFor, availability, defaultAgentOf, integratePrompt, launchCommand, launchWithoutPrompt, openingPrompt, shipPrompt } from "./agents.ts";
 import { consoleFolderProblem, prepareConsoleFolder } from "./consoleFolder.ts";
 import type { SessionActivity } from "../activity/events.ts";
 import { SessionStore } from "./store.ts";
@@ -148,9 +148,13 @@ export class SessionManager {
     if (!snapshot) throw new SessionError(404, "unknown change");
     if (!availableActions(snapshot).includes(action)) throw new SessionError(400, `"${action}" is not available for this change in its current stage`);
 
-    // One running session per worktree. Archiving has a worktree of its own, so it may run next to the change's other session.
-    const archiving = action === "archive";
-    const existing = this.list().find((s) => s.repoId === repo.id && s.change === change && (s.action === "archive") === archiving && OPEN_SESSION_STATES.includes(s.state));
+    // One open session per change, whatever the action: a change never has two consoles, and Archive is no exception.
+    // Nothing is typed here — a starter for a change whose agent is up goes through `prompt`, which reports whether
+    // the text was submitted; returning the session keeps a double-clicked starter from opening or typing anything
+    // twice. `list()` is newest first, so a process that still holds two running sessions from before this rule
+    // returns the one the user started last. In-place sessions need this as much as worktrees do: their working
+    // directory is the repository folder itself, which no per-worktree rule would have kept a second agent out of.
+    const existing = this.list().find((s) => s.repoId === repo.id && s.change === change && OPEN_SESSION_STATES.includes(s.state));
     if (existing) return existing;
 
     const agent = agentFor(config, repo);
@@ -255,7 +259,7 @@ export class SessionManager {
     if (running) return { session: running, created: false };
     const agent = defaultAgentOf(config);
     if (!agent) throw new SessionError(503, "no agent is configured");
-    const prompt = agent.prompts.integrate;
+    const prompt = integratePrompt(agent);
     if (!prompt) throw new SessionError(400, `${agent.name} has no Integrate prompt configured`);
     if (!Bun.which(agent.command[0])) throw new SessionError(503, `${agent.name} was not found (${agent.command[0]}); install it or change its command in Settings`);
     const now = new Date().toISOString();
@@ -400,8 +404,12 @@ export class SessionManager {
   /**
    * The next step of a change, in the session that is already running for it: the starter's prompt is submitted to the
    * terminal under the rules for text sent on the user's behalf — typed, then Enter as a separate key press only once
-   * the agent has shown the text, so a selection menu is never confirmed. Archive is not sent here: it belongs in its
-   * own worktree.
+   * the agent has shown the text, so a selection menu is never confirmed.
+   *
+   * Every action the change's stage allows may be sent, Archive included — it is how a completed change is archived
+   * without ending the agent that worked on it — and the action the session was started with restricts nothing. The
+   * prompt runs where that session runs: the change's own worktree, or the folder itself for a repository without
+   * git. Nothing is created and no git command runs for it; what the agent then does there is the agent's own doing.
    */
   async prompt(id: string, input: { action?: unknown }): Promise<PromptResult> {
     const session = this.get(id);
@@ -410,7 +418,6 @@ export class SessionManager {
     if (!config.agentSessions.enabled) throw new SessionError(403, "agent sessions are disabled");
     if (!SESSION_ACTIONS.includes(input.action as SessionAction)) throw new SessionError(400, "unknown action");
     const action = input.action as SessionAction;
-    if (action === "archive" || session.action === "archive") throw new SessionError(400, "archiving runs in its own session");
     const proc = this.live.get(id)?.proc;
     if (session.state !== "running" || !proc) throw new SessionError(409, "the session is not running");
     const change = this.deps

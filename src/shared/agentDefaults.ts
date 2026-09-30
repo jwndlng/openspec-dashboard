@@ -1,4 +1,4 @@
-import type { AgentProfile, AgentSessionsConfig, PromptKey } from "./types.ts";
+import type { AgentProfile, AgentSessionsConfig, PromptKey, Shortcut } from "./types.ts";
 
 // Each prompt is one line: it may be typed into a terminal (`submit.ts`). Together they carry the meaning of the
 // `- [~]` task marker, which OpenSpec itself does not define — see the agent-sessions spec.
@@ -42,7 +42,19 @@ export const CLAUDE_PROFILE: AgentProfile = {
   unsetEnv: ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"],
 };
 
+/**
+ * The shortcuts the console offers until the user edits them: the four answers an agent's questions usually need, each
+ * sending exactly what its control reads. They are a starting point, not a floor — the user may reword, reorder, remove
+ * or empty them, and the dashboard never adds one back (see the agent-sessions spec).
+ */
+export const DEFAULT_SHORTCUTS: readonly Shortcut[] = [
+  { id: "go-ahead", title: "Yes, go ahead", prompt: "Yes, go ahead" },
+  { id: "create-pr", title: "Yes, create a PR", prompt: "Yes, create a PR" },
+  { id: "resolve-conflicts", title: "Resolve PR conflicts", prompt: "Resolve PR conflicts" },
+  { id: "stop", title: "No, stop here", prompt: "No, stop here" },
+];
+
 /** Agent sessions ship disabled; nothing starts an agent until the user turns them on. */
 export function defaultAgentSessions(): AgentSessionsConfig {
-  return { enabled: false, agents: [structuredClone(CLAUDE_PROFILE)], defaultAgent: CLAUDE_PROFILE.id };
+  return { enabled: false, agents: [structuredClone(CLAUDE_PROFILE)], defaultAgent: CLAUDE_PROFILE.id, shortcuts: structuredClone(DEFAULT_SHORTCUTS) as Shortcut[] };
 }

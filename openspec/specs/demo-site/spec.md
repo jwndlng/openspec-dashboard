@@ -119,7 +119,9 @@ On every push to `main`, the demo build and its screenshots SHALL be published t
 - **THEN** the README shows the dark board screenshot and a "Live demo" link that opens the published demo
 
 ### Requirement: Agent sessions are enabled and simulated in the demo
-The demo SHALL start with agent sessions enabled and one fictional agent profile reported as available, so that session starters, the running badge, work-status badges, the Open work list and Ship are visible without the visitor changing any setting. The visitor MAY switch agent sessions off in the demo's Settings for the current page session. Starting a session for a card SHALL be validated as the dashboard validates it (tracked repository, existing unarchived change, action available in the change's stage, one open session per change) and SHALL create a running session in memory. Resume, Ship, close, delete, worktree status and worktree removal SHALL behave as in the dashboard from the UI's point of view: Ship SHALL be refused unless the worktree's work status is shippable and SHALL end with the work status `pushed`; removing a worktree SHALL be refused, with a reason, while it holds uncommitted or unpushed work. The demo MUST NOT start a process, open a network connection or write anywhere for any of this.
+The demo SHALL start with agent sessions enabled and one fictional agent profile reported as available, so that session starters, the running badge, work-status badges, the Open work list and Ship are visible without the visitor changing any setting. The visitor MAY switch agent sessions off in the demo's Settings for the current page session. Starting a session for a card SHALL be validated as the dashboard validates it (tracked repository, existing unarchived change, action available in the change's stage and sub-state, one open session per change) and SHALL create a running session in memory. Resume, Ship, close, delete, worktree status and worktree removal SHALL behave as in the dashboard from the UI's point of view: Ship SHALL be refused unless the worktree's work status is shippable and SHALL end with the work status `pushed`; removing a worktree SHALL be refused, with a reason, while it holds uncommitted or unpushed work. The demo MUST NOT start a process, open a network connection or write anywhere for any of this.
+
+The demo's data SHALL include at least one change in `Done` awaiting validation — its tasks partly `- [x]` and partly `- [~]` — so that the **Validate** badge, the three-part progress bar and the **Validate** starter are reachable in the demo, and the fictional agent profile SHALL carry a Validate prompt. A simulated **Validate** session SHALL behave as every other simulated starter does.
 
 #### Scenario: Sessions are on by default
 - **WHEN** the demo is opened for the first time
@@ -134,7 +136,7 @@ The demo SHALL start with agent sessions enabled and one fictional agent profile
 - **THEN** the card shows a running session, the session panel opens with a terminal, and starting it again returns the same session
 
 #### Scenario: Action not available
-- **WHEN** Implement is requested for a change that is still at `Proposal`
+- **WHEN** Implement is requested for a change that is still in `Drafts`
 - **THEN** the request is refused with the same reason the dashboard gives
 
 #### Scenario: Ship
@@ -169,15 +171,19 @@ In the demo, a session's terminal SHALL show a hand-written transcript played in
 - **THEN** its first line says that it is a demo recording and that nothing runs on the page
 
 ### Requirement: Pull is simulated in the demo
-The demo's mock API SHALL implement the pull operations in memory without any network access or process: a pull SHALL complete after a short delay with a canned outcome derived from the sample — a fast-forward for repositories on their default branch, "fetched only" for repositories whose main checkout is on another branch — and "Pull all" SHALL return one outcome per git repository in the sample. The sample SHALL contain at least one repository whose main checkout is not on its default branch, so that the notice is shown on first load. Outcomes SHALL NOT persist across a reload.
+The demo's mock API SHALL implement the pull operations in memory without any network access or process: a pull SHALL complete after a short delay with a canned outcome derived from the sample — a fast-forward for repositories on their default branch, "fetched only" for repositories whose main checkout is on another branch — and "Pull all" SHALL return one outcome per git repository in the sample. The sample SHALL contain at least one repository whose main checkout is not on its default branch, so that the notice is shown on first load, and at least one repository whose first pull is refused because of change leftovers — one identical and one differing — so that Resolve and pull can be tried; confirming it SHALL answer with a simulated fast-forward naming the replaced files and a made-up location for the copy. Outcomes SHALL NOT persist across a reload.
 
 #### Scenario: Pull in the demo
-- **WHEN** the visitor activates Pull for a sample repository on its default branch
+- **WHEN** the visitor activates Pull for a sample repository on its default branch that is not blocked
 - **THEN** the control shows that it is running and then a fast-forward outcome, and no network request is made
 
 #### Scenario: Notice in the demo
 - **WHEN** the demo is opened
 - **THEN** the sample repository whose main checkout is on a feature branch shows the not-on-default-branch notice, and pulling it reports that it was only fetched
+
+#### Scenario: Blocked pull in the demo
+- **WHEN** the visitor pulls the sample repository blocked by change leftovers and confirms Resolve and pull
+- **THEN** the outcome first lists the two leftovers and offers the resolution, then reports a fast-forward naming both files and the copy of the differing one, and no network request is made
 
 ### Requirement: The main console is simulated in the demo
 While agent sessions are enabled in the demo, the top bar SHALL show the main console control. Opening the console
@@ -197,3 +203,49 @@ continuing on a line of input, and ending as an exited agent. The console's fold
 #### Scenario: Nothing leaves the page
 - **WHEN** the demo console is opened, answered and ended
 - **THEN** no process is started and no network request is made
+
+### Requirement: Integrating a repository is simulated in the demo
+
+The demo's sample SHALL include at least one integratable repository — a fictional git repository without OpenSpec —
+listed in Settings below the candidates, under the same heading and with the same **Integrate** and Ignore actions the
+dashboard shows. Activating **Integrate** SHALL create an integration session in memory whose terminal plays a short
+hand-written, vendor-neutral transcript under the same rules as every demo transcript: labelled as a recording,
+continuing on a line of input, and ending as an exited agent. When that transcript ends, the demo SHALL do what the
+marker appearing does in the dashboard: the repository becomes a tracked, enabled repository with its default name, it
+leaves the integratable list, and it appears on the board with a small sample of changes. The result SHALL NOT persist
+across a reload. The demo MUST NOT start a process, open a network connection or write anywhere for any of this.
+
+#### Scenario: The integratable repository is listed
+- **WHEN** the visitor opens Settings in the demo
+- **THEN** an integratable repository is listed below the candidates, in its own list, with **Integrate** and Ignore
+
+#### Scenario: Integrating in the demo
+- **WHEN** the visitor activates **Integrate** for it
+- **THEN** a session panel opens whose terminal starts with the line saying it is a demo recording, and the repository is not yet on the board
+
+#### Scenario: The integration finishes
+- **WHEN** the integration transcript reaches its end
+- **THEN** the session is shown as ended, the repository is listed as a tracked enabled repository, it is gone from the integratable list, and it appears on the board
+
+#### Scenario: Sessions switched off
+- **WHEN** the visitor switches agent sessions off in the demo's Settings
+- **THEN** the integratable repository is still listed and **Integrate** is inactive with the reason given
+
+#### Scenario: Nothing leaves the page
+- **WHEN** the demo's integration is started, played and ended
+- **THEN** no process is started and no network request is made
+
+#### Scenario: Not persisted
+- **WHEN** the visitor integrates the repository in the demo and reloads the page
+- **THEN** the repository is an integratable repository again
+
+### Requirement: Dismissal is simulated in the demo
+The demo's mock API SHALL implement the dismiss preview and the dismissal in memory: the preview SHALL list files derived from the sample change's artifacts, with at least one sample change showing a file that would be lost for good, and confirming SHALL remove the change from the demo's snapshot so the board follows as it would after a real dismissal. The demo MUST NOT write anywhere or make a network request for it, and a dismissal SHALL NOT persist across a reload.
+
+#### Scenario: Dismiss in the demo
+- **WHEN** the visitor dismisses a sample change in `Drafts` from its detail view
+- **THEN** the change disappears from the board and no network request is made
+
+#### Scenario: Reload restores it
+- **WHEN** the visitor reloads the demo after dismissing a sample change
+- **THEN** the change is back on the board

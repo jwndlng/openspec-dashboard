@@ -1,5 +1,5 @@
 // The board's filter bar (kanban-board: "The board's filters form one filter bar"): search, a Repositories menu, the
-// Stale selector, the Hide archived switch, removable tags for what is filtered, and the count of changes shown.
+// Stale selector, the Hide archived and Hide merged switches, removable tags for what is filtered, and the count of changes shown.
 // Same filters and URL format as before; only the controls are new.
 import { useEffect, useRef, useState } from "preact/hooks";
 import type { RepoSnapshot } from "../shared/types.ts";
@@ -134,6 +134,18 @@ export function FilterBar({
         <button type="button" role="switch" aria-checked={filters.hideArchived} class={`control switch-control ${filters.hideArchived ? "on" : ""}`} onClick={() => setFilters({ hideArchived: !filters.hideArchived })}>
           <span class="switch" aria-hidden="true" />
           Hide archived
+        </button>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={filters.hideMerged}
+          disabled={filters.hideArchived}
+          class={`control switch-control ${filters.hideMerged ? "on" : ""}`}
+          title={filters.hideArchived ? "The Archived column is hidden" : "Hide archived changes whose archive has reached the main checkout; keep the ones still to be pushed or merged"}
+          onClick={() => setFilters({ hideMerged: !filters.hideMerged })}
+        >
+          <span class="switch" aria-hidden="true" />
+          Hide merged
         </button>
         {hasActiveFilters(filters) && (
           <button type="button" class="btn sm ghost clear-filters" onClick={() => setFilters({ ...EMPTY_FILTERS, layout: filters.layout })}>

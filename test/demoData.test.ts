@@ -50,6 +50,8 @@ test("the sample showcases every board feature", () => {
   for (const c of changes) perColumn.set(c.column, (perColumn.get(c.column) ?? 0) + 1);
   for (const column of boardColumns(sample.snapshot)) expect([column, perColumn.get(column) ?? 0]).not.toEqual([column, 0]);
   expect(perColumn.get("Archived") ?? 0).toBeGreaterThan(25);
+  // With Hide merged on by default, the Archived column still has archives that wait to be pushed or merged.
+  expect(changes.filter((c) => c.archived && c.checkout?.isMain === false).length).toBeGreaterThanOrEqual(2);
   expect(changes.some((c) => c.branchMatch)).toBe(true);
   expect(changes.some((c) => c.warnings?.includes("tasks file has no tasks"))).toBe(true);
   expect(changes.some((c) => c.warnings?.some((w) => w !== "tasks file has no tasks"))).toBe(true);
@@ -105,7 +107,9 @@ test("the sample shows worktree-agnostic changes: one that lives in a worktree a
   for (const { repo, change } of inWorktree) {
     // it lives in one of its repository's worktrees, on that worktree's branch
     const worktree = repo.worktrees.find((w) => w.path === change.checkout?.path);
-    expect([change.name, worktree?.isMain, worktree?.branch]).toEqual([change.name, undefined, change.branchMatch]);
+    expect([change.name, worktree?.isMain, worktree?.branch]).toEqual([change.name, undefined, change.checkout?.branch]);
+    // like the scanner, only an active change carries a branch match
+    expect([change.name, change.branchMatch]).toEqual([change.name, change.archived ? undefined : change.checkout?.branch]);
   }
   const both = inWorktree.find(({ change }) => change.otherCheckouts?.length)!;
   expect(both.change.otherCheckouts).toEqual([{ path: both.repo.path, branch: both.repo.currentBranch, isMain: true, column: "Drafts" }]);

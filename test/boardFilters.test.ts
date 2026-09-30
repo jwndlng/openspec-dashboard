@@ -31,6 +31,19 @@ test("clear filters shows only while something is filtered", () => {
   expect(hasActiveFilters(parseFilters("?q=x"))).toBe(true);
 });
 
+test("Hide merged is on by default and only merged=1 in the URL turns it off", () => {
+  expect(EMPTY_FILTERS.hideMerged).toBe(true);
+  expect(parseFilters("").hideMerged).toBe(true);
+  expect(parseFilters("?merged=0").hideMerged).toBe(true);
+  expect(parseFilters("?merged=1").hideMerged).toBe(false);
+  expect(serializeFilters(EMPTY_FILTERS)).toBe("");
+  expect(serializeFilters({ ...EMPTY_FILTERS, hideMerged: false })).toBe("?merged=1");
+  expect(parseFilters(serializeFilters({ ...EMPTY_FILTERS, hideMerged: false, hideArchived: true }))).toEqual({ ...EMPTY_FILTERS, hideMerged: false, hideArchived: true });
+  // Only a departure from the default is a filter to clear.
+  expect(hasActiveFilters(parseFilters(""))).toBe(false);
+  expect(hasActiveFilters(parseFilters("?merged=1"))).toBe(true);
+});
+
 test("the board layout follows the window unless chosen, and lives in the URL", () => {
   expect(resolveLayout("auto", true)).toBe("stack");
   expect(resolveLayout("auto", false)).toBe("lanes");

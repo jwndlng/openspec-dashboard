@@ -199,10 +199,26 @@ export interface AgentProfile {
   command: string[];
   /** Opening prompt per session starter; `{change}` is the only placeholder. A starter without a prompt is not offered. */
   prompts: Partial<Record<PromptKey, string>>;
+  /** Additional instructions appended to the prompt of the same key, composed as one line. Never a prompt of its own:
+   *  a key without a prompt stays unavailable and its text is sent nowhere — except `ship`, which has a default. */
+  promptSuffixes?: Partial<Record<PromptKey, string>>;
   /** Continues this agent's latest conversation in the same directory, e.g. ["claude", "--continue"]. */
   resumeCommand?: string[];
   /** Environment variables removed for the agent, e.g. API keys so a CLI's own login is used. */
   unsetEnv?: string[];
+}
+
+/**
+ * One shortcut of the agent console: a control that types a prepared prompt into the running agent. The title is what
+ * the control reads and is never sent; the prompt is what the agent receives, exactly as written — one line, with no
+ * placeholder, because a shortcut is offered in every session, including those that belong to no change.
+ */
+export interface Shortcut {
+  id: string;
+  /** What the control reads. Never sent to the agent. */
+  title: string;
+  /** Typed into the agent's terminal exactly as written; one line, no placeholder. */
+  prompt: string;
 }
 
 export interface AgentSessionsConfig {
@@ -211,6 +227,8 @@ export interface AgentSessionsConfig {
   defaultAgent: string;
   /** Where the main console's agent runs; absent means `~/.openspec-dashboard/console/`. Never inside a tracked repository. */
   consoleDir?: string;
+  /** The console's shortcuts, in the order they are offered. Empty means no shortcuts are offered at all. */
+  shortcuts: Shortcut[];
 }
 
 export interface Config {
