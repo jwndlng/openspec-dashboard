@@ -28,8 +28,8 @@ The dashboard SHALL show a projects overview at `/` listing every repository tha
 Each row SHALL show the repository name, the number of non-archived changes in each board stage column (using the same column list and order as the combined board, excluding `Archived`), the total of non-archived changes, the number of changes that are complete but not archived, and the relative age of the repository's last update. Zero counts SHALL be rendered as a neutral placeholder rather than `0`. The to-archive count SHALL be conveyed with text and not by colour alone. A repository with no non-archived changes SHALL be shown de-emphasised with the text "no open changes". A repository whose last scan failed SHALL show a warning indicator exposing the error message while still showing its retained counts.
 
 #### Scenario: Row content
-- **WHEN** repository `alpha-infra` has 1 change in `Specs`, 9 in `Implementing`, 2 in `Done`, 40 archived, and was last updated 1 day ago
-- **THEN** its row shows `1` under Specs, `9` under Implementing, `2` under Done, an open total of `12`, a to-archive count of `2`, and `1d ago`
+- **WHEN** repository `alpha-infra` has 1 change in `Drafts`, 9 in `Implementing`, 2 in `Done`, 40 archived, and was last updated 1 day ago
+- **THEN** its row shows `1` under Drafts, `9` under Implementing, `2` under Done, an open total of `12`, a to-archive count of `2`, and `1d ago`
 
 #### Scenario: Repository without open changes
 - **WHEN** a repository has only archived changes
@@ -101,16 +101,16 @@ The overview SHALL be sorted by last updated, newest first, by default. The user
 - **WHEN** the tiles layout is shown and the user picks "Open" in the sort control
 - **THEN** the tiles are ordered by open count, highest first, and the URL contains `sort=open`
 
-### Requirement: Drill down to a repository board
-Activating a repository row SHALL navigate to `/repo/<repoId>` without a page reload, and the repository name SHALL be a real link so it can be opened in a new tab. The repository board SHALL show only that repository's changes, SHALL derive its columns from that repository's changes alone, and SHALL NOT show the repository filter. The search, stale and hide-archived filters SHALL remain available and persist in the URL. The archived column, card actions and refresh behaviour SHALL be the same as on the combined board. Opening `/repo/<repoId>` directly SHALL work.
+### Requirement: Repository rows open the repository's board
+Activating a repository row SHALL navigate to `/repo/<repoId>` without a page reload, and the repository name SHALL be a real link so it can be opened in a new tab. The repository board SHALL show only that repository's changes, SHALL show the same lifecycle columns as the combined board, and SHALL NOT show the repository filter. The search, stale and hide-archived filters SHALL remain available and persist in the URL. The archived column, card actions and refresh behaviour SHALL be the same as on the combined board. Opening `/repo/<repoId>` directly SHALL work.
 
 #### Scenario: Drill down
 - **WHEN** the user clicks the row for `beta-soc`
 - **THEN** the URL becomes `/repo/<id of beta-soc>` and only `beta-soc` changes are shown in Kanban columns
 
-#### Scenario: Columns follow the repository's schema
+#### Scenario: Same columns for every schema
 - **WHEN** most repositories use `spec-driven` but repository `gamma-lab` uses a schema whose artifacts are `brief` and `plan`
-- **THEN** the board for `gamma-lab` shows `Brief` and `Plan` as its artifact columns and not the `spec-driven` ones
+- **THEN** the board for `gamma-lab` shows `Backlog`, `Drafts`, `Ready`, `Implementing`, `Done` and `Archived`, and no `Brief` or `Plan` column
 
 #### Scenario: Deep link
 - **WHEN** the user opens `/repo/<id>?stale=14` in a new tab
@@ -233,7 +233,7 @@ The overview SHALL offer two layouts of the same repositories, `Table` and `Tile
 - **THEN** the table is shown
 
 #### Scenario: Tile content
-- **WHEN** repository `alpha-infra` has 1 change in `Specs`, 9 in `Implementing`, 2 in `Done`, was last updated 1 day ago, and has a clean main checkout on `main` plus a worktree on `feat/report` with 4 uncommitted items
+- **WHEN** repository `alpha-infra` has 1 change in `Drafts`, 9 in `Implementing`, 2 in `Done`, was last updated 1 day ago, and has a clean main checkout on `main` plus a worktree on `feat/report` with 4 uncommitted items
 - **THEN** its tile shows those stage counts, an open total of `12`, a to-archive count of `2`, `1d ago`, the indicator `1 worktree · 1 uncommitted`, and the checkout summary `1 worktree · 2 branches active`, whose tooltip names `main` as the main checkout and `feat/report` as a worktree
 
 #### Scenario: Drill down from a tile

@@ -9,8 +9,8 @@ Defines the activity feed: the history of what the dashboard observed happening 
 After every scan the dashboard SHALL compare the new snapshot with the previous one and record what changed as events: a change created, a change moved from one column to another, task progress within a column, a change archived, a change removed, a repository tracked or no longer tracked, and a repository's scan starting to fail or recovering. Changes SHALL be matched by repository and change name. A change that moved and progressed in the same scan SHALL yield one moved event carrying the new progress. While a repository's scan is failing its changes MUST NOT be compared. Detection MUST be a function of the two snapshots only and MUST NOT read or write any repository.
 
 #### Scenario: A change becomes ready
-- **WHEN** the previous snapshot shows change `cache-api-calls` of `demo-ops` in `Specs` and the new one shows it in `Ready`
-- **THEN** one event is recorded: `cache-api-calls` in `demo-ops` moved from `Specs` to `Ready`
+- **WHEN** the previous snapshot shows change `cache-api-calls` of `demo-ops` in `Drafts` and the new one shows it in `Ready`
+- **THEN** one event is recorded: `cache-api-calls` in `demo-ops` moved from `Drafts` to `Ready`
 
 #### Scenario: Task progress
 - **WHEN** a change stays in `Implementing` and its tasks go from `3/12` to `7/12`
@@ -27,6 +27,14 @@ After every scan the dashboard SHALL compare the new snapshot with the previous 
 #### Scenario: A failing scan is not mistaken for activity
 - **WHEN** a repository's scan fails and the dashboard keeps showing its previous changes
 - **THEN** one scan-failing event with the error is recorded and no change events for that repository; when it succeeds again a recovered event is recorded and comparison resumes
+
+#### Scenario: Old entries keep their column names
+- **WHEN** the log holds an event recorded before the columns were simplified, `bump-toolchain` moved from `Specs` to `Ready`
+- **THEN** the feed shows it with the names it was recorded with
+
+#### Scenario: Renamed columns are not recorded as moves
+- **WHEN** the dashboard starts with a snapshot kept from a version that placed `cache-api-calls` in `Specs`, and the first scan finds the change unchanged
+- **THEN** no moved event is recorded for it
 
 ### Requirement: First sight of a repository is a baseline, not activity
 A repository that was not part of the previous snapshot — on first run, after the snapshot cache was deleted, or when the repository was just enabled — SHALL yield exactly one repository-tracked event stating its number of open changes, and MUST NOT yield events for its individual changes. Archived changes that appear for a change not seen before SHALL be recorded only when their archive date lies within the last 7 days.

@@ -139,18 +139,6 @@ The demo's data SHALL include at least one change in `Done` awaiting validation 
 - **WHEN** Implement is requested for a change that is still in `Drafts`
 - **THEN** the request is refused with the same reason the dashboard gives
 
-#### Scenario: A change awaiting validation
-- **WHEN** the demo board is opened
-- **THEN** the `Done` column holds a change with a **Validate** badge whose progress bar names its awaiting tasks
-
-#### Scenario: Simulated validate session
-- **WHEN** the visitor starts **Validate** on that change
-- **THEN** a running session is created in memory as for any other starter, and no process is started
-
-#### Scenario: Implement is refused for a change awaiting validation
-- **WHEN** Implement is requested for the demo's change in `Done` with awaiting tasks
-- **THEN** the request is refused with the same reason the dashboard gives
-
 #### Scenario: Ship
 - **WHEN** the visitor presses Ship on an ended session with 3 uncommitted files
 - **THEN** the terminal plays a commit, push and pull-request transcript and the work status becomes `pushed`
