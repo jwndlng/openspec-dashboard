@@ -212,13 +212,37 @@ continuing on a line of input, and ending as an exited agent. The console's fold
 - **WHEN** the demo console is opened, answered and ended
 - **THEN** no process is started and no network request is made
 
-### Requirement: Pull requests are simulated in the demo
-The demo's mock API SHALL serve pull requests from synthetic sample data, in memory, without any network access or process: the sample SHALL contain open pull requests (at least one draft, one approved with passing checks, one with failing checks, and one whose review is requested from the visitor's simulated login) and at least one merged within the last 7 days, spread over several sample repositories, and at least one sample repository shown as not on GitHub. Ages SHALL be relative to the time the demo is opened so the sample stays recent. A refresh SHALL complete after a short delay with the same data. Nothing SHALL persist across a reload.
+### Requirement: Integrating a repository is simulated in the demo
 
-#### Scenario: Pull requests in the demo
-- **WHEN** the visitor opens Pull requests in the demo
-- **THEN** open and recently merged sample pull requests are listed with their statuses, and no request leaves the page
+The demo's sample SHALL include at least one integratable repository — a fictional git repository without OpenSpec —
+listed in Settings below the candidates, under the same heading and with the same **Integrate** and Ignore actions the
+dashboard shows. Activating **Integrate** SHALL create an integration session in memory whose terminal plays a short
+hand-written, vendor-neutral transcript under the same rules as every demo transcript: labelled as a recording,
+continuing on a line of input, and ending as an exited agent. When that transcript ends, the demo SHALL do what the
+marker appearing does in the dashboard: the repository becomes a tracked, enabled repository with its default name, it
+leaves the integratable list, and it appears on the board with a small sample of changes. The result SHALL NOT persist
+across a reload. The demo MUST NOT start a process, open a network connection or write anywhere for any of this.
 
-#### Scenario: Refresh in the demo
-- **WHEN** the visitor activates Refresh
-- **THEN** the control shows that it is running and then the same list with a new fetch time
+#### Scenario: The integratable repository is listed
+- **WHEN** the visitor opens Settings in the demo
+- **THEN** an integratable repository is listed below the candidates, in its own list, with **Integrate** and Ignore
+
+#### Scenario: Integrating in the demo
+- **WHEN** the visitor activates **Integrate** for it
+- **THEN** a session panel opens whose terminal starts with the line saying it is a demo recording, and the repository is not yet on the board
+
+#### Scenario: The integration finishes
+- **WHEN** the integration transcript reaches its end
+- **THEN** the session is shown as ended, the repository is listed as a tracked enabled repository, it is gone from the integratable list, and it appears on the board
+
+#### Scenario: Sessions switched off
+- **WHEN** the visitor switches agent sessions off in the demo's Settings
+- **THEN** the integratable repository is still listed and **Integrate** is inactive with the reason given
+
+#### Scenario: Nothing leaves the page
+- **WHEN** the demo's integration is started, played and ended
+- **THEN** no process is started and no network request is made
+
+#### Scenario: Not persisted
+- **WHEN** the visitor integrates the repository in the demo and reloads the page
+- **THEN** the repository is an integratable repository again
