@@ -145,6 +145,24 @@ test("open work lists running sessions first, then worktrees nobody is working o
   expect(openWork([wt("idle", { state: "clean" })], [], NOW).items).toEqual([]);
 });
 
+test("a session that ends leaves the running rows and its worktree takes the entry's place", () => {
+  // The old dock-era rule was that an ended session simply dropped out and the count fell. With the dock gone this
+  // list is the only way back to that worktree, so the row moves rather than disappearing and the count holds.
+  const worktrees = [wt("add-x", { state: "unpushed", count: 2 }, 1, { sessionId: "s1", path: "/w/s1" })];
+  const while_running = openWork(worktrees, [sess("s1")], NOW);
+  expect(while_running.items.map((i) => i.key)).toEqual(["s1"]);
+  expect(while_running.running).toBe(1);
+  expect(while_running.unshipped).toBe(0);
+
+  const after_exit = openWork(worktrees, [sess("s1", { state: "exited", exitCode: 0 })], NOW);
+  expect(after_exit.items.map((i) => i.key)).toEqual(["/w/s1"]);
+  expect(after_exit.running).toBe(0);
+  expect(after_exit.unshipped).toBe(1);
+  // Same total, and the row still carries the session record so the Console tab is still reachable through it.
+  expect(after_exit.running + after_exit.unshipped).toBe(while_running.running + while_running.unshipped);
+  expect(after_exit.items[0].session?.id).toBe("s1");
+});
+
 test("a running session's own worktree is counted once, as running rather than as unshipped", () => {
   const worktrees = [wt("shipping", { state: "uncommitted", count: 3 }, 1, { sessionId: "s1", path: "/w/s1" })];
   const { items, unshipped, running: live } = openWork(worktrees, [sess("s1")], NOW);

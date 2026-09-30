@@ -47,7 +47,7 @@ The dashboard SHALL be built with `bun build --compile` into one executable that
 
 ### Requirement: Discover endpoint
 
-`POST /api/discover` SHALL run discovery and return `{ candidates: [...], errors: [...] }`. The request MAY carry a JSON body with `scanRoots` and/or `ignorePaths`; when present they are used instead of the configured values, and each entry MUST be an absolute path after `~` expansion, otherwise the response MUST be `400` with a message. With no body the configured values are used. `candidates` SHALL contain only repositories found under the roots, outside the ignore paths, whose canonical path is not already in the saved config, each with `id`, canonical `path`, default `name` and `enabled: false`, sorted by path, and never the same directory twice. A candidate that shares its normalised `origin` remote with other known repositories SHALL carry `sameRemoteAs`, a list of `{ name, path, tracked }` for those repositories; otherwise the field is absent. `errors` SHALL list per-root problems. The endpoint MUST NOT persist anything and MUST NOT modify the in-memory config.
+`POST /api/discover` SHALL run discovery and return `{ candidates: [...], integratable: [...], errors: [...] }`. The request MAY carry a JSON body with `scanRoots` and/or `ignorePaths`; when present they are used instead of the configured values, and each entry MUST be an absolute path after `~` expansion, otherwise the response MUST be `400` with a message. With no body the configured values are used. `candidates` SHALL contain only repositories found under the roots, outside the ignore paths, whose canonical path is not already in the saved config, each with `id`, canonical `path`, default `name` and `enabled: false`, sorted by path, and never the same directory twice. A candidate that shares its normalised `origin` remote with other known repositories SHALL carry `sameRemoteAs`, a list of `{ name, path, tracked }` for those repositories; otherwise the field is absent. `integratable` SHALL contain the git repositories found under the roots, outside the ignore paths, that hold no `openspec/config.yaml`, are not linked git worktrees, are not already in the saved config and do not contain a reported OpenSpec project, each with `id`, canonical `path` and default `name`, sorted by path and never the same directory twice; it is `[]` when there are none. `errors` SHALL list per-root problems. The endpoint MUST NOT persist anything and MUST NOT modify the in-memory config.
 
 #### Scenario: Discover without saving
 - **WHEN** `POST /api/discover` finds two new repos and the client never calls `PUT /api/config`
@@ -80,6 +80,18 @@ The dashboard SHALL be built with `bun build --compile` into one executable that
 #### Scenario: Missing root is reported, not fatal
 - **WHEN** `POST /api/discover` is called with one existing and one non-existent root
 - **THEN** the response is `200`, `errors` names the non-existent root, and `candidates` contains the repositories under the existing root
+
+#### Scenario: Integratable repositories are returned
+- **WHEN** `/abs/workspace/a` holds `openspec/config.yaml` and `/abs/workspace/b` is a git repository without it
+- **THEN** `candidates` contains `/abs/workspace/a`, `integratable` contains `/abs/workspace/b`, and neither list contains the other's entry
+
+#### Scenario: A container is not integratable
+- **WHEN** `/abs/workspace/mono` is a git repository without the marker and `/abs/workspace/mono/pkg` holds `openspec/config.yaml`
+- **THEN** `candidates` contains `/abs/workspace/mono/pkg` and `integratable` does not contain `/abs/workspace/mono`
+
+#### Scenario: A tracked repository is in neither list
+- **WHEN** the config contains `/abs/workspace/a` and discovery runs
+- **THEN** `/abs/workspace/a` appears in neither `candidates` nor `integratable`
 
 ### Requirement: Scan endpoint
 
@@ -136,7 +148,7 @@ The dashboard SHALL be built with `bun build --compile` into one executable that
 - **THEN** the response is `403` and nothing is written
 
 ### Requirement: The dashboard never writes to tracked repositories
-The dashboard MUST NOT write to a tracked repository except in response to an explicit user action, and then only as enumerated here: (1) `openspec/config.yaml`, where only the managed sections of the `context` and `rules` keys are modified (applying shared OpenSpec config profiles); (2) for agent sessions, creating a git worktree and its branch for a session (`git worktree add`, preceded by `git worktree prune`), with the worktree's directory placed under `~/.openspec-dashboard/worktrees/` and never inside the repository's working tree, and removing such a worktree with a non-forcing `git worktree remove` after the user confirmed and read-only checks proved that it holds no uncommitted change and no work that exists nowhere else; (3) the pull action: `git fetch` from the repository's own remote followed by a fast-forward-only `git merge` of the main checkout's upstream, with repository hooks disabled, as specified in the `repository-pull` capability; (4) creating a new change directory at `openspec/changes/<name>/` with its `.openspec.yaml` marker and an optional `prompt.md`, as specified in the `change-creation` capability — the dashboard writes those files itself and MUST NOT invoke the `openspec` CLI or any other external command for it; (5) staging that new change directory, and only it, with a single `git add -- openspec/changes/<name>/` once those files are written, as specified in the `change-creation` capability — best-effort, never failing the creation, and never run for a refused create. Apart from those worktree commands the dashboard MUST NOT delete or move anything in a tracked repository. Apart from the pull action it MUST NOT change the main checkout's working tree beyond the create-change directory above, and MUST NOT change the main checkout's index beyond adding that same directory's files to it, and MUST NOT contact a remote, and it MUST NOT change the main checkout's branch at all. It MUST NOT commit, push, stash, reset, or create or delete a ref in a tracked repository under any circumstances. The pull action MUST NOT run except on the user's explicit request for that repository (or for all repositories): never on a timer, during a scan, on page load or as a side effect of another operation. Apart from the pull action, the only network access the dashboard makes is the pull-request query of the `pull-requests` capability: it runs only the GitHub CLI's read-only `gh pr list` and `gh api user`, never any other `gh` subcommand, with its working directory outside every tracked repository, and only when the user asks for it as specified in that capability; it MUST NOT write to a tracked repository, run git, or change anything on GitHub. Scanning, polling, discovery and serving the UI MUST NOT start a `gh` process. All other filesystem writes MUST be confined to `~/.openspec-dashboard/`. Scanning, polling, discovery, previews, reading work statuses and saving any dashboard setting MUST NOT write to a tracked repository. Apart from the worktree commands, the pull action's `fetch` and `merge --ff-only` and the create-change `add` above, git MUST only be invoked with read-only subcommands (`rev-parse`, `log`, `worktree list`, `status`, `show-ref`, `symbolic-ref`, `for-each-ref`, `rev-list`, `diff`, `config --get`). Every git invocation MUST run with optional locks disabled (`GIT_OPTIONAL_LOCKS=0`), so that no invocation rewrites `.git/index` as a side effect — `git status` refreshes the index by default — and the create-change `add` is the only invocation that may write the index at all, which it does by design. When agent sessions are enabled, the dashboard MAY start the user's configured agent in a session's worktree on the user's explicit request; what that agent changes, commits or pushes is the agent's doing under its own permission prompts and is never done by the dashboard's own code. With agent sessions disabled the dashboard MUST NOT start any process that can modify a repository.
+The dashboard MUST NOT write to a tracked repository except in response to an explicit user action, and then only as enumerated here: (1) `openspec/config.yaml`, where only the managed sections of the `context` and `rules` keys are modified (applying shared OpenSpec config profiles); (2) for agent sessions, creating a git worktree and its branch for a session (`git worktree add`, preceded by `git worktree prune`), with the worktree's directory placed under `~/.openspec-dashboard/worktrees/` and never inside the repository's working tree, and removing such a worktree with a non-forcing `git worktree remove` (preceded by `git worktree unlock`) after the user confirmed and read-only checks proved that it holds no uncommitted change and no work that exists nowhere else; (3) the pull action: `git fetch` from the repository's own remote followed by a fast-forward-only `git merge` of the main checkout's upstream, with repository hooks disabled, as specified in the `repository-pull` capability, and — only after the user confirmed Resolve and pull and the re-checks of that capability proved every blocking file to be an unchanged change leftover — removing exactly those leftover files from the main checkout's index (`git rm --cached`) and working tree immediately before the retried fast-forward, having first saved a copy of each leftover that differs under `~/.openspec-dashboard/`, and, when that fast-forward is still refused, writing those same files back with their previous content and re-staging the ones that had been staged (`git add -- <those paths>`); (4) creating a new change directory at `openspec/changes/<name>/` with its `.openspec.yaml` marker and an optional `prompt.md`, as specified in the `change-creation` capability — the dashboard writes those files itself and MUST NOT invoke the `openspec` CLI or any other external command for it; (5) staging that new change directory, and only it, with a single `git add -- openspec/changes/<name>/` once those files are written, as specified in the `change-creation` capability — best-effort, never failing the creation, and never run for a refused create; (6) repository cleanup, as specified in the `repository-cleanup` capability, on the user's confirmation of items the user selected: removing any linked worktree of the repository with a non-forcing `git worktree remove` (preceded by `git worktree unlock` only for a worktree the dashboard created) after read-only checks proved that it holds no uncommitted change and no work that exists nowhere else, removing stale worktree records with `git worktree prune`, and deleting a local branch other than the default branch and the main checkout's branch with `git branch -D` after read-only checks proved that its work is in the default branch and that it still points at the commit the user saw. Apart from those worktree commands, that branch deletion and the pull action's removal of confirmed change leftovers the dashboard MUST NOT delete or move anything in a tracked repository. Apart from the pull action it MUST NOT change the main checkout's working tree beyond the create-change directory above, and MUST NOT change the main checkout's index beyond adding that same directory's files to it, and MUST NOT contact a remote, and it MUST NOT change the main checkout's branch at all. It MUST NOT commit, push, stash or reset in a tracked repository under any circumstances, and MUST NOT create or delete a ref except the session branch created with a session's worktree and the local branches deleted by repository cleanup; it MUST NOT delete a remote-tracking ref or a remote branch. The pull action MUST NOT run except on the user's explicit request for that repository (or for all repositories): never on a timer, during a scan, on page load or as a side effect of another operation. Apart from the pull action, the only network access the dashboard makes is the pull-request query of the `pull-requests` capability: it runs only the GitHub CLI's read-only `gh pr list` and `gh api user`, never any other `gh` subcommand, with its working directory outside every tracked repository, and only when the user asks for it as specified in that capability; it MUST NOT write to a tracked repository, run git, or change anything on GitHub. Scanning, polling, discovery and serving the UI MUST NOT start a `gh` process. All other filesystem writes MUST be confined to `~/.openspec-dashboard/`. Scanning, polling, discovery, previews, reading work statuses and saving any dashboard setting MUST NOT write to a tracked repository. Apart from the worktree commands, the pull action's `fetch`, `merge --ff-only`, leftover `rm --cached` and restoring `add`, the create-change `add` and the cleanup's `branch -D` above, git MUST only be invoked with read-only subcommands (`rev-parse`, `log`, `worktree list`, `status`, `show-ref`, `symbolic-ref`, `for-each-ref`, `rev-list`, `diff`, `config --get`, `ls-files`, `ls-tree`, `cat-file`, and `hash-object` without `-w`). Every git invocation MUST run with optional locks disabled (`GIT_OPTIONAL_LOCKS=0`), so that no invocation rewrites `.git/index` as a side effect — `git status` refreshes the index by default — and only the pull action's `merge --ff-only`, its leftover `rm --cached` and restoring `add`, and the create-change `add` may write the index at all, which they do by design. When agent sessions are enabled, the dashboard MAY start the user's configured agent in a session's worktree on the user's explicit request; what that agent changes, commits or pushes is the agent's doing under its own permission prompts and is never done by the dashboard's own code. With agent sessions disabled the dashboard MUST NOT start any process that can modify a repository.
 
 #### Scenario: No side effects
 - **WHEN** a full scan runs across all tracked repos
@@ -171,12 +183,20 @@ The dashboard MUST NOT write to a tracked repository except in response to an ex
 - **THEN** no agent process is started and no repository is touched
 
 #### Scenario: No network unless asked
-- **WHEN** the dashboard starts, serves the UI, runs full scans on its poll interval and reads work statuses, and nobody uses the pull action or opens or refreshes a pull-request list
-- **THEN** no git command that contacts a remote is run, no `gh` process is started, and no main checkout's index or working tree changes
+- **WHEN** the dashboard starts, serves the UI, runs full scans on its poll interval and reads work statuses, and nobody uses the pull action
+- **THEN** no git command that contacts a remote is run and no main checkout's index or working tree changes
 
 #### Scenario: Pull changes only what a fast-forward changes
 - **WHEN** the pull action is used on a repository
 - **THEN** only its git directory and the files the fast-forward updates in its main checkout change, its checked-out branch is the same as before, and no linked worktree's files, index or branch change
+
+#### Scenario: Resolving leftovers touches only the leftovers
+- **WHEN** the user confirms Resolve and pull for a repository blocked by two change leftovers while `notes.md` has an unrelated uncommitted edit
+- **THEN** the only paths removed from the index and working tree before the fast-forward are those two files, `notes.md` keeps its edit, no commit, stash, reset or branch change happens, and copies are written only under `~/.openspec-dashboard/`
+
+#### Scenario: Offering a resolution writes nothing
+- **WHEN** a pull is refused because of change leftovers and the result offers Resolve and pull
+- **THEN** until the user confirms, no file, index entry or ref under the repository has changed beyond the fetch
 
 #### Scenario: Create-change touches only the new directory
 - **WHEN** a change is created via `POST /api/repos/<id>/changes`
@@ -189,6 +209,14 @@ The dashboard MUST NOT write to a tracked repository except in response to an ex
 #### Scenario: Failed create writes nothing
 - **WHEN** `POST /api/repos/<id>/changes` is refused for any reason
 - **THEN** no file, directory, index entry or git ref under that repository changes, and no git command is run
+
+#### Scenario: Cleanup preview has no side effects
+- **WHEN** a cleanup preview is computed for a repository with merged worktrees and branches
+- **THEN** no file under the repository, its git directory or its worktrees is created, modified or deleted, and no ref changes
+
+#### Scenario: Cleanup deletes only confirmed local branches
+- **WHEN** the user confirms a cleanup that selects one merged branch while two other merged branches exist
+- **THEN** exactly that one `refs/heads/` ref is deleted, and no other ref, including every `refs/remotes/` ref, changes
 
 #### Scenario: Discovery has no side effects
 - **WHEN** discovery looks up the `origin` remote of candidates and configured repositories
@@ -300,7 +328,7 @@ The API SHALL provide: `POST /api/sessions` with `{ repoId, change, action }` to
 
 ### Requirement: Pull endpoints
 
-`POST /api/repos/<id>/pull` SHALL run the pull action for one repository and return its result; `POST /api/pull` SHALL run it for every eligible repository with bounded concurrency and return one result per repository, a failure in one not affecting the others. A repository is eligible only if it is enabled in the config, its last scan succeeded and it is a git repository; the repository's path MUST come from the config and never from the request. An unknown, disabled or non-git repository SHALL be refused without running git. A second request for a repository whose pull is still running SHALL be refused with `409`. Both endpoints are mutating requests under the same-origin protection. After a pull the repository SHALL be rescanned.
+`POST /api/repos/<id>/pull` SHALL run the pull action for one repository and return its result, including the blocking files and, when every one is a change leftover, what the user has to confirm to resolve them; `POST /api/pull` SHALL run it for every eligible repository with bounded concurrency and return one result per repository, a failure in one not affecting the others. `POST /api/repos/<id>/pull` with a body `{ "resolve": { "upstream": <commit>, "files": [{ "path", … }] } }` — the incoming commit and the blocking files exactly as a previous result offered them — SHALL run Resolve and pull for that repository as specified in the `repository-pull` capability instead of a fetch; the server MUST re-determine the blocking files itself and MUST NOT treat any path or content in the request as more than the claim it checks. A malformed resolve body SHALL be refused with `400` and nothing touched; a resolve whose claim no longer matches SHALL be answered with a `refused` result and nothing touched. `POST /api/pull` never resolves anything. A repository is eligible only if it is enabled in the config, its last scan succeeded and it is a git repository; the repository's path MUST come from the config and never from the request. An unknown, disabled or non-git repository SHALL be refused without running git. A second request for a repository whose pull or resolve is still running SHALL be refused with `409`. Both endpoints are mutating requests under the same-origin protection. After a pull or resolve the repository SHALL be rescanned.
 
 #### Scenario: One repository
 - **WHEN** `POST /api/repos/<id>/pull` is called for an enabled repository that is two commits behind its upstream
@@ -318,9 +346,21 @@ The API SHALL provide: `POST /api/sessions` with `{ repoId, change, action }` to
 - **WHEN** `POST /api/pull` runs over three repositories and one remote cannot be reached
 - **THEN** the response has three results, two successful and one `failed` with a reason
 
+#### Scenario: Resolve as offered
+- **WHEN** a pull result offered Resolve and pull and the same upstream commit and files are posted back as `resolve`
+- **THEN** the response reports the fast-forward and the replaced files with the locations of any copies, and no fetch was run
+
+#### Scenario: Resolve claiming a file that is not a leftover
+- **WHEN** a `resolve` body names `src/app.ts`, which has an uncommitted edit that the incoming commits change
+- **THEN** the response is a `refused` result and `src/app.ts`, the index and the branch are unchanged
+
+#### Scenario: Malformed resolve
+- **WHEN** the `resolve` body has no upstream commit or a path that is absolute or contains `..`
+- **THEN** the response is `400` and no git command that writes is run
+
 #### Scenario: Foreign origin
-- **WHEN** a page on another origin posts to a pull endpoint
-- **THEN** the response is `403` and nothing is fetched
+- **WHEN** a page on another origin posts to a pull endpoint, with or without `resolve`
+- **THEN** the response is `403` and nothing is fetched or removed
 
 ### Requirement: Pull request endpoints
 `GET /api/pull-requests` SHALL return the cached pull-request lists without contacting any network host and without starting a process: `{ viewer?, repos: [...] }`, where `viewer` is the signed-in GitHub login when known and `repos` holds one entry per enabled repository with its `repoId`, its GitHub repository (`owner/name`) when it has one, a `status` of `ok`, `unavailable`, `failed` or `never` (not fetched yet), a `reason` for `unavailable` and `failed`, the time of the last successful fetch, and its pull requests as specified in the `pull-requests` capability. `POST /api/pull-requests/refresh` SHALL refresh the lists, with an optional JSON body `{ "repoId"?: string, "force"?: boolean }`: with `repoId` only that repository (and the other enabled repositories sharing its GitHub repository) is refreshed, otherwise every enabled repository; without `force: true` a repository whose last fetch is younger than the freshness window SHALL be left as it is. The response SHALL be the same shape as the `GET` after the refresh. An unknown or disabled `repoId` SHALL be refused with `404` without starting a process. While a refresh is running, a second refresh request SHALL wait for and return the running refresh's result rather than start a second query for the same repositories. The refresh endpoint is a mutating request under the same-origin protection. Neither endpoint SHALL trigger a scan.
@@ -452,3 +492,57 @@ session, and `POST /api/sessions/<id>/close` SHALL ignore `removeWorktree` for i
 #### Scenario: Console folder inside a repository
 - **WHEN** `PUT /api/config` sets the console folder to a directory inside a tracked repository
 - **THEN** the response is `400` and the saved configuration is unchanged
+
+### Requirement: Integration endpoints
+
+`POST /api/integrations` with `{ path }` SHALL open an integration session for that integratable repository and return
+it: the running integration session for that folder if there is one, otherwise a newly started one. The path MUST be an
+absolute path that discovery currently reports as integratable; anything else MUST be refused with `404`, including a
+path that is already a tracked repository, holds `openspec/config.yaml`, is not a git repository, is a linked worktree
+or lies outside the configured roots or below an ignore path. The request MUST be refused with `403` when agent
+sessions are disabled, with `400` when the default agent has no `integrate` prompt, and with `503` when the default
+agent's executable is not found — each with a reason and without starting a process. It is a mutating request under the
+same-origin protection.
+
+`GET /api/sessions` SHALL include integration sessions, marked as such, carrying the folder and no repository id,
+change, action or branch; resume, close, delete and the terminal WebSocket SHALL accept an integration session's id
+like any other. `POST /api/sessions/<id>/ship`, `POST /api/sessions/<id>/prompt` and
+`GET /api/sessions/<id>/worktree` SHALL be refused with `409` for an integration session, and
+`POST /api/sessions/<id>/close` SHALL ignore `removeWorktree` for it.
+
+When an integration session ends, the server SHALL re-check its folder for `openspec/config.yaml` and, if it is there,
+add the repository to the configuration with `enabled: true` and its default name and start a scan; `GET /api/config`
+then returns it and `GET /api/state` shows it once the scan completes. If the marker is absent the configuration MUST
+be unchanged.
+
+#### Scenario: Opening an integration
+- **WHEN** `POST /api/integrations` is sent with the path of a repository discovery reports as integratable
+- **THEN** the response is the integration session, with the folder as its working directory and no branch
+
+#### Scenario: Opening twice
+- **WHEN** `POST /api/integrations` is sent for a folder whose integration session is running
+- **THEN** the response contains that session and no second process is started
+
+#### Scenario: A path that is not integratable
+- **WHEN** `POST /api/integrations` names a directory that already holds `openspec/config.yaml`
+- **THEN** the response is `404` and no process is started
+
+#### Scenario: Feature disabled
+- **WHEN** agent sessions are disabled and `POST /api/integrations` is called
+- **THEN** the response is `403` and no process is started
+
+#### Scenario: Cross-site
+- **WHEN** a page from another origin sends `POST /api/integrations`
+- **THEN** the response is `403` and no process is started
+
+#### Scenario: Change-only routes
+- **WHEN** `POST /api/sessions/<id>/ship` names an integration session
+- **THEN** the response is `409` and nothing is sent to its terminal
+
+#### Scenario: Marker present when the session ends
+- **WHEN** an integration session ends and `openspec/config.yaml` now exists in its folder
+- **THEN** `GET /api/config` contains that repository with `enabled: true` and a scan has been started
+
+#### Scenario: Marker absent when the session ends
+- **WHEN** an integration session ends and its folder holds no `openspec/config.yaml`
+- **THEN** `GET /api/config` is unchanged and the next `POST /api/discover` still lists the folder in `integratable`

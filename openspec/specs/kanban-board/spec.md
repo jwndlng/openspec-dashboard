@@ -30,9 +30,9 @@ The board SHALL show the columns `Backlog`, `Drafts`, `Ready`, `Implementing`, `
 - **WHEN** a `spec-driven` change has `specs` done and `proposal` not done
 - **THEN** it appears in the `Drafts` column, not in `Backlog`
 
-#### Scenario: Ready to apply
-- **WHEN** all artifacts are done and `tasks` is `done: 0, total: 12`
-- **THEN** it appears in `Ready` showing `0/12`
+#### Scenario: The column count covers both sub-states
+- **WHEN** the `Done` column holds three complete changes and two awaiting validation
+- **THEN** its header count is `5` and every "to archive" count is `5`
 
 #### Scenario: First task ticked
 - **WHEN** all artifacts are done and `tasks` is `done: 1, total: 12`
@@ -574,7 +574,23 @@ The branch badge in the repository board header MUST NOT extend beyond its conta
 
 #### Scenario: Card content
 - **WHEN** a change `cloud-deployment` in repo `demo-ops` has `tasks 30/30`, last activity 12 days ago and a branch match `feat/cloud-deployment`, and is shown on the combined board
-- **THEN** the card sits in the `demo-ops` group and shows `cloud-deployment`, `updated 12d ago`, a full progress bar labelled `30/30` and **Show details**, and shows neither `demo-ops`, the branch, nor a completion badge
+- **THEN** the card sits in the `demo-ops` group and shows `cloud-deployment`, `updated 12d ago`, a full progress bar labelled `30/30 Tasks` and **Show details**, and shows neither `demo-ops`, the branch, nor a completion badge
+
+#### Scenario: Drafting progress
+- **WHEN** a `spec-driven` change has `proposal` and `design` done and `specs` and `tasks` not done
+- **THEN** its card in `Drafts` shows a progress bar half filled and labelled `2/4 Artifacts`, whose tooltip and accessible name read `2 of 4 artifacts written`
+
+#### Scenario: Drafting progress for another schema
+- **WHEN** a change of a schema with the artifacts `brief`, `plan`, `checklist` has `brief` done
+- **THEN** its card in `Drafts` shows a drafting progress bar labelled `1/3 Artifacts`
+
+#### Scenario: Backlog card has no bar
+- **WHEN** a change in `Backlog` has a `tasks.md` that is not written yet
+- **THEN** its card shows no progress bar
+
+#### Scenario: Task progress replaces drafting progress
+- **WHEN** a change moves from `Drafts` to `Ready` with `tasks` `done: 0, total: 12`
+- **THEN** its card shows the task progress bar labelled `0/12 Tasks`, whose tooltip says it counts tasks, and no drafting progress
 
 #### Scenario: Drafting progress
 - **WHEN** a `spec-driven` change has `proposal` and `design` done and `specs` and `tasks` not done
@@ -594,7 +610,19 @@ The branch badge in the repository board header MUST NOT extend beyond its conta
 
 #### Scenario: Card with a running session
 - **WHEN** a change in `Implementing` has a session whose agent is waiting for the user
-- **THEN** its card shows the session's status beside the name, the task progress, and the next step in its footer
+- **THEN** its card shows the change name and its age, under them the session's status, then the task progress, and the next step in its footer
+
+#### Scenario: Session status does not squeeze the name
+- **WHEN** the change `introduce-tenant-quota-enforcement` has a running session and a session worktree, and its name fits the card's width on one line
+- **THEN** its card shows the whole name on one line, with the session badge and the console quick link on the line below the age
+
+#### Scenario: No session, no status line
+- **WHEN** a change has neither a session nor a session worktree
+- **THEN** its card goes straight from the age to the progress bar, with no empty line between them
+
+#### Scenario: Show details matches the starter
+- **WHEN** a card in `Ready` offers **▶ Implement** and **Show details** in its footer
+- **THEN** both are drawn with the same height and the same text size
 
 #### Scenario: Details live in the detail view
 - **WHEN** a change has a `prompt.md`, a worktree with uncommitted files and all of its artifacts written
@@ -603,6 +631,18 @@ The branch badge in the repository board header MUST NOT extend beyond its conta
 #### Scenario: Long branch name in the repository header
 - **WHEN** the repository board's current branch is `feat/introduce-tenant-quota-enforcement` and it does not fit
 - **THEN** its badge shows the beginning, an ellipsis and `quota-enforcement`, stays inside the header, and presents the full name on hover and to a screen reader
+
+#### Scenario: Awaiting validation
+- **WHEN** a change in `Done` has `tasks` `done: 13, awaiting: 2, total: 15`
+- **THEN** its card shows a **Validate** badge and a progress bar labelled `13 + 2 awaiting / 15 Tasks`, whose accessible name says thirteen tasks are done, two await validation and none are open
+
+#### Scenario: Awaiting segment is not the only cue
+- **WHEN** a screen reader reads a card awaiting validation
+- **THEN** it reads the **Validate** badge and a progress label naming the awaiting count, without relying on the segment's colour
+
+#### Scenario: No awaiting tasks
+- **WHEN** a change has `tasks` `done: 4, awaiting: 0, total: 12`
+- **THEN** its card shows no **Validate** badge and a two-part bar labelled `4/12 Tasks`
 
 ### Requirement: Visual design follows the grey and indigo token set
 The UI SHALL define its colours as two token sets sharing the same token names: a dark set (neutral dark grey backgrounds ascending from `#26272b` for the page to `#4b4c51` for the most elevated surface, light enough that the edges between surfaces and every border stay visible; indigo brand `#6366f1`) and a light set (slate backgrounds from `#f8fafc`, with white raised surfaces, indigo brand `#4f46e5`). In the dark theme the background tokens SHALL be near-neutral greys, in the light theme slate greys with at most a slight cool tint; the indigo brand SHALL be used only as an accent (focus, active state, primary actions, progress) and MUST NOT be the resting colour of panel or card borders, nor the colour of any status label; highlighting the border of the card or control under the pointer is an active state and MAY use it. Borders SHALL be neutral: translucent white in the dark theme and translucent slate in the light theme. Both themes SHALL share Inter for text, JetBrains Mono for identifiers, one radius scale (small controls, fields and cards, panels and columns — rounder the larger the element) and one set of shadow tokens, with fonts bundled locally. Component styles MUST reference colour, radius and shadow tokens only and MUST NOT contain literal colour values. In both themes, text and status colours SHALL have a contrast ratio of at least 4.5:1 against the backgrounds they are rendered on, and so SHALL the text of a filled primary button against that button. The token set SHALL keep the status roles, the brand accent and the repository colours in three disjoint colour ranges, so that no status label can be mistaken for a repository accent or for the accent, and no repository can be shown in a colour that means a status. The UI MUST render correctly without network access, and any icon SHALL be drawn from inline markup, be decorative only, and sit beside text that says the same thing — with one exception, the card's console quick link, whose icon carries its meaning in a tooltip and an accessible name.
@@ -739,7 +779,7 @@ Every view SHALL open with a hero header. It SHALL show the product mark and the
 - **THEN** the control still shows `5s` and the dashboard keeps refreshing on that interval
 
 ### Requirement: The product has its own mark
-The dashboard SHALL show its own product mark instead of a generic icon: a ring of four arcs — the four stages of a change — fading behind a leading arc that ends in a bright dot, around a small rounded square, on a rounded accent-gradient tile. The mark in the page SHALL be drawn in the theme's accent tokens and be hidden from assistive technology, as the product name stands beside it. The page SHALL carry the same mark as its favicon, embedded in the page itself so no request is made for it.
+The dashboard SHALL show its own product mark instead of a generic icon: a drafting drawing of a change travelling through its artifacts — a rounded square framed by faint dashed construction lines that overshoot it, a short tick at each corner-radius centre, a small hub in the middle, and four circular nodes centred on the square's four edges, each carrying a glyph: an arrow for the proposal at the top, a document for the spec on the right, a triangle for the delta at the bottom and a prompt for the code on the left. The mark in the page SHALL be a line drawing on the page's own ground, with its strokes in the theme's accent text colour and its nodes and hub filled with the page background, drawn from theme tokens only so that it stays legible in every supported theme, and SHALL be hidden from assistive technology, as the product name stands beside it. The page SHALL carry the same mark as its favicon, embedded in the page itself so no request is made for it. Because a favicon is shown at 16–32px and cannot follow the page's theme, it SHALL draw the mark on a filled rounded square in fixed colours and MAY leave out the construction lines and ticks; the square, the hub and the four nodes with their glyphs SHALL be the same as in the page.
 
 #### Scenario: Favicon without a request
 - **WHEN** the dashboard is opened offline
@@ -747,7 +787,15 @@ The dashboard SHALL show its own product mark instead of a generic icon: a ring 
 
 #### Scenario: One mark
 - **WHEN** the favicon and the mark in the hero are compared
-- **THEN** they are the same drawing
+- **THEN** they show the same square, hub and four nodes with the same glyphs in the same places
+
+#### Scenario: Mark in both themes
+- **WHEN** the theme is switched between dark and light
+- **THEN** the mark in the hero is redrawn in that theme's accent and background colours, and its nodes, glyphs and square stay clearly visible against the hero's ground
+
+#### Scenario: Mark is decorative
+- **WHEN** a screen reader reads the hero
+- **THEN** it reads `OpenSpec Dashboard` and nothing for the mark
 
 ### Requirement: The board fits half a screen
 The board SHALL offer two layouts of the same columns and cards: **Lanes**, the columns side by side, and **Stack**, each column a full-width section whose repository groups (or, on a repository board, cards) flow in a grid, with the page scrolling vertically so the hero scrolls away. By default the layout SHALL follow the window: **Stack** below 1280px wide, **Lanes** otherwise, switching live as the window is resized. A **Lanes**/**Stack** switch in the filter bar SHALL mark the layout on screen and SHALL make an explicit choice that overrides the default and persists in the URL (`layout=lanes` or `layout=stack`); an unknown value SHALL mean the default. The layout SHALL NOT be a filter: it changes no card or count, and **Clear filters** keeps it. In **Lanes**, a column without cards SHALL shrink to a slim rail that still shows its name and count, and lanes SHALL be narrower on windows narrower than 1600px. Grouping, minimizing, counts, the archived bound and every card's content SHALL be the same in both layouts.

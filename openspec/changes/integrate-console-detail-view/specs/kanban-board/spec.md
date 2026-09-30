@@ -1,38 +1,8 @@
 # Spec Delta
 
-## MODIFIED Requirements
+## ADDED Requirements
 
-### Requirement: Cards offer session starters and show session state
-When agent sessions are enabled and the card's repository is tracked and not excluded, a card SHALL offer the session starters available for its change — **Draft artifacts** while an artifact is not done, **Implement** in `Ready` or `Implementing`, **Archive** in `Done`, none for archived changes — limited to the starters the repository's agent has a prompt for, and disabled with an explanation when that agent's executable is not found. A card whose change has a running session SHALL instead show a badge — `running`, or `quiet <duration>` when the terminal has been silent for more than a minute — and a card whose latest session failed to start or ended with an error SHALL show that; activating the badge SHALL open that change's detail view with its Console tab selected and that session shown. Status MUST be conveyed by text as well as colour. **Show details** remains available. When agent sessions are disabled or the repository is excluded, cards MUST look and behave exactly as before.
-
-#### Scenario: Done change offers Archive
-- **WHEN** a change is in `Done` and agent sessions are enabled
-- **THEN** the card offers **Archive** next to its "complete" badge
-
-#### Scenario: Ready change
-- **WHEN** a change is in `Ready`, agent sessions are enabled and its repository is not excluded
-- **THEN** the card offers **Implement** and still offers **Show details**
-
-#### Scenario: Running session
-- **WHEN** a change has a running session
-- **THEN** its card shows a session badge and no starter, and activating the badge opens that change's detail view on its Console tab
-
-#### Scenario: Feature off
-- **WHEN** agent sessions are disabled
-- **THEN** no card shows a starter or a session badge
-
-### Requirement: Cards show the work status of their change's worktree
-When agent sessions apply to a card's repository and a session worktree exists for its change, the card SHALL show a work-status badge as text plus colour — the number of uncommitted files, the number of commits not pushed, `pushed`, or `merged` — also when no session is running, next to the running session's badge if there is one. Nothing is shown for `clean` or `missing`. Open work whose last activity is older than 24 hours (`uncommitted`, `unpushed`) or 7 days (`pushed`), with no session running, SHALL be highlighted as stale with its age. The badge of `merged` SHALL state that this is as of the last fetch and that the worktree can be removed. Activating the badge opens that change's detail view on its Console tab, showing the worktree's most recent session.
-
-#### Scenario: Ended session with uncommitted work
-- **WHEN** a change's session has ended cleanly and its worktree holds 3 uncommitted files
-- **THEN** the card shows "3 uncommitted" and activating it opens that change's detail view on its Console tab with that session shown
-
-#### Scenario: Stale
-- **WHEN** a worktree has had unpushed commits for two days and no session is running
-- **THEN** the badge is highlighted and says so
-
-### Requirement: Open work list
+### Requirement: Open work lists running sessions and unshipped work
 While agent sessions are enabled the top bar SHALL show an "Open work" control. Now that each terminal lives in its
 change's detail view, this list is the only view of agent activity that spans repositories, so it SHALL cover both the
 agents running and the work they left behind.
@@ -72,6 +42,16 @@ without a reload.
 - **WHEN** a running session's own worktree holds three uncommitted files
 - **THEN** it appears once, as that running session, and the count does not also count it as unshipped
 
+#### Scenario: Stale worktrees are listed first
+- **WHEN** a worktree has had unpushed commits for two days and no session runs in it
+- **THEN** it is listed first among the work left behind — after every running session, before the unshipped worktrees
+  that are not stale and before the merged ones — with its age and its staleness stated as text
+
+#### Scenario: A session that ends leaves the running rows
+- **WHEN** the list shows a running session and that session's agent exits with unpushed commits in its worktree
+- **THEN** the entry leaves the running rows and its worktree takes a place among the work left behind, so the count
+  does not drop, and the change's detail header still shows the worktree's work-status badge
+
 #### Scenario: Archive worktree of an archived change
 - **WHEN** the archive worktree of a change that is already archived holds a commit that is not pushed
 - **THEN** it appears in the Open work list although no card offers it, and opening it shows its Console tab
@@ -79,6 +59,27 @@ without a reload.
 #### Scenario: Nothing open
 - **WHEN** no session runs and no session worktree holds anything
 - **THEN** the top bar shows no Open work control
+
+## MODIFIED Requirements
+
+### Requirement: Cards offer session starters and show session state
+When agent sessions are enabled and the card's repository is tracked and not excluded, a card SHALL offer the session starters available for its change — **Draft artifacts** while an artifact is not done, **Implement** in `Ready` or `Implementing`, **Archive** in `Done`, none for archived changes — limited to the starters the repository's agent has a prompt for, and disabled with an explanation when that agent's executable is not found. A card whose change has a running session SHALL instead show a badge — `running`, or `quiet <duration>` when the terminal has been silent for more than a minute — and a card whose latest session failed to start or ended with an error SHALL show that; activating the badge SHALL open that change's detail view with its Console tab selected and that session shown. Status MUST be conveyed by text as well as colour. **Show details** remains available. When agent sessions are disabled or the repository is excluded, cards MUST look and behave exactly as before.
+
+#### Scenario: Done change offers Archive
+- **WHEN** a change is in `Done` and agent sessions are enabled
+- **THEN** the card offers **Archive** next to its "complete" badge
+
+#### Scenario: Ready change
+- **WHEN** a change is in `Ready`, agent sessions are enabled and its repository is not excluded
+- **THEN** the card offers **Implement** and still offers **Show details**
+
+#### Scenario: Running session
+- **WHEN** a change has a running session
+- **THEN** its card shows a session badge and no starter, and activating the badge opens that change's detail view on its Console tab
+
+#### Scenario: Feature off
+- **WHEN** agent sessions are disabled
+- **THEN** no card shows a starter or a session badge
 
 ### Requirement: Cards keep offering the next step while a session runs
 A card whose change has a running session SHALL show the session badge and, next to it, the starters available in the change's current stage. For Draft and Implement with a running session in the change's own worktree, the starter SHALL send its prompt to that session and open that change's detail view on its Console tab with the terminal focused; its label and tooltip MUST say that it sends the prompt to the running session, and MUST NOT ask the user for a further key press. When the prompt was typed but not submitted, the Console tab SHALL say so as it does for any other text sent on the user's behalf. Archive SHALL open its own session as before. The Console tab SHALL offer the same next-step buttons for the session shown.
@@ -169,6 +170,19 @@ The session badge of a running session whose terminal is not quiet SHALL be anim
 - **THEN** the running badge is static and still reads `running`
 
 ## REMOVED Requirements
+
+### Requirement: Open work list
+**Reason**: Replaced by "Open work lists running sessions and unshipped work". With the dock gone this list is the only
+view of agent activity that spans repositories, so it widens to cover the worktrees the previous narrowing excluded —
+which reverses this requirement's "Stale worktrees stay out" outright, and retires three more of its scenarios: "Only
+running sessions are listed" (worktrees are listed too), "A session that ends leaves the list" (its worktree takes the
+entry's place, so the count does not drop) and "Opening an entry" (an entry opens the change's detail view on its
+Console tab, not a dock pane). The session rows this requirement specified are kept exactly as they are.
+
+**Migration**: See "Open work lists running sessions and unshipped work" above. Every running session is still listed
+oldest first with the same fields and the same live badge; what is added are the worktrees whose work is
+`uncommitted`, `unpushed`, `pushed` or `merged` with no session running, which no card offers and which the dock's tab
+strip used to reach.
 
 ### Requirement: Session panel
 **Reason**: The dock is replaced by the Console tab of the change's detail view. A session belongs to one change, and
