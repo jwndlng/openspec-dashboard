@@ -10,8 +10,8 @@
 
 ## 3. Board
 
-- [~] 3.1 In `src/ui/kanban.tsx`, read the session worktrees from the sessions context and, while `filters.hideMerged` is on, filter the `Archived` column with `archivePending` before `recentArchived`, so the count and `25 of <total>` follow it. Apply the same filter to the "showing" count. Verify with `bun run dev` against a repository with one archive in a linked worktree and others on main: only the pending one is shown and counted.
-- [~] 3.2 Add the **Hide merged** switch in `src/ui/boardFilters.tsx` directly after **Hide archived**, with the same switch markup, `aria-checked`, disabled while `hideArchived` is on, and a `title` explaining what it hides. Verify that it toggles `merged=1` in the URL, that it is disabled under **Hide archived**, and that **Clear filters** turns it back on.
+- [x] 3.1 In `src/ui/kanban.tsx`, read the session worktrees from the sessions context and, while `filters.hideMerged` is on, filter the `Archived` column with `archivePending` before `recentArchived`, so the count and `25 of <total>` follow it. Apply the same filter to the "showing" count. Verify with `bun run dev` against a repository with one archive in a linked worktree and others on main: only the pending one is shown and counted.
+- [x] 3.2 Add the **Hide merged** switch in `src/ui/boardFilters.tsx` directly after **Hide archived**, with the same switch markup, `aria-checked`, disabled while `hideArchived` is on, and a `title` explaining what it hides. Verify that it toggles `merged=1` in the URL, that it is disabled under **Hide archived**, and that **Clear filters** turns it back on.
 
 ## 4. Demo
 
