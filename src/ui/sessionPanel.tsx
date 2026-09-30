@@ -189,7 +189,8 @@ const STEP_LABEL: Record<SessionAction, string> = { draft: "Draft artifacts", im
 
 /**
  * The change's sessions, in the slot the delta specs use for their file list. Omitted for a single session: there is
- * nothing to choose. A change can legitimately have two — its own and its archive worktree's.
+ * nothing to choose. A change can legitimately have several records — only one of them running, the others ended,
+ * their output still readable and their worktrees possibly still holding work.
  */
 export function ConsoleSessionList({ sessions, selected, onSelect }: { sessions: ChangeSession[]; selected?: string; onSelect: (id: string) => void }) {
   if (sessions.length < 2) return null;
@@ -257,10 +258,10 @@ export function ConsolePanel({ session, worktree, of }: { session?: ChangeSessio
   const merged = tree?.work.state === "merged";
   // The change as the snapshot has it: what both the next steps and the empty state's starters are decided from.
   const card = repoId && change ? ui.snapshot?.repos.find((r) => r.id === repoId)?.changes.find((c) => c.name === change && !c.archived) : undefined;
-  const nextSteps =
-    session && card
-      ? startersFor(ui.config, card).filter((action) => nextStepFor(ui.sessions, session.repoId, session.change, action).promptSessionId === session.id)
-      : [];
+  // Every starter the change's stage allows — Archive included — but only in the panel of the session that would
+  // receive it, which is the change's running one. An ended session's panel offers none: nothing can be typed there.
+  const receiving = session !== undefined && nextStepFor(ui.sessions, session.repoId, session.change).promptSessionId === session.id;
+  const nextSteps = receiving && card ? startersFor(ui.config, card) : [];
   // Nothing has ever run for this change: the tab says so and offers the openings, which is why it exists at all.
   const untouched = !session && !tree;
 
