@@ -13,15 +13,34 @@ interface Machine {
   bin: string;
   /** One line per `git` invocation, so a memoised report can be told from a recomputed one. */
   gitLog: string;
+  /** This machine's `gh` configuration directory. Empty unless a test writes `hosts.yml` into it. */
+  ghDir: string;
+}
+
+/** Restores an environment variable to what it was, whatever a test did to it in between. */
+function holdEnv(name: string): void {
+  const previous = process.env[name];
+  cleanups.push(() => {
+    if (previous === undefined) delete process.env[name];
+    else process.env[name] = previous;
+  });
 }
 
 /**
- * A PATH holding only the stubs asked for. The `git` stub answers `config --get user.name`/`user.email` from files in
- * its own directory, so an identity can be present or absent without touching the machine's real git configuration.
+ * A PATH holding only the stubs asked for, and a `gh` configuration of its own. The `git` stub answers
+ * `config --get user.name`/`user.email` from files in its own directory, so an identity can be present or absent
+ * without touching the machine's real git configuration. Every variable the report reads is taken over here — without
+ * that, a report would be `ok` on a developer's machine, where `gh` is logged in, and `warning` on a CI runner, where
+ * it is not.
  */
 async function machine(tools: readonly string[] = TOOLS, identity: { name?: string; email?: string } = { name: "Demo User", email: "demo@example.invalid" }): Promise<Machine> {
   const bin = await tempDir("osd-bin-");
   const gitLog = join(bin, "git.log");
+  const ghDir = await tempDir("osd-gh-");
+  for (const name of ["GH_TOKEN", "GITHUB_TOKEN", "GH_CONFIG_DIR", "XDG_CONFIG_HOME"]) holdEnv(name);
+  delete process.env.GH_TOKEN;
+  delete process.env.GITHUB_TOKEN;
+  process.env.GH_CONFIG_DIR = ghDir;
   if (identity.name !== undefined) await writeFile(join(bin, "user.name"), identity.name);
   if (identity.email !== undefined) await writeFile(join(bin, "user.email"), identity.email);
   for (const tool of tools) {
@@ -33,7 +52,14 @@ async function machine(tools: readonly string[] = TOOLS, identity: { name?: stri
     await writeFile(join(bin, tool), script);
     await chmod(join(bin, tool), 0o755);
   }
-  return { bin, gitLog };
+  return { bin, gitLog, ghDir };
+}
+
+/** What `gh auth login` leaves behind: a host entry. The report only ever checks that this file is there and not empty. */
+async function ghCredentials(ghDir: string): Promise<string> {
+  const hosts = join(ghDir, "hosts.yml");
+  await writeFile(hosts, "github.com:\n    user: demo\n    git_protocol: https\n");
+  return hosts;
 }
 
 const originalPath = process.env.PATH;
@@ -70,7 +96,8 @@ function repoSnapshot(id: string, isGit: boolean): RepoSnapshot {
 
 // 2.1 — the report's shape, order and fold.
 test("a fully equipped machine yields ok, in a stable order", async () => {
-  const { bin } = await machine();
+  const { bin, ghDir } = await machine();
+  await ghCredentials(ghDir);
   const result = await report(bin, withAgents());
   expect(result.status).toBe("ok");
   expect(result.checks.map((c) => c.id)).toEqual(["dashboard-home", "git", "git-identity", "openspec-cli", "agent:claude", "github-cli"]);
@@ -198,48 +225,30 @@ test("gh not installed is distinct from gh without credentials", async () => {
   expect(withoutGh.found).toContain("`gh` not found");
   expect(withoutGh.found).not.toContain("no credentials");
 
-  const ghDir = await tempDir("osd-gh-");
-  const previous = process.env.GH_CONFIG_DIR;
-  process.env.GH_CONFIG_DIR = ghDir;
-  cleanups.push(() => {
-    if (previous === undefined) delete process.env.GH_CONFIG_DIR;
-    else process.env.GH_CONFIG_DIR = previous;
-  });
+  // `gh` present, its configuration directory empty: installed, but nothing to authenticate with.
   const bare = byId(await report((await machine()).bin, withAgents()), "github-cli");
   expect(bare.found).toContain("no credentials were found");
   expect(bare.remedy).toContain("gh auth login");
 });
 
 test("an existing host file reads as configured without being opened", async () => {
-  const ghDir = await tempDir("osd-gh-");
+  const { bin, ghDir } = await machine();
   const hosts = join(ghDir, "hosts.yml");
   await writeFile(hosts, "github.com:\n    oauth_token: gho_SECRETVALUE\n");
   await chmod(hosts, 0o000); // Unreadable: a check that opened it would fail.
   cleanups.push(() => chmod(hosts, 0o600));
-  const previous = process.env.GH_CONFIG_DIR;
-  process.env.GH_CONFIG_DIR = ghDir;
-  cleanups.push(() => {
-    if (previous === undefined) delete process.env.GH_CONFIG_DIR;
-    else process.env.GH_CONFIG_DIR = previous;
-  });
-  const result = await report((await machine()).bin, withAgents());
+  const result = await report(bin, withAgents());
   expect(byId(result, "github-cli").status).toBe("ok");
   expect(byId(result, "github-cli").found).toContain(hosts);
   expect(JSON.stringify(result)).not.toContain("gho_SECRET");
 });
 
 test("a token in the environment is named, never shown", async () => {
-  const previousToken = process.env.GH_TOKEN;
-  const previousDir = process.env.GH_CONFIG_DIR;
+  // `machine()` clears both token variables and gives this machine an empty gh directory, so the token is the only
+  // thing that can make this check pass, and `machine()`'s own cleanup restores whatever the real environment had.
+  const { bin } = await machine();
   process.env.GH_TOKEN = "gho_TOPSECRET_VALUE";
-  process.env.GH_CONFIG_DIR = await tempDir("osd-gh-");
-  cleanups.push(() => {
-    if (previousToken === undefined) delete process.env.GH_TOKEN;
-    else process.env.GH_TOKEN = previousToken;
-    if (previousDir === undefined) delete process.env.GH_CONFIG_DIR;
-    else process.env.GH_CONFIG_DIR = previousDir;
-  });
-  const result = await report((await machine()).bin, withAgents());
+  const result = await report(bin, withAgents());
   expect(byId(result, "github-cli").status).toBe("ok");
   expect(byId(result, "github-cli").found).toContain("GH_TOKEN is set");
   expect(JSON.stringify(result)).not.toContain("TOPSECRET");
