@@ -2,8 +2,10 @@ import { afterAll, afterEach, beforeAll, expect, setDefaultTimeout, test } from 
 import { createFetchHandler, createWebSocketHandlers, webSocketRefusal, type AppState, type TerminalSocketData } from "../src/server/api.ts";
 import { Scanner } from "../src/server/scanner.ts";
 import type { Session } from "../src/shared/types.ts";
+import { writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import { useTempHome } from "./helpers.ts";
-import { harness, waitFor, type Harness } from "./sessionHelpers.ts";
+import { git, harness, waitFor, type Harness } from "./sessionHelpers.ts";
 
 const JSON_HEADERS = { "content-type": "application/json" };
 // These tests start real processes in pseudo-terminals and open sockets; slow CI runners need more than the 5 s default.
@@ -93,6 +95,10 @@ test("session routes: open, duplicate, refusals, cross-site", async () => {
   expect((await post(`${http}/api/sessions`, { ...body, change: "no-such-change" })).status).toBe(404);
   expect((await post(`${http}/api/sessions`, { ...body, change: "../../etc" })).status).toBe(400);
   expect((await post(`${http}/api/sessions`, { ...body, action: "deploy" })).status).toBe(400);
+  // The route refuses on the sub-state as well: `validate` before `Done`, `implement` once the change is validating.
+  expect((await post(`${http}/api/sessions`, { ...body, action: "validate" })).status).toBe(400);
+  expect((await post(`${http}/api/sessions`, { ...body, change: "confirm-retention", action: "implement" })).status).toBe(400);
+  expect(h.manager.list().length).toBe(1); // still only the session opened above: nothing was started
   expect((await fetch(`${http}/api/sessions/${session.id}`, { method: "DELETE", headers: JSON_HEADERS })).status).toBe(409); // still running
   expect((await fetch(`${http}/api/sessions/${session.id}/terminal`)).status).toBe(403); // a plain GET without the page's Origin
   expect((await fetch(`${http}/api/sessions/${session.id}/terminal`, { headers: { origin: http } })).status).toBe(426); // right origin, but not a WebSocket
@@ -205,6 +211,7 @@ test("the main console: opened once, same-origin only, attachable, refused chang
   await waitFor(() => client.text().includes("you said: hello"), "console echo");
 
   expect((await post(`${http}/api/sessions/${session.id}/ship`)).status).toBe(409);
+  expect((await post(`${http}/api/sessions/${session.id}/resolve-conflicts`)).status).toBe(409);
   expect((await post(`${http}/api/sessions/${session.id}/prompt`, { action: "implement" })).status).toBe(409);
   expect((await fetch(`${http}/api/sessions/${session.id}/worktree`)).status).toBe(409);
   const closed = await post(`${http}/api/sessions/${session.id}/close`, { removeWorktree: true });
@@ -233,4 +240,61 @@ test("saving a console folder inside a tracked repository is refused; a folder a
   const above = await put(`${h.repoPath}/..`);
   expect(above.status).toBe(200);
   expect((await above.json()).agentSessions.consoleDir).toBe(h.repoPath.replace(/\/demo-ops$/, ""));
+});
+
+test("the resolve-conflicts route answers each refusal with its own status, and only for a same-origin request", async () => {
+  const h = await harness();
+  const { http } = await serve(h);
+  const route = (id: string) => `${http}/api/sessions/${id}/resolve-conflicts`;
+
+  expect((await post(route("no-such-session"))).status).toBe(404);
+
+  const session = await h.manager.open({ repoId: h.repoId, change: "upgrade-runtime", action: "implement" });
+  await waitFor(() => h.manager.get(session.id).state === "running", "the agent");
+  // The branch still merges: there is nothing to resolve.
+  const nothing = await post(route(session.id));
+  expect(nothing.status).toBe(409);
+  expect((await nothing.json()).error).toMatch(/no conflicts to resolve/);
+
+  // A cross-site page in the same browser must not reach it, loopback or not.
+  const foreign = await post(route(session.id), undefined, { "content-type": "application/json", origin: "https://example.com" });
+  expect(foreign.status).toBe(403);
+
+  h.config.agentSessions.enabled = false;
+  expect((await post(route(session.id))).status).toBe(403);
+});
+
+test("resolve conflicts is refused for a session that runs in a folder without git", async () => {
+  const h = await harness({ git: false });
+  const { http } = await serve(h);
+  const session = await h.manager.open({ repoId: h.repoId, change: "upgrade-runtime", action: "implement" });
+  expect(session.inPlace).toBe(true);
+  const refused = await post(`${http}/api/sessions/${session.id}/resolve-conflicts`);
+  expect(refused.status).toBe(400);
+  expect((await refused.json()).error).toMatch(/not a git repository/);
+});
+
+test("resolve conflicts on an ended session whose agent is gone answers 503 and starts nothing", async () => {
+  const h = await harness();
+  const { http } = await serve(h);
+  const session = await h.manager.open({ repoId: h.repoId, change: "upgrade-runtime", action: "implement" });
+  await waitFor(() => h.manager.get(session.id).state === "running", "the agent");
+  h.manager.write(session.id, "exit\r");
+  await waitFor(() => h.manager.get(session.id).state === "exited", "exit");
+
+  // Give the branch a conflict, so the refusal can only be about the missing executable.
+  await writeFile(join(session.worktreePath, "shared.txt"), "branch side\n");
+  git(session.worktreePath, "add", "-A");
+  git(session.worktreePath, "commit", "-q", "-m", "branch edit");
+  await writeFile(join(h.repoPath, "shared.txt"), "main side\n");
+  git(h.repoPath, "add", "-A");
+  git(h.repoPath, "commit", "-q", "-m", "main edit");
+
+  const agent = h.config.agentSessions.agents[0];
+  agent.command = ["osd-no-such-agent-binary", "{prompt}"];
+  agent.resumeCommand = undefined;
+
+  const refused = await post(`${http}/api/sessions/${session.id}/resolve-conflicts`);
+  expect(refused.status).toBe(503);
+  expect(h.manager.get(session.id).state).toBe("exited");
 });

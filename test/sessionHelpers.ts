@@ -1,6 +1,6 @@
 import { cp, realpath } from "node:fs/promises";
 import { join } from "node:path";
-import { defaultConfig, newRepoConfig } from "../src/server/config.ts";
+import { defaultAgentSessions, defaultConfig, newRepoConfig } from "../src/server/config.ts";
 import { scanRepo } from "../src/server/scanner.ts";
 import { SessionManager, type ManagerDeps } from "../src/server/sessions/manager.ts";
 import type { AgentProfile, Config, Snapshot } from "../src/shared/types.ts";
@@ -59,7 +59,7 @@ export async function tempPlainRepo(): Promise<string> {
 export async function harness(overrides: { enabled?: boolean; repoOff?: boolean; agent?: Partial<AgentProfile>; git?: boolean } = {}): Promise<Harness> {
   const repoPath = overrides.git === false ? await tempPlainRepo() : await tempGitRepo();
   const repo = { ...newRepoConfig(repoPath, true), agent: overrides.repoOff ? { enabled: false } : undefined };
-  const config: Config = { ...defaultConfig(), repos: [repo], agentSessions: { enabled: overrides.enabled ?? true, agents: [fakeProfile(overrides.agent)], defaultAgent: "fake" } };
+  const config: Config = { ...defaultConfig(), repos: [repo], agentSessions: { ...defaultAgentSessions(), enabled: overrides.enabled ?? true, agents: [fakeProfile(overrides.agent)], defaultAgent: "fake" } };
   const snapshot: Snapshot = { generatedAt: new Date().toISOString(), repos: [await scanRepo(repo)] };
   const newManager = (extra: Partial<ManagerDeps> = {}) => new SessionManager({ getConfig: () => config, getSnapshot: () => snapshot, typePromptDelayMs: 150, ...extra });
   return { config, snapshot, repoId: repo.id, repoPath, manager: newManager(), newManager };

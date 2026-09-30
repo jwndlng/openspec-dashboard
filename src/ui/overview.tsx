@@ -137,7 +137,7 @@ function Row({ row, stages, now }: { row: OverviewRow; stages: string[]; now: nu
       <td class="when" title={row.lastUpdatedAt ?? "no activity date"}>
         {lastUpdated(row, now)}
       </td>
-      <td class="row-actions">{row.isGit && row.ok && <PullButton repoId={row.id} compact />}</td>
+      <td class="row-actions">{row.isGit && row.ok && <PullButton repoId={row.id} repoName={row.name} compact />}</td>
     </tr>
   );
 }
@@ -188,7 +188,7 @@ function Tile({ row, stages, now, hue }: { row: OverviewRow; stages: string[]; n
             updated {lastUpdated(row, now)}
           </span>
         </div>
-        {row.isGit && row.ok && <PullButton repoId={row.id} compact />}
+        {row.isGit && row.ok && <PullButton repoId={row.id} repoName={row.name} compact />}
       </header>
       <div class="tile-badges">
         <RepoBadges row={row} />

@@ -1,8 +1,11 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import { availableName, nameHints } from "../shared/nameHints.ts";
-import type { Config, DiscoveredRepo, DiscoverResult, RepoConfig, Snapshot } from "../shared/types.ts";
+import { integrateUnavailable, type Config, type DiscoveredRepo, type DiscoverResult, type IntegratableRepo, type RepoConfig, type Snapshot } from "../shared/types.ts";
 import { AgentSettings } from "./agentSettings.tsx";
 import { api, ApiError } from "./api.ts";
+import { EnvironmentPanel } from "./environment.tsx";
+import { environmentAttention, environmentCount, type EnvironmentState } from "./environmentState.ts";
+import { useSessionUi } from "./sessions.tsx";
 import { SettingsNav, type SettingsSection, SettingsSections, useSectionNav } from "./settingsNav.tsx";
 import { SharedConfigPanel } from "./sharedConfig.tsx";
 
@@ -12,15 +15,22 @@ interface Props {
   onSaved: (config: Config) => void;
   /** Something changed that the next scan will pick up (shared config saved or applied). */
   onRescan: () => void;
+  /** The latest environment report, owned by the app shell: the hero reads the same one. */
+  environment: EnvironmentState;
+  /** **Re-check**: asks for a fresh report. Nothing about it belongs to the page's draft. */
+  onRecheckEnvironment: () => void;
 }
 
-export function Settings({ config, snapshot, onSaved, onRescan }: Props) {
+export function Settings({ config, snapshot, onSaved, onRescan, environment, onRecheckEnvironment }: Props) {
   const [draft, setDraft] = useState<Config | null>(config);
   const [dirty, setDirty] = useState(false);
   const [newRoot, setNewRoot] = useState("");
   const [newIgnore, setNewIgnore] = useState("");
   const [discovering, setDiscovering] = useState(false);
   const [candidates, setCandidates] = useState<DiscoveredRepo[]>([]);
+  const [integratable, setIntegratable] = useState<IntegratableRepo[]>([]);
+  const [integrating, setIntegrating] = useState<string>();
+  const [integrateError, setIntegrateError] = useState<{ path: string; reason: string }>();
   const [discovered, setDiscovered] = useState(false);
   const discoverSeq = useRef(0);
   const [discoverErrors, setDiscoverErrors] = useState<DiscoverResult["errors"]>([]);
@@ -41,6 +51,7 @@ export function Settings({ config, snapshot, onSaved, onRescan }: Props) {
     const seq = ++discoverSeq.current;
     if (roots.length === 0) {
       setCandidates([]);
+      setIntegratable([]);
       setDiscoverErrors([]);
       setDiscovered(false);
       setDiscovering(false);
@@ -51,6 +62,7 @@ export function Settings({ config, snapshot, onSaved, onRescan }: Props) {
       const result = await api.discover(roots, ignorePaths);
       if (seq !== discoverSeq.current) return;
       setCandidates(result.candidates);
+      setIntegratable(result.integratable);
       setDiscoverErrors(result.errors);
       setDiscovered(true);
     } catch (err) {
@@ -61,6 +73,7 @@ export function Settings({ config, snapshot, onSaved, onRescan }: Props) {
     }
   };
 
+  const ui = useSessionUi();
   const loaded = config !== null;
   useEffect(() => {
     if (config && config.scanRoots.length > 0) void runDiscovery(config.scanRoots, config.ignorePaths);
@@ -68,7 +81,7 @@ export function Settings({ config, snapshot, onSaved, onRescan }: Props) {
 
   // Hooks first: the ids are all the hook needs, and they are known before the draft is.
   const scroller = useRef<HTMLDivElement>(null);
-  const sectionIds = draft ? ["roots", "tracked", "discovered", "scanning", "agents", ...(config ? ["shared-config"] : [])] : [];
+  const sectionIds = draft ? ["roots", "tracked", "discovered", "integratable", "scanning", "agents", ...(config ? ["shared-config"] : []), "environment"] : [];
   const nav = useSectionNav(scroller, sectionIds);
 
   if (!draft) return <div class="settings">Loading…</div>;
@@ -133,7 +146,27 @@ export function Settings({ config, snapshot, onSaved, onRescan }: Props) {
   const draftIds = new Set(draft.repos.map((r) => r.id));
   const newCandidates = candidates.filter((c) => !draftIds.has(c.id));
   const enabledCount = draft.repos.filter((r) => r.enabled).length;
-  const hints = nameHints([...draft.repos, ...newCandidates]);
+  // Already tracked in the draft, or already being set up: neither is still waiting for OpenSpec.
+  const newIntegratable = integratable.filter((r) => !draftIds.has(r.id));
+  const hints = nameHints([...draft.repos, ...newCandidates, ...newIntegratable]);
+  // Why Integrate cannot be offered at all. The rows are listed either way: knowing the repository is there is useful
+  // before deciding to turn agent sessions on.
+  const integrateOff = integrateUnavailable(draft, ui.agents);
+  const runningFor = (path: string) => ui.integrations.find((s) => s.folder === path && s.state === "running");
+  const integrate = async (repo: IntegratableRepo) => {
+    setIntegrating(repo.path);
+    setIntegrateError(undefined);
+    try {
+      const session = await api.startIntegration(repo.path);
+      await ui.refresh();
+      ui.showIntegration(session.id);
+    } catch (err) {
+      // A session that was never created has no panel to report itself in, so the row says why.
+      setIntegrateError({ path: repo.path, reason: err instanceof Error ? err.message : String(err) });
+    } finally {
+      setIntegrating(undefined);
+    }
+  };
   const hintBadge = (id: string) => {
     const hint = hints.get(id);
     return hint ? <span class="badge mono" title="another listed repository has the same name">{hint}</span> : null;
@@ -228,6 +261,8 @@ export function Settings({ config, snapshot, onSaved, onRescan }: Props) {
       label: "Discovered",
       count: discovering ? "…" : String(newCandidates.length),
       attention: !discovering && newCandidates.length > 0,
+      countNote: "new",
+      countTitle: "waiting to be enabled",
       content: (
         <section class="panel">
           <h2>Discovered · {newCandidates.length} not tracked{discovering ? " · discovering…" : ""}</h2>
@@ -265,6 +300,55 @@ export function Settings({ config, snapshot, onSaved, onRescan }: Props) {
       ),
     },
     {
+      id: "integratable",
+      label: "Without OpenSpec",
+      count: discovering ? "…" : String(newIntegratable.length),
+      content: (
+        <section class="panel">
+          <h2>Without OpenSpec · {newIntegratable.length} repositories{discovering ? " · discovering…" : ""}</h2>
+          <p class="hint">
+            Git repositories under the workspace roots that do not use OpenSpec yet — the list above is for repositories that already do. <strong>Integrate</strong> starts your
+            agent in the repository to run <code>openspec init</code> there; the dashboard tracks it once{" "}
+            <code>openspec/config.yaml</code> exists. The agent works <strong>in the checkout itself</strong>, with no branch and no undo.
+          </p>
+          {integrateOff && <div class="notice">Integrate is unavailable: {integrateOff}.</div>}
+          <div class="list">
+            {newIntegratable.map((repo) => {
+              const running = runningFor(repo.path);
+              return (
+                <div class="item candidate integratable" key={repo.id}>
+                  <span class="name">{repo.name}</span>
+                  <span class="path" title={repo.path}>
+                    {hintBadge(repo.id)} {repo.path}
+                  </span>
+                  <span class="row">
+                    {running ? (
+                      <button type="button" class="btn sm" onClick={() => ui.showIntegration(running.id)}>
+                        Setting up…
+                      </button>
+                    ) : (
+                      <button type="button" class="btn sm" disabled={integrateOff !== undefined || integrating === repo.path} title={integrateOff ?? `Run openspec init in ${repo.path}`} onClick={() => void integrate(repo)}>
+                        {integrating === repo.path ? "Starting…" : "Integrate"}
+                      </button>
+                    )}
+                    <button type="button" class="btn sm ghost" title="add this path to the ignored paths" onClick={() => ignore(repo.path)}>
+                      Ignore
+                    </button>
+                  </span>
+                  {integrateError?.path === repo.path && <span class="hint danger">{integrateError.reason}</span>}
+                </div>
+              );
+            })}
+            {newIntegratable.length === 0 && (
+              <span class="hint">
+                {draft.scanRoots.length === 0 ? "Add a workspace root to discover repositories." : discovering ? "Discovering…" : discovered ? "Every repository under the roots already uses OpenSpec." : ""}
+              </span>
+            )}
+          </div>
+        </section>
+      ),
+    },
+    {
       id: "scanning",
       label: "Scanning",
       content: (
@@ -284,6 +368,16 @@ export function Settings({ config, snapshot, onSaved, onRescan }: Props) {
     { id: "agents", label: "Agent sessions", content: <AgentSettings draft={draft} update={update} /> },
     // Works on the saved config, not the draft above: it has its own save and only ever targets tracked repositories.
     ...(config ? [{ id: "shared-config", label: "Shared OpenSpec config", content: <SharedConfigPanel config={config} snapshot={snapshot} onApplied={onRescan} /> }] : []),
+    // Last: it configures nothing, and it is where the hero's environment indicator links to. Outside the draft, so
+    // re-checking never marks the page as having unsaved changes.
+    {
+      id: "environment",
+      label: "Environment",
+      count: environmentCount(environment),
+      attention: environmentAttention(environment),
+      countTitle: "checks that need attention",
+      content: <EnvironmentPanel state={environment} onRecheck={onRecheckEnvironment} />,
+    },
   ];
 
   return (

@@ -4,7 +4,7 @@ import { realpathSync } from "node:fs";
 import { mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { ConfigValidationError, defaultAgentSessions, defaultConfig, loadConfig, newRepoConfig, repoId, saveConfig, validateConfig, validateIgnorePaths } from "../src/server/config.ts";
-import { CLAUDE_PROFILE } from "../src/shared/agentDefaults.ts";
+import { CLAUDE_PROFILE, DEFAULT_SHORTCUTS, FORMER_PROMPTS } from "../src/shared/agentDefaults.ts";
 import { tempDir, useTempHome } from "./helpers.ts";
 
 let home: string;
@@ -93,6 +93,37 @@ test("the former preconfigured Archive prompt is read as the current one; anythi
   expect(upgraded.prompts).toEqual(CLAUDE_PROFILE.prompts); // the other prompts are untouched
 });
 
+const withPrompts = (prompts: Record<string, string>, id = "claude") => {
+  const agent = { ...CLAUDE_PROFILE, id, prompts };
+  return { ...defaultConfig(), agentSessions: { enabled: true, agents: [agent], defaultAgent: id } };
+};
+const promptsOf = (input: unknown) => validateConfig(input).agentSessions.agents[0].prompts;
+
+test("former preconfigured prompts are upgraded per starter, so one never rewrites another", () => {
+  const FORMER_IMPLEMENT = "/opsx:apply {change}";
+  const FORMER_SYNCING_ARCHIVE = FORMER_PROMPTS.archive?.at(-1) as string;
+  expect(FORMER_PROMPTS.implement).toContain(FORMER_IMPLEMENT);
+  expect(CLAUDE_PROFILE.prompts.implement).not.toBe(FORMER_IMPLEMENT);
+  expect(CLAUDE_PROFILE.prompts.archive).not.toBe(FORMER_SYNCING_ARCHIVE);
+
+  // What every installation on the previous version has saved: both former texts, verbatim. Both upgrade — and neither
+  // a Validate nor an Integrate prompt is invented, because the rule only ever replaces a prompt that is there
+  // (agent-sessions spec).
+  const { validate: _validate, integrate: _integrate, ...upgraded } = CLAUDE_PROFILE.prompts;
+  expect(promptsOf(withPrompts({ draft: "/opsx:ff {change}", implement: FORMER_IMPLEMENT, archive: FORMER_SYNCING_ARCHIVE }))).toEqual(upgraded);
+
+  // An edited Implement prompt is the user's and stays; the untouched Archive one still upgrades.
+  const edited = "/opsx:apply {change} and stop after each task";
+  expect(promptsOf(withPrompts({ implement: edited, archive: FORMER_SYNCING_ARCHIVE }))).toEqual({ implement: edited, archive: CLAUDE_PROFILE.prompts.archive });
+
+  // A removed starter stays removed, and a profile the user added is never touched.
+  expect(promptsOf(withPrompts({ archive: FORMER_SYNCING_ARCHIVE })).implement).toBeUndefined();
+  expect(promptsOf(withPrompts({ implement: FORMER_IMPLEMENT, archive: FORMER_SYNCING_ARCHIVE }, "my-agent"))).toEqual({ implement: FORMER_IMPLEMENT, archive: FORMER_SYNCING_ARCHIVE });
+
+  // Nothing invents a Validate prompt for a profile that has none: the new starter is simply not offered there.
+  expect(promptsOf(withPrompts({ implement: FORMER_IMPLEMENT })).validate).toBeUndefined();
+});
+
 test("a config file with the former Archive prompt loads upgraded, is not rewritten by loading, and saves the new prompt", async () => {
   const path = join(home, "config.json");
   const former = `${JSON.stringify(withArchive(FORMER_ARCHIVE), null, 2)}\n`;
@@ -104,6 +135,105 @@ test("a config file with the former Archive prompt loads upgraded, is not rewrit
   await saveConfig(config);
   expect(JSON.parse(await readFile(path, "utf8")).agentSessions.agents[0].prompts.archive).toBe(CLAUDE_PROFILE.prompts.archive);
   expect((await loadConfig()).config.agentSessions.agents[0].prompts.archive).toBe(CLAUDE_PROFILE.prompts.archive);
+});
+
+const withShortcuts = (shortcuts: unknown) => {
+  const cfg = defaultConfig();
+  return { ...cfg, agentSessions: { ...cfg.agentSessions, shortcuts } };
+};
+const shortcutsOf = (input: unknown) => validateConfig(input).agentSessions.shortcuts;
+const refuse = (input: unknown) => expect(() => validateConfig(input)).toThrow(ConfigValidationError);
+
+test("a config that does not mention shortcuts carries the shipped ones; an empty list is the user's own", () => {
+  const { agentSessions, ...noAgentSessions } = defaultConfig();
+  const { shortcuts: _none, ...withoutShortcuts } = agentSessions;
+  expect(shortcutsOf({ ...noAgentSessions, agentSessions: withoutShortcuts })).toEqual([...DEFAULT_SHORTCUTS]);
+  expect(shortcutsOf(noAgentSessions)).toEqual([...DEFAULT_SHORTCUTS]);
+  expect(shortcutsOf(withShortcuts([]))).toEqual([]);
+});
+
+test("a saved shortcut list is carried through unchanged: no default is ever added back", () => {
+  const mine = [
+    { id: "ship", title: "Ship it", prompt: "Commit the work, push the branch and open a pull request; ask me before force-pushing." },
+    { id: "review", title: "Review", prompt: "Review your own diff and list what you would change." },
+  ];
+  expect(shortcutsOf(withShortcuts(mine))).toEqual(mine);
+  expect(shortcutsOf(withShortcuts(structuredClone(DEFAULT_SHORTCUTS).slice(0, 1)))).toEqual([DEFAULT_SHORTCUTS[0]]);
+});
+
+test("a shortcut's title and prompt are validated where every other prompt is", () => {
+  const ok = { id: "ship", title: "Ship it", prompt: "Open a pull request." };
+  expect(shortcutsOf(withShortcuts([ok]))).toEqual([ok]);
+  // Trimmed on the way in, like the agent name and the starter prompts.
+  expect(shortcutsOf(withShortcuts([{ ...ok, title: "  Ship it  ", prompt: "  Open a pull request.  " }]))).toEqual([ok]);
+
+  refuse(withShortcuts([{ ...ok, title: "" }]));
+  refuse(withShortcuts([{ ...ok, title: "   " }]));
+  refuse(withShortcuts([{ ...ok, title: "x".repeat(41) }]));
+  refuse(withShortcuts([{ ...ok, prompt: "" }]));
+  // A newline would submit the text past the echo check that decides about Enter.
+  refuse(withShortcuts([{ ...ok, prompt: "First line\nSecond line" }]));
+  refuse(withShortcuts([{ ...ok, prompt: "tab\tseparated" }]));
+  refuse(withShortcuts([{ ...ok, prompt: "x".repeat(2001) }]));
+  // The dashboard does not help switch off an agent's permission checks, here as anywhere else.
+  refuse(withShortcuts([{ ...ok, prompt: "Run it with --dangerously-skip-permissions" }]));
+  refuse(withShortcuts([{ ...ok, id: "Ship It" }]));
+  refuse(withShortcuts([ok, { ...ok, title: "Again" }])); // duplicate ids
+  refuse(withShortcuts([{ title: "No id", prompt: "x" }]));
+  refuse(withShortcuts("not a list"));
+});
+
+test("a config file without shortcuts loads with the shipped ones and is not rewritten by loading", async () => {
+  const path = join(home, "config.json");
+  const { agentSessions, ...rest } = defaultConfig();
+  const { shortcuts: _none, ...withoutShortcuts } = agentSessions;
+  const saved = `${JSON.stringify({ ...rest, agentSessions: withoutShortcuts }, null, 2)}\n`;
+  await writeFile(path, saved, "utf8");
+  const { config, warning } = await loadConfig();
+  expect(warning).toBeUndefined();
+  expect(config.agentSessions.shortcuts).toEqual([...DEFAULT_SHORTCUTS]);
+  expect(await readFile(path, "utf8")).toBe(saved);
+  // Saving writes them; emptying the list and saving keeps it empty across a reload.
+  await saveConfig({ ...config, agentSessions: { ...config.agentSessions, shortcuts: [] } });
+  expect(JSON.parse(await readFile(path, "utf8")).agentSessions.shortcuts).toEqual([]);
+  expect((await loadConfig()).config.agentSessions.shortcuts).toEqual([]);
+});
+
+const withSuffixes = (promptSuffixes: Record<string, string>, id = "claude") => {
+  const agent = { ...CLAUDE_PROFILE, id, promptSuffixes };
+  return { ...defaultConfig(), agentSessions: { enabled: true, agents: [agent], defaultAgent: id } };
+};
+const suffixesOf = (input: unknown) => validateConfig(input).agentSessions.agents[0].promptSuffixes;
+
+test("additional instructions are validated per prompt: {change} is optional, Integrate takes no placeholder", () => {
+  const saved = { implement: "Run the linter before you finish.", ship: "Mention {change} in the PR title.", integrate: "Install it for the tools I name." };
+  expect(suffixesOf(withSuffixes(saved))).toEqual(saved);
+
+  // A suffix does not have to name the change — unlike the starter prompt it extends.
+  expect(suffixesOf(withSuffixes({ draft: "Ask me before you write specs." }))?.draft).toBe("Ask me before you write specs.");
+  // Any other placeholder is refused, per key, naming the field.
+  expect(() => validateConfig(withSuffixes({ implement: "Work in {repo}." }))).toThrow(/promptSuffixes\.implement: unknown placeholder/);
+  // Integrate is substituted into at all, so its suffix may carry no placeholder either.
+  expect(() => validateConfig(withSuffixes({ integrate: "Set up {change}." }))).toThrow(/promptSuffixes\.integrate: no placeholder is supported/);
+  // The dashboard never helps switch an agent's permission checks off, wherever the text sits.
+  expect(() => validateConfig(withSuffixes({ draft: "Run with --dangerously-skip-permissions." }))).toThrow(/promptSuffixes\.draft: must not contain a permission-bypass/);
+  // Whitespace only is nothing to append, and is refused rather than stored as a blank line.
+  expect(() => validateConfig(withSuffixes({ archive: "   \n  " }))).toThrow(ConfigValidationError);
+});
+
+test("a config saved before additional instructions existed loads with none, and a prompt upgrade leaves them alone", async () => {
+  // The legacy file has no promptSuffixes key at all: every prompt is composed exactly as it was.
+  const path = join(home, "config.json");
+  await writeFile(path, `${JSON.stringify(withArchive(FORMER_ARCHIVE), null, 2)}\n`, "utf8");
+  const { config, warning } = await loadConfig();
+  expect(warning).toBeUndefined();
+  expect(config.agentSessions.agents[0].promptSuffixes).toBeUndefined();
+
+  // Upgrading the former Archive prompt rewrites the prompt, never the suffixes beside it.
+  const withBoth = { ...withArchive(FORMER_ARCHIVE), agentSessions: { ...withArchive(FORMER_ARCHIVE).agentSessions, agents: [{ ...CLAUDE_PROFILE, prompts: { ...CLAUDE_PROFILE.prompts, archive: FORMER_ARCHIVE }, promptSuffixes: { archive: "Tell me what you archived." } }] } };
+  const upgraded = validateConfig(withBoth).agentSessions.agents[0];
+  expect(upgraded.prompts.archive).toBe(CLAUDE_PROFILE.prompts.archive);
+  expect(upgraded.promptSuffixes).toEqual({ archive: "Tell me what you archived." });
 });
 
 test("config without ignorePaths loads with an empty list", async () => {
@@ -172,4 +302,26 @@ test("a saved console folder that no longer exists still loads; its shape is sti
   expect(gone.agentSessions.consoleDir).toBe("/w/acme/was-here-once");
   expect(() => validateConfig({ ...base, agentSessions: { ...base.agentSessions, consoleDir: "acme" } })).toThrow(ConfigValidationError);
   expect(validateConfig(base).agentSessions.consoleDir).toBeUndefined();
+});
+
+test("the Resolve conflicts prompt and its suffix survive a round trip, like Ship's", () => {
+  // Without this the key is silently stripped on load, and a configured prompt quietly stops being used.
+  const agent = {
+    ...CLAUDE_PROFILE,
+    prompts: { ...CLAUDE_PROFILE.prompts, resolveConflicts: "Rebase {change} onto the default branch and fix the clashes." },
+    promptSuffixes: { resolveConflicts: "We rebase here, never merge." },
+  };
+  const config = validateConfig({ ...defaultConfig(), agentSessions: { enabled: true, agents: [agent], defaultAgent: "claude" } });
+  expect(config.agentSessions.agents[0].prompts.resolveConflicts).toBe("Rebase {change} onto the default branch and fix the clashes.");
+  expect(config.agentSessions.agents[0].promptSuffixes?.resolveConflicts).toBe("We rebase here, never merge.");
+
+  // Like Ship, it speaks about the worktree the agent sits in, so naming the change is optional.
+  expect(suffixesOf(withSuffixes({ resolveConflicts: "Run the checks before pushing." }))?.resolveConflicts).toBe("Run the checks before pushing.");
+  const noChange = { ...CLAUDE_PROFILE, prompts: { ...CLAUDE_PROFILE.prompts, resolveConflicts: "Make this branch merge again." } };
+  expect(validateConfig({ ...defaultConfig(), agentSessions: { enabled: true, agents: [noChange], defaultAgent: "claude" } }).agentSessions.agents[0].prompts.resolveConflicts).toBe("Make this branch merge again.");
+
+  // The usual guards still apply to it.
+  const bypass = { ...CLAUDE_PROFILE, prompts: { ...CLAUDE_PROFILE.prompts, resolveConflicts: "Fix it with --dangerously-skip-permissions." } };
+  expect(() => validateConfig({ ...defaultConfig(), agentSessions: { enabled: true, agents: [bypass], defaultAgent: "claude" } })).toThrow(/permission-bypass/);
+  expect(() => validateConfig(withSuffixes({ resolveConflicts: "Work in {repo}." }))).toThrow(/promptSuffixes\.resolveConflicts: unknown placeholder/);
 });

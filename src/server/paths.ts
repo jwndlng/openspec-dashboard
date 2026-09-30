@@ -39,6 +39,16 @@ export function cachePath(): string {
   return join(dashboardHome(), "cache", "snapshot.json");
 }
 
+/**
+ * Object store for the in-memory merges that decide a work status's conflict signal. `git merge-tree --write-tree`
+ * writes the tree it produces somewhere; pointing it here (with the repository's own objects offered only as an
+ * alternate) is what keeps the check a read of the tracked repository. Nothing in it is worth keeping: it is created
+ * on demand and emptied on start-up.
+ */
+export function mergeScratchDir(): string {
+  return join(dashboardHome(), "merge-scratch");
+}
+
 /** Expands a leading `~` and normalises; relative paths stay relative so validation can reject them. */
 export function expandPath(p: string): string {
   if (p === "~") return homedir();
@@ -62,4 +72,13 @@ export function canonicalPath(p: string): string {
     resolved = expanded;
   }
   return resolved.length > parse(resolved).root.length ? resolved.replace(/[\\/]+$/, "") : resolved;
+}
+
+/**
+ * Where an executable is found on the PATH, or undefined. Deliberately passes `PATH` explicitly: `Bun.which(cmd)` uses
+ * the PATH captured when the process started, so it would not see a PATH the process changed — which is exactly what a
+ * test does, and what an environment check has to be able to observe.
+ */
+export function whichOnPath(command: string): string | undefined {
+  return Bun.which(command, { PATH: process.env.PATH ?? "" }) ?? undefined;
 }

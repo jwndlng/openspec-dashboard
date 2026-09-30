@@ -6,6 +6,7 @@ import { cdCommand } from "../src/ui/format.ts";
 import { checkoutsNeedingAttention } from "../src/ui/checkout.tsx";
 import { attentionCount, checkoutSummary, enabledOnly, filterRows, monogram, overviewRows, parseOverviewState, serializeOverviewState, sortRows, toggleSort, wipIndicator } from "../src/ui/overviewState.ts";
 import { repoPath, routeFromPath } from "../src/ui/routes.ts";
+import { isComplete } from "../src/shared/columns.ts";
 
 function change(repoId: string, name: string, column: string, extra: Partial<ChangeSnapshot> = {}): ChangeSnapshot {
   const stage = column === "Done" ? "done" : column === "Archived" ? "archived" : column === "Implementing" ? "implementing" : column === "Backlog" ? "backlog" : "drafts";
@@ -278,3 +279,18 @@ test("the repository header counts the checkouts holding work", () => {
   ).toBe(2);
 });
 
+
+test("the Done column and every 'to archive' count cover both sub-states", () => {
+  const changes = [
+    change("z", "verified", "Done", { subState: "complete", tasks: { done: 12, awaiting: 0, total: 12 } }),
+    change("z", "awaiting-one", "Done", { subState: "validate", tasks: { done: 13, awaiting: 2, total: 15 } }),
+    change("z", "awaiting-two", "Done", { subState: "validate", tasks: { done: 0, awaiting: 9, total: 9 } }),
+    change("z", "building", "Implementing", { tasks: { done: 1, awaiting: 1, total: 4 } }),
+  ];
+  const [row] = overviewRows({ generatedAt: "", repos: [repo("z", "gamma-net", changes)] });
+  // `Done` is one column with one count; a change awaiting validation can be archived, so it is counted.
+  expect(row.stageCounts).toEqual({ Done: 3, Implementing: 1 });
+  expect([row.open, row.toArchive, row.archived]).toEqual([4, 3, 0]);
+  // And the board's own "To archive" stat is the same rule (`isComplete`), which is per stage, not per sub-state.
+  expect(changes.filter((c) => isComplete(c.stage)).length).toBe(3);
+});

@@ -350,6 +350,9 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: 
 }
 .select-control select option { color: var(--fg-heading); background: var(--bg-raised); }
 .select-control > .icon:last-child { pointer-events: none; }
+/* The same select control at status-corner size: the corner runs on `.btn.sm`, not on the filter bar's 34px. */
+.control.status-control { height: auto; padding: 3px 9px; gap: 5px; font-size: 12px; border-radius: var(--radius-sm); }
+.control.status-control select { padding: 0 14px 0 0; margin-right: -14px; font-size: 12px; }
 /* A switch: a track and a thumb before the label. */
 .switch {
   position: relative; flex: none; width: 28px; height: 16px; border-radius: 999px;
@@ -361,6 +364,8 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: 
 }
 .switch-control.on .switch { background: var(--brand-strong); }
 .switch-control.on .switch::after { transform: translateX(12px); background: var(--on-brand); }
+.switch-control:disabled { color: var(--fg-disabled); cursor: default; }
+.switch-control:disabled .switch { opacity: 0.5; }
 /* The Repositories menu. */
 .menu { position: relative; }
 .menu-list {
@@ -513,13 +518,12 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: 
 @media (prefers-reduced-motion: no-preference) {
   .card:hover { transform: translateY(-2px); }
 }
-/* The name owns the card's width; the session status and console link get a line of their own below it. */
-.card-top { display: flex; flex-direction: column; align-items: stretch; gap: 6px; min-width: 0; }
+/* The name and its age own the card's width apart from the console link's slot at the top right; `min-width: 0` on the
+   title is what makes the name wrap inside what that slot leaves instead of pushing it out of the card. */
+.card-top { display: flex; align-items: flex-start; gap: 8px; min-width: 0; }
 .card .name { min-width: 0; font-family: var(--font-mono); font-size: 13px; font-weight: 600; line-height: 19px; color: var(--fg-heading); word-break: break-word; text-transform: none; letter-spacing: 0; }
-.card-title { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.card-title { flex: 1; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .card-title .age { font-family: var(--font-mono); font-size: 11px; color: var(--fg-subtle); }
-.card-status { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-start; gap: 4px; }
-.card-status:empty { display: none; }
 /* The quick way into a change's agent console; neutral, since blue on the board means a running agent. */
 .card .console-link {
   flex: none; display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 20px;
@@ -538,14 +542,22 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: 
 .card .show-details:focus-visible { outline: 2px solid var(--brand); outline-offset: 1px; color: var(--brand-fg); }
 .card .meta { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding-top: 9px; border-top: 1px solid var(--border-light); }
 .card .meta > * { min-width: 0; }
+/* The running session's badge stands in for the starter here, so it sits on the starter's line and at its height. */
+.card .meta .session-badge { padding-block: 3px; }
 /* The age is quiet text, not a chip. */
 .card .warn-text { color: var(--warning); font-size: 11px; }
 
 /* Progress meter: thin, rounded ends, value in text tokens beside it. */
 .meter { display: flex; align-items: center; gap: 8px; }
-.meter .track { flex: 1; height: 4px; border-radius: 999px; background: var(--bg-surface); overflow: hidden; }
-.meter .fill { height: 100%; border-radius: 999px; background: var(--brand); }
+.meter .track { display: flex; flex: 1; height: 4px; border-radius: 999px; background: var(--bg-surface); overflow: hidden; }
+.meter .fill { flex: none; height: 100%; border-radius: 999px; background: var(--brand); }
 .meter.full .fill { background: var(--success); }
+/* Tasks the agent finished and a person has still to confirm: hatched, so the segment is never colour alone. */
+.meter.has-awaiting .fill { border-radius: 999px 0 0 999px; }
+.meter .awaiting {
+  flex: none; height: 100%; border-radius: 0 999px 999px 0;
+  background: repeating-linear-gradient(135deg, var(--warning) 0 2px, var(--warning-bg) 2px 5px);
+}
 .meter .value { font-family: var(--font-mono); font-size: 11px; color: var(--fg-subtle); min-width: 42px; text-align: right; }
 /* The card's value names its unit (`2/4 Artifacts`), so it sizes to its text. */
 .meter .value.unit { flex: none; min-width: 0; white-space: nowrap; }
@@ -591,6 +603,18 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: 
 
 /* ---- Pull ---- */
 .pull { display: inline-flex; align-items: center; gap: 6px; }
+/* A blocked pull has a list behind it: the badge becomes the way in, still reading as a badge. */
+.pull-badge-button { cursor: pointer; text-decoration: underline; text-decoration-style: dotted; text-underline-offset: 2px; font-family: inherit; }
+.pull-badge-button:hover, .pull-badge-button:focus-visible { border-color: var(--border-strong); color: var(--fg); }
+.pull-blocked { display: flex; flex-direction: column; gap: 10px; padding: 16px 20px 18px; }
+.pull-blocked .hint { margin: 0; font-size: 12px; }
+.pull-blocked-files { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; font-size: 12px; }
+.pull-blocked-files li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
+.pull-blocked-files .mono { overflow-wrap: anywhere; }
+.notice .pull-blocked-files { margin-top: 6px; }
+.pull-blocked-actions { display: flex; align-items: center; gap: 8px; }
+/* Inline in the end-session dialog: the surrounding dialog brings its own padding. */
+.dialog-body .pull-blocked { padding: 0; }
 .row-actions { text-align: right; white-space: nowrap; }
 .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 
@@ -780,6 +804,21 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: 
 .new-change .hint { font-size: 11px; font-weight: 400; }
 .new-change .hint.danger { color: var(--danger); }
 
+/* Dismissing a change: the file list and its verdicts, then Cancel and the destructive button apart. */
+.dismiss-body { display: flex; flex-direction: column; gap: 12px; padding: 20px 24px 12px; }
+.dismiss-body .hint { margin: 0; font-size: 12px; }
+.dismiss-files { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; font-size: 12px; }
+.dismiss-files li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
+.dismiss-files .mono { overflow-wrap: anywhere; }
+.notice .dismiss-files { margin-top: 6px; }
+.dismiss-actions { display: flex; align-items: center; gap: 8px; padding: 14px 24px 18px; border-top: 1px solid var(--border-light); }
+/* Quiet in the header: it only reads as destructive once hovered or focused. */
+.btn.ghost.dismiss-change { flex: none; margin-left: auto; }
+.btn.ghost.dismiss-change:not(:disabled):hover, .btn.ghost.dismiss-change:focus-visible { color: var(--danger); border-color: var(--danger-border); background: var(--danger-bg); }
+.btn.ghost.dismiss-change:disabled { opacity: 0.55; cursor: not-allowed; }
+.app-notice { display: flex; align-items: center; gap: 8px; margin: 8px 16px 0; background: var(--bg-section); }
+.app-notice span { flex: 1; min-width: 0; }
+
 /* ---- Empty / notices ---- */
 .empty {
   margin: var(--gap-4) auto; max-width: 480px; text-align: center; padding: var(--gap-3);
@@ -828,8 +867,25 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: 
 .list .item { display: grid; grid-template-columns: auto minmax(120px, 200px) 1fr auto; gap: var(--gap-1); align-items: center; padding: 4px 6px; border-radius: var(--radius-sm); }
 .list .item:hover { background: var(--bg-raised); }
 .list .item .path { color: var(--fg-subtle); font-family: var(--font-mono); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* One environment check: status badge, what is checked, what was found, and how to fix it. The status badge carries the
+   colour; every row also says its status in words, so the de-emphasis below never becomes the only difference. */
+.list .item.env-check { grid-template-columns: auto minmax(140px, 220px) minmax(0, 1fr); align-items: baseline; }
+/* Only when at least one check has a remedy: with none, the found column takes the width instead. */
+.list.with-remedies .item.env-check { grid-template-columns: auto minmax(140px, 220px) minmax(0, 1fr) minmax(0, 1.2fr); }
+.list .item.env-check .label { font-weight: 500; }
+.list .item.env-check .remedy { font-size: 12px; }
+/* A check the configuration makes unnecessary: quieter, never hidden, and its text still meets the contrast rules. */
+.list .item.env-check.muted { opacity: 0.72; }
+.list .item.env-check.muted .label { font-weight: 400; color: var(--fg-subtle); }
+@media (max-width: 720px) {
+  /* Narrow: the four columns become two rows rather than shrinking the paths to nothing. */
+  .list .item.env-check { grid-template-columns: auto minmax(0, 1fr); }
+  .list .item.env-check .path, .list .item.env-check .remedy { grid-column: 1 / -1; }
+}
 .list .item.candidate { grid-template-columns: minmax(120px, 200px) 1fr auto; }
 .list .item.candidate .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* A repository waiting to be set up: the same row, with the refusal (when there is one) wrapping onto its own line. */
+.list .item.integratable .hint.danger { grid-column: 1 / -1; color: var(--danger); font-size: 11px; }
 .list .item.off .path, .list .item.off .name { color: var(--fg-disabled); }
 .savebar { position: sticky; bottom: 0; display: flex; gap: var(--gap-1); align-items: center; padding: var(--gap-1) var(--gap-2); background: var(--bg-section); border-top: 1px solid var(--border-light); }
 
@@ -845,6 +901,7 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: 
   .shared-config .profiles { grid-template-columns: 1fr; }
   .list .item { grid-template-columns: auto 1fr; }
   .list .item.candidate { grid-template-columns: 1fr auto; }
+  .list .item.integratable .row { grid-column: 1 / -1; }
   .list .item .path { grid-column: 1 / -1; }
 }
 
@@ -855,9 +912,11 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: 
 .session-head { display: flex; flex-direction: column; gap: 4px; padding: 4px var(--gap-1); border-bottom: 1px solid var(--border-light); }
 .session-head .hint { font-size: 12px; color: var(--fg-subtle); word-break: break-all; }
 .session-confirm { display: flex; flex-direction: column; gap: 6px; padding: var(--gap-1); border: 1px solid var(--warning-border); border-radius: var(--radius); background: var(--bg-raised); }
+/* An integration session edits a main checkout, so its panel says so above the terminal, not only once on the way in. */
+.in-place-note { font-size: 12px; }
 /* The agent's terminal fills the rest of the panel; the widget sizes itself to this box. */
 .session-terminal { flex: 1; min-height: 0; display: flex; flex-direction: column; background: var(--bg-base); }
-/* The terminal fills what the default responses leave; its ResizeObserver refits it when the row comes and goes. */
+/* The terminal fills what the shortcut row leaves; its ResizeObserver refits it when the row comes and goes. */
 .session-terminal-area { position: relative; flex: 1; min-height: 0; }
 .session-terminal-host { position: absolute; inset: 14px 8px 14px var(--detail-pad, 12px); }
 .session-unsent { flex: none; display: flex; align-items: flex-start; gap: 6px; margin: 6px 8px 0; }
@@ -875,6 +934,8 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: 
 .agent-card .agent-fields { margin-top: var(--gap-1); }
 .agent-repo { display: grid; grid-template-columns: minmax(140px, 220px) 1fr; gap: 4px var(--gap-1); align-items: center; padding: 4px 6px; }
 .agent-repo .path { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-mono); font-size: 11px; }
+.agent-shortcut { display: grid; grid-template-columns: minmax(120px, 200px) 1fr auto; gap: 4px var(--gap-1); align-items: center; padding: 4px 6px; }
+@media (max-width: 720px) { .agent-shortcut { grid-template-columns: 1fr; } }
 .agent-tools { display: flex; flex-direction: column; gap: 4px; }
 .agent-tools textarea { resize: vertical; }
 .open-work { position: relative; }
@@ -913,13 +974,7 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: 
   to { background-position: -50% 0; }
 }
 
-/* ---- The end-session dialog, and the close control on a running badge ---- */
-.session-chip { display: inline-flex; align-items: stretch; gap: 2px; }
-.badge-x {
-  padding: 0 5px; cursor: pointer; font: inherit; font-size: 10px; line-height: 16px; color: var(--fg-subtle);
-  background: var(--bg-section); border: 1px solid var(--border-light); border-radius: var(--radius-sm);
-}
-.badge-x:hover, .badge-x:focus-visible { color: var(--danger); border-color: var(--danger-border); }
+/* ---- The end-session dialog ---- */
 .end-overlay { z-index: 30; }
 .end-dialog { width: min(520px, 100%); }
 .btn.danger { color: var(--danger); border-color: var(--danger-border); background: var(--danger-bg); }
@@ -995,6 +1050,9 @@ body:has(.detail-overlay) { overflow: hidden; }
 .detail-head .spacer { flex: 1; }
 .detail-close { flex: none; font-size: 14px; line-height: 1; padding: 6px 10px; }
 .detail-meter.wide { width: 360px; max-width: 100%; margin-bottom: 20px; }
+.detail-meter .awaiting-note { margin: 8px 0 0; font-size: 12px; line-height: 1.5; color: var(--fg-subtle); }
+/* The third task state: neither ticked nor empty, and as inoperable as the other two. */
+.markdown li.task.awaiting > input[type="checkbox"] { accent-color: var(--warning); }
 .detail-tabs { display: flex; flex-wrap: wrap; gap: 4px; padding: 0 calc(var(--detail-pad) - 14px); background: var(--bg-section); border-bottom: 1px solid var(--border-light); }
 .detail-tab {
   display: inline-flex; align-items: center; gap: 8px; padding: 13px 14px 12px; font: inherit; font-size: 13px; font-weight: 500; cursor: pointer;
@@ -1088,6 +1146,8 @@ body:has(.detail-overlay) { overflow: hidden; }
 .console-head .hint { font-size: 12px; color: var(--fg-subtle); }
 .detail > .main-console { flex: 1; min-height: 0; border-left: none; }
 .console-empty .mono { font-size: 11px; word-break: break-all; }
+/* The starters of a change no agent has worked on yet: the tab's only offer, so it gets room under the explanation. */
+.console-starters { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 14px; }
 .console-sessions .console-session { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 10px 12px; }
 .console-session .console-session-what { font-weight: 600; }
 .console-session.on { background: var(--info-bg, var(--bg-surface)); border-color: var(--info-border); color: var(--fg-heading); }

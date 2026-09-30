@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { changeSessions, SHIPPABLE_WORK } from "../src/shared/types.ts";
 import { ApiError, type TerminalHandlers } from "../src/ui/api.ts";
 import { createDemoApi } from "../src/ui/demo/demoApi.ts";
-import { NEEDS_YOU_AFTER_MS, openWork, sessionBadge } from "../src/ui/sessionState.ts";
+import { conflictBadge, NEEDS_YOU_AFTER_MS, openWork, resolvable, sessionBadge } from "../src/ui/sessionState.ts";
 import type { Clock } from "../src/ui/demo/transcripts.ts";
 
 /** The demo API on a wall clock and a timer clock the test advances by hand. */
@@ -144,6 +144,11 @@ test("starting a session: validated like the dashboard, one per change, in memor
   expect(await refusal(api.openSession("nope", "idempotency-keys", "draft"))).toBe("404: unknown repository");
   expect(await refusal(api.openSession("6d44c1f8", "schema-registry", "implement"))).toBe("409: the repository's last scan failed");
 
+  // The sub-state decides too: a change in `Done` awaiting validation takes Validate, never Implement.
+  expect(await refusal(api.openSession("a71c02e9", "verify-rate-limit-headers", "implement"))).toBe('400: "implement" is not available for this change in its current stage');
+  const validating = await api.openSession("a71c02e9", "verify-rate-limit-headers", "validate");
+  expect(validating).toMatchObject({ state: "running", action: "validate", change: "verify-rate-limit-headers", agentName: "Demo Agent" });
+
   const started = await api.openSession("a71c02e9", "migrate-to-postgres-16", "implement");
   expect(started).toMatchObject({ state: "running", branch: "feat/migrate-to-postgres-16", agentName: "Demo Agent", worktreePath: "/home/demo/.openspec-dashboard/worktrees/a71c02e9/migrate-to-postgres-16" });
   expect((await api.openSession("a71c02e9", "migrate-to-postgres-16", "implement")).id).toBe(started.id);
@@ -212,7 +217,12 @@ test("deleting a record leaves its worktree reported; resume and next-step promp
   expect(sent.submitted).toBe(true); // one activation sends it, as in the dashboard
   advance(2000);
   expect(view.text()).toContain("/opsx:apply versioned-api-reference"); // the agent took it up
-  expect(await refusal(api.promptSession(pushed.id, "archive"))).toBe("400: archiving runs in its own session");
+  // Archive is a next step like any other now: into the same session, never a second console for the change.
+  const archiving = await api.promptSession(pushed.id, "archive");
+  expect([archiving.id, archiving.submitted, archiving.action]).toEqual([pushed.id, true, "archive"]);
+  advance(2000);
+  expect(view.text()).toContain("/opsx:archive versioned-api-reference");
+  expect(changeSessions((await api.sessions()).sessions).filter((s) => s.change === "versioned-api-reference" && s.state === "running")).toHaveLength(1);
 });
 
 test("switching sessions off hides them; nothing else breaks; callers cannot reach into the demo's state", async () => {
@@ -260,4 +270,90 @@ test("the demo console is refused while agent sessions are off", async () => {
   const config = await api.config();
   await api.saveConfig({ ...config, agentSessions: { ...config.agentSessions, enabled: false } });
   expect(await refusal(api.openConsole())).toBe("403: agent sessions are disabled");
+});
+
+test("integrating a repository in the demo: a recording in the folder itself, then a tracked repository with a board", async () => {
+  const { api, advance, terminal } = demo();
+  const { integratable, candidates } = await api.discover();
+  expect(integratable).toHaveLength(1);
+  const repo = integratable[0];
+  expect(repo).toMatchObject({ name: "sparrow-gateway", path: "/home/demo/work/sparrow-gateway" });
+  expect(candidates.some((c) => c.id === repo.id)).toBe(false); // it is not a candidate: it has no OpenSpec yet
+  expect((await api.state()).repos.some((r) => r.id === repo.id)).toBe(false);
+
+  const session = await api.startIntegration(repo.path);
+  expect(session).toMatchObject({ integration: true, inPlace: true, folder: repo.path, worktreePath: repo.path, state: "running" });
+  expect(session.branch).toBeUndefined();
+  expect((await api.startIntegration(repo.path)).id).toBe(session.id); // one at a time per folder
+
+  // No worktree of its own, and never part of open work.
+  const listed = await api.sessions();
+  expect(listed.worktrees.some((w) => w.path === repo.path)).toBe(false);
+  expect(openWork(listed.worktrees, listed.sessions).items.some((i) => i.key === session.id)).toBe(false);
+  expect(await refusal(api.shipSession(session.id))).toBe("409: this session is setting a repository up for OpenSpec, so it belongs to no change");
+  expect(await refusal(api.worktreeStatus(session.id))).toBe("409: this session is setting a repository up for OpenSpec, so it belongs to no change");
+
+  const view = terminal(session.id);
+  advance(1_000);
+  expect(view.text()).toContain("demo recording");
+  expect((await api.config()).repos.some((r) => r.id === repo.id)).toBe(false); // nothing yet: the recording is still running
+
+  advance(2_000); // the transcript stops at its question
+  view.connection.send({ type: "input", data: "claude, cursor\r" });
+  advance(20_000); // …and then runs to its end
+
+  expect(view.text()).toContain("openspec/config.yaml");
+  expect((await api.sessions()).sessions.find((s) => s.id === session.id)?.state).toBe("exited");
+  // The marker "appeared": it is a tracked, enabled repository with a board, and it is no longer offered.
+  expect((await api.config()).repos.find((r) => r.id === repo.id)).toMatchObject({ name: "sparrow-gateway", enabled: true });
+  expect((await api.discover()).integratable).toEqual([]);
+  const board = (await api.state()).repos.find((r) => r.id === repo.id);
+  expect(board?.changes.map((c) => c.name)).toEqual(["retry-budget-per-route", "drop-legacy-tls-ciphers"]);
+  view.connection.close();
+});
+
+test("the demo refuses an integration for anything but a repository that is waiting for one", async () => {
+  const { api } = demo();
+  const { integratable } = await api.discover();
+  expect(await refusal(api.startIntegration("/home/demo/work/atlas-api"))).toContain("404"); // already an OpenSpec project
+  expect(await refusal(api.startIntegration("/home/demo/elsewhere"))).toContain("404");
+
+  const config = await api.config();
+  await api.saveConfig({ ...config, agentSessions: { ...config.agentSessions, enabled: false } });
+  expect(await refusal(api.startIntegration(integratable[0].path))).toBe("403: agent sessions are disabled");
+  expect((await api.sessions()).sessions).toEqual([]);
+});
+
+test("Resolve conflicts: the sample shows a conflicting branch on first load, and resolving plays out without a network", async () => {
+  const { api, advance, terminal } = demo();
+  const conflicting = await byChange(api, "versioned-api-reference");
+  const work = await workOf(api, conflicting.change);
+  expect(work).toEqual({ state: "pushed", base: "origin/main", conflicts: { base: "origin/main", files: ["src/router/table.ts", "src/router/table.test.ts"] } });
+
+  // What the UI decides from: the badge shows, and the control is offered.
+  const worktree = (await api.sessions()).worktrees.find((w) => w.change === conflicting.change);
+  expect(conflictBadge(worktree)).toMatchObject({ tone: "warning", label: "conflicts with origin/main" });
+  expect(resolvable(conflicting, worktree)).toBe(true);
+
+  // A branch that merges cleanly is refused, with the dashboard's own wording.
+  const merged = await byChange(api, "deprecate-v1-auth");
+  expect(await refusal(api.resolveConflicts(merged.id))).toBe("409: this branch has no conflicts to resolve (merged)");
+
+  const view = terminal(conflicting.id);
+  advance(0);
+  expect((await api.resolveConflicts(conflicting.id)).state).toBe("running");
+  advance(60_000);
+  expect(view.text()).toContain("no longer merges into the default branch");
+  expect(view.text()).toContain("Conflicts resolved");
+  expect(view.events).toContain("<exit>");
+
+  // The conflict is gone once the recording's agent has pushed; the branch is merely pushed again.
+  expect(await workOf(api, conflicting.change)).toEqual({ state: "pushed", base: "origin/main" });
+  expect(resolvable(await byChange(api, conflicting.change), (await api.sessions()).worktrees.find((w) => w.change === conflicting.change))).toBe(false);
+});
+
+test("Resolve conflicts in the demo does not survive a reload", async () => {
+  const fresh = await byChange(demo().api, "versioned-api-reference");
+  expect(fresh.state).toBe("exited");
+  expect((await workOf(demo().api, "versioned-api-reference"))?.conflicts?.files).toHaveLength(2);
 });

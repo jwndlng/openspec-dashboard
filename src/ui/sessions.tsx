@@ -2,11 +2,11 @@
 // card shows (starter buttons, or a badge that opens the session panel).
 import { createContext, type ComponentChildren } from "preact";
 import { useCallback, useContext, useEffect, useMemo, useState } from "preact/hooks";
-import { changeSessions, isConsole, type AgentAvailability, type ChangeSession, type ChangeSnapshot, type Config, type ConsoleSession, type SessionAction, type SessionWorktree, type Snapshot } from "../shared/types.ts";
+import { changeSessions, isConsole, isIntegration, type AgentAvailability, type ChangeSession, type ChangeSnapshot, type Config, type ConsoleSession, type IntegrationSession, type SessionAction, type SessionWorktree, type Snapshot } from "../shared/types.ts";
 import { api } from "./api.ts";
 import { cdCommand, relTime } from "./format.ts";
 import { assignRepoHues, repoTint } from "./repoGroups.ts";
-import { agentForRepo, openWork, type SessionBadge, nextStepFor, sessionBadge, sessionsForChange, sessionsEnabledFor, startersFor, workBadge, worktreeForChange } from "./sessionState.ts";
+import { agentForRepo, cardSessionControls, conflictBadge, openWork, type SessionBadge, nextStepFor, sessionBadge, sessionsEnabledFor, workBadge, worktreeForChange } from "./sessionState.ts";
 import { boardFrom, changePath, CONSOLE_TAB, parseDetailQuery, routeFromPath, serializeDetailQuery } from "./routes.ts";
 import { currentPath, currentQuery, navigate } from "./url.ts";
 
@@ -22,6 +22,11 @@ interface SessionUi {
   /** Whether the main console overlay is open. Not part of the route: the console is not a place in the app. */
   consoleOpen: boolean;
   showConsole(open: boolean): void;
+  /** Sessions setting a repository up for OpenSpec, newest first; they belong to no repository in the config. */
+  integrations: IntegrationSession[];
+  /** The integration session whose overlay is open, if any. Like the console, not part of the route. */
+  integrationId?: string;
+  showIntegration(id: string | undefined): void;
   agents: AgentAvailability[];
   /** Every session worktree with what became of its work; outlives session records. */
   worktrees: SessionWorktree[];
@@ -47,7 +52,7 @@ interface SessionUi {
 }
 
 const noop = async () => undefined;
-const Context = createContext<SessionUi>({ config: null, snapshot: null, sessions: [], consoles: [], consoleOpen: false, showConsole: () => {}, agents: [], worktrees: [], focusTick: { tick: 0 }, reportUnsent: () => {}, requestEnd: () => {}, openPanel: () => {}, start: noop, refresh: noop });
+const Context = createContext<SessionUi>({ config: null, snapshot: null, sessions: [], consoles: [], consoleOpen: false, showConsole: () => {}, integrations: [], showIntegration: () => {}, agents: [], worktrees: [], focusTick: { tick: 0 }, reportUnsent: () => {}, requestEnd: () => {}, openPanel: () => {}, start: noop, refresh: noop });
 
 export const useSessionUi = () => useContext(Context);
 
@@ -60,11 +65,22 @@ export function SessionProvider({
   snapshot = null,
   consoleOpen = false,
   showConsole = () => {},
+  integrationId,
+  showIntegration = () => {},
   children,
-}: { config: Config | null; snapshot?: Snapshot | null; consoleOpen?: boolean; showConsole?: (open: boolean) => void; children: ComponentChildren }) {
+}: {
+  config: Config | null;
+  snapshot?: Snapshot | null;
+  consoleOpen?: boolean;
+  showConsole?: (open: boolean) => void;
+  integrationId?: string;
+  showIntegration?: (id: string | undefined) => void;
+  children: ComponentChildren;
+}) {
   const enabled = config?.agentSessions.enabled === true;
   const [sessions, setSessions] = useState<ChangeSession[]>([]);
   const [consoles, setConsoles] = useState<ConsoleSession[]>([]);
+  const [integrations, setIntegrations] = useState<IntegrationSession[]>([]);
   const [agents, setAgents] = useState<AgentAvailability[]>([]);
   const [worktrees, setWorktrees] = useState<SessionWorktree[]>([]);
   const [error, setError] = useState<string>();
@@ -74,6 +90,7 @@ export function SessionProvider({
       const result = await api.sessions();
       setSessions(changeSessions(result.sessions));
       setConsoles(result.sessions.filter(isConsole));
+      setIntegrations(result.sessions.filter(isIntegration));
       setAgents(result.agents);
       setWorktrees(result.worktrees ?? []);
       setError(undefined);
@@ -117,7 +134,7 @@ export function SessionProvider({
   const start = useCallback(
     async (repoId: string, change: string, action: SessionAction) => {
       try {
-        const into = nextStepFor(sessions, repoId, change, action).promptSessionId;
+        const into = nextStepFor(sessions, repoId, change).promptSessionId;
         const session = into ? await api.promptSession(into, action) : await api.openSession(repoId, change, action);
         if (into) {
           // Sent under the rules for text sent on the user's behalf: say so when the agent never showed it.
@@ -139,8 +156,8 @@ export function SessionProvider({
 
   const shown = consoleOpen && enabled;
   const value = useMemo(
-    () => ({ config, snapshot, sessions, consoles, consoleOpen: shown, showConsole, agents, worktrees, endingId, focusTick, unsentId, reportUnsent, requestEnd, error, openPanel, start, refresh }),
-    [config, snapshot, sessions, consoles, shown, agents, worktrees, endingId, focusTick, unsentId, error, openPanel, start, refresh],
+    () => ({ config, snapshot, sessions, consoles, consoleOpen: shown, showConsole, integrations, integrationId, showIntegration, agents, worktrees, endingId, focusTick, unsentId, reportUnsent, requestEnd, error, openPanel, start, refresh }),
+    [config, snapshot, sessions, consoles, shown, integrations, integrationId, showIntegration, agents, worktrees, endingId, focusTick, unsentId, error, openPanel, start, refresh],
   );
   return <Context.Provider value={value}>{children}</Context.Provider>;
 }
@@ -292,70 +309,58 @@ export function OpenWork() {
   );
 }
 
-const STARTER_LABEL: Record<SessionAction, string> = { draft: "Draft artifacts", implement: "Implement", archive: "Archive" };
+const STARTER_LABEL: Record<SessionAction, string> = { draft: "Draft artifacts", implement: "Implement", validate: "Validate", archive: "Archive" };
 const STARTER_HINT: Record<SessionAction, string> = {
   draft: "Start an agent in a terminal to write this change's missing artifacts",
   implement: "Start an agent in a terminal to implement this change's tasks",
+  validate: "Start an agent in a terminal to walk you through this change's tasks awaiting validation",
   archive: "Start an agent in a terminal to sync the specs and archive this completed change",
 };
 
-/** Rendered inside a card. Shows nothing at all unless the feature is on and the card's repository has not been switched off. */
 /**
- * A card's session controls. `part` splits them for the card's layout: `status` is the session badge (working, quiet,
- * may need you, failed) beside the change name, `starters` the next-step buttons in its footer. Without `part`, both
- * plus the worktree's work status. The card leaves the work status to the detail view (see `WorkStatus`).
+ * A change's session state and its next step, in one place so the two can never disagree: the session badge (working,
+ * may need you, failed) and the starters. Rendered in a card's footer, and in the Console tab of a change no agent has
+ * worked on yet. Shows nothing at all unless the feature is on and the repository has not been switched off.
+ *
+ * While any of the change's sessions runs, the badge stands in for the starters and nothing else is offered: the badge
+ * opens the terminal, which is where the next step and **End session** live. A badge that is not running is the failure
+ * case, so it keeps its starters — the next attempt stays one activation away. The work status is the detail view's
+ * (see `WorkStatus`), never a card's.
  */
-export function SessionControls({ card, part }: { card: Pick<ChangeSnapshot, "repoId" | "name" | "archived" | "artifacts" | "stage">; part?: "status" | "starters" }) {
+export function SessionControls({ card }: { card: Pick<ChangeSnapshot, "repoId" | "name" | "archived" | "artifacts" | "stage" | "subState"> }) {
   const ui = useSessionUi();
   const [starting, setStarting] = useState<SessionAction>();
   const [failure, setFailure] = useState<string>();
   if (!sessionsEnabledFor(ui.config, card.repoId)) return null;
 
-  const worktree = worktreeForChange(ui.worktrees, card.repoId, card.name);
-  const shown = sessionsForChange(ui.sessions, card.repoId, card.name);
+  const { shown, starters } = cardSessionControls(ui.config, ui.sessions, card);
   const agent = agentForRepo(ui.config, card.repoId);
   const found = ui.agents.find((a) => a.id === agent?.id);
   const unavailable = found && !found.available ? `${found.name} was not found on this machine — check its command in Settings` : undefined;
-  const status = part !== "starters";
-  const starters = part !== "status";
   return (
     <>
-      {status && shown.map((session) => (
-        <span class="session-chip" key={session.id}>
-          <SessionBadgeView badge={sessionBadge(session)} onClick={() => ui.openPanel(session.id)} />
-          {session.state === "running" && (
-            <button type="button" class="badge-x" aria-label={`End the session for ${session.change}`} title="End this session…" onClick={() => ui.requestEnd(session.id)}>
-              ✕
-            </button>
-          )}
-        </span>
+      {shown.map((session) => (
+        <SessionBadgeView key={session.id} badge={sessionBadge(session)} onClick={() => ui.openPanel(session.id)} />
       ))}
-      {part === undefined && worktree && <WorkBadge worktree={worktree} />}
-      {starters && startersFor(ui.config, card).map((action) => {
-        // The change's running session is sent the next step; only archiving always starts its own.
-        const step = nextStepFor(ui.sessions, card.repoId, card.name, action);
-        if (step.blocked) return null;
-        const intoRunning = step.promptSessionId !== undefined;
-        const blockedBy = intoRunning ? undefined : unavailable;
-        return (
-          <button
-            type="button"
-            class="btn sm session-start"
-            key={action}
-            title={blockedBy ?? (intoRunning ? `Sends the “${STARTER_LABEL[action]}” prompt to the running session` : `${STARTER_HINT[action]} (${agent?.name})`)}
-            disabled={Boolean(blockedBy) || starting !== undefined}
-            onClick={async () => {
-              setStarting(action);
-              setFailure(undefined);
-              setFailure(await ui.start(card.repoId, card.name, action));
-              setStarting(undefined);
-            }}
-          >
-            {starting === action ? "Starting…" : `${intoRunning ? "↳" : "▶"} ${STARTER_LABEL[action]}`}
-          </button>
-        );
-      })}
-      {starters && failure && (
+      {starters.map((action) => (
+        // Always an opening: a card offers no starter while a session runs, so `start` never types into one from here.
+        <button
+          type="button"
+          class="btn sm session-start"
+          key={action}
+          title={unavailable ?? `${STARTER_HINT[action]} (${agent?.name})`}
+          disabled={Boolean(unavailable) || starting !== undefined}
+          onClick={async () => {
+            setStarting(action);
+            setFailure(undefined);
+            setFailure(await ui.start(card.repoId, card.name, action));
+            setStarting(undefined);
+          }}
+        >
+          {starting === action ? "Starting…" : `▶ ${STARTER_LABEL[action]}`}
+        </button>
+      ))}
+      {failure && (
         <span class="notice danger session-failure" role="status">
           {failure}
         </span>
@@ -364,10 +369,34 @@ export function SessionControls({ card, part }: { card: Pick<ChangeSnapshot, "re
   );
 }
 
-/** The work status of a change's session worktree, for the detail view's header; nothing when there is none to show. */
+/**
+ * "This branch no longer merges." Hook-free on purpose: it is rendered in two places and is the one piece of this
+ * feature's markup worth asserting on without a renderer. Nothing when the branch merges, or could not be checked.
+ */
+export function ConflictBadge({ worktree }: { worktree: SessionWorktree | undefined }) {
+  const badge = conflictBadge(worktree);
+  if (!badge) return null;
+  return (
+    <span class={`badge ${badge.tone}`} title={badge.title}>
+      <span aria-hidden="true">{badge.icon} </span>
+      {badge.label}
+    </span>
+  );
+}
+
+/**
+ * The work status of a change's session worktree, for the detail view's header; nothing when there is none to show.
+ * A conflicting branch says so here too, but the control to do something about it stays in the panel, where the agent is.
+ */
 export function WorkStatus({ repoId, name }: { repoId: string; name: string }) {
   const ui = useSessionUi();
   if (!sessionsEnabledFor(ui.config, repoId)) return null;
   const worktree = worktreeForChange(ui.worktrees, repoId, name);
-  return worktree ? <WorkBadge worktree={worktree} /> : null;
+  if (!worktree) return null;
+  return (
+    <>
+      <WorkBadge worktree={worktree} />
+      <ConflictBadge worktree={worktree} />
+    </>
+  );
 }

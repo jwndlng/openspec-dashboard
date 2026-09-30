@@ -3,10 +3,10 @@ import { chmod, mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/pr
 import { existsSync } from "node:fs";
 import { join, relative } from "node:path";
 import { defaultConfig, newRepoConfig } from "../src/server/config.ts";
-import { maskCredentials, PullBusyError, pullAll, pullRepository, reasonFrom } from "../src/server/pull.ts";
+import { blockingSet, classifyBlocking, isChangeLeftoverPath, maskCredentials, parseBlobEntries, parseNulList, parseStatusStates, PullBusyError, pullAll, pullRepository, reasonFrom } from "../src/server/pull.ts";
 import { Scanner } from "../src/server/scanner.ts";
 import { useTempHome } from "./helpers.ts";
-import { type Fixture, fixture, git, remoteCommits } from "./pullHelpers.ts";
+import { type Fixture, fixture, git, localChange, remoteChange, remoteCommits } from "./pullHelpers.ts";
 
 // These tests create git repositories, run real git against local remotes and wait on deliberately slow fake remotes;
 // slow CI runners need more than the 5 s default.
@@ -228,4 +228,151 @@ test("nothing but the pull action ever reaches a remote: scans and polls leave a
   // …and the recorder does work: the pull action is what trips it
   expect((await pullRepository(repo)).update).toBe("failed");
   expect(existsSync(marker)).toBe(true);
+});
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Blocking files: the pure classification, then what a refusal reports.
+// ---------------------------------------------------------------------------------------------------------------------
+
+const YAML = "openspec/changes/add-login/.openspec.yaml";
+const blob = (id: string, mode = "100644") => ({ mode, id });
+const a = "a".repeat(40);
+const b = "b".repeat(40);
+
+test("git's -z output parses back into paths, states and blobs, spaces and all", () => {
+  expect(parseNulList("one\u0000two\u0000")).toEqual(["one", "two"]);
+  const states = parseStatusStates(" M src/app.ts\u0000A  openspec/changes/x/y\u0000?? note s.md\u0000AD gone.txt\u0000");
+  expect([...states]).toEqual([
+    ["src/app.ts", " M"],
+    ["openspec/changes/x/y", "A "],
+    ["note s.md", "??"],
+    ["gone.txt", "AD"],
+  ]);
+  expect([...parseBlobEntries(`100644 blob ${a}\t${YAML}\u0000120000 blob ${b}\tlink\u0000`)]).toEqual([
+    [YAML, blob(a)],
+    ["link", blob(b, "120000")],
+  ]);
+  expect([...parseBlobEntries(`100755 ${a} 0\tbin/run\u0000`)]).toEqual([["bin/run", blob(a, "100755")]]);
+  expect(parseBlobEntries("garbage with no tab\u0000").size).toBe(0);
+});
+
+test("only the paths the incoming commits change and the checkout has uncommitted block, once each, sorted", () => {
+  const states = new Map([
+    ["src/app.ts", " M"],
+    ["notes.md", " M"],
+  ]);
+  expect(blockingSet(["src/app.ts", "src/app.ts", "README.md"], states)).toEqual(["src/app.ts"]);
+  expect(blockingSet(["b.txt", "src/app.ts"], new Map([...states, ["b.txt", "??"]]))).toEqual(["b.txt", "src/app.ts"]);
+  expect(blockingSet(["README.md"], states)).toEqual([]);
+});
+
+test("a leftover path is a change directory's file, never the archive and never an odd name", () => {
+  expect(isChangeLeftoverPath(YAML)).toBe(true);
+  expect(isChangeLeftoverPath("openspec/changes/add-login/specs/api/spec.md")).toBe(true);
+  expect(isChangeLeftoverPath("openspec/changes/archive/2026-01-01-add-login/proposal.md")).toBe(false);
+  expect(isChangeLeftoverPath("openspec/changes/add login/proposal.md")).toBe(false); // not a change name
+  expect(isChangeLeftoverPath("openspec/changes/../secrets/x.md")).toBe(false);
+  expect(isChangeLeftoverPath("openspec/changes/add-login/../../../x")).toBe(false);
+  expect(isChangeLeftoverPath("openspec/changes/add-login")).toBe(false); // the directory itself, no file
+  expect(isChangeLeftoverPath("openspec/changes/add-login/")).toBe(false);
+  expect(isChangeLeftoverPath("openspec/specs/api/spec.md")).toBe(false);
+  expect(isChangeLeftoverPath("src/app.ts")).toBe(false);
+});
+
+test("what makes a blocking file a leftover, and what makes it differ", () => {
+  const facts = { incoming: blob(a), worktree: a, regularFile: true };
+  // staged, identical to the incoming blob
+  expect(classifyBlocking(YAML, "A ", { ...facts, staged: blob(a) })).toEqual({ path: YAML, kind: "leftover", differs: false, incoming: a, staged: a, worktree: a });
+  // staged and edited: the working tree differs
+  expect(classifyBlocking(YAML, "AM", { ...facts, staged: blob(a), worktree: b })).toMatchObject({ kind: "leftover", differs: true, worktree: b });
+  // staged content differs even though the working tree matches
+  expect(classifyBlocking(YAML, "A ", { ...facts, staged: blob(b) })).toMatchObject({ kind: "leftover", differs: true, staged: b });
+  // a mode of its own is a difference too
+  expect(classifyBlocking(YAML, "A ", { ...facts, staged: blob(a, "100755") })).toMatchObject({ kind: "leftover", differs: true });
+  // untracked, never staged
+  expect(classifyBlocking(YAML, "??", facts)).toEqual({ path: YAML, kind: "leftover", differs: false, incoming: a, staged: undefined, worktree: a });
+
+  // everything that is the user's own work instead
+  const work = { path: YAML, kind: "local-work" as const };
+  expect(classifyBlocking(YAML, " M", facts)).toEqual(work); // tracked in the current commit and edited
+  expect(classifyBlocking(YAML, "AD", facts)).toEqual(work); // staged new but deleted again
+  expect(classifyBlocking(YAML, "A ", { ...facts, incoming: undefined })).toEqual(work); // the incoming commit has no such file
+  expect(classifyBlocking(YAML, "A ", { ...facts, incoming: blob(a, "120000") })).toEqual(work); // a symlink upstream
+  expect(classifyBlocking(YAML, "A ", { ...facts, staged: blob(a, "120000") })).toEqual(work); // a symlink in the index
+  expect(classifyBlocking(YAML, "A ", { ...facts, regularFile: false })).toEqual(work); // not an ordinary file on disk
+  expect(classifyBlocking(YAML, "A ", { ...facts, worktree: undefined })).toEqual(work); // could not be hashed
+  expect(classifyBlocking("src/app.ts", "A ", facts)).toEqual({ path: "src/app.ts", kind: "local-work" });
+  expect(classifyBlocking("openspec/changes/archive/2026-01-01-x/proposal.md", "A ", facts)).toMatchObject({ kind: "local-work" });
+});
+
+test("a refusal over local work lists exactly the overlapping files and says what to do about them", async () => {
+  const f = await make();
+  await remoteCommits(f, 1, "app.txt");
+  await writeFile(join(f.repo, "app.txt"), "my edit to the same file\n");
+  await writeFile(join(f.repo, "notes.txt"), "an edit nothing incoming touches\n"); // not blocking
+  const refused = await pull(f);
+  expect(refused).toMatchObject({ update: "refused", blocking: [{ path: "app.txt", kind: "local-work" }], hint: "Commit or set aside the listed files, then pull again." });
+  expect(refused.blocking).toHaveLength(1);
+  expect(refused.resolvable).toBeUndefined();
+  expect(refused.reason).toContain("would be overwritten");
+});
+
+test("a change's own leftovers are recognised: staged, untracked, identical and differing, and the offer is made", async () => {
+  const f = await make();
+  await remoteChange(f, "add-login", { ".openspec.yaml": "schema: spec-driven\n", "prompt.md": "upstream prompt\n" });
+  await remoteChange(f, "add-billing", { ".openspec.yaml": "schema: spec-driven\n" });
+  await localChange(f, "add-login", { ".openspec.yaml": "schema: spec-driven\n", "prompt.md": "the prompt as it was typed here\n" });
+  await localChange(f, "add-billing", { ".openspec.yaml": "schema: spec-driven\n" }, false); // never staged
+  const refused = await pull(f);
+  expect(refused.update).toBe("refused");
+  expect(refused.blocking).toEqual([
+    { path: "openspec/changes/add-billing/.openspec.yaml", kind: "leftover", differs: false, incoming: expect.any(String), staged: undefined, worktree: expect.any(String) },
+    { path: "openspec/changes/add-login/.openspec.yaml", kind: "leftover", differs: false, incoming: expect.any(String), staged: expect.any(String), worktree: expect.any(String) },
+    { path: "openspec/changes/add-login/prompt.md", kind: "leftover", differs: true, incoming: expect.any(String), staged: expect.any(String), worktree: expect.any(String) },
+  ]);
+  expect(refused.resolvable).toEqual({ upstream: git(f.repo, "rev-parse", "origin/main"), files: refused.blocking ?? [] });
+  expect(refused.hint).toContain("Resolve and pull replaces them with the incoming version");
+});
+
+test("one real edit among the leftovers withdraws the offer", async () => {
+  const f = await make();
+  await remoteChange(f, "add-login", { ".openspec.yaml": "schema: spec-driven\n" });
+  await remoteCommits(f, 1, "app.txt");
+  await localChange(f, "add-login", { ".openspec.yaml": "schema: spec-driven\n" });
+  await writeFile(join(f.repo, "app.txt"), "my own edit\n");
+  const refused = await pull(f);
+  expect(refused.blocking?.map((b) => [b.path, b.kind])).toEqual([
+    ["app.txt", "local-work"],
+    ["openspec/changes/add-login/.openspec.yaml", "leftover"],
+  ]);
+  expect(refused.resolvable).toBeUndefined();
+  expect(refused.hint).toBe("Commit or set aside the listed files, then pull again.");
+});
+
+test("an offer writes nothing: a refused pull with a Resolve and pull offer changed nothing beyond the fetch", async () => {
+  const f = await make();
+  await remoteChange(f, "add-login", { ".openspec.yaml": "schema: spec-driven\n", "prompt.md": "as merged\n" });
+  await localChange(f, "add-login", { ".openspec.yaml": "schema: spec-driven\n", "prompt.md": "as typed here\n" });
+  git(f.repo, "fetch", "-q"); // so even the remote-tracking ref is already where the pull will leave it
+  const before = { at: head(f.repo), status: status(f.repo), index: await readFile(join(f.repo, ".git", "index")), files: await fingerprint(join(f.repo, "openspec")) };
+
+  const refused = await pull(f);
+  expect(refused.resolvable).toBeDefined();
+  expect([head(f.repo), status(f.repo)]).toEqual([before.at, before.status]);
+  expect(Buffer.compare(before.index, await readFile(join(f.repo, ".git", "index")))).toBe(0);
+  expect(await fingerprint(join(f.repo, "openspec"))).toEqual(before.files);
+  // …and nothing was written under the dashboard's home either: copies happen only on confirmation
+  expect(existsSync(join(process.env.OPENSPEC_DASHBOARD_HOME as string, "pull-backups"))).toBe(false);
+});
+
+test("a diverged refusal says where to reconcile and never mentions forcing", async () => {
+  const f = await make();
+  await remoteCommits(f, 1);
+  await writeFile(join(f.repo, "local.txt"), "local\n");
+  git(f.repo, "add", "-A");
+  git(f.repo, "commit", "-q", "-m", "local work");
+  const refused = await pull(f);
+  expect(refused).toMatchObject({ update: "refused", hint: "Reconcile the local commits outside the dashboard, then pull again." });
+  expect(refused.blocking).toBeUndefined();
+  expect(`${refused.reason} ${refused.hint}`).not.toMatch(/force|--hard|discard|reset/i);
 });

@@ -1,9 +1,11 @@
 // Settings section for agent sessions. Off by default; turning it on lets you start an agent CLI in a terminal for a
 // change, so the section says plainly what that means. An agent is just a command line and its opening prompts.
+import { Fragment } from "preact";
 import { useEffect, useState } from "preact/hooks";
 import { CLAUDE_PROFILE } from "../shared/agentDefaults.ts";
-import { DEFAULT_SHIP_PROMPT, repoAgentEnabled, SESSION_ACTIONS, type AgentAvailability, type AgentProfile, type AgentSessionsConfig, type Config, type RepoConfig, type Session, type SessionAction } from "../shared/types.ts";
+import { DEFAULT_RESOLVE_CONFLICTS_PROMPT, DEFAULT_SHIP_PROMPT, repoAgentEnabled, SESSION_ACTIONS, type AgentAvailability, type AgentProfile, type AgentSessionsConfig, type Config, type PromptKey, type RepoConfig, type Session, type SessionAction, type Shortcut } from "../shared/types.ts";
 import { api } from "./api.ts";
+import { addShortcut, moveShortcut, removeShortcut, restoredShortcuts } from "./quickReplies.ts";
 import { parseArgLines, slugId } from "./sessionState.ts";
 
 interface Props {
@@ -11,9 +13,17 @@ interface Props {
   update: (patch: Partial<Config>) => void;
 }
 
-const ACTION_LABEL: Record<SessionAction, string> = { draft: "Draft artifacts", implement: "Implement", archive: "Archive" };
+const ACTION_LABEL: Record<SessionAction, string> = { draft: "Draft artifacts", implement: "Implement", validate: "Validate", archive: "Archive" };
 
-function AgentEditor({ agent, found, isDefault, canRemove, onChange, onRemove, onDefault }: { agent: AgentProfile; found?: AgentAvailability; isDefault: boolean; canRemove: boolean; onChange: (patch: Partial<AgentProfile>) => void; onRemove: () => void; onDefault: () => void }) {
+/** Exported for the tests: one profile's fields, hook-free so they can be rendered without a DOM. */
+export function AgentEditor({ agent, found, isDefault, canRemove, onChange, onRemove, onDefault }: { agent: AgentProfile; found?: AgentAvailability; isDefault: boolean; canRemove: boolean; onChange: (patch: Partial<AgentProfile>) => void; onRemove: () => void; onDefault: () => void }) {
+  /** Additional instructions for one prompt; an empty field is stored as absent, as a removed prompt is. */
+  const setSuffix = (key: PromptKey, value: string) => {
+    const promptSuffixes = { ...agent.promptSuffixes };
+    if (value.trim()) promptSuffixes[key] = value;
+    else delete promptSuffixes[key];
+    onChange({ promptSuffixes: Object.keys(promptSuffixes).length ? promptSuffixes : undefined });
+  };
   return (
     <details class="agent-card" open={isDefault}>
       <summary>
@@ -34,21 +44,30 @@ function AgentEditor({ agent, found, isDefault, canRemove, onChange, onRemove, o
           <textarea class="input mono" rows={Math.max(2, agent.command.length)} value={agent.command.join("\n")} onInput={(e) => onChange({ command: parseArgLines(e.currentTarget.value) })} />
         </label>
         {SESSION_ACTIONS.map((action) => (
-          <label class="check grow" key={action}>
-            {ACTION_LABEL[action]}
-            <input
-              class="input mono grow"
-              placeholder="no prompt — this starter is not offered"
-              value={agent.prompts[action] ?? ""}
-              onInput={(e) => {
-                const prompts = { ...agent.prompts };
-                const value = e.currentTarget.value;
-                if (value.trim()) prompts[action] = value;
-                else delete prompts[action];
-                onChange({ prompts });
-              }}
-            />
-          </label>
+          <Fragment key={action}>
+            <label class="check grow">
+              {ACTION_LABEL[action]}
+              <input
+                class="input mono grow"
+                placeholder="no prompt — this starter is not offered"
+                value={agent.prompts[action] ?? ""}
+                onInput={(e) => {
+                  const prompts = { ...agent.prompts };
+                  const value = e.currentTarget.value;
+                  if (value.trim()) prompts[action] = value;
+                  else delete prompts[action];
+                  onChange({ prompts });
+                }}
+              />
+            </label>
+            <label class="agent-tools">
+              <span class="hint">
+                Additional {ACTION_LABEL[action]} instructions (optional): appended to that prompt as one line, and only when it is set — this text alone does not offer the
+                starter. <code>{"{change}"}</code> may be used.
+              </span>
+              <input class="input mono" placeholder="nothing is appended" value={agent.promptSuffixes?.[action] ?? ""} onInput={(e) => setSuffix(action, e.currentTarget.value)} />
+            </label>
+          </Fragment>
         ))}
         <label class="agent-tools">
           <span class="hint">
@@ -70,6 +89,77 @@ function AgentEditor({ agent, found, isDefault, canRemove, onChange, onRemove, o
           />
         </label>
         <label class="agent-tools">
+          <span class="hint">
+            Additional <strong>Ship</strong> instructions (optional): appended as one line to the Ship prompt above — or to the default shown there, so a standing instruction
+            about pull requests needs no prompt of its own. <code>{"{change}"}</code> may be used.
+          </span>
+          <textarea class="input mono" rows={2} placeholder="nothing is appended" value={agent.promptSuffixes?.ship ?? ""} onInput={(e) => setSuffix("ship", e.currentTarget.value)} />
+        </label>
+        <label class="agent-tools">
+          <span class="hint">
+            Resolve conflicts prompt (optional): what <strong>Resolve conflicts</strong> asks this agent when a session's branch no longer merges into the default branch. Empty
+            uses the default shown; <code>{"{change}"}</code> may be used. The dashboard merges nothing itself — it only asks.
+          </span>
+          <textarea
+            class="input mono"
+            rows={3}
+            placeholder={DEFAULT_RESOLVE_CONFLICTS_PROMPT}
+            value={agent.prompts.resolveConflicts ?? ""}
+            onInput={(e) => {
+              const prompts = { ...agent.prompts };
+              const value = e.currentTarget.value;
+              if (value.trim()) prompts.resolveConflicts = value;
+              else delete prompts.resolveConflicts;
+              onChange({ prompts });
+            }}
+          />
+        </label>
+        <label class="agent-tools">
+          <span class="hint">
+            Additional <strong>Resolve conflicts</strong> instructions (optional): appended as one line to the prompt above — or to the default shown there, so a standing
+            instruction about how this project reconciles a branch needs no prompt of its own. <code>{"{change}"}</code> may be used.
+          </span>
+          <textarea
+            class="input mono"
+            rows={2}
+            placeholder="nothing is appended"
+            value={agent.promptSuffixes?.resolveConflicts ?? ""}
+            onInput={(e) => setSuffix("resolveConflicts", e.currentTarget.value)}
+          />
+        </label>
+        <label class="agent-tools">
+          <span class="hint">
+            Integrate prompt (optional): what <strong>Integrate</strong> asks this agent in a repository that does not use OpenSpec yet. It runs in that repository's folder, so
+            it takes <strong>no placeholder at all</strong> — nothing from this page becomes part of the command line. Empty means this agent offers no Integrate action.
+          </span>
+          <textarea
+            class="input mono"
+            rows={3}
+            placeholder={CLAUDE_PROFILE.prompts.integrate}
+            value={agent.prompts.integrate ?? ""}
+            onInput={(e) => {
+              const prompts = { ...agent.prompts };
+              const value = e.currentTarget.value;
+              if (value.trim()) prompts.integrate = value;
+              else delete prompts.integrate;
+              onChange({ prompts });
+            }}
+          />
+        </label>
+        <label class="agent-tools">
+          <span class="hint">
+            Additional <strong>Integrate</strong> instructions (optional): appended as one line to the Integrate prompt above, and only when it is set. Like that prompt they take{" "}
+            <strong>no placeholder at all</strong>.
+          </span>
+          <textarea
+            class="input mono"
+            rows={2}
+            placeholder="nothing is appended"
+            value={agent.promptSuffixes?.integrate ?? ""}
+            onInput={(e) => setSuffix("integrate", e.currentTarget.value)}
+          />
+        </label>
+        <label class="agent-tools">
           <span class="hint">Resume command (optional, one argument per line): continues the agent's latest conversation in the same worktree.</span>
           <textarea class="input mono" rows={2} value={(agent.resumeCommand ?? []).join("\n")} onInput={(e) => onChange({ resumeCommand: parseArgLines(e.currentTarget.value).length ? parseArgLines(e.currentTarget.value) : undefined })} />
         </label>
@@ -87,6 +177,67 @@ function AgentEditor({ agent, found, isDefault, canRemove, onChange, onRemove, o
         </div>
       </div>
     </details>
+  );
+}
+
+/**
+ * The shortcuts of the agent console: what its controls read and what each one types into the running agent. The two are
+ * independent, so a one-word control can carry several sentences; the prompt is sent exactly as written, which is why it
+ * is one line and takes no placeholder.
+ */
+function ShortcutEditor({ shortcuts, onChange }: { shortcuts: Shortcut[]; onChange: (shortcuts: Shortcut[]) => void }) {
+  const patch = (id: string, fields: Partial<Shortcut>) => onChange(shortcuts.map((s) => (s.id === id ? { ...s, ...fields } : s)));
+  const add = () => onChange(addShortcut(shortcuts));
+  return (
+    <>
+      <h2>Shortcuts</h2>
+      <p class="hint">
+        The controls beside a session's terminal. The <strong>title</strong> is what the control reads; the{" "}
+        <strong>prompt</strong> is what the agent receives, typed exactly as written — <strong>one line, no placeholder</strong>, because a shortcut is offered in every session,
+        including those that belong to no change. A shortcut is only ever typed and confirmed the way any text sent for you is: at a selection menu nothing is confirmed. Remove
+        them all and the row disappears.
+      </p>
+      <div class="list">
+        {shortcuts.map((shortcut, i) => (
+          <div class="agent-shortcut" key={shortcut.id}>
+            <input class="input" aria-label={`Title of shortcut ${i + 1}`} placeholder="Title" value={shortcut.title} onInput={(e) => patch(shortcut.id, { title: e.currentTarget.value })} />
+            <input
+              class="input mono"
+              aria-label={`Prompt of shortcut ${i + 1}`}
+              placeholder="what the agent receives"
+              value={shortcut.prompt}
+              onInput={(e) => patch(shortcut.id, { prompt: e.currentTarget.value })}
+            />
+            <span class="row">
+              <button type="button" class="btn sm ghost" aria-label={`Move ${shortcut.title} earlier`} disabled={i === 0} onClick={() => onChange(moveShortcut(shortcuts, i, -1))}>
+                ↑
+              </button>
+              <button
+                type="button"
+                class="btn sm ghost"
+                aria-label={`Move ${shortcut.title} later`}
+                disabled={i === shortcuts.length - 1}
+                onClick={() => onChange(moveShortcut(shortcuts, i, 1))}
+              >
+                ↓
+              </button>
+              <button type="button" class="btn sm ghost" aria-label={`Remove ${shortcut.title}`} onClick={() => onChange(removeShortcut(shortcuts, shortcut.id))}>
+                Remove
+              </button>
+            </span>
+          </div>
+        ))}
+        {shortcuts.length === 0 && <span class="hint">No shortcuts — a session's terminal shows no shortcut row.</span>}
+      </div>
+      <div class="row">
+        <button type="button" class="btn sm" onClick={add}>
+          + Add shortcut
+        </button>
+        <button type="button" class="btn sm ghost" onClick={() => onChange(restoredShortcuts())}>
+          Restore defaults
+        </button>
+      </div>
+    </>
   );
 }
 
@@ -128,8 +279,9 @@ export function AgentSettings({ draft, update }: Props) {
       <p class="hint">
         Start an agent CLI for a change straight from its card; it opens in a terminal here in the dashboard — the same program you would run in your own terminal, with its own
         login, settings and permission prompts. <strong>Turning this on lets the dashboard start that program on this machine, and the agent can change files and run commands as
-        you allow it to.</strong> Each session works in its own git worktree under <code>~/.openspec-dashboard/worktrees/</code>, never in a repository's main checkout. It
-        applies to <strong>every tracked repository</strong>; switch individual ones off below.
+        you allow it to.</strong> Each session works in its own git worktree under <code>~/.openspec-dashboard/worktrees/</code>, never in a repository's main checkout — except an{" "}
+        <strong>Integrate</strong> session, which runs in the repository folder itself to set it up for OpenSpec. It applies to <strong>every tracked repository</strong>; switch
+        individual ones off below.
       </p>
       <div class="row">
         <label class="check">
@@ -163,6 +315,8 @@ export function AgentSettings({ draft, update }: Props) {
             </button>
           )}
         </div>
+
+        <ShortcutEditor shortcuts={settings.shortcuts} onChange={(shortcuts) => set({ shortcuts })} />
 
         <h2>Console</h2>
         <label class="agent-tools">

@@ -2,9 +2,10 @@
 // the dashboard that does — so it only ever happens from these buttons.
 import { type ComponentChildren, createContext } from "preact";
 import { useContext, useRef, useState } from "preact/hooks";
-import type { PullResult } from "../shared/types.ts";
+import type { PullResolve, PullResult } from "../shared/types.ts";
 import { api } from "./api.ts";
-import { pullOutcome } from "./pullState.ts";
+import { Modal } from "./modal.tsx";
+import { blockingNote, pullOutcome, resolveSummary } from "./pullState.ts";
 
 type PullState = "running" | PullResult;
 
@@ -15,13 +16,24 @@ interface PullUi {
    * already running for this repository is joined rather than started again, so the caller gets that one's outcome.
    */
   pull(repoId: string): Promise<PullResult>;
+  /**
+   * Confirms Resolve and pull for one repository. Shares the pull's in-flight map, so the Pull button shows it running
+   * and a pull started meanwhile joins it; like `pull` it never rejects.
+   */
+  resolve(repoId: string, claim: PullResolve): Promise<PullResult>;
   pullAll(repoIds: string[]): void;
   allRunning: boolean;
 }
 
 const NO_PROVIDER = (repoId: string): PullResult => ({ repoId, fetched: false, update: "failed", reason: "no pull provider" });
 
-const Context = createContext<PullUi>({ states: {}, pull: (repoId) => Promise.resolve(NO_PROVIDER(repoId)), pullAll: () => {}, allRunning: false });
+const Context = createContext<PullUi>({
+  states: {},
+  pull: (repoId) => Promise.resolve(NO_PROVIDER(repoId)),
+  resolve: (repoId) => Promise.resolve(NO_PROVIDER(repoId)),
+  pullAll: () => {},
+  allRunning: false,
+});
 
 /** For anything outside this module that starts a pull and wants to say what came of it (the end-session dialog). */
 export const usePull = () => useContext(Context);
@@ -35,12 +47,12 @@ export function PullProvider({ onPulled, children }: { onPulled: () => void; chi
   // The pull running for a repository, by id. A ref, not state: `pull` must see it in the call, not after a render.
   const inFlight = useRef<Record<string, Promise<PullResult>>>({});
 
-  const pull = (repoId: string): Promise<PullResult> => {
+  /** The one path both Pull and Resolve and pull take: one request per repository, its outcome kept for the badge. */
+  const start = (repoId: string, request: () => Promise<PullResult>): Promise<PullResult> => {
     const running = inFlight.current[repoId];
     if (running) return running; // one pull per repository, whether it came from here or from "Pull all"
     set(repoId, "running");
-    const done = api
-      .pullRepo(repoId)
+    const done = request()
       .then(
         (result) => result,
         (err) => failed(repoId, err),
@@ -54,6 +66,9 @@ export function PullProvider({ onPulled, children }: { onPulled: () => void; chi
     inFlight.current[repoId] = done;
     return done;
   };
+
+  const pull = (repoId: string): Promise<PullResult> => start(repoId, () => api.pullRepo(repoId));
+  const resolve = (repoId: string, claim: PullResolve): Promise<PullResult> => start(repoId, () => api.resolvePull(repoId, claim));
 
   const pullAll = (repoIds: string[]) => {
     if (allRunning) return;
@@ -73,16 +88,84 @@ export function PullProvider({ onPulled, children }: { onPulled: () => void; chi
     });
   };
 
-  return <Context.Provider value={{ states, pull, pullAll, allRunning }}>{children}</Context.Provider>;
+  return <Context.Provider value={{ states, pull, resolve, pullAll, allRunning }}>{children}</Context.Provider>;
 }
 
 const PULL_HINT = "Fetch this repository's remote and fast-forward its main checkout. Never merges, rebases, stashes or switches branches; off the default branch it only fetches.";
 
-export function PullButton({ repoId, compact = false }: { repoId: string; compact?: boolean }) {
+/**
+ * What a blocked pull shows: the files in the way, what each one is, and — when every one of them is a leftover of a
+ * change created here — the Resolve and pull button. Nothing happens until that button is pressed; the list, the hint
+ * and the summary above it are what the user confirms. Once a resolve has run, `result` is its outcome and this turns
+ * into that: the files it replaced and where the copies are. Used inside the `Modal` below and inline in the
+ * end-session dialog, so both places offer exactly one repository's resolution at a time.
+ */
+export function PullBlockedList({ result: shown, running, onResolve }: { result: PullResult; running: boolean; onResolve: (claim: PullResolve) => void }) {
+  if (shown.resolved) {
+    const copies = shown.resolved.filter((r) => r.copy);
+    return (
+      <div class="pull-blocked">
+        <p class="hint">{pullOutcome(shown).detail}</p>
+        <ul class="pull-blocked-files">
+          {shown.resolved.map((r) => (
+            <li key={r.path}>
+              <span class="mono">{r.path}</span> <span class="badge success">replaced</span>
+            </li>
+          ))}
+        </ul>
+        {copies.length > 0 && (
+          <div class="notice">
+            {copies.length === 1 ? "A copy of the version that was here is kept at" : "Copies of the versions that were here are kept at"}
+            <ul class="pull-blocked-files">
+              {copies.map((r) => (
+                <li key={r.path}>
+                  <span class="mono">{r.copy}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  const blocking = shown.blocking ?? [];
+  const claim = shown.resolvable;
+  return (
+    <div class="pull-blocked">
+      {shown.reason && <p class="hint">{shown.reason}</p>}
+      <ul class="pull-blocked-files">
+        {blocking.map((file) => (
+          <li key={file.path}>
+            <span class="mono">{file.path}</span> <span class={`badge ${file.kind === "leftover" ? (file.differs ? "warning" : "") : "danger"}`}>{blockingNote(file)}</span>
+          </li>
+        ))}
+      </ul>
+      {shown.hint && <p class="hint">{shown.hint}</p>}
+      {claim && (
+        <>
+          <p class="hint">{resolveSummary(claim.files)}</p>
+          <div class="row pull-blocked-actions">
+            <span style={{ flex: 1 }} />
+            <button type="button" class="btn sm primary" disabled={running} onClick={() => onResolve(claim)}>
+              {running ? "Resolving…" : "Resolve and pull"}
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+export function PullButton({ repoId, repoName, compact = false }: { repoId: string; repoName?: string; compact?: boolean }) {
   const ui = usePull();
+  const [open, setOpen] = useState(false);
   const state = ui.states[repoId];
   const running = state === "running";
-  const outcome = state && state !== "running" ? pullOutcome(state) : undefined;
+  const result = state && state !== "running" ? state : undefined;
+  const outcome = result ? pullOutcome(result) : undefined;
+  // A refusal over uncommitted files has more to say than a tooltip can: the badge becomes the way in.
+  const blocked = result?.blocking !== undefined || result?.resolved !== undefined;
   return (
     <span class="pull">
       <button
@@ -97,10 +180,28 @@ export function PullButton({ repoId, compact = false }: { repoId: string; compac
       >
         {running ? "Pulling…" : "⇣ Pull"}
       </button>
-      {outcome && (
+      {outcome && result && blocked && (
+        <button
+          type="button"
+          class={`badge ${outcome.tone} pull-badge-button`}
+          title={`${outcome.detail} Opens the list of files.`}
+          onClick={(e) => {
+            e.stopPropagation(); // in an overview row, a click must not open the repository
+            setOpen(true);
+          }}
+        >
+          {outcome.label}
+        </button>
+      )}
+      {outcome && !blocked && (
         <span class={`badge ${outcome.tone}`} title={outcome.detail}>
           {outcome.label}
         </span>
+      )}
+      {open && result && (
+        <Modal label={`Blocked pull for ${repoName ?? repoId}`} title="Blocked pull" subtitle={<span class="mono">{repoName ?? repoId}</span>} onClose={() => setOpen(false)}>
+          <PullBlockedList result={result} running={running} onResolve={(claim) => void ui.resolve(repoId, claim)} />
+        </Modal>
       )}
     </span>
   );

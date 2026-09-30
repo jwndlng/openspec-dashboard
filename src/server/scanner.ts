@@ -176,7 +176,7 @@ async function scanChange(ctx: RepoContext, entry: ChangeDirEntry, withGit: bool
     warnings.push(...sync.warnings);
   }
 
-  const { stage, column } = deriveStage({ archived: Boolean(entry.archived), artifacts, tasks });
+  const { stage, column, subState } = deriveStage({ archived: Boolean(entry.archived), artifacts, tasks });
   return {
     repoId: ctx.repo.id,
     name: entry.name,
@@ -191,6 +191,7 @@ async function scanChange(ctx: RepoContext, entry: ChangeDirEntry, withGit: bool
     branchMatch: entry.archived ? undefined : ctx.isMain ? findBranchMatch(entry.name, ctx.branch, ctx.worktrees) : ctx.branch,
     stage,
     column,
+    subState,
     prompt,
     warnings: warnings.length ? warnings : undefined,
   };

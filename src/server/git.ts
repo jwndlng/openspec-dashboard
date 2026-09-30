@@ -143,13 +143,22 @@ export function parseStatusPaths(porcelainZ: string): StatusPath[] {
  * Empty on any failure.
  */
 export async function statusPaths(cwd: string, relPath: string): Promise<{ path: string; deleted: boolean }[]> {
+  return (await knownStatusPaths(cwd, relPath)) ?? [];
+}
+
+/**
+ * `statusPaths`, but undefined when git failed — for callers that must not read a failure as "nothing differs". With
+ * `ignored`, ignored files are listed too, each on its own.
+ */
+export async function knownStatusPaths(cwd: string, relPath: string, options: { ignored?: boolean } = {}): Promise<{ path: string; deleted: boolean }[] | undefined> {
   // Porcelain paths are relative to the top level, which is not `cwd` when the project sits in a subdirectory.
   // `--show-cdup` keeps `cwd`'s own spelling (`--show-toplevel` would resolve symlinks such as /var → /private/var).
   const cdup = (await git(cwd, ["rev-parse", "--show-cdup"]))?.trim();
-  if (cdup === undefined) return [];
+  if (cdup === undefined) return undefined;
   const top = join(cwd, cdup);
-  const out = await git(cwd, ["status", "--porcelain=v1", "-z", "--untracked-files=all", "--", relPath]);
-  return out ? parseStatusPaths(out).map((p) => ({ path: join(top, p.path), deleted: p.deleted })) : [];
+  const out = await git(cwd, ["status", "--porcelain=v1", "-z", "--untracked-files=all", ...(options.ignored ? ["--ignored"] : []), "--", relPath]);
+  if (out === undefined) return undefined;
+  return parseStatusPaths(out).map((p) => ({ path: join(top, p.path), deleted: p.deleted }));
 }
 
 /** What one `git status --porcelain=v2 --branch` says about a checkout. Counts only: entry paths are never kept. */

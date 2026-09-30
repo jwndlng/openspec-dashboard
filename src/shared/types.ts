@@ -14,9 +14,16 @@ export interface ArtifactStatus {
 }
 
 export interface TaskProgress {
+  /** `[x]` boxes only: verified work. A task awaiting validation is never counted here. */
   done: number;
+  /** `[~]` boxes: finished by the agent, not yet confirmed by a person. Absent in snapshots cached by older versions. */
+  awaiting?: number;
+  /** Every checkbox: done, awaiting and open together. */
   total: number;
 }
+
+/** A change in `Done` is either awaiting a person's confirmation (`validate`) or fully verified (`complete`). */
+export type DoneSubState = "complete" | "validate";
 
 export interface ChangeSnapshot {
   repoId: string;
@@ -52,6 +59,8 @@ export interface ChangeSnapshot {
   stage: Stage;
   /** Display column, e.g. "Drafts", "Implementing". */
   column: string;
+  /** Only for `done`: `validate` while a person still has to confirm a task. Derived with the column, never stored. */
+  subState?: DoneSubState;
   /**
    * Contents of the change's `prompt.md`, when present. A free-text hint the user jotted down when starting the change;
    * not a schema artifact and does not affect artifact status. Bounded, so pathological files do not bloat the snapshot.
@@ -190,10 +199,26 @@ export interface AgentProfile {
   command: string[];
   /** Opening prompt per session starter; `{change}` is the only placeholder. A starter without a prompt is not offered. */
   prompts: Partial<Record<PromptKey, string>>;
+  /** Additional instructions appended to the prompt of the same key, composed as one line. Never a prompt of its own:
+   *  a key without a prompt stays unavailable and its text is sent nowhere — except `ship`, which has a default. */
+  promptSuffixes?: Partial<Record<PromptKey, string>>;
   /** Continues this agent's latest conversation in the same directory, e.g. ["claude", "--continue"]. */
   resumeCommand?: string[];
   /** Environment variables removed for the agent, e.g. API keys so a CLI's own login is used. */
   unsetEnv?: string[];
+}
+
+/**
+ * One shortcut of the agent console: a control that types a prepared prompt into the running agent. The title is what
+ * the control reads and is never sent; the prompt is what the agent receives, exactly as written — one line, with no
+ * placeholder, because a shortcut is offered in every session, including those that belong to no change.
+ */
+export interface Shortcut {
+  id: string;
+  /** What the control reads. Never sent to the agent. */
+  title: string;
+  /** Typed into the agent's terminal exactly as written; one line, no placeholder. */
+  prompt: string;
 }
 
 export interface AgentSessionsConfig {
@@ -202,6 +227,8 @@ export interface AgentSessionsConfig {
   defaultAgent: string;
   /** Where the main console's agent runs; absent means `~/.openspec-dashboard/console/`. Never inside a tracked repository. */
   consoleDir?: string;
+  /** The console's shortcuts, in the order they are offered. Empty means no shortcuts are offered at all. */
+  shortcuts: Shortcut[];
 }
 
 export interface Config {
@@ -215,10 +242,16 @@ export interface Config {
   agentSessions: AgentSessionsConfig;
 }
 
-export type SessionAction = "draft" | "implement" | "archive";
-export const SESSION_ACTIONS: readonly SessionAction[] = ["draft", "implement", "archive"];
-/** `ship` is a prompt, not a starter: it asks the agent of an existing session to commit, push and open a pull request. */
-export type PromptKey = SessionAction | "ship";
+export type SessionAction = "draft" | "implement" | "validate" | "archive";
+export const SESSION_ACTIONS: readonly SessionAction[] = ["draft", "implement", "validate", "archive"];
+/**
+ * `ship` is a prompt, not a starter: it asks the agent of an existing session to commit, push and open a pull request.
+ * `integrate` is not a starter for a change either: it opens an integration session in a repository that does not use
+ * OpenSpec yet. Unlike every other prompt it carries no placeholder — the folder is the agent's working directory, so
+ * no text from the browser reaches the command line. `resolveConflicts` is a prompt of the same kind as `ship`: it
+ * asks the agent of an existing session to make its branch merge into the base again.
+ */
+export type PromptKey = SessionAction | "ship" | "integrate" | "resolveConflicts";
 /** Agent-neutral on purpose, so every profile can ship without being configured for it. */
 /** What Ship answers: the session, and whether the prompt was submitted. `false` means the agent of a running session
  *  did not show the typed prompt (it may be showing a menu), so Enter was not pressed and nothing was confirmed. */
@@ -229,12 +262,29 @@ export type PromptResult = ShipResult;
 export const DEFAULT_SHIP_PROMPT =
   "Ship the work in this worktree: commit everything that belongs to it with a Conventional Commit message, push the branch, and open a pull request against the default branch if there is none yet. Do not merge it. Tell me the pull request URL.";
 
+/** Agent-neutral like Ship's, and deliberately silent about method: rebase or merge is the repository's convention,
+ *  which the agent knows and the dashboard does not. */
+export const DEFAULT_RESOLVE_CONFLICTS_PROMPT =
+  "The branch for {change} in this worktree no longer merges into the default branch. Bring it up to date with the default branch and resolve every conflict, keeping what this branch set out to do. Then run the project's checks and push the branch. Do not merge the pull request.";
+
 /**
  * What became of the work in a session's worktree, from local git only (nothing is fetched, so `merged` is as of the
  * user's last fetch). `clean`: no commit the base lacks; `missing`: the directory is not a worktree (any more).
  */
 export type WorkState = "missing" | "clean" | "uncommitted" | "unpushed" | "pushed" | "merged";
 export const SHIPPABLE_WORK: readonly WorkState[] = ["uncommitted", "unpushed", "pushed"];
+/** States holding work the base does not have yet — the only ones where merging into the base is worth checking. */
+export const CONFLICTABLE_WORK: readonly WorkState[] = ["uncommitted", "unpushed", "pushed"];
+
+/** That merging the branch into the base would conflict. Absent means it merges cleanly *or* could not be checked. */
+export interface WorkConflicts {
+  /** What it would be merged into, e.g. `origin/main`. */
+  base: string;
+  /** Conflicting paths, capped; never empty. */
+  files: string[];
+  /** Set when the cap cut the list short. */
+  truncated?: boolean;
+}
 
 export interface WorkStatus {
   state: WorkState;
@@ -242,6 +292,8 @@ export interface WorkStatus {
   count?: number;
   /** What the branch was compared with, e.g. `origin/main`. */
   base?: string;
+  /** Only for `CONFLICTABLE_WORK`, and only when the check could be made. As of the user's last fetch, like `merged`. */
+  conflicts?: WorkConflicts;
 }
 
 /** A directory under the dashboard's worktrees folder; it outlives session records, so it is listed on its own. */
@@ -300,6 +352,8 @@ interface SessionBase {
 /** A session started for one change of one repository, from a card's starter. */
 export interface ChangeSession extends SessionBase {
   console?: undefined;
+  integration?: undefined;
+  folder?: undefined;
   repoId: string;
   change: string;
   action: SessionAction;
@@ -311,6 +365,8 @@ export interface ChangeSession extends SessionBase {
  */
 export interface ConsoleSession extends SessionBase {
   console: true;
+  integration?: undefined;
+  folder?: undefined;
   repoId?: undefined;
   change?: undefined;
   action?: undefined;
@@ -319,15 +375,43 @@ export interface ConsoleSession extends SessionBase {
   inPlace?: undefined;
 }
 
-export type Session = ChangeSession | ConsoleSession;
+/**
+ * Setting a repository up for OpenSpec: the default agent in a git repository that is not tracked yet, run **in place**
+ * in its main checkout, because the point is to leave `openspec/config.yaml` where discovery looks for it. It belongs
+ * to no repository in the config, no change and no action; it has no branch, no worktree of its own, no work status,
+ * no Ship and no pull, and is never part of Open work or the activity log.
+ */
+export interface IntegrationSession extends SessionBase {
+  integration: true;
+  console?: undefined;
+  /** Canonical path of the repository being set up; the agent's working directory. */
+  folder: string;
+  repoId?: undefined;
+  change?: undefined;
+  action?: undefined;
+  branch?: undefined;
+  adopted?: undefined;
+  inPlace: true;
+}
+
+export type Session = ChangeSession | ConsoleSession | IntegrationSession;
 
 export function isConsole(session: Session): session is ConsoleSession {
   return session.console === true;
 }
 
+export function isIntegration(session: Session): session is IntegrationSession {
+  return session.integration === true;
+}
+
+/** A session that belongs to no repository and no change: the console and integrations. */
+export function isChangeless(session: Session): session is ConsoleSession | IntegrationSession {
+  return isConsole(session) || isIntegration(session);
+}
+
 /** Only the change sessions of a list: every view about repositories and changes starts here. */
 export function changeSessions(sessions: readonly Session[]): ChangeSession[] {
-  return sessions.filter((s): s is ChangeSession => !isConsole(s));
+  return sessions.filter((s): s is ChangeSession => !isChangeless(s));
 }
 
 export interface AgentAvailability {
@@ -338,18 +422,33 @@ export interface AgentAvailability {
   path?: string;
 }
 
+/**
+ * Why **Integrate** cannot be offered at all — as opposed to for one folder. Shared so the disabled row, the refusal
+ * and the test all say the same thing. `undefined` means the action is available.
+ */
+export function integrateUnavailable(config: Config, agents: readonly AgentAvailability[]): string | undefined {
+  if (!config.agentSessions.enabled) return "agent sessions are disabled";
+  const agent = config.agentSessions.agents.find((a) => a.id === config.agentSessions.defaultAgent);
+  if (!agent) return "no agent is configured";
+  if (!agent.prompts.integrate) return `${agent.name} has no Integrate prompt configured`;
+  if (agents.find((a) => a.id === agent.id)?.available === false) return `${agent.name} was not found (${agent.command[0]})`;
+  return undefined;
+}
+
 /** Included unless explicitly switched off for this repository (the global switch is checked separately). */
 export function repoAgentEnabled(repo: Pick<RepoConfig, "enabled" | "agent">): boolean {
   return repo.enabled && repo.agent?.enabled !== false;
 }
 
 /** The session starters a change currently qualifies for (before feature/opt-in checks). */
-export function availableActions(change: Pick<ChangeSnapshot, "archived" | "artifacts" | "stage">): SessionAction[] {
+export function availableActions(change: Pick<ChangeSnapshot, "archived" | "artifacts" | "stage" | "subState">): SessionAction[] {
   if (change.archived) return [];
   const actions: SessionAction[] = [];
   if (change.artifacts.length === 0 || change.artifacts.some((a) => a.status !== "done")) actions.push("draft");
   if (change.stage === "ready" || change.stage === "implementing") actions.push("implement");
-  if (change.stage === "done") actions.push("archive"); // every task ticked, not archived yet
+  // In `Done` there is nothing left to implement; offering it is what sends an agent back into finished code.
+  if (change.stage === "done" && change.subState === "validate") actions.push("validate");
+  if (change.stage === "done") actions.push("archive"); // every task settled, not archived yet
   return actions;
 }
 
@@ -364,9 +463,21 @@ export interface SameRemoteRepo {
 /** A discovery candidate. `sameRemoteAs` is information for the user and is dropped when the candidate is enabled. */
 export type DiscoveredRepo = RepoConfig & { sameRemoteAs?: SameRemoteRepo[] };
 
+/**
+ * A git repository under the roots that does not use OpenSpec yet: no `openspec/config.yaml`, not a linked worktree,
+ * not in the config, and not a container of a reported OpenSpec project. Offered for integration, never tracked.
+ */
+export interface IntegratableRepo {
+  id: string;
+  path: string;
+  name: string;
+}
+
 export interface DiscoverResult {
   /** Repositories found under the roots that are not in the config yet. Never persisted by discovery. */
   candidates: DiscoveredRepo[];
+  /** Git repositories under the roots that have no OpenSpec yet. Empty when there are none. */
+  integratable: IntegratableRepo[];
   errors: { root: string; message: string }[];
 }
 
@@ -508,6 +619,8 @@ export type ActivityEvent = ActivityBase &
     | { kind: "session-started"; change: string; action: string; agentName: string; resumed?: boolean }
     | { kind: "session-ended"; change: string; exitCode?: number; error?: string }
     | { kind: "session-shipped"; change: string; submitted?: boolean }
+    /** The resolve prompt was handed over — not that the conflict was resolved: that is re-derived from git. */
+    | { kind: "session-conflicts-resolve"; change: string; submitted?: boolean }
   );
 
 export type ActivityKind = ActivityEvent["kind"];
@@ -525,13 +638,14 @@ export const ACTIVITY_KINDS: readonly ActivityKind[] = [
   "session-started",
   "session-ended",
   "session-shipped",
+  "session-conflicts-resolve",
 ];
 
 /** The filter groups of the Activity view. */
 export const ACTIVITY_GROUPS: Readonly<Record<"changes" | "tasks" | "sessions" | "repositories", readonly ActivityKind[]>> = {
   changes: ["change-created", "change-moved", "change-archived", "change-removed"],
   tasks: ["tasks-progress"],
-  sessions: ["session-started", "session-ended", "session-shipped"],
+  sessions: ["session-started", "session-ended", "session-shipped", "session-conflicts-resolve"],
   repositories: ["repo-tracked", "repo-untracked", "repo-failing", "repo-recovered"],
 };
 
@@ -547,12 +661,40 @@ export interface ActivityPage {
 }
 
 /**
+ * One uncommitted path that stops a fast-forward: the incoming commits change it and the main checkout has it modified,
+ * staged or untracked. A **change leftover** is a file the dashboard's own create-change wrote and staged that the
+ * incoming commits now bring along; anything else is the user's **local work** and is never touched
+ * (openspec/specs/repository-pull: "Change leftovers blocking a pull are resolved on confirmation").
+ */
+export interface PullBlockingFile {
+  /** Repository-relative, forward slashes — git's own spelling. */
+  path: string;
+  kind: "leftover" | "local-work";
+  /** Leftovers only: the local content is not the incoming content, so a copy is kept before it is replaced. */
+  differs?: boolean;
+  /** Leftovers only. Blob ids, the claim a confirmation is checked against: upstream, index (when staged), working tree. */
+  incoming?: string;
+  staged?: string;
+  worktree?: string;
+}
+
+/**
+ * What a confirmed **Resolve and pull** claims: the upstream commit the user was shown and the blocking files exactly as
+ * they were offered. The server re-determines all of it and proceeds only when its own answer matches this one.
+ */
+export interface PullResolve {
+  /** Full commit id the upstream pointed at when the offer was made. */
+  upstream: string;
+  files: PullBlockingFile[];
+}
+
+/**
  * What the pull action did for one repository. The fetch and the update of the main checkout are reported separately:
  * the fetch is always safe, the update only happens when it is an unambiguous fast-forward on the default branch.
  */
 export interface PullResult {
   repoId: string;
-  /** The remote was fetched (remote-tracking refs are current). */
+  /** The remote was fetched (remote-tracking refs are current). A confirmed resolve never fetches. */
   fetched: boolean;
   update: "fast-forwarded" | "up-to-date" | "skipped" | "refused" | "failed";
   /** Commits the main checkout moved forward. */
@@ -564,6 +706,14 @@ export interface PullResult {
   defaultBranch?: string;
   /** The repository has a post-merge hook; the dashboard does not run hooks. */
   hooksSkipped?: boolean;
+  /** Refusals over uncommitted files: every blocking path, classified. Absent when git refused for another reason. */
+  blocking?: PullBlockingFile[];
+  /** Present only when every blocking file is a change leftover: post this back to run Resolve and pull. */
+  resolvable?: PullResolve;
+  /** What a confirmed resolve replaced, and where a copy of the local version was saved when it differed. */
+  resolved?: { path: string; copy?: string }[];
+  /** The next step in plain words, for a refusal the user has to act on. Never suggests forcing or discarding. */
+  hint?: string;
 }
 
 /** What `POST /api/repos/<id>/changes` answers on success: the change exists on disk; `staged` says whether git tracks it already. */
@@ -633,4 +783,68 @@ export interface CleanupItemResult {
 export interface CleanupResult {
   repoId: string;
   items: CleanupItemResult[];
+}
+
+/** One file of a change directory as the dismiss confirmation shows it. */
+export interface DismissFile {
+  /** Relative to the change directory, with `/` separators. */
+  path: string;
+  /** `restorable`: tracked and identical to `HEAD`, so git can bring it back. `lost`: untracked, modified, or no git. */
+  state: "restorable" | "lost";
+}
+
+/** What dismissing a change would delete (openspec/specs/change-dismissal). */
+export interface DismissPreview {
+  repoId: string;
+  name: string;
+  isGit: boolean;
+  files: DismissFile[];
+  /** Linked worktrees holding their own copy of the change; they are kept, and the card stays while one does. */
+  copies: { path: string; branch?: string }[];
+  /** "Same as shown" token over every file's path, size, mtime and state; the dismissal is refused when it changed. */
+  fingerprint: string;
+}
+
+export interface DismissResult {
+  name: string;
+  /** Whether the removal was staged; false for a repository without git, an untracked change, or a failed `git add`. */
+  staged: boolean;
+}
+
+/**
+ * Status of one environment check (openspec/specs/environment-check). `not-needed` is not a weaker `ok`: it means the
+ * configuration switched off the feature that would need it, so nothing was looked at.
+ */
+export type EnvironmentStatus = "ok" | "warning" | "problem" | "not-needed";
+
+/** Worst first; `not-needed` last, so a report of only disabled features is not reported as `ok`. */
+export const ENVIRONMENT_STATUS_ORDER: readonly EnvironmentStatus[] = ["problem", "warning", "ok", "not-needed"];
+
+/** One prerequisite of the machine the dashboard runs on, as the environment report states it. */
+export interface EnvironmentCheck {
+  /** Stable: `git`, `git-identity`, `openspec-cli`, `github-cli`, `dashboard-home`, or `agent:<agent id>`. */
+  id: string;
+  label: string;
+  status: EnvironmentStatus;
+  /** What was found, in one line. Never a credential, and never a claim that something will work. */
+  found: string;
+  /** How to fix it, in one line; absent when the status is `ok` or `not-needed`. */
+  remedy?: string;
+}
+
+export interface EnvironmentReport {
+  checkedAt: string;
+  /** The worst status of any check, in `ENVIRONMENT_STATUS_ORDER`. */
+  status: EnvironmentStatus;
+  checks: EnvironmentCheck[];
+  /**
+   * What the report cannot know, because it contacts no network: present whenever the GitHub CLI check looked at
+   * anything at all.
+   */
+  caveat?: string;
+}
+
+/** Checks the user is meant to act on: a `not-needed` check is not a problem, and an `ok` one needs nothing. */
+export function environmentProblems(report: EnvironmentReport): number {
+  return report.checks.filter((c) => c.status === "warning" || c.status === "problem").length;
 }

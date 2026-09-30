@@ -1,11 +1,14 @@
 import { afterAll, afterEach, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
+import { existsSync } from "node:fs";
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { createFetchHandler, type AppState } from "../src/server/api.ts";
+import { worktreesDir } from "../src/server/paths.ts";
 import { Scanner } from "../src/server/scanner.ts";
-import type { ChangeSnapshot, Session } from "../src/shared/types.ts";
+import type { ChangeSession, ChangeSnapshot, Session } from "../src/shared/types.ts";
+import { nextStepFor, startersFor } from "../src/ui/sessionState.ts";
 import { useTempHome } from "./helpers.ts";
-import { FAKE_AGENT, harness, waitFor, watch, type Harness } from "./sessionHelpers.ts";
+import { fakeProfile, FAKE_AGENT, harness, waitFor, watch, type Harness } from "./sessionHelpers.ts";
 
 setDefaultTimeout(30_000);
 
@@ -53,7 +56,7 @@ test("a next step an agent never shows is left typed: no Enter, nothing confirme
   expect(manager.get(s.id).state).toBe("running");
 });
 
-test("prompt refusals: stage, archive, unknown action, not running, feature off", async () => {
+test("prompt refusals: stage, unknown action, not running, feature off", async () => {
   const h = await harness();
   managers.push(h.manager);
   const s = await h.manager.open({ repoId: h.repoId, change: "upgrade-runtime", action: "implement" });
@@ -66,7 +69,7 @@ test("prompt refusals: stage, archive, unknown action, not running, feature off"
     return 0;
   };
   expect(await refused("draft")).toBe(400); // every artifact of the fixture's change is done
-  expect(await refused("archive")).toBe(400);
+  expect(await refused("archive")).toBe(400); // not because it is Archive: the change is not `Done` yet
   expect(await refused("ship")).toBe(400);
   expect(await refused("implement", "nope")).toBe(404);
 
@@ -77,6 +80,28 @@ test("prompt refusals: stage, archive, unknown action, not running, feature off"
   h.manager.write(s.id, "exit\r");
   await waitFor(() => h.manager.get(s.id).state === "exited", "exit");
   expect(await refused("implement")).toBe(409);
+});
+
+test("the next step carries the profile's additional instructions for that action", async () => {
+  const h = await harness({ agent: { promptSuffixes: { implement: "Run the linter before you finish." } } });
+  managers.push(h.manager);
+  const s = await h.manager.open({ repoId: h.repoId, change: "upgrade-runtime", action: "implement" });
+  const seen = await watch(h.manager, s.id);
+  await waitFor(() => seen.text().includes("fake-agent ready"), "the agent");
+  // The opening prompt already carried it, as one argument.
+  expect(seen.text()).toContain("implement upgrade-runtime Run the linter before you finish.");
+
+  expect((await h.manager.prompt(s.id, { action: "implement" })).submitted).toBe(true);
+  await waitFor(() => seen.text().includes("you said: implement upgrade-runtime Run the linter before you finish."), "the composed prompt the agent received");
+});
+
+test("additional instructions for an action with no prompt leave it unavailable, and are sent nowhere", async () => {
+  const h = await harness({ agent: { prompts: { draft: "draft {change}" }, promptSuffixes: { implement: "Run the linter before you finish." } } });
+  managers.push(h.manager);
+  // Implement is available for the fixture's change, but the agent has no Implement prompt: the suffix does not stand in for one.
+  expect(h.manager.open({ repoId: h.repoId, change: "upgrade-runtime", action: "implement" })).rejects.toThrow(/no "implement" prompt configured/);
+  expect(h.manager.list()).toHaveLength(0);
+  expect(startersFor(h.config, changeOf(h, "upgrade-runtime"))).toEqual([]);
 });
 
 test("a draft session takes the implement prompt once the change is ready, and records it", async () => {
@@ -91,18 +116,56 @@ test("a draft session takes the implement prompt once the change is ready, and r
   expect((await h.manager.prompt(s.id, { action: "implement" })).action).toBe("implement");
 });
 
-test("archive runs in its own worktree next to the change's running session; the same starter twice is one session", async () => {
+test("one open session per change: opening any action returns the running session, and Archive gets no worktree of its own", async () => {
   const h = await harness();
   managers.push(h.manager);
   const a = await h.manager.open({ repoId: h.repoId, change: "upgrade-runtime", action: "implement" });
+  expect((await h.manager.open({ repoId: h.repoId, change: "upgrade-runtime", action: "implement" })).id).toBe(a.id);
   Object.assign(changeOf(h, "upgrade-runtime"), { stage: "done" });
-  const arch = await h.manager.open({ repoId: h.repoId, change: "upgrade-runtime", action: "archive" });
-  expect(arch.id).not.toBe(a.id);
-  expect(arch.worktreePath).not.toBe(a.worktreePath);
-  expect(arch.branch).toBe("chore/archive-upgrade-runtime");
-  expect((await h.manager.open({ repoId: h.repoId, change: "upgrade-runtime", action: "archive" })).id).toBe(arch.id);
-  expect(h.manager.list().filter((x) => x.state === "running")).toHaveLength(2);
-  expect(h.manager.prompt(arch.id, { action: "implement" })).rejects.toThrow();
+  // The action asked for makes no difference: Archive used to open a second session in a worktree of its own.
+  expect((await h.manager.open({ repoId: h.repoId, change: "upgrade-runtime", action: "archive" })).id).toBe(a.id);
+  expect(h.manager.list().filter((x) => x.state === "running")).toHaveLength(1);
+  expect(existsSync(join(worktreesDir(), h.repoId, "archive-upgrade-runtime"))).toBe(false);
+});
+
+test("Archive goes into the running session: submitted there, one session, no archive worktree", async () => {
+  const h = await harness();
+  managers.push(h.manager);
+  const s = await h.manager.open({ repoId: h.repoId, change: "upgrade-runtime", action: "implement" });
+  const seen = await watch(h.manager, s.id);
+  await waitFor(() => seen.text().includes("fake-agent ready"), "the agent");
+
+  Object.assign(changeOf(h, "upgrade-runtime"), { stage: "done" });
+  const result = await h.manager.prompt(s.id, { action: "archive" });
+  expect([result.id, result.submitted, result.action]).toEqual([s.id, true, "archive"]);
+  await waitFor(() => seen.text().includes("you said: archive upgrade-runtime"), "the prompt the agent received");
+  expect(h.manager.list().filter((x) => x.state === "running")).toHaveLength(1);
+  expect(existsSync(join(worktreesDir(), h.repoId, "archive-upgrade-runtime"))).toBe(false);
+});
+
+test("a session that was started as Archive takes the next step the stage allows", async () => {
+  const h = await harness({ agent: { prompts: { implement: "implement {change}", validate: "validate {change}", archive: "archive {change}" } } });
+  managers.push(h.manager);
+  // `confirm-retention` is Done with a task awaiting confirmation, so both Archive and Validate are available for it.
+  const s = await h.manager.open({ repoId: h.repoId, change: "confirm-retention", action: "archive" });
+  const seen = await watch(h.manager, s.id);
+  await waitFor(() => seen.text().includes("fake-agent ready"), "the agent");
+
+  const result = await h.manager.prompt(s.id, { action: "validate" });
+  expect([result.id, result.submitted, result.action]).toEqual([s.id, true, "validate"]);
+  expect(h.manager.list().filter((x) => x.state === "running")).toHaveLength(1);
+});
+
+test("a folder without git keeps one agent: the running session is returned, with no second agent in the folder", async () => {
+  const h = await harness({ git: false });
+  managers.push(h.manager);
+  const a = await h.manager.open({ repoId: h.repoId, change: "upgrade-runtime", action: "implement" });
+  expect(a.inPlace).toBe(true);
+  expect(a.worktreePath).toBe(h.repoPath);
+  Object.assign(changeOf(h, "upgrade-runtime"), { stage: "done" });
+  // Nothing about an in-place session is a worktree, so only the per-change rule keeps a second agent out of the folder.
+  expect((await h.manager.open({ repoId: h.repoId, change: "upgrade-runtime", action: "archive" })).id).toBe(a.id);
+  expect(h.manager.list().filter((x) => x.state === "running")).toHaveLength(1);
 });
 
 test("API: the prompt route is guarded, and the worktree route reports the work status as it is now", async () => {
@@ -114,12 +177,36 @@ test("API: the prompt route is guarded, and the worktree route reports the work 
 
   const s = (await (await post("/api/sessions", { repoId: h.repoId, change: "upgrade-runtime", action: "implement" })).json()) as Session;
   expect((await post(`/api/sessions/${s.id}/prompt`, { action: "implement" }, "https://evil.example")).status).toBe(403);
-  expect((await post(`/api/sessions/${s.id}/prompt`, { action: "archive" })).status).toBe(400);
   expect((await post(`/api/sessions/${s.id}/prompt`, { action: "implement" })).status).toBe(200);
+  Object.assign(changeOf(h, "upgrade-runtime"), { stage: "done" });
+  expect((await post(`/api/sessions/${s.id}/prompt`, { action: "archive" })).status).toBe(200);
 
   await h.manager.worktrees(); // fill the list's cache, which must not be what the dialog sees
   await writeFile(join(s.worktreePath, "fresh.txt"), "x");
   const status = (await (await handle(new Request(`http://127.0.0.1:4173/api/sessions/${s.id}/worktree`))).json()) as { removable: boolean; work: { state: string; count: number } };
   expect(status.work).toMatchObject({ state: "uncommitted", count: 1 });
   expect(status.removable).toBe(false);
+});
+
+test("Validate is the next step of a validating change: typed into its running session, and Implement is not offered", async () => {
+  const h = await harness({ agent: { prompts: { implement: "implement {change}", validate: "validate {change}", archive: "archive {change}" } } });
+  managers.push(h.manager);
+  const card = changeOf(h, "confirm-retention");
+  expect([card.column, card.subState]).toEqual(["Done", "validate"]);
+
+  const cfg = { ...h.config, agentSessions: { ...h.config.agentSessions, agents: [fakeProfile({ prompts: { implement: "i {change}", validate: "v {change}", archive: "a {change}" } })] } };
+  expect(startersFor(cfg, card)).toEqual(["validate", "archive"]);
+  // Without a Validate prompt the card is left with Archive alone.
+  const noValidate = { ...cfg, agentSessions: { ...cfg.agentSessions, agents: [fakeProfile({ prompts: { implement: "i {change}", archive: "a {change}" } })] } };
+  expect(startersFor(noValidate, card)).toEqual(["archive"]);
+
+  // Whatever the starter, it goes into the change's running session.
+  const s = await h.manager.open({ repoId: h.repoId, change: "confirm-retention", action: "validate" });
+  expect(nextStepFor(h.manager.list().filter((x) => !x.console) as ChangeSession[], h.repoId, "confirm-retention")).toEqual({ promptSessionId: s.id });
+  const seen = await watch(h.manager, s.id);
+  await waitFor(() => seen.text().includes("fake-agent ready"), "the agent");
+  expect((await h.manager.prompt(s.id, { action: "validate" })).submitted).toBe(true);
+  await waitFor(() => seen.text().includes("you said: validate confirm-retention"), "the prompt the agent received");
+  // Nothing is left to implement in `Done`, so that step is refused even into a running session.
+  expect(h.manager.prompt(s.id, { action: "implement" })).rejects.toThrow(/not available/);
 });

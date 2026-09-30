@@ -1,5 +1,5 @@
 // Pure helpers for the agent-session UI; free of DOM access at import time so they can be unit-tested.
-import { availableActions, repoAgentEnabled, SHIPPABLE_WORK, type AgentProfile, type ChangeSnapshot, type Config, type RepoSnapshot, type ChangeSession, changeSessions, type ConsoleSession, type Session, type SessionAction, type SessionWorktree, type WorkStatus } from "../shared/types.ts";
+import { availableActions, isChangeless, repoAgentEnabled, SHIPPABLE_WORK, type AgentProfile, type ChangeSnapshot, type Config, type RepoSnapshot, type ChangeSession, changeSessions, type ConsoleSession, type Session, type SessionAction, type SessionWorktree, type WorkStatus } from "../shared/types.ts";
 
 /** Session starters are shown when the feature is on, for every tracked repository that has not been switched off. */
 export function sessionsEnabledFor(config: Config | null, repoId: string): boolean {
@@ -15,15 +15,16 @@ export function agentForRepo(config: Config | null, repoId: string): AgentProfil
 }
 
 /** What the change's stage allows, narrowed to what this repository's agent has an opening prompt for. */
-export function startersFor(config: Config | null, card: Pick<ChangeSnapshot, "repoId" | "archived" | "artifacts" | "stage">): SessionAction[] {
+export function startersFor(config: Config | null, card: Pick<ChangeSnapshot, "repoId" | "archived" | "artifacts" | "stage" | "subState">): SessionAction[] {
   const agent = agentForRepo(config, card.repoId);
   if (!agent) return [];
   return availableActions(card).filter((action) => Boolean(agent.prompts[action]));
 }
 
 /**
- * The sessions a card shows: every running one (archiving may run next to the change's other session), otherwise the
- * most recent one if it did not end cleanly.
+ * The sessions a card shows: the running one (a change has at most one), otherwise the most recent one if it did not
+ * end cleanly. A list, not a single session, because records from before the one-session-per-change rule may still
+ * show two running for one change until they end.
  */
 export function sessionsForChange(sessions: ChangeSession[], repoId: string, change: string): ChangeSession[] {
   const mine = sessions.filter((s) => s.repoId === repoId && s.change === change).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
@@ -34,13 +35,32 @@ export function sessionsForChange(sessions: ChangeSession[], repoId: string, cha
 }
 
 /**
- * Where a starter goes: into the change's running session (the prompt is typed there), or into a new session.
- * Archive always gets its own, and nothing is typed into an archive session.
+ * What a card offers about its change's sessions: the sessions to show a badge for, and the starters to offer beside
+ * them. While any of the change's sessions runs the badge stands in for the starters and there are none — the badge
+ * opens the terminal, which is where the next step and **End session** live. A badge that is not running is the failure
+ * case `sessionsForChange` keeps, so it comes with the starters and the next attempt stays one activation away.
+ *
+ * Pure, because this is the rule the card and the console's empty state must agree on, and a component that uses hooks
+ * cannot be asserted on without a renderer.
  */
-export function nextStepFor(sessions: ChangeSession[], repoId: string, change: string, action: SessionAction): { promptSessionId?: string; blocked?: boolean } {
-  const running = sessions.filter((s) => s.repoId === repoId && s.change === change && s.state === "running");
-  if (action === "archive") return { blocked: running.some((s) => s.action === "archive") };
-  return { promptSessionId: running.find((s) => s.action !== "archive")?.id };
+export function cardSessionControls(
+  config: Config | null,
+  sessions: ChangeSession[],
+  card: Pick<ChangeSnapshot, "repoId" | "name" | "archived" | "artifacts" | "stage" | "subState">,
+): { shown: ChangeSession[]; starters: SessionAction[] } {
+  if (!sessionsEnabledFor(config, card.repoId)) return { shown: [], starters: [] };
+  const shown = sessionsForChange(sessions, card.repoId, card.name);
+  return { shown, starters: shown.some((s) => s.state === "running") ? [] : startersFor(config, card) };
+}
+
+/**
+ * Where a starter goes: into the change's running session (the prompt is typed there), or into a new session. The
+ * action does not enter into it — one change has one console, and every action the stage allows is sent to it,
+ * Archive included. Only the console's next-step buttons ask: a card offers no starter while a session runs (see
+ * `cardSessionControls`).
+ */
+export function nextStepFor(sessions: ChangeSession[], repoId: string, change: string): { promptSessionId?: string } {
+  return { promptSessionId: sessions.find((s) => s.repoId === repoId && s.change === change && s.state === "running")?.id };
 }
 
 /** When a session was last doing something: what it printed, else what happened to the record. */
@@ -60,12 +80,23 @@ export function consoleSession(sessions: ChangeSession[], wanted: string | undef
 }
 
 /**
- * Whether a change gets a Console tab at all. A worktree counts even without a session record, and outlives the change
- * itself — which is why a change the snapshot no longer carries is shown rather than reported as not found.
+ * Whether a change has a console with something in it: a session record, or a worktree — which counts even without one
+ * and outlives the change itself, and is why a change the snapshot no longer carries is shown rather than reported as
+ * not found. Not the same question as `consoleTabAvailable`: this one has to stay narrow, or every name that is in no
+ * snapshot would render an empty console frame instead of "not found".
  */
 export function consoleAvailable(config: Config | null, sessions: ChangeSession[], worktrees: SessionWorktree[], repoId: string, change: string): boolean {
   if (!sessionsEnabledFor(config, repoId)) return false;
   return sessions.some((s) => s.repoId === repoId && s.change === change) || worktrees.some((w) => w.repoId === repoId && w.change === change);
+}
+
+/**
+ * Whether a change gets a Console tab, and its card the console quick link: one question, asked per repository, because
+ * the tab now exists before any agent has run — with nothing to show it offers the change's starters. Deliberately
+ * independent of the change: the way into a terminal is in the same place on every card.
+ */
+export function consoleTabAvailable(config: Config | null, repoId: string): boolean {
+  return sessionsEnabledFor(config, repoId);
 }
 
 export type EndSeverity = "plain" | "notice" | "danger";
@@ -191,10 +222,50 @@ export function workBadge(worktree: SessionWorktree, sessions: readonly Session[
   return undefined;
 }
 
+/**
+ * The conflict badge, beside the work badge rather than replacing it: "pushed" and "no longer merges" are two different
+ * facts about the same branch, and the user needs both. Warning, not danger: nothing is lost, the branch needs work.
+ *
+ * The wording always carries the freshness caveat, because the base is whatever the user last fetched (design D4).
+ */
+export function conflictBadge(worktree: SessionWorktree | undefined): SessionBadge | undefined {
+  const conflicts = worktree?.work.conflicts;
+  if (!conflicts) return undefined;
+  const count = conflicts.files.length;
+  const listed = conflicts.truncated ? `${count}+ files` : plural(count, "file");
+  const names = conflicts.files.join(", ");
+  return {
+    icon: "⚠",
+    label: `conflicts with ${conflicts.base}`,
+    tone: "warning",
+    title: `this branch no longer merges into ${conflicts.base} as of your last fetch — ${listed}: ${names}${conflicts.truncated ? ", and more" : ""}. Pull to refresh the base.`,
+  };
+}
+
+/**
+ * Whether Resolve conflicts is offered. The same predicate the server refuses by, expressed where the control lives —
+ * an in-place session has no branch, and a worktree with no conflict signal has nothing to resolve.
+ */
+export function resolvable(session: Session | undefined, worktree: SessionWorktree | undefined): boolean {
+  if (!session || isChangeless(session) || session.inPlace) return false;
+  return worktree?.work.conflicts !== undefined;
+}
+
 /** The worktree a card stands for: the change's own one; its archive worktree only matters once that holds work. */
 export function worktreeForChange(worktrees: SessionWorktree[], repoId: string, change: string): SessionWorktree | undefined {
   const mine = worktrees.filter((w) => w.repoId === repoId && w.change === change);
   return mine.find((w) => SHIPPABLE_WORK.includes(w.work.state)) ?? mine.find((w) => w.work.state === "merged");
+}
+
+/**
+ * An archived change that still has to be pushed or merged: its agent worktree holds unshipped work, or its archive is
+ * only in a linked worktree that is not known to be merged. Everything else — the main checkout holds the archive, or
+ * there is no git — is wrapped up. From local git only, so "merged" is as of the user's last fetch or pull.
+ */
+export function archivePending(card: Pick<ChangeSnapshot, "repoId" | "name" | "checkout">, worktrees: readonly SessionWorktree[]): boolean {
+  const mine = worktrees.filter((w) => w.repoId === card.repoId && w.change === card.name);
+  if (mine.some((w) => SHIPPABLE_WORK.includes(w.work.state))) return true;
+  return card.checkout?.isMain === false && !mine.some((w) => w.work.state === "merged");
 }
 
 /** One row of the Open work list: a running session, or a worktree that still holds something. */

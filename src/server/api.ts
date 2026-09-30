@@ -1,13 +1,16 @@
 import { ACTIVITY_KINDS, type ActivityKind } from "../shared/types.ts";
 import { MAX_PAGE, type ActivityLog, type PageQuery } from "./activity/log.ts";
-import type { CleanupSelection, Config, DiscoverResult, RepoConfig, ScanTriggerResult, SharedConfigApplyResult, SharedConfigAssignment, SharedConfigPreview } from "../shared/types.ts";
+import type { CleanupSelection, Config, DiscoverResult, PullBlockingFile, PullResolve, RepoConfig, RepoSnapshot, ScanTriggerResult, SharedConfigApplyResult, SharedConfigAssignment, SharedConfigPreview } from "../shared/types.ts";
 import { applyCleanup, CleanupBusyError, previewCleanup } from "./cleanup.ts";
 import { changeDirFor, listArtifactFiles, readArtifactFile } from "./artifacts.ts";
 import { consoleFolderProblem } from "./sessions/consoleFolder.ts";
 import { ConfigValidationError, saveConfig, validateConfig, validateIgnorePaths, validateScanRoots } from "./config.ts";
 import { createChange } from "./createChange.ts";
+import { dismissChange, DismissError, isDismissableName, previewDismiss } from "./dismissChange.ts";
 import { discoverRepos } from "./discover.ts";
-import { PullBusyError, pullAll, pullRepository } from "./pull.ts";
+import { environmentReport } from "./environment.ts";
+import { confirmPendingIntegrations, startIntegration } from "./integration.ts";
+import { MAX_BLOCKING_FILES, PullBusyError, pullAll, pullRepository, resolvePullRepository } from "./pull.ts";
 import type { Scanner } from "./scanner.ts";
 import { applyTo, EMPTY_SHARED_CONFIG, loadSharedConfig, previewFor, SharedConfigValidationError, saveSharedConfig } from "./sharedConfig.ts";
 import { SessionError, type SessionManager } from "./sessions/manager.ts";
@@ -94,6 +97,9 @@ async function postDiscover(state: AppState, req: Request): Promise<Response> {
       throw err;
     }
   }
+  // A marker written while an agent was still going is noticed here: the folder becomes a tracked repository rather
+  // than being offered again. Read-only towards repositories; the only write is to the dashboard's own config.
+  await confirmPendingIntegrations(state);
   const result: DiscoverResult = await discoverRepos(state.config.repos, roots, ignorePaths);
   return json(result);
 }
@@ -200,6 +206,18 @@ async function consoleRoute(state: AppState): Promise<Response> {
   }
 }
 
+/** Starts an integration session for one integratable repository, or returns the one running for it. Mutating. */
+async function integrationRoute(state: AppState, req: Request): Promise<Response> {
+  if (!state.sessions) return json({ error: "agent sessions are not available" }, 403);
+  try {
+    const { session, created } = await startIntegration(state, await readJson(req));
+    return json(session, created ? 201 : 200);
+  } catch (err) {
+    if (err instanceof SessionError) return json({ error: err.message }, err.status);
+    throw err;
+  }
+}
+
 async function sessionRoutes(state: AppState, req: Request, url: URL, server?: ServerLike): Promise<Response> {
   const sessions = state.sessions;
   if (!sessions) return json({ error: "agent sessions are not available" }, 403);
@@ -226,6 +244,7 @@ async function sessionRoutes(state: AppState, req: Request, url: URL, server?: S
     } else if (req.method === "POST") {
       if (sub === "resume") return json(await sessions.resume(id));
       if (sub === "ship") return json(await sessions.ship(id));
+      if (sub === "resolve-conflicts") return json(await sessions.resolveConflicts(id));
       if (sub === "prompt") return json(await sessions.prompt(id, await readJson(req)));
       if (sub === "close") return json(await sessions.close(id, { removeWorktree: (await readJson(req)).removeWorktree === true }));
     }
@@ -372,6 +391,50 @@ async function postCreateChange(state: AppState, req: Request, repoId: string): 
   return json({ name: result.name, staged: result.staged }, 201);
 }
 
+/** A repository a change may be dismissed from: configured, enabled, successfully scanned; git is not required. */
+function dismissTarget(state: AppState, repoId: string, name: string): { repo: RepoConfig; scanned: RepoSnapshot } | Response {
+  const repo = state.config.repos.find((r) => r.id === repoId);
+  if (!repo) return json({ error: "unknown repository" }, 404);
+  if (!repo.enabled) return json({ error: "repository is disabled" }, 409);
+  const scanned = state.scanner.snapshot.repos.find((r) => r.id === repoId);
+  if (!scanned?.ok) return json({ error: "repository has not been successfully scanned" }, 409);
+  if (!isDismissableName(name)) return json({ error: "invalid change name" }, 400);
+  return { repo, scanned };
+}
+
+/** Read-only: what dismissing the change would delete. */
+async function getDismiss(state: AppState, repoId: string, name: string): Promise<Response> {
+  const target = dismissTarget(state, repoId, name);
+  if (target instanceof Response) return target;
+  try {
+    return json(await previewDismiss(target.repo, target.scanned, name));
+  } catch (err) {
+    if (err instanceof DismissError) return json({ error: err.message }, err.status);
+    throw err;
+  }
+}
+
+/**
+ * The one route that deletes a change directory: `openspec/changes/<name>/` of the main checkout, after re-checking it
+ * is exactly what the user confirmed, then stages that removal. A refusal deletes nothing and runs no writing git.
+ */
+async function postDismiss(state: AppState, req: Request, repoId: string, name: string): Promise<Response> {
+  const target = dismissTarget(state, repoId, name);
+  if (target instanceof Response) return target;
+  try {
+    const body = await readJson(req);
+    if (typeof body.fingerprint !== "string" || !body.fingerprint) return json({ error: "expected { fingerprint: string }" }, 400);
+    const sessions = state.sessions;
+    const result = await dismissChange(target.repo, target.scanned, name, body.fingerprint, () => sessions?.hasOpenSession(repoId, name) ?? false);
+    state.scanner.trigger();
+    return json(result);
+  } catch (err) {
+    if (err instanceof DismissError) return json({ error: err.message }, err.status);
+    if (err instanceof SessionError) return json({ error: err.message }, err.status);
+    throw err;
+  }
+}
+
 /**
  * Repositories the pull action may run in: tracked, scanned without error, and git. The path comes from the config —
  * a request only ever names an id.
@@ -381,12 +444,67 @@ function pullable(state: AppState): RepoConfig[] {
   return state.config.repos.filter((r) => r.enabled && scanned.get(r.id)?.ok === true && scanned.get(r.id)?.isGit === true);
 }
 
-/** The one route that contacts a remote and updates a main checkout — and only because the user asked for it. */
-async function postPull(state: AppState, repoId: string): Promise<Response> {
+const BLOB_ID = /^[0-9a-f]{40,64}$/;
+const MAX_PATH_LENGTH = 1024;
+
+/** A repository-relative path that can only mean one file inside the repository. */
+function safeRelativePath(value: unknown): value is string {
+  if (typeof value !== "string" || value === "" || value.length > MAX_PATH_LENGTH) return false;
+  if (value.includes("\0") || value.includes("\\") || value.startsWith("/") || /^[A-Za-z]:/.test(value)) return false;
+  return value.split("/").every((segment) => segment !== "" && segment !== "." && segment !== "..");
+}
+
+function blockingFile(value: unknown): PullBlockingFile | undefined {
+  if (typeof value !== "object" || value === null) return undefined;
+  const { path, kind, differs, incoming, staged, worktree } = value as Record<string, unknown>;
+  if (!safeRelativePath(path)) return undefined;
+  if (kind !== "leftover" && kind !== "local-work") return undefined;
+  if (differs !== undefined && typeof differs !== "boolean") return undefined;
+  for (const id of [incoming, staged, worktree]) if (id !== undefined && !(typeof id === "string" && BLOB_ID.test(id))) return undefined;
+  return { path, kind, differs: differs as boolean | undefined, incoming: incoming as string | undefined, staged: staged as string | undefined, worktree: worktree as string | undefined };
+}
+
+/**
+ * Shape only. Whether these paths really are unchanged change leftovers is decided by the pull action itself, which
+ * re-determines all of it: nothing here is trusted beyond being a well-formed claim.
+ */
+function pullResolve(value: unknown): PullResolve | undefined {
+  if (typeof value !== "object" || value === null) return undefined;
+  const { upstream, files } = value as Record<string, unknown>;
+  if (typeof upstream !== "string" || !BLOB_ID.test(upstream)) return undefined;
+  if (!Array.isArray(files) || files.length === 0 || files.length > MAX_BLOCKING_FILES) return undefined;
+  const parsed = files.map(blockingFile);
+  if (parsed.some((f) => f === undefined)) return undefined;
+  const paths = new Set(parsed.map((f) => (f as PullBlockingFile).path));
+  if (paths.size !== parsed.length) return undefined;
+  return { upstream, files: parsed as PullBlockingFile[] };
+}
+
+/**
+ * The one route that contacts a remote and updates a main checkout — and only because the user asked for it. With a
+ * `resolve` body it runs Resolve and pull instead, which fetches nothing and removes only what it re-proves.
+ */
+async function postPull(state: AppState, req: Request, repoId: string): Promise<Response> {
   const repo = pullable(state).find((r) => r.id === repoId);
   if (!repo) return json({ error: "not a tracked, successfully scanned git repository" }, 404);
+  // A plain pull still posts nothing at all, so an empty body is not an error.
+  const text = await req.text();
+  let resolve: PullResolve | undefined;
+  if (text.trim() !== "") {
+    let body: unknown;
+    try {
+      body = JSON.parse(text);
+    } catch {
+      return json({ error: "body must be JSON" }, 400);
+    }
+    const claim = typeof body === "object" && body !== null ? (body as Record<string, unknown>).resolve : undefined;
+    if (claim !== undefined) {
+      resolve = pullResolve(claim);
+      if (!resolve) return json({ error: "resolve must name an upstream commit and the blocking files exactly as they were offered" }, 400);
+    }
+  }
   try {
-    const result = await pullRepository(repo);
+    const result = resolve ? await resolvePullRepository(repo, resolve) : await pullRepository(repo);
     state.scanner.trigger();
     return json(result);
   } catch (err) {
@@ -516,10 +634,16 @@ export function createFetchHandler({ state, indexHtml }: AppOptions): (req: Requ
       }
       if (pathname === "/api/sessions" || pathname.startsWith("/api/sessions/")) return sessionRoutes(state, req, url, server);
       if (pathname === "/api/console" && req.method === "POST") return consoleRoute(state);
+      if (pathname === "/api/integrations" && req.method === "POST") return integrationRoute(state, req);
       const artifactMatch = req.method === "GET" ? ARTIFACT_ROUTE.exec(pathname) : null;
       if (artifactMatch) return artifactRoutes(state, url, artifactMatch);
       if (req.method === "POST" && pathname === "/api/worktrees/remove") return postWorktreeRemove(state, req);
       if (req.method === "GET" && pathname === "/api/state") return json(state.scanner.snapshot);
+      // Read-only and local (openspec/specs/environment-check): no network, nothing in a tracked repository.
+      // `force` is what **Re-check** sends: the user just changed the machine, which no cache key can see.
+      if (req.method === "GET" && pathname === "/api/environment") {
+        return json(await environmentReport(state.config, state.scanner.snapshot, { force: url.searchParams.get("force") === "1" }));
+      }
       if (req.method === "GET" && pathname === "/api/activity") return getActivity(state, url);
       if (req.method === "GET" && pathname === "/api/config") return json(state.config);
       if (req.method === "PUT" && pathname === "/api/config") return putConfig(state, req);
@@ -530,10 +654,13 @@ export function createFetchHandler({ state, indexHtml }: AppOptions): (req: Requ
       if (req.method === "POST" && pathname === "/api/shared-config/apply") return postSharedConfigApply(state, req);
       if (req.method === "POST" && pathname === "/api/pull") return postPullAll(state);
       const pullOne = /^\/api\/repos\/([^/]+)\/pull$/.exec(pathname);
-      if (req.method === "POST" && pullOne) return postPull(state, decodeURIComponent(pullOne[1]));
+      if (req.method === "POST" && pullOne) return postPull(state, req, decodeURIComponent(pullOne[1]));
       const cleanupMatch = /^\/api\/repos\/([^/]+)\/cleanup$/.exec(pathname);
       if (cleanupMatch && req.method === "GET") return getCleanup(state, decodeURIComponent(cleanupMatch[1]));
       if (cleanupMatch && req.method === "POST") return postCleanup(state, req, decodeURIComponent(cleanupMatch[1]));
+      const dismissMatch = /^\/api\/repos\/([^/]+)\/changes\/([^/]+)\/dismiss$/.exec(pathname);
+      if (dismissMatch && req.method === "GET") return getDismiss(state, decodeURIComponent(dismissMatch[1]), decodeURIComponent(dismissMatch[2]));
+      if (dismissMatch && req.method === "POST") return postDismiss(state, req, decodeURIComponent(dismissMatch[1]), decodeURIComponent(dismissMatch[2]));
       const createChangeMatch = /^\/api\/repos\/([^/]+)\/changes$/.exec(pathname);
       if (req.method === "POST" && createChangeMatch) return postCreateChange(state, req, decodeURIComponent(createChangeMatch[1]));
       if (req.method === "POST" && pathname === "/api/scan") {

@@ -4,12 +4,12 @@
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
 import { useEffect, useRef, useState } from "preact/hooks";
-import { SHIPPABLE_WORK, type ChangeSession, type Session, type SessionAction, type SessionWorktree } from "../shared/types.ts";
+import { SHIPPABLE_WORK, type ChangeSession, type Session, type SessionAction, type SessionWorktree, type Shortcut } from "../shared/types.ts";
 import { api, type TerminalMessage } from "./api.ts";
 import { cdCommand } from "./format.ts";
-import { DEFAULT_QUICK_REPLIES, NOT_SUBMITTED_NOTICE, replyHint, replyMessage, type QuickReply } from "./quickReplies.ts";
-import { nextStepFor, sessionBadge, startersFor, workBadge, worktreeOfSession } from "./sessionState.ts";
-import { SessionBadgeView, useSessionUi } from "./sessions.tsx";
+import { NOT_SUBMITTED_NOTICE, shortcutHint, shortcutMessage, visibleShortcuts } from "./quickReplies.ts";
+import { nextStepFor, resolvable, sessionBadge, startersFor, workBadge, worktreeOfSession } from "./sessionState.ts";
+import { ConflictBadge, SessionBadgeView, SessionControls, useSessionUi } from "./sessions.tsx";
 
 export function Copy({ text, label }: { text: string; label: string }) {
   const [done, setDone] = useState(false);
@@ -42,31 +42,31 @@ function terminalTheme(el: HTMLElement) {
   };
 }
 
-/** How long a typed-only response stays inert after a click, so a double click types it once. */
-const REPLY_GUARD_MS = 600;
-/** A submitted response stays inert until the server answers; this only covers an answer that never comes. */
+/** A sent shortcut stays inert until the server answers; this only covers an answer that never comes. */
 const SUBMIT_GUARD_MS = 10_000;
 /** How long the "typed but not sent" notice stays before it dismisses itself. */
 const UNSENT_NOTICE_MS = 12_000;
 
 /**
- * One session's terminal plus its default responses. Used by a change's Console tab and by the main console; it knows
- * nothing about repositories or changes.
+ * One session's terminal plus the configured shortcuts. Used by a change's Console tab and by the main console; it knows
+ * nothing about repositories or changes, which is why every session is offered the same shortcuts.
  */
 export function TerminalView({ sessionId, running, onExit }: { sessionId: string; running: boolean; onExit: () => void }) {
   const host = useRef<HTMLDivElement>(null);
   const [status, setStatus] = useState<"connecting" | "open" | "closed">("connecting");
-  // The effect below owns the terminal and its socket; the default responses reach them through this ref.
+  // The effect below owns the terminal and its socket; the shortcuts reach them through this ref.
   const live = useRef<{ send: (message: TerminalMessage) => void; focus: () => void }>();
   // The ref is the guard (it holds within one tick, where state would still be stale); the state only greys the button.
   const guard = useRef(new Set<string>());
   const [guarded, setGuarded] = useState<readonly string[]>([]);
 
-  // A default response goes to the server as `submit`: typed, and sent with Enter only once the agent has shown it.
-  // The server answers this socket with `submitted`; until then the clicked response stays inert.
+  // A shortcut goes to the server as `submit`: its prompt is typed, and sent with Enter only once the agent has shown
+  // it. The server answers this socket with `submitted`; until then the activated shortcut stays inert.
   const pending = useRef<string[]>([]);
   // Text went into this terminal on the user's behalf (a next step): put the keyboard back where the agent is.
-  const { focusTick, unsentId, reportUnsent } = useSessionUi();
+  const { config, focusTick, unsentId, reportUnsent } = useSessionUi();
+  // The shortcuts are the user's, the same for every session; an empty list means the row is not shown at all.
+  const shortcuts = visibleShortcuts(config, running, status === "open");
   useEffect(() => {
     if (focusTick.tick > 0 && focusTick.id === sessionId) live.current?.focus();
   }, [focusTick, sessionId]);
@@ -75,21 +75,18 @@ export function TerminalView({ sessionId, running, onExit }: { sessionId: string
     guard.current.delete(id);
     setGuarded([...guard.current]);
   };
-  const reply = (r: QuickReply) => {
-    if (guard.current.has(r.id)) return;
-    guard.current.add(r.id);
+  const sendShortcut = (shortcut: Shortcut) => {
+    if (guard.current.has(shortcut.id)) return;
+    guard.current.add(shortcut.id);
     setGuarded([...guard.current]);
     if (unsentId === sessionId) reportUnsent(undefined); // another pane's notice is not this pane's to clear
-    live.current?.send(replyMessage(r));
+    live.current?.send(shortcutMessage(shortcut));
     live.current?.focus();
-    if (r.submit) pending.current.push(r.id);
-    setTimeout(
-      () => {
-        pending.current = pending.current.filter((id) => id !== r.id);
-        release(r.id);
-      },
-      r.submit ? SUBMIT_GUARD_MS : REPLY_GUARD_MS,
-    );
+    pending.current.push(shortcut.id);
+    setTimeout(() => {
+      pending.current = pending.current.filter((id) => id !== shortcut.id);
+      release(shortcut.id);
+    }, SUBMIT_GUARD_MS);
   };
   // Answers arrive in the order the submissions were made (the server runs them one after another).
   const onSubmitted = useRef<(ok: boolean) => void>(() => {});
@@ -168,15 +165,15 @@ export function TerminalView({ sessionId, running, onExit }: { sessionId: string
           </button>
         </div>
       )}
-      {running && status === "open" && (
-        // biome-ignore lint/a11y/useSemanticElements: a fieldset would bring legend/border styling the response row does not want
+      {shortcuts.length > 0 && (
+        // biome-ignore lint/a11y/useSemanticElements: a fieldset would bring legend/border styling the shortcut row does not want
         <div class="session-replies" role="group" aria-labelledby={`replies-${sessionId}`}>
           <span id={`replies-${sessionId}`} class="hint session-replies-label">
             Shortcuts:
           </span>
-          {DEFAULT_QUICK_REPLIES.map((r) => (
-            <button key={r.id} type="button" class="btn sm" title={replyHint(r)} disabled={guarded.includes(r.id)} onClick={() => reply(r)}>
-              {r.label}
+          {shortcuts.map((shortcut) => (
+            <button key={shortcut.id} type="button" class="btn sm" title={shortcutHint(shortcut)} disabled={guarded.includes(shortcut.id)} onClick={() => sendShortcut(shortcut)}>
+              {shortcut.title}
             </button>
           ))}
         </div>
@@ -185,11 +182,12 @@ export function TerminalView({ sessionId, running, onExit }: { sessionId: string
   );
 }
 
-const STEP_LABEL: Record<SessionAction, string> = { draft: "Draft artifacts", implement: "Implement", archive: "Archive" };
+const STEP_LABEL: Record<SessionAction, string> = { draft: "Draft artifacts", implement: "Implement", validate: "Validate", archive: "Archive" };
 
 /**
  * The change's sessions, in the slot the delta specs use for their file list. Omitted for a single session: there is
- * nothing to choose. A change can legitimately have two — its own and its archive worktree's.
+ * nothing to choose. A change can legitimately have several records — only one of them running, the others ended,
+ * their output still readable and their worktrees possibly still holding work.
  */
 export function ConsoleSessionList({ sessions, selected, onSelect }: { sessions: ChangeSession[]; selected?: string; onSelect: (id: string) => void }) {
   if (sessions.length < 2) return null;
@@ -235,25 +233,36 @@ export function useTerminalGeneration(session: Session | undefined): number {
   return generation;
 }
 
-export function ConsolePanel({ session, worktree }: { session?: ChangeSession; worktree?: SessionWorktree }) {
+/**
+ * The Console tab's body. `of` is the change the tab belongs to, which is the only thing left to go on when the change
+ * has neither a session nor a worktree — the tab exists before any agent has run, and then its job is to offer the
+ * starters rather than to explain itself away.
+ */
+export function ConsolePanel({ session, worktree, of }: { session?: ChangeSession; worktree?: SessionWorktree; of?: { repoId: string; change: string } }) {
   const ui = useSessionUi();
   const [error, setError] = useState<string>();
   // An agent that was started again (Resume, Ship — from here or from the end-session dialog) gets a fresh terminal view.
   const generation = useTerminalGeneration(session);
 
   const badge = session ? sessionBadge(session) : undefined;
-  const repo = ui.config?.repos.find((r) => r.id === session?.repoId);
+  const repoId = session?.repoId ?? worktree?.repoId ?? of?.repoId;
+  const change = session?.change ?? worktree?.change ?? of?.change;
+  const repo = ui.config?.repos.find((r) => r.id === repoId);
   // An in-place session runs in the repository folder, which is not a worktree: nothing git-derived applies to it.
   const tree = worktreeOfSession(session, ui.worktrees) ?? (session ? undefined : worktree);
   const work = tree && workBadge(tree, ui.sessions);
   const shippable = session !== undefined && tree !== undefined && SHIPPABLE_WORK.includes(tree.work.state);
+  // The badge sits beside the work badge, not instead of it: "pushed" and "no longer merges" are both true.
+  const canResolve = resolvable(session, tree);
   const merged = tree?.work.state === "merged";
-  // The change's next step, offered here only when it would go into this very terminal.
-  const card = session && ui.snapshot?.repos.find((r) => r.id === session.repoId)?.changes.find((c) => c.name === session.change && !c.archived);
-  const nextSteps =
-    session && card
-      ? startersFor(ui.config, card).filter((action) => nextStepFor(ui.sessions, session.repoId, session.change, action).promptSessionId === session.id)
-      : [];
+  // The change as the snapshot has it: what both the next steps and the empty state's starters are decided from.
+  const card = repoId && change ? ui.snapshot?.repos.find((r) => r.id === repoId)?.changes.find((c) => c.name === change && !c.archived) : undefined;
+  // Every starter the change's stage allows — Archive included — but only in the panel of the session that would
+  // receive it, which is the change's running one. An ended session's panel offers none: nothing can be typed there.
+  const receiving = session !== undefined && nextStepFor(ui.sessions, session.repoId, session.change).promptSessionId === session.id;
+  const nextSteps = receiving && card ? startersFor(ui.config, card) : [];
+  // Nothing has ever run for this change: the tab says so and offers the openings, which is why it exists at all.
+  const untouched = !session && !tree;
 
   const act = async (fn: () => Promise<unknown>) => {
     try {
@@ -267,7 +276,7 @@ export function ConsolePanel({ session, worktree }: { session?: ChangeSession; w
 
   const path = session?.worktreePath ?? tree?.path;
   return (
-    <section class="console-pane" aria-label={`Agent console ${session?.change ?? tree?.change ?? ""}`}>
+    <section class="console-pane" aria-label={`Agent console ${change ?? ""}`}>
       <header class="session-head">
         <div class="row">
           {session && <span class="hint">{session.agentName}</span>}
@@ -284,6 +293,7 @@ export function ConsolePanel({ session, worktree }: { session?: ChangeSession; w
               {work.label}
             </span>
           )}
+          <ConflictBadge worktree={tree} />
           {session?.adopted && (
             <span
               class="badge"
@@ -311,6 +321,25 @@ export function ConsolePanel({ session, worktree }: { session?: ChangeSession; w
               }
             >
               ⇪ Ship
+            </button>
+          )}
+          {canResolve && session && (
+            <button
+              type="button"
+              class="btn sm"
+              title={
+                session.state === "running"
+                  ? `Sends ${session.agentName} a prompt asking it to bring the branch up to date and resolve the conflicts. The dashboard merges nothing itself.`
+                  : `Starts ${session.agentName} in this worktree with a prompt to bring the branch up to date and resolve the conflicts. The dashboard merges nothing itself.`
+              }
+              onClick={() =>
+                act(async () => {
+                  const result = await api.resolveConflicts(session.id);
+                  ui.reportUnsent(result.submitted ? undefined : session.id);
+                })
+              }
+            >
+              ⚠ Resolve conflicts
             </button>
           )}
           {session && session.state !== "running" && session.resumable && (
@@ -351,6 +380,15 @@ export function ConsolePanel({ session, worktree }: { session?: ChangeSession; w
       </header>
       {session ? (
         <TerminalView key={`${session.id}:${generation}`} sessionId={session.id} running={session.state === "running"} onExit={ui.refresh} />
+      ) : untouched ? (
+        <div class="console-empty">
+          <p class="detail-hint">No agent has worked on this change yet. Start one here and its terminal takes this tab.</p>
+          {card && (
+            <div class="console-starters">
+              <SessionControls card={card} />
+            </div>
+          )}
+        </div>
       ) : (
         <div class="console-empty">
           <p class="detail-hint">

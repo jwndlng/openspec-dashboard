@@ -18,7 +18,16 @@ test("filters round-trip through the URL; unknown groups are dropped; order is s
 test("groups map to the kinds the API filters by", () => {
   expect(kindsFor([])).toEqual([]);
   expect(kindsFor(["tasks"])).toEqual(["tasks-progress"]);
-  expect(kindsFor(["sessions", "repositories"])).toEqual(["session-started", "session-ended", "session-shipped", "repo-tracked", "repo-untracked", "repo-failing", "repo-recovered"]);
+  expect(kindsFor(["sessions", "repositories"])).toEqual([
+    "session-started",
+    "session-ended",
+    "session-shipped",
+    "session-conflicts-resolve",
+    "repo-tracked",
+    "repo-untracked",
+    "repo-failing",
+    "repo-recovered",
+  ]);
 });
 
 test("events are grouped under local days: Today, Yesterday, then dates", () => {
@@ -57,6 +66,9 @@ test("every kind has wording, and what needs a look stands out", () => {
     [{ ...base(at), kind: "session-ended", change: "a", error: "could not start the agent" }, "session failed: could not start the agent", "danger"],
     [{ ...base(at), kind: "session-shipped", change: "a" }, "ship requested", "normal"],
     [{ ...base(at), kind: "session-shipped", change: "a", submitted: false }, "ship requested — typed, not sent", "normal"],
+    // What was handed over, never what came of it: the outcome is re-read from git.
+    [{ ...base(at), kind: "session-conflicts-resolve", change: "a" }, "conflict resolution requested", "normal"],
+    [{ ...base(at), kind: "session-conflicts-resolve", change: "a", submitted: false }, "conflict resolution requested — typed, not sent", "normal"],
   ];
   for (const [event, words, weight] of cases) {
     expect(describe(event)).toBe(words);

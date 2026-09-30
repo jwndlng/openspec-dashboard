@@ -6,7 +6,9 @@ import { ActivityLog } from "./activity/log.ts";
 import { readSnapshot } from "./cache.ts";
 import { loadConfig } from "./config.ts";
 import { Scanner } from "./scanner.ts";
+import { confirmIntegration } from "./integration.ts";
 import { SessionManager } from "./sessions/manager.ts";
+import { pruneMergeScratch } from "./sessions/workStatus.ts";
 import { VERSION } from "./version.ts";
 
 // With `type: "text"` Bun hands us the file contents; bun-types only knows the HTMLBundle shape.
@@ -55,6 +57,8 @@ async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
   const { config, warning } = await loadConfig();
   if (warning) console.warn(`warning: ${warning}`);
+  // Merges of previous runs; they are a scratch store, never state.
+  await pruneMergeScratch();
 
   // History for the Activity view: what changed between consecutive snapshots, plus what the session manager reports.
   const activity = new ActivityLog();
@@ -72,6 +76,8 @@ async function main(): Promise<void> {
     getConfig: () => state.config,
     getSnapshot: () => state.scanner.snapshot,
     onActivity: (session, what) => void activity.append([sessionEvent(session, state.config.repos.find((r) => r.id === session.repoId)?.name ?? session.repoId, what)]),
+    // The marker, not the agent's word: if `openspec/config.yaml` is there now, the repository becomes tracked.
+    onIntegrationEnded: (session) => void confirmIntegration(state, session.folder).catch(() => undefined),
   });
   await state.sessions.init();
   state.scanner.start();

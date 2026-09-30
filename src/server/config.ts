@@ -2,8 +2,8 @@ import { createHash } from "node:crypto";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { basename, dirname, isAbsolute } from "node:path";
 import { z } from "zod";
-import { CLAUDE_PROFILE, defaultAgentSessions, FORMER_ARCHIVE_PROMPTS } from "../shared/agentDefaults.ts";
-import type { Config, RepoConfig } from "../shared/types.ts";
+import { CLAUDE_PROFILE, defaultAgentSessions, FORMER_PROMPTS } from "../shared/agentDefaults.ts";
+import type { Config, PromptKey, RepoConfig } from "../shared/types.ts";
 import { canonicalPath, configPath, dashboardHome, expandPath } from "./paths.ts";
 
 export const DEFAULT_PORT = 4711;
@@ -47,13 +47,82 @@ const shipPromptSchema = z
   .refine(placeholdersOnly(["{change}"]), { message: "unknown placeholder; only {change} is supported" })
   .refine(noBypass, { message: BYPASS_MESSAGE });
 
+// Integrate belongs to no change: the repository folder is the agent's working directory, so nothing from the browser
+// is substituted into it at all. Rejecting every placeholder is what makes that guarantee checkable.
+const integratePromptSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .refine(placeholdersOnly([]), { message: "no placeholder is supported in an Integrate prompt" })
+  .refine(noBypass, { message: BYPASS_MESSAGE });
+
+/**
+ * Additional instructions appended to a prompt. Same rules as the prompt they extend, minus the requirement to name the
+ * change: a suffix may mention `{change}` but does not have to, and an Integrate suffix carries no placeholder at all —
+ * that is what keeps the Integrate guarantee ("nothing from the browser is substituted into it") checkable per key.
+ */
+const suffixSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .refine(placeholdersOnly(["{change}"]), { message: "unknown placeholder; only {change} is supported" })
+  .refine(noBypass, { message: BYPASS_MESSAGE });
+
+const integrateSuffixSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .refine(placeholdersOnly([]), { message: "no placeholder is supported in additional Integrate instructions" })
+  .refine(noBypass, { message: BYPASS_MESSAGE });
+
 const agentProfileSchema = z.object({
   id: z.string().regex(/^[a-z0-9][a-z0-9-]{0,31}$/, { message: "lower-case letters, digits and dashes" }),
   name: z.string().trim().min(1),
   command: commandSchema,
-  prompts: z.object({ draft: promptSchema.optional(), implement: promptSchema.optional(), archive: promptSchema.optional(), ship: shipPromptSchema.optional() }).default({}),
+  prompts: z
+    .object({
+      draft: promptSchema.optional(),
+      implement: promptSchema.optional(),
+      validate: promptSchema.optional(),
+      archive: promptSchema.optional(),
+      ship: shipPromptSchema.optional(),
+      resolveConflicts: shipPromptSchema.optional(),
+      integrate: integratePromptSchema.optional(),
+    })
+    .default({}),
+  promptSuffixes: z
+    .object({
+      draft: suffixSchema.optional(),
+      implement: suffixSchema.optional(),
+      validate: suffixSchema.optional(),
+      archive: suffixSchema.optional(),
+      ship: suffixSchema.optional(),
+      resolveConflicts: suffixSchema.optional(),
+      integrate: integrateSuffixSchema.optional(),
+    })
+    .optional(),
   resumeCommand: z.array(z.string().min(1).refine(noBypass, { message: BYPASS_MESSAGE })).min(1).optional(),
   unsetEnv: z.array(z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/)).optional(),
+});
+
+// A shortcut's prompt is typed into a running agent's terminal, so it has to be one line: a newline would submit the
+// text past the echo check that decides about Enter (server/sessions/submit.ts). The title only ever reaches a control.
+const isSingleLine = (value: string) =>
+  ![...value].some((char) => {
+    const code = char.charCodeAt(0);
+    return code < 32 || code === 127;
+  });
+
+const shortcutSchema = z.object({
+  id: z.string().regex(/^[a-z0-9][a-z0-9-]{0,31}$/, { message: "lower-case letters, digits and dashes" }),
+  title: z.string().trim().min(1).max(40, { message: "a title has to fit on a control: at most 40 characters" }),
+  prompt: z
+    .string()
+    .trim()
+    .min(1)
+    .max(2000)
+    .refine(isSingleLine, { message: "must be a single line without control characters" })
+    .refine(noBypass, { message: BYPASS_MESSAGE }),
 });
 
 // Older configs carried Claude-specific keys here (claudePath, commands, allowedTools, …); unknown keys are dropped.
@@ -66,12 +135,17 @@ const agentSessionsSchema = z
     defaultAgent: z.string().default(() => defaultAgentSessions().defaultAgent),
     // Shape only: a config whose console folder was deleted since must still load. Saving checks the folder itself.
     consoleDir: absolutePath.optional(),
+    // Absent means a config saved before shortcuts were configurable: it carries the shipped ones. An empty list is the
+    // user's own decision and is kept — the dashboard never adds a shortcut back.
+    shortcuts: z.array(shortcutSchema).default(() => defaultAgentSessions().shortcuts),
   })
   .default({})
   .superRefine((cfg, ctx) => {
     const ids = cfg.agents.map((a) => a.id);
     if (new Set(ids).size !== ids.length) ctx.addIssue({ code: "custom", path: ["agents"], message: "agent ids must be unique" });
     if (!ids.includes(cfg.defaultAgent)) ctx.addIssue({ code: "custom", path: ["defaultAgent"], message: "must be the id of a configured agent" });
+    const shortcutIds = cfg.shortcuts.map((s) => s.id);
+    if (new Set(shortcutIds).size !== shortcutIds.length) ctx.addIssue({ code: "custom", path: ["shortcuts"], message: "shortcut ids must be unique" });
   });
 
 const repoSchema = z.object({
@@ -146,11 +220,18 @@ export function validateConfig(input: unknown): Config {
  * one and other profiles are the user's. Nothing is written here; the value reaches the file with the next save.
  */
 function upgradeFormerDefaults(config: Config): Config {
-  const agents = config.agentSessions.agents.map((agent) =>
-    agent.id === CLAUDE_PROFILE.id && agent.prompts.archive !== undefined && FORMER_ARCHIVE_PROMPTS.includes(agent.prompts.archive)
-      ? { ...agent, prompts: { ...agent.prompts, archive: CLAUDE_PROFILE.prompts.archive } }
-      : agent,
-  );
+  const agents = config.agentSessions.agents.map((agent) => {
+    if (agent.id !== CLAUDE_PROFILE.id) return agent;
+    const prompts = { ...agent.prompts };
+    let upgraded = false;
+    for (const [key, former] of Object.entries(FORMER_PROMPTS) as [PromptKey, readonly string[]][]) {
+      const saved = prompts[key];
+      if (saved === undefined || !former.includes(saved)) continue; // removed or edited: the user's
+      prompts[key] = CLAUDE_PROFILE.prompts[key];
+      upgraded = true;
+    }
+    return upgraded ? { ...agent, prompts } : agent;
+  });
   return { ...config, agentSessions: { ...config.agentSessions, agents } };
 }
 

@@ -1,5 +1,6 @@
 // Agent profiles (design.md D16): an agent is a command line plus opening prompts. Nothing here knows any vendor.
-import { DEFAULT_SHIP_PROMPT, type AgentAvailability, type AgentProfile, type Config, type RepoConfig, type SessionAction } from "../../shared/types.ts";
+import { DEFAULT_RESOLVE_CONFLICTS_PROMPT, DEFAULT_SHIP_PROMPT, type AgentAvailability, type AgentProfile, type Config, type PromptKey, type RepoConfig, type SessionAction } from "../../shared/types.ts";
+import { whichOnPath } from "../paths.ts";
 import { CHANGE_NAME } from "../source.ts";
 
 export function agentFor(config: Config, repo: RepoConfig): AgentProfile | undefined {
@@ -9,23 +10,50 @@ export function agentFor(config: Config, repo: RepoConfig): AgentProfile | undef
 
 export function availability(config: Config): AgentAvailability[] {
   return config.agentSessions.agents.map((agent) => {
-    const path = Bun.which(agent.command[0]) ?? undefined;
+    const path = whichOnPath(agent.command[0]);
     return { id: agent.id, name: agent.name, available: path !== undefined, path };
   });
+}
+
+/**
+ * A prompt plus the profile's additional instructions for the same key. One line, always: a prompt may be typed into a
+ * terminal, where a line break would submit it early, so whitespace in the suffix is collapsed before it is appended.
+ */
+function compose(agent: AgentProfile, key: PromptKey, prompt: string): string {
+  const suffix = agent.promptSuffixes?.[key]?.trim().replace(/\s+/g, " ");
+  return suffix ? `${prompt} ${suffix}` : prompt;
 }
 
 /** The opening prompt for a starter, or undefined when this agent has none (the starter is then not offered). */
 export function openingPrompt(agent: AgentProfile, action: SessionAction, change: string): string | undefined {
   const template = agent.prompts[action];
+  // Checked before the suffix: additional instructions are an addition, never a prompt of their own, so they never make
+  // a starter available (agent-sessions spec).
   if (!template) return undefined;
   if (!CHANGE_NAME.test(change)) throw new Error("invalid change name");
-  return template.replaceAll("{change}", change);
+  return compose(agent, action, template).replaceAll("{change}", change);
 }
 
-/** Every agent can ship: a profile without its own Ship prompt gets the agent-neutral default. */
+/** Every agent can ship: a profile without its own Ship prompt gets the agent-neutral default — suffix and all. */
 export function shipPrompt(agent: AgentProfile, change: string): string {
   if (!CHANGE_NAME.test(change)) throw new Error("invalid change name");
-  return (agent.prompts.ship ?? DEFAULT_SHIP_PROMPT).replaceAll("{change}", change);
+  return compose(agent, "ship", agent.prompts.ship ?? DEFAULT_SHIP_PROMPT).replaceAll("{change}", change);
+}
+
+/**
+ * The Integrate prompt, or undefined when this agent has none (Integrate is then not offered). Nothing is substituted
+ * into it: the repository folder is the agent's working directory, so no text from the browser reaches its command line.
+ */
+export function integratePrompt(agent: AgentProfile): string | undefined {
+  const template = agent.prompts.integrate;
+  if (!template) return undefined;
+  return compose(agent, "integrate", template);
+}
+
+/** Like Ship: every agent can be asked to resolve conflicts, configured for it or not — suffix and all. */
+export function resolveConflictsPrompt(agent: AgentProfile, change: string): string {
+  if (!CHANGE_NAME.test(change)) throw new Error("invalid change name");
+  return compose(agent, "resolveConflicts", agent.prompts.resolveConflicts ?? DEFAULT_RESOLVE_CONFLICTS_PROMPT).replaceAll("{change}", change);
 }
 
 export interface Launch {

@@ -1,11 +1,13 @@
-import { useCallback, useEffect, useLayoutEffect, useState } from "preact/hooks";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import type { ComponentChildren } from "preact";
 import type { Config, Snapshot } from "../shared/types.ts";
 import { Activity } from "./activity.tsx";
 import { loadSeen, saveSeen, unseenLabel } from "./activityState.ts";
 import { api } from "./api.ts";
+import { AUTO_REFRESH_OPTIONS, type AutoRefreshInterval, createRefreshLoop, intervalMs, loadInterval, parseInterval, performRefresh, saveInterval } from "./autoRefresh.ts";
 import { ChangeDetail } from "./changeDetail.tsx";
 import { ConsoleButton, ConsoleOverlay } from "./console.tsx";
+import { IntegrationOverlay } from "./integrate.tsx";
 import { relTime } from "./format.ts";
 import { Kanban } from "./kanban.tsx";
 import { Overview } from "./overview.tsx";
@@ -14,10 +16,11 @@ import { enabledOnly } from "./overviewState.ts";
 import { backTarget, parseDetailQuery, repoPath, type Route, routeFromPath } from "./routes.ts";
 import { EndSessionDialog } from "./endSessionDialog.tsx";
 import { OpenWork, SessionProvider } from "./sessions.tsx";
+import { environmentWarning, type EnvironmentState } from "./environmentState.ts";
 import { Settings } from "./settings.tsx";
-import { currentPath, currentQuery, href, navigate, onRouteChange } from "./url.ts";
+import { currentPath, currentQuery, followInApp, href, hrefWithQuery, navigate, onRouteChange } from "./url.ts";
 import { applyTheme, loadPreference, nextPreference, resolveTheme, savePreference, type ThemePreference } from "./theme.ts";
-import { IconActivity, IconKanban, IconLayoutGrid, IconMonitor, IconMoon, IconRefresh, IconSettings, IconSun } from "./icons.tsx";
+import { IconActivity, IconChevronDown, IconClock, IconKanban, IconLayoutGrid, IconMonitor, IconMoon, IconRefresh, IconSettings, IconSun } from "./icons.tsx";
 import { LogoMark } from "./logo.tsx";
 
 const THEME_LABEL: Record<ThemePreference, string> = { system: "System", light: "Light", dark: "Dark" };
@@ -29,11 +32,23 @@ export function App() {
   const [config, setConfig] = useState<Config | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  /** How often the dashboard repeats a refresh by itself; a per-browser choice, never the server's poll interval. */
+  const [autoRefresh, setAutoRefresh] = useState<AutoRefreshInterval>(loadInterval);
+  /** The snapshot time a refresh compares against, in a ref so a new snapshot does not rebuild the refresh callback. */
+  const generatedAt = useRef<string | undefined>(undefined);
+  /** A refresh is in flight. A ref, not state: two callers in one frame must not both get through. */
+  const busy = useRef(false);
+  /** A one-line outcome of an action taken in an overlay that has since closed, e.g. a dismissed change. */
+  const [notice, setNotice] = useState<string>();
   const [, tick] = useState(0);
   const [themePref, setThemePref] = useState<ThemePreference>(loadPreference);
   const [unseen, setUnseen] = useState(0);
   // The main console overlay. Not in the route: opening and closing it leaves the page (and its filters) as it was.
   const [consoleOpen, showConsole] = useState(false);
+  // The terminal of an integration started from Settings; same reasoning, and the same need to make the page inert.
+  const [integrationId, showIntegration] = useState<string>();
+  /** What this machine is missing. Owned here because both Settings and the hero read the same report. */
+  const [environment, setEnvironment] = useState<EnvironmentState>({ loading: true });
 
   useEffect(() => onRouteChange(() => setRoute(routeFromPath(currentPath()))), []);
 
@@ -76,7 +91,9 @@ export function App() {
 
   const loadState = useCallback(async () => {
     try {
-      setSnapshot(await api.state());
+      const next = await api.state();
+      generatedAt.current = next.generatedAt;
+      setSnapshot(next);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -89,6 +106,24 @@ export function App() {
     api.config().then(setConfig).catch(() => undefined);
   }, [loadState]);
 
+  /**
+   * Asks for the environment report. On load, after the configuration was saved, and from **Re-check** — never from the
+   * poll or the auto-refresh loop: the report is about this machine, not about the repositories, and computing it starts
+   * a process. A failed request keeps the previous report, so the section can say what went wrong beside it.
+   */
+  const loadEnvironment = useCallback(async (force = false) => {
+    setEnvironment((was) => ({ ...was, loading: true }));
+    try {
+      setEnvironment({ report: await api.environment(force), loading: false });
+    } catch (err) {
+      setEnvironment((was) => ({ report: was.report, loading: false, error: err instanceof Error ? err.message : String(err) }));
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadEnvironment();
+  }, [loadEnvironment]);
+
   // Re-fetch on the configured poll interval, and re-render the relative ages every minute.
   useEffect(() => {
     const seconds = Math.max(10, config?.pollIntervalSeconds ?? 60);
@@ -100,30 +135,67 @@ export function App() {
     };
   }, [config?.pollIntervalSeconds, loadState]);
 
-  const refresh = async () => {
-    setRefreshing(true);
-    const before = snapshot?.generatedAt;
-    try {
-      await api.scan();
-      // Poll until the snapshot changes (or give up after ~20s); a scan usually takes a second or two.
-      for (let i = 0; i < 40; i++) {
-        await new Promise((r) => setTimeout(r, 500));
-        const next = await api.state();
-        if (next.generatedAt !== before) {
-          setSnapshot(next);
-          break;
-        }
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setRefreshing(false);
-    }
+  const chooseAutoRefresh = (interval: AutoRefreshInterval) => {
+    saveInterval(interval);
+    setAutoRefresh(interval);
   };
+
+  // One refresh, shared by the Refresh button and the auto-refresh loop, so the two can never scan at once however
+  // they interleave. The guard is a ref, not `refreshing`: state updates are batched, so two callers in the same frame
+  // would both read `refreshing === false`. Only a refresh the user asked for takes the button over: an automatic one
+  // must not flicker the corner every couple of seconds, nor leave the button dead between ticks. What shows an
+  // automatic refresh is the `updated` age resetting and the interval control standing marked.
+  const refresh = useCallback(async (manual = true) => {
+    if (busy.current) return;
+    busy.current = true;
+    if (manual) setRefreshing(true);
+    try {
+      await performRefresh({
+        api,
+        before: generatedAt.current,
+        // The user is watching the button, so a manual refresh waits for the scan even if it was not the one to start
+        // it; an automatic tick takes what there is and re-arms instead of holding the wait open.
+        waitForScan: manual,
+        delay: (ms) => new Promise((r) => setTimeout(r, ms)),
+        onSnapshot: (next) => {
+          generatedAt.current = next.generatedAt;
+          setSnapshot(next);
+        },
+        onError: setError,
+      });
+    } finally {
+      busy.current = false;
+      if (manual) setRefreshing(false);
+    }
+  }, []);
+
+  // Auto-refresh: repeat what Refresh does on the chosen interval, chained from each refresh finishing so a slow scan
+  // cannot make ticks pile up. Only the scan and the re-fetch are driven from here — never the pull action. While the
+  // page is hidden the chain is held; coming back refreshes at once, which is when the user wants it.
+  useEffect(() => {
+    const delay = intervalMs(autoRefresh);
+    if (delay === 0) return;
+    const loop = createRefreshLoop({
+      intervalMs: delay,
+      run: () => refresh(false), // automatic: quiet, and it does not take the button over
+      setTimer: (fire, ms) => setTimeout(fire, ms),
+      clearTimer: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
+    });
+    loop.start();
+    if (document.hidden) loop.pause();
+    const follow = () => (document.hidden ? loop.pause() : loop.resume());
+    document.addEventListener("visibilitychange", follow);
+    return () => {
+      document.removeEventListener("visibilitychange", follow);
+      loop.stop();
+    };
+  }, [autoRefresh, refresh]);
 
   // Views only ever see repositories that are enabled right now, even if the last scan predates a Settings change.
   const shown = enabledOnly(snapshot, config);
   const failing = shown?.repos.filter((r) => !r.ok) ?? [];
+  // Only shown when a check actually failed: a report that has not arrived, or could not be, warns about nothing.
+  const envWarning = environmentWarning(environment);
 
   // The server rescans after a shared-config save or apply; pick the result up without waiting for the next poll.
   const reloadSoon = () => {
@@ -136,7 +208,8 @@ export function App() {
   const boardRoute: Route = back ? routeFromPath(back.path) : route;
   // The overlay closes with the feature: nothing may be started while agent sessions are off.
   const consoleShown = consoleOpen && config?.agentSessions.enabled === true;
-  const overlayOpen = route.view === "change" || consoleShown;
+  const integrationShown = integrationId !== undefined && config?.agentSessions.enabled === true;
+  const overlayOpen = route.view === "change" || consoleShown || integrationShown;
 
   const ThemeIcon = THEME_ICON[themePref];
   const link = (path: string, label: ComponentChildren, active: boolean) => (
@@ -156,7 +229,7 @@ export function App() {
     <PullProvider onPulled={reloadSoon}>
     {/* Above both the page and the overlay: the detail view's Console tab reads sessions from here too, and the
         end-session dialog it opens must not sit inside the part that goes inert. */}
-    <SessionProvider config={config} snapshot={shown} consoleOpen={consoleShown} showConsole={showConsole}>
+    <SessionProvider config={config} snapshot={shown} consoleOpen={consoleShown} showConsole={showConsole} integrationId={integrationShown ? integrationId : undefined} showIntegration={showIntegration}>
     {/* Everything but the detail overlay: inert while it is open, so the board behind it takes no focus and no clicks. */}
     <div class="app" inert={overlayOpen} aria-hidden={overlayOpen ? "true" : undefined}>
       {/* The hero: the product's name, big, over a soft accent glow; below it the navigation, and — continuing the same
@@ -178,6 +251,16 @@ export function App() {
                 ⚠ {r.name}
               </span>
             ))}
+            {envWarning && (
+              <a
+                class="badge warning"
+                href={hrefWithQuery("/settings", "?section=environment")}
+                title={envWarning.title}
+                onClick={(e) => followInApp(e, "/settings", "?section=environment")}
+              >
+                ⚠ Environment {envWarning.count}
+              </a>
+            )}
             {error && <span class="badge danger">API: {error}</span>}
             <ConsoleButton />
             <button type="button" class="btn sm ghost" onClick={cycleTheme} title="Cycle theme: System → Light → Dark">
@@ -186,10 +269,23 @@ export function App() {
             </button>
             <span class="status">
               <span>updated {snapshot ? relTime(snapshot.generatedAt) : "…"}</span>
-              <button type="button" class="btn sm" onClick={refresh} disabled={refreshing}>
+              <button type="button" class="btn sm" onClick={() => void refresh()} disabled={refreshing}>
                 <IconRefresh size={13} />
                 {refreshing ? "Scanning…" : "Refresh"}
               </button>
+              {/* How often the dashboard refreshes itself. Marked `on` for anything but Off, so whether the board
+                  keeps itself current reads at a glance and not only from the value. */}
+              <label class={`control select-control status-control ${autoRefresh === "off" ? "" : "on"}`}>
+                <IconClock size={12} />
+                <select aria-label="Auto-refresh interval" value={autoRefresh} onChange={(e) => chooseAutoRefresh(parseInterval(e.currentTarget.value))}>
+                  {AUTO_REFRESH_OPTIONS.map((o) => (
+                    <option key={o.value} value={o.value}>
+                      {o.value === "off" ? "Auto: off" : `Auto: ${o.label}`}
+                    </option>
+                  ))}
+                </select>
+                <IconChevronDown size={11} />
+              </label>
             </span>
           </div>
         </div>
@@ -234,8 +330,28 @@ export function App() {
         </nav>
       </header>
       <main class="main">
+        {notice && (
+          <div class="notice app-notice" role="status">
+            <span>{notice}</span>
+            <button type="button" class="btn sm ghost" onClick={() => setNotice(undefined)} aria-label="Dismiss notice">
+              ✕
+            </button>
+          </div>
+        )}
         {route.view === "settings" ? (
-          <Settings config={config} snapshot={shown} onSaved={(c) => { setConfig(c); void loadState(); }} onRescan={reloadSoon} />
+          <Settings
+            config={config}
+            snapshot={shown}
+            onSaved={(c) => {
+              setConfig(c);
+              void loadState();
+              // The configuration decides which checks are needed at all, so a fresh report is asked for.
+              void loadEnvironment();
+            }}
+            onRescan={reloadSoon}
+            environment={environment}
+            onRecheckEnvironment={() => void loadEnvironment(true)}
+          />
         ) : route.view === "activity" ? (
           <Activity snapshot={shown} onSeen={markSeen} />
         ) : route.view === "overview" ? (
@@ -259,9 +375,19 @@ export function App() {
     <EndSessionDialog />
     {route.view === "change" && (
       // Keyed so selection and content start over when moving between changes.
-      <ChangeDetail key={`${route.repoId}/${route.changeName}`} snapshot={shown} repoId={route.repoId} changeName={route.changeName} />
+      <ChangeDetail
+        key={`${route.repoId}/${route.changeName}`}
+        snapshot={shown}
+        repoId={route.repoId}
+        changeName={route.changeName}
+        onDismissed={(text) => {
+          setNotice(text);
+          reloadSoon();
+        }}
+      />
     )}
     <ConsoleOverlay />
+    <IntegrationOverlay />
     </SessionProvider>
     </PullProvider>
   );

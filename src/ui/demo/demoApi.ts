@@ -1,14 +1,43 @@
 // In-memory stand-in for the dashboard server. Nothing is read from or written to anywhere: a reload starts over.
 import { pageEvents } from "../../shared/activity.ts";
 import { summarizeWorkInProgress } from "../../shared/workInProgress.ts";
-import type { ChangeSnapshot, Config, PullResult, RepoSharedConfig, RepoSnapshot, SharedConfigApplyResult, SharedConfigPreview, SharedProfile, Snapshot } from "../../shared/types.ts";
+import type { ChangeSnapshot, Config, DismissFile, DismissPreview, PullBlockingFile, PullResult, RepoSharedConfig, RepoSnapshot, SharedConfigApplyResult, SharedConfigPreview, SharedProfile, Snapshot } from "../../shared/types.ts";
 import { ApiError, type Api } from "../api.ts";
 import { demoApply, demoPreview, newCleanupState, remainingWorktrees } from "./demoCleanup.ts";
 import { createDemoSessions } from "./demoSessions.ts";
 import { sampleArtifactFiles } from "./sampleArtifacts.ts";
-import { buildActivity, buildSample, DEMO_CARRIED, DEMO_PROFILES, DEMO_ROOT } from "./sampleData.ts";
+import { buildActivity, buildSample, DEMO_CARRIED, demoEnvironment, DEMO_PROFILES, DEMO_ROOT } from "./sampleData.ts";
 import type { Clock } from "./transcripts.ts";
 
+
+// ---------------------------------------------------------------------------------------------------------------------
+// One sample repository's first pull is blocked by the dashboard's own leftovers, so the visitor can try Resolve and
+// pull: `.openspec.yaml` is the same on both sides, `prompt.md` is not, and everything here is made up.
+// ---------------------------------------------------------------------------------------------------------------------
+const BLOCKED_REPO = "2f86b0cd"; // quill-docs
+const BLOCKED_CHANGE = "add-import-redirects";
+const BLOCKED_UPSTREAM = "4f19b7ce0a2d5168b3c47ae90d1f6825bb3c07ea";
+const BLOCKED_FILES: PullBlockingFile[] = [
+  {
+    path: `openspec/changes/${BLOCKED_CHANGE}/.openspec.yaml`,
+    kind: "leftover",
+    differs: false,
+    incoming: "9a3c1d5e7b02f48619cd3a7e04b8156f2c9d0e71",
+    staged: "9a3c1d5e7b02f48619cd3a7e04b8156f2c9d0e71",
+    worktree: "9a3c1d5e7b02f48619cd3a7e04b8156f2c9d0e71",
+  },
+  {
+    path: `openspec/changes/${BLOCKED_CHANGE}/prompt.md`,
+    kind: "leftover",
+    differs: true,
+    incoming: "1b74e0c6d9a25f38401e7bc3a5d68f291047c3ba",
+    staged: "e52d8106f3ba9c74d015e6b82a39fc07461d9825",
+    worktree: "e52d8106f3ba9c74d015e6b82a39fc07461d9825",
+  },
+];
+const BLOCKED_HINT =
+  "These files are left over from changes created here that the incoming commits already contain. Resolve and pull replaces them with the incoming version and keeps a copy of anything that differs.";
+const BLOCKED_COPY = `/home/demo/.openspec-dashboard/pull-backups/${BLOCKED_REPO}/2026-02-14T09-41-08-317Z/openspec/changes/${BLOCKED_CHANGE}/prompt.md`;
 
 export interface DemoApiOptions {
   now?: () => number;
@@ -89,25 +118,67 @@ export function createDemoApi({ now = Date.now, latencyMs = 150, clock }: DemoAp
     return { desired: profiles.filter((p) => profileIds.includes(p.id)) };
   };
 
+  // What the visitor dismissed: gone from the board until a reload. Keyed by repository id and change name.
+  const dismissed = new Set<string>();
+  const dismissKey = (repoId: string, name: string) => `${repoId}\0${name}`;
+  const withoutDismissed = (repo: RepoSnapshot): RepoSnapshot =>
+    repo.changes.some((c) => !c.archived && dismissed.has(dismissKey(repo.id, c.name))) ? { ...repo, changes: repo.changes.filter((c) => c.archived || !dismissed.has(dismissKey(repo.id, c.name))) } : repo;
+
   /** The board without session worktrees: what the sessions themselves are validated against. */
+  /** Every repository the sample can describe: the tracked ones, plus any that has been integrated in this session. */
+  const sampleRepo = (id: string): RepoSnapshot | undefined => sample.snapshot.repos.find((s) => s.id === id) ?? sample.integrated.find((s) => s.id === id);
+
   const baseSnapshot = (): Snapshot => ({
     generatedAt,
-    repos: config.repos.filter((r) => r.enabled).map((r) => sample.snapshot.repos.find((s) => s.id === r.id) ?? emptyRepo(r.id, r.name, r.path)),
+    repos: config.repos.filter((r) => r.enabled).map((r) => {
+      const known = sampleRepo(r.id);
+      return known ? withoutDismissed(known) : emptyRepo(r.id, r.name, r.path);
+    }),
   });
 
   const activityLog = buildActivity(sample.snapshot, now());
   /** Long enough to see "Pulling…", like a fetch over a network would be. */
   const PULL_MS = Math.min(900, latencyMs * 6);
   const pulled = new Set<string>();
+  let leftoversResolved = false;
   const simulatedPull = (repoId: string): PullResult | undefined => {
     const repo = snapshot().repos.find((r) => r.id === repoId);
     if (!repo?.ok || !repo.isGit) return undefined;
     const base = { repoId, fetched: true, branch: repo.currentBranch, upstream: `origin/${repo.currentBranch}`, defaultBranch: repo.defaultBranch };
     if (repo.onDefaultBranch === false) return { ...base, update: "skipped", reason: `on ${repo.currentBranch}, not ${repo.defaultBranch}; only fetched` };
+    // One sample repository is blocked by the dashboard's own leftovers until the visitor tries Resolve and pull.
+    if (repoId === BLOCKED_REPO && !leftoversResolved) {
+      return {
+        ...base,
+        update: "refused",
+        reason: `Your local changes to the following files would be overwritten by merge: ${BLOCKED_FILES.map((f) => f.path).join(" ")}`,
+        blocking: structuredClone(BLOCKED_FILES),
+        resolvable: { upstream: BLOCKED_UPSTREAM, files: structuredClone(BLOCKED_FILES) },
+        hint: BLOCKED_HINT,
+      };
+    }
     if (pulled.has(repoId)) return { ...base, update: "up-to-date" };
     pulled.add(repoId);
     // a made-up but stable number of new commits per sample repository
     return { ...base, update: "fast-forwarded", commits: 1 + (Number.parseInt(repoId.slice(0, 2), 16) % 5) };
+  };
+
+  /** Resolving in the demo removes nothing anywhere: it answers with what the dashboard would say for those files. */
+  const simulatedResolve = (repoId: string, upstream: string): PullResult | undefined => {
+    const repo = snapshot().repos.find((r) => r.id === repoId);
+    if (!repo?.ok || !repo.isGit) return undefined;
+    const base = { repoId, fetched: false, branch: repo.currentBranch, upstream: `origin/${repo.currentBranch}`, defaultBranch: repo.defaultBranch };
+    if (repoId !== BLOCKED_REPO || leftoversResolved || upstream !== BLOCKED_UPSTREAM) {
+      return { ...base, update: "refused", reason: "the blocking files are no longer the ones that were shown; pull again to see where they stand" };
+    }
+    leftoversResolved = true;
+    pulled.add(repoId);
+    return {
+      ...base,
+      update: "fast-forwarded",
+      commits: 2,
+      resolved: [{ path: BLOCKED_FILES[0].path }, { path: BLOCKED_FILES[1].path, copy: BLOCKED_COPY }],
+    };
   };
 
   // What the visitor removed with Clean up: gone from the board until a reload.
@@ -118,7 +189,7 @@ export function createDemoApi({ now = Date.now, latencyMs = 150, clock }: DemoAp
   };
   /** Cleanup sees the sample's own checkouts, not session worktrees: those are removed from the sessions view. */
   const cleanupTarget = (repoId: string): RepoSnapshot => {
-    const repo = sample.snapshot.repos.find((r) => r.id === repoId);
+    const repo = sampleRepo(repoId);
     if (!repo || !config.repos.some((r) => r.id === repoId && r.enabled)) throw new ApiError(404, "unknown repository");
     if (!repo.ok || !repo.isGit) throw new ApiError(409, "not a tracked, successfully scanned git repository");
     return repo;
@@ -129,8 +200,8 @@ export function createDemoApi({ now = Date.now, latencyMs = 150, clock }: DemoAp
     repos: config.repos
       .filter((r) => r.enabled)
       .map((r) => {
-        const known = sample.snapshot.repos.find((s) => s.id === r.id);
-        const repo = known ? cleanedUp({ ...known, name: r.name }) : emptyRepo(r.id, r.name, r.path);
+        const known = sampleRepo(r.id);
+        const repo = known ? cleanedUp(withoutDismissed({ ...known, name: r.name })) : emptyRepo(r.id, r.name, r.path);
         // A session's worktree is a worktree of its repository, so `git worktree list` — the snapshot — has it too.
         const sessionWorktrees = config.agentSessions.enabled ? demoSessions.gitWorktrees(r.id) : [];
         const worktrees = [...repo.worktrees, ...sessionWorktrees];
@@ -140,7 +211,23 @@ export function createDemoApi({ now = Date.now, latencyMs = 150, clock }: DemoAp
       }),
   });
 
-  const demoSessions: ReturnType<typeof createDemoSessions> = createDemoSessions({ now, clock, getConfig: () => config, getSnapshot: () => baseSnapshot() });
+  /** Still without OpenSpec: the sample's integratable repositories minus the ones the visitor has already set up. */
+  const integratable = () => sample.integratable.filter((r) => !config.repos.some((c) => c.id === r.id));
+
+  const demoSessions: ReturnType<typeof createDemoSessions> = createDemoSessions({
+    now,
+    clock,
+    getConfig: () => config,
+    getSnapshot: () => baseSnapshot(),
+    integratable,
+    // The recording ended, which here stands for `openspec/config.yaml` appearing: track it and show its board.
+    onIntegrated: (path) => {
+      const repo = sample.integratable.find((r) => r.path === path);
+      if (!repo || config.repos.some((r) => r.id === repo.id)) return;
+      config = { ...config, repos: [...config.repos, { id: repo.id, path: repo.path, name: repo.name, enabled: true }] };
+      generatedAt = new Date(now()).toISOString();
+    },
+  });
 
   // Same answers as the server: 404 for a repository that is not enabled or a change it does not have.
   const findChange = (repoId: string, change: string): { change: ChangeSnapshot; dir: string } => {
@@ -151,6 +238,22 @@ export function createDemoApi({ now = Date.now, latencyMs = 150, clock }: DemoAp
     if (!found) throw new ApiError(404, "unknown change");
     const dir = found.archived ? `${repo.path}/openspec/changes/archive/${found.archived}-${change}` : `${repo.path}/openspec/changes/${change}`;
     return { change: found, dir };
+  };
+  /**
+   * The sample's files of an active change in the main checkout, all committed — except a draft's scratch notes, so the
+   * confirmation's "lost for good" can be seen. A change only a linked worktree holds is refused, as by the server.
+   */
+  const demoDismissPreview = (repoId: string, name: string): DismissPreview => {
+    const { change } = findChange(repoId, name);
+    if (change.archived) throw new ApiError(404, `"${name}" is archived; only active changes can be dismissed`);
+    const checkouts = [change.checkout, ...(change.otherCheckouts ?? [])].filter((c) => c !== undefined);
+    const holder = checkouts.find((c) => !c.isMain);
+    if (checkouts.length > 0 && !checkouts.some((c) => c.isMain)) throw new ApiError(404, `"${name}" lives only in the worktree on ${holder?.branch ?? holder?.path}`);
+    const paths = [".openspec.yaml", ...Object.values(sampleArtifactFiles(change)).flatMap((byPath) => Object.keys(byPath))];
+    const files: DismissFile[] = paths.sort().map((path) => ({ path, state: "restorable" }));
+    if (change.stage === "drafts") files.push({ path: "notes.md", state: "lost" });
+    const copies = checkouts.filter((c) => !c.isMain).map((c) => ({ path: c.path, branch: c.branch }));
+    return { repoId, name, isGit: true, files, copies, fingerprint: `demo:${repoId}:${name}` };
   };
   const failing = <T>(work: () => T): Promise<T> => {
     try {
@@ -183,6 +286,8 @@ export function createDemoApi({ now = Date.now, latencyMs = 150, clock }: DemoAp
     // Built once from the sample, like a log that was written while the sample came about; filtered and paged like the real one.
     activity: (query) => reply(pageEvents(activityLog, query)),
     config: () => reply(config),
+    // Fixed sample data, derived from the config the visitor is looking at: no process, no PATH, no file, no connection.
+    environment: () => reply(demoEnvironment(config, now())),
     saveConfig: (next) => {
       config = structuredClone(next);
       return reply(config);
@@ -194,6 +299,7 @@ export function createDemoApi({ now = Date.now, latencyMs = 150, clock }: DemoAp
       const tracked = new Set(config.repos.map((r) => r.id));
       return reply({
         candidates: roots.some(inDemo) ? sample.candidates.filter((c) => !tracked.has(c.id) && !ignored(c.path)) : [],
+        integratable: roots.some(inDemo) ? integratable().filter((r) => !ignored(r.path)) : [],
         errors: roots.filter((root) => !inDemo(root)).map((root) => ({ root, message: "The demo cannot read your disk; only the sample workspace exists here." })),
       });
     },
@@ -209,12 +315,29 @@ export function createDemoApi({ now = Date.now, latencyMs = 150, clock }: DemoAp
       generatedAt = new Date(now()).toISOString();
       return new Promise((resolve) => setTimeout(() => resolve(structuredClone({ results })), PULL_MS));
     },
+    // Confirming Resolve and pull in the demo writes nothing: the outcome is the one the dashboard would report.
+    resolvePull: (repoId, claim) => {
+      const result = simulatedResolve(repoId, claim.upstream);
+      if (!result) return new Promise((_, reject) => setTimeout(() => reject(new Error("not a tracked, successfully scanned git repository")), latencyMs));
+      generatedAt = new Date(now()).toISOString();
+      return new Promise((resolve) => setTimeout(() => resolve(structuredClone(result)), PULL_MS));
+    },
     cleanupPreview: (repoId) => attempt(() => demoPreview(cleanupState, cleanupTarget(repoId))),
     cleanup: (repoId, selection) =>
       attempt(() => {
         const result = demoApply(cleanupState, cleanupTarget(repoId), selection);
         generatedAt = new Date(now()).toISOString();
         return result;
+      }),
+    // Dismissing in the demo deletes nothing anywhere: the change leaves the in-memory board until a reload.
+    dismissPreview: (repoId, name) => attempt(() => demoDismissPreview(repoId, name)),
+    dismissChange: (repoId, name, fingerprint) =>
+      attempt(() => {
+        const preview = demoDismissPreview(repoId, name);
+        if (fingerprint !== preview.fingerprint) throw new ApiError(409, `"${name}" changed since it was shown; look at it again before dismissing`);
+        dismissed.add(dismissKey(repoId, name));
+        generatedAt = new Date(now()).toISOString();
+        return { name, staged: true };
       }),
     scan: () => {
       generatedAt = new Date(now()).toISOString();
@@ -251,8 +374,10 @@ export function createDemoApi({ now = Date.now, latencyMs = 150, clock }: DemoAp
     sessions: () => reply(demoSessions.list()),
     openSession: (repoId, change, action) => attempt(() => demoSessions.open(repoId, change, action)),
     openConsole: () => attempt(() => demoSessions.openConsole()),
+    startIntegration: (path) => attempt(() => demoSessions.openIntegration(path)),
     resumeSession: (id) => attempt(() => demoSessions.resume(id)),
     shipSession: (id) => attempt(() => demoSessions.ship(id)),
+    resolveConflicts: (id) => attempt(() => demoSessions.resolveConflicts(id)),
     removeWorktree: (repoId, name) => attempt(() => demoSessions.removeWorktree(repoId, name)),
     closeSession: (id, removeWorktree) => attempt(() => demoSessions.close(id, removeWorktree)),
     deleteSession: (id) => attempt(() => demoSessions.delete(id)),

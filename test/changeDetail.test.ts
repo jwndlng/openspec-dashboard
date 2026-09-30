@@ -22,7 +22,7 @@ import {
   taskProgress,
   TERMINAL_SELECTOR,
 } from "../src/ui/changeDetail.tsx";
-import { type Card, ChangeCard, CopyButton, cardLink, consoleTarget, initialFilters } from "../src/ui/kanban.tsx";
+import { type Card, ChangeCard, ConsoleLink, CopyButton, cardLink, consoleTarget, initialFilters } from "../src/ui/kanban.tsx";
 import { renderMarkdown } from "../src/ui/markdown.tsx";
 import { backTarget, CONSOLE_TAB, parseDetailQuery, routeFromPath, serializeDetailQuery } from "../src/ui/routes.ts";
 import { FIXTURES } from "./helpers.ts";
@@ -180,6 +180,23 @@ test("tabs: schema order, state on every tab, artifacts without files not select
   expect(artifactLabel("release-notes")).toBe("Release notes");
 });
 
+test("the Console tab comes last and is selectable whatever the artifacts are in", () => {
+  const withConsole = byTag(ArtifactTabs({ artifacts, selected: CONSOLE_TAB, onSelect: () => {}, console: true }), "button");
+  expect(withConsole.map((tab) => textOf(tab))).toEqual(["Proposaldone", "Specsdone", "Designready", "Tasksblocked", "Console"]);
+  // Last, selectable, and carrying no artifact state: the Console tab is not an artifact.
+  expect(withConsole[4].props.disabled).toBeFalsy();
+  expect(withConsole[4].props["aria-selected"]).toBe(true);
+
+  // A change with no artifact file at all still has a selectable Console tab.
+  const noFiles = artifacts.map((a) => ({ ...a, files: [], status: "ready" as const }));
+  const bare = byTag(ArtifactTabs({ artifacts: noFiles, selected: CONSOLE_TAB, onSelect: () => {}, console: true }), "button");
+  expect(bare.slice(0, 4).every((tab) => tab.props.disabled)).toBe(true);
+  expect(bare[4].props.disabled).toBeFalsy();
+
+  // Feature off for the repository: no Console tab at all.
+  expect(byTag(ArtifactTabs({ artifacts, selected: "proposal", onSelect: () => {} }), "button").map((tab) => textOf(tab))).not.toContain("Console");
+});
+
 test("selection: URL wins when it exists, stale artifact or file falls back without an error", () => {
   expect(resolveSelection(artifacts, {})).toEqual({ artifactId: "proposal", file: "proposal.md" });
   expect(resolveSelection(artifacts, { artifact: "specs" })).toEqual({ artifactId: "specs", file: "specs/dashboard-api/spec.md" });
@@ -189,6 +206,11 @@ test("selection: URL wins when it exists, stale artifact or file falls back with
   expect(resolveSelection(artifacts, { artifact: "nope", file: "../../etc/passwd" })).toEqual({ artifactId: "proposal", file: "proposal.md" });
   expect(resolveSelection(artifacts.map((a) => ({ ...a, files: [] })), { artifact: "specs" })).toEqual({});
   expect(resolveSelection([], {})).toEqual({});
+  // The Console tab is selectable whenever it is offered — which is now decided per repository, not per change.
+  expect(resolveSelection(artifacts, { artifact: CONSOLE_TAB }, true)).toEqual({ artifactId: CONSOLE_TAB });
+  expect(resolveSelection([], { artifact: CONSOLE_TAB }, true)).toEqual({ artifactId: CONSOLE_TAB });
+  // No Console tab (agent sessions off for the repository): fall back to the first artifact with content, no error.
+  expect(resolveSelection(artifacts, { artifact: CONSOLE_TAB }, false)).toEqual({ artifactId: "proposal", file: "proposal.md" });
 });
 
 test("file list only for multi-file artifacts, first file selected by default", () => {
@@ -203,8 +225,8 @@ test("file list only for multi-file artifacts, first file selected by default", 
 
 test("tasks artifact: read-only checklist with done/total from the file on screen", () => {
   const text = readFileSync(join(FIXTURES, "demo-ops", "openspec", "changes", "cloud-deployment", "tasks.md"), "utf8");
-  expect(taskProgress(text)).toEqual({ done: 4, total: 10 });
-  expect(taskProgress("1. [X] a\n* [ ] b\n  - [x] c\nnot [x] a task")).toEqual({ done: 2, total: 3 });
+  expect(taskProgress(text)).toEqual({ done: 4, awaiting: 0, total: 10 });
+  expect(taskProgress("1. [X] a\n* [ ] b\n  - [x] c\nnot [x] a task")).toEqual({ done: 2, awaiting: 0, total: 3 });
   const view = FileContent({ state: { status: "ok", path: "tasks.md", text }, raw: false, isTasks: true, rendered: renderMarkdown(text) });
   expect(textOf(view)).toContain("4/10");
   const boxes = byTag(view, "input");
@@ -216,6 +238,32 @@ test("tasks artifact: read-only checklist with done/total from the file on scree
   }
   // other artifacts get no progress bar
   expect(textOf(FileContent({ state: { status: "ok", path: "proposal.md", text }, raw: false, isTasks: false, rendered: renderMarkdown(text) }))).not.toContain("4/10");
+});
+
+test("tasks artifact: the three checkbox states render distinctly, none of them operable", () => {
+  const text = ["## 1. Work", "", "- [x] 1.1 built and checked", "- [~] 1.2 check it in the browser", "- [ ] 1.3 still open", ""].join("\n");
+  expect(taskProgress(text)).toEqual({ done: 1, awaiting: 1, total: 3 });
+  const view = FileContent({ state: { status: "ok", path: "tasks.md", text }, raw: false, isTasks: true, rendered: renderMarkdown(text) });
+
+  const boxes = byTag(view, "input");
+  expect(boxes.map((b) => [b.props.checked, b.props.indeterminate, b.props["aria-checked"]])).toEqual([
+    [true, undefined, undefined],
+    [false, true, "mixed"],
+    [false, undefined, undefined],
+  ]);
+  // Clicking any of them sends nothing: every box is disabled and carries no handler at all.
+  for (const box of boxes) {
+    expect(box.props.disabled).toBe(true);
+    expect(Object.keys(box.props).filter((k) => k.startsWith("on"))).toEqual([]);
+  }
+  // The awaiting item is marked as such, and reads as its own words: the marker is not left in the text.
+  const items = byTag(view, "li");
+  expect(items.map((li) => li.props.class)).toEqual(["task", "task awaiting", "task"]);
+  expect(textOf(items[1])).toBe("1.2 check it in the browser");
+  // And the view says in words how many await validation.
+  expect(textOf(view)).toContain("1 + 1 awaiting / 3");
+  expect(textOf(view)).toContain("1 task awaits your validation");
+  expect(textOf(FileContent({ state: { status: "ok", path: "tasks.md", text: "- [x] a\n- [ ] b\n" }, raw: false, isTasks: true, rendered: renderMarkdown("- [x] a\n- [ ] b\n") }))).not.toContain("await");
 });
 
 test("raw shows the source verbatim instead of the rendering", () => {
@@ -302,8 +350,11 @@ test("a card shows only what an overview needs, and leaves the rest to the detai
   const top = classed(view, "card-top")[0];
   expect(textOf(classed(top, "name")[0])).toBe("multi-tenant-sync");
   expect(textOf(classed(top, "age")[0])).toBe("updated 3d ago");
-  // The name comes first and has the top to itself; the session status gets the line below it.
-  expect([top.props.children].flat().map((el) => (el as { props: { class?: string } }).props.class)).toEqual(["card-title", "card-status"]);
+  // The name comes first and shares the top with nothing but the console link's slot; the session status is in the
+  // footer now, so no status line sits between the age and the progress bar.
+  const topChildren = [top.props.children].flat() as { type: unknown; props: { class?: string } }[];
+  expect(topChildren.map((el) => el.props.class ?? el.type)).toEqual(["card-title", ConsoleLink]);
+  expect(classed(view, "card-status")).toEqual([]);
   // The progress bar names what it counts: tasks once the change is past Drafts, artifacts while drafting.
   expect(textOf(classed(view, "value")[0])).toBe("4/12 Tasks");
   const drafting = ChangeCard({ card: { ...detailed, stage: "drafts", column: "Drafts" }, now: NOW, from: "/board" });
@@ -316,6 +367,15 @@ test("the console quick link opens the detail view on its Console tab and keeps 
   const target = consoleTarget(card, "/board?q=sync");
   expect(target.path).toBe("/repo/r1/change/multi-tenant-sync");
   expect(parseDetailQuery(target.query)).toMatchObject({ artifact: CONSOLE_TAB, from: "/board?q=sync" });
+
+  // Every card carries the link's slot, in the card's top and nowhere else, whatever the change's session history is:
+  // whether it draws anything is `consoleTabAvailable`'s call, which is a repository's setting (see workStatusUi).
+  for (const one of [card, { ...card, archived: "2026-03-09" }]) {
+    const view = ChangeCard({ card: one, now: NOW, from: "/board" });
+    expect(byComponent(view, ConsoleLink)).toHaveLength(1);
+    expect(byComponent(classed(view, "card-top")[0], ConsoleLink)).toHaveLength(1);
+    expect(byComponent(classed(view, "meta")[0], ConsoleLink)).toEqual([]);
+  }
 });
 
 test("a board behind the detail view takes its filters from the query it is given", () => {

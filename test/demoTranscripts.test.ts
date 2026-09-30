@@ -100,7 +100,7 @@ test("a line of input answers the question — typed, or sent by a quick-reply b
   }
 });
 
-test("a default response arrives as `submit`: it is typed, sent with Enter, and answered as submitted", () => {
+test("a shortcut arrives as `submit`: it is typed, sent with Enter, and answered as submitted", () => {
   const p = play({ index: 0, waiting: false });
   p.advance(60_000);
   p.playback.send({ type: "submit", data: "Yes, go ahead" });

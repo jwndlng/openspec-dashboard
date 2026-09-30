@@ -47,6 +47,14 @@ track.
   (with a bar of written artifacts) → Ready → Implementing → Done → Archived. Changes in git worktrees are included, so work shows
   up before it is merged. ([kanban-board](openspec/specs/kanban-board/spec.md),
   [change-scanner](openspec/specs/change-scanner/spec.md))
+- **Awaiting validation**: a task written `- [~]` in `tasks.md` means the agent finished it but a person still has to
+  confirm it — "check it in the browser", "try the packaged build". It counts towards the change being finished but
+  never towards `done`, so a change whose tasks are all `- [x]` or `- [~]` sits in **Done** with a **Validate** badge
+  and a bar like `13 + 2 awaiting / 15 Tasks`, and offers **Validate** instead of **Implement**. **Archive** is
+  offered for the whole `Done` column, so you can archive straight away; `openspec archive` will ask about the
+  leftovers, and that question is the validation. The dashboard only reads the marker: it never writes, ticks or
+  clears a checkbox in any repository — your agent does that, in its own session.
+  ([change-scanner](openspec/specs/change-scanner/spec.md), [kanban-board](openspec/specs/kanban-board/spec.md))
 - **Change details**: **Show details** on a card opens the change's proposal, design, specs and tasks in an overlay
   over the board; close it with `Escape` to get back to the board as you left it. Apply and start commands are run
   by hand or through an agent session. ([change-detail](openspec/specs/change-detail/spec.md))
@@ -56,6 +64,10 @@ track.
   board with a project dropdown, optionally with a prompt.
   Nothing is committed.
   ([change-creation](openspec/specs/change-creation/spec.md))
+- **Dismiss change**: drop a change you are not going ahead with from its detail view. The confirmation lists every file
+  and says which ones git can restore and which are lost for good; confirming deletes `openspec/changes/<name>/` from
+  the main checkout and stages that removal. Nothing is committed, and worktrees and branches are left alone.
+  ([change-dismissal](openspec/specs/change-dismissal/spec.md))
 - **Pull**: fetch and fast-forward a repository's main checkout. Never merges, rebases, stashes or switches branches.
   ([repository-pull](openspec/specs/repository-pull/spec.md))
 - **Clean up**: remove a repository's leftover worktrees and delete local branches whose work is merged, including
@@ -65,11 +77,22 @@ track.
   repositories, with a diff preview first. ([shared-config](openspec/specs/shared-config/spec.md))
 - **Agent sessions** (off by default): start your agent CLI, such as Claude Code, for a change in its own git worktree.
   Its terminal is the **Console** tab of that change's detail view, next to the change's artifacts, so one change is
-  one place. **Open work** in the top bar lists every running agent and every worktree that still holds something
+  one place, and every card carries a link to it in the same top-right corner. While an agent works, the card's start
+  button becomes its status — activate it to open the terminal, where the next step and **End session** are.
+  **Open work** in the top bar lists every running agent and every worktree that still holds something
   (uncommitted, unpushed, pushed, merged) across all repositories.
+  A branch that no longer merges into the default branch says so, with the files that clash — worked out locally, so it
+  is as fresh as your last fetch — and **Resolve conflicts** hands your agent the job. The dashboard merges, rebases
+  and pushes nothing itself; it only asks, exactly as **Ship** does.
   A tracked folder that is not a git repository works too — there the agent runs in the folder itself, so it edits your
-  files directly, with no branch and no undo, and the session says so.
+  files directly, with no branch and no undo, and the session says so. The same goes for an **Integrate** session.
   ([agent-sessions](openspec/specs/agent-sessions/spec.md))
+- **Integrate a repository**: Settings lists the git repositories under your workspace roots that do not use OpenSpec
+  yet, next to the candidates that already do. **Integrate** starts your agent in that repository to run
+  `openspec init` there and answer its questions. The dashboard writes nothing itself, and starts tracking the
+  repository only once `openspec/config.yaml` is actually on disk — never on the agent's word. That one session runs
+  in the checkout itself, with no branch and no undo, because that is where the marker has to land.
+  ([repo-integration](openspec/specs/repo-integration/spec.md))
 - **Console**: the terminal button next to the theme control opens your default agent outside every change, with no
   prompt — for drafting a new change, looking across repositories or any chore. It runs in a console folder
   (`~/.openspec-dashboard/console/` unless you pick another one in Settings, never inside a tracked repository), one at
@@ -83,8 +106,10 @@ track.
 - It reads repositories with read-only git commands. Scanning, polling and discovery never write anything or contact
   a remote.
 - It writes to a repository only when you click something: **Pull** (the only network access, using git's own
-  credentials), **New change**, **applying shared config**, creating or removing an **agent session's worktree**, and
-  **Clean up** (removing worktrees and deleting merged local branches you selected).
+  credentials) and, when you confirm **Resolve and pull**, removing the change files it created here that the incoming
+  commits already contain — a copy of anything that differs is kept under `~/.openspec-dashboard/` first; **New
+  change**, **Dismiss change** (deleting that change's directory), **applying shared config**, creating or removing an
+  **agent session's worktree**, and **Clean up** (removing worktrees and deleting merged local branches you selected).
   The full list is in the [dashboard-api spec](openspec/specs/dashboard-api/spec.md).
 - Its own state lives in `~/.openspec-dashboard/`.
 

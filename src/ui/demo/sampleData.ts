@@ -4,13 +4,16 @@
 //
 // Ages are relative to `now`, so the published demo never looks abandoned. Column and stage are derived with the
 // same rules the scanner uses, so the sample cannot disagree with the board.
+import { DEFAULT_SHORTCUTS } from "../../shared/agentDefaults.ts";
 import { deriveStage } from "../../shared/columns.ts";
-import type { ActivityEvent, AgentProfile, ArtifactStatus, ChangeSnapshot, CheckoutStatus, Config, RepoConfig, RepoSnapshot, SharedProfile, Snapshot, Worktree } from "../../shared/types.ts";
+import type { ActivityEvent, AgentProfile, ArtifactStatus, ChangeSnapshot, CheckoutStatus, Config, EnvironmentCheck, EnvironmentReport, IntegratableRepo, RepoConfig, RepoSnapshot, SharedProfile, Shortcut, Snapshot, Worktree } from "../../shared/types.ts";
 import { summarizeWorkInProgress } from "../../shared/workInProgress.ts";
 
 /** Appears in the demo bundle only; test/demoBundle.test.ts uses it to tell the two bundles apart. */
 export const DEMO_MARKER = "openspec-dashboard-demo-build";
 export const DEMO_ROOT = "/home/demo/work";
+/** The fictional user's home the sample paths sit under; test/demoData.test.ts allows /home/demo and nothing else. */
+export const DEMO_HOME = "/home/demo";
 
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
@@ -33,6 +36,8 @@ interface SampleChange {
   written?: Written;
   /** [done, total]; implies every artifact is written unless `written` says otherwise. */
   tasks?: [number, number];
+  /** Of `total`, how many are `- [~]`: finished by the agent, awaiting the user. Never part of `done`. */
+  awaiting?: number;
   /** Age of the last activity in days. */
   age: number;
   synced?: boolean;
@@ -59,8 +64,16 @@ interface SampleRepo {
   error?: string;
   warnings?: string[];
   changes: SampleChange[];
-  /** [name, archived days ago, task total] */
-  archived: [string, number, number][];
+  /**
+   * [name, archived days ago, task total, worktree branch]. With a branch — one of `worktrees` — the archive exists only
+   * in that worktree and the main checkout does not hold it yet: it still has to be pushed or merged.
+   */
+  archived: [string, number, number, string?][];
+  /**
+   * A git repository under the roots that does not use OpenSpec yet. It is not tracked and not a candidate; Settings
+   * offers to set it up, and what is described here is what it looks like once that is done.
+   */
+  integratable?: true;
 }
 
 const CLEAN: CheckoutStatus = { modified: 0, untracked: 0, conflicts: 0 };
@@ -142,7 +155,13 @@ export const DEMO_AGENT: AgentProfile = {
   id: "demo-agent",
   name: "Demo Agent",
   command: ["demo-agent", "{prompt}"],
-  prompts: { draft: "/opsx:ff {change}", implement: "/opsx:apply {change}", archive: "/opsx:archive {change}" },
+  prompts: {
+    draft: "/opsx:ff {change}",
+    implement: "/opsx:apply {change}",
+    validate: "/opsx:apply {change} — walk me through the tasks left to validate",
+    archive: "/opsx:archive {change}",
+    integrate: "Set this project up for OpenSpec: run `openspec init` here and tell me what it created.",
+  },
   resumeCommand: ["demo-agent", "--continue"],
 };
 
@@ -155,6 +174,7 @@ const REPOS: SampleRepo[] = [
     worktrees: [
       ["feat/add-rate-limiting", "uncommitted"],
       ["fix/flaky-health-check", "never-pushed"],
+      ["chore/archive-request-id-propagation", "ahead"],
     ],
     changes: [
       // proposed on main, being implemented in a worktree: one card, led by the worktree's copy
@@ -164,12 +184,15 @@ const REPOS: SampleRepo[] = [
       { name: "structured-error-codes", written: "specs", age: 1 },
       { name: "idempotency-keys", written: "proposal", age: 9 },
       { name: "deprecate-v1-auth", tasks: [12, 12], age: 3 },
+      // Code-complete, two checks only a person can make: `Done`, sub-state `validate`.
+      { name: "verify-rate-limit-headers", tasks: [11, 13], awaiting: 2, age: 0.5 },
       { name: "openapi-examples", tasks: [8, 8], age: 6, synced: true },
       { name: "graphql-gateway-spike", written: "none", age: 0.3 },
     ],
     archived: [
       ["add-health-endpoint", 4, 6],
-      ["request-id-propagation", 8, 11],
+      // archived in its worktree, committed there but not pushed yet
+      ["request-id-propagation", 8, 11, "chore/archive-request-id-propagation"],
       ["split-billing-module", 15, 27],
       ["cache-user-lookups", 22, 9],
       ["rotate-signing-keys", 31, 13],
@@ -211,6 +234,7 @@ const REPOS: SampleRepo[] = [
       ["chore/upgrade-terraform", "clean"],
       ["spike/bisect-slow-plan", "detached"],
       ["feat/abandoned-dns-module", "stale"],
+      ["chore/archive-enable-vpc-flow-logs", "clean"],
     ],
     updated: 26,
     warnings: ["openspec/config.yaml: unknown key `defaults` ignored"],
@@ -225,7 +249,8 @@ const REPOS: SampleRepo[] = [
       { name: "shrink-staging-cluster", tasks: [9, 9], age: 16, synced: true },
     ],
     archived: [
-      ["enable-vpc-flow-logs", 6, 10],
+      // archived and pushed in its worktree, waiting for the pull request to be merged
+      ["enable-vpc-flow-logs", 6, 10, "chore/archive-enable-vpc-flow-logs"],
       ["migrate-state-backend", 12, 19],
       ["harden-bastion-access", 20, 16],
       ["alerting-on-cert-expiry", 28, 7],
@@ -298,12 +323,26 @@ const REPOS: SampleRepo[] = [
   },
 ];
 
-/** Found by discovery but not tracked, so Settings has something under "Discovered". */
+/** Found by discovery, a git repository, but with no OpenSpec yet: Settings offers to set it up. */
 const CANDIDATES: [string, string][] = [
   ["9a20e6b1", "pebble-cli"],
   ["b7f3108c", "tide-notifications"],
   ["53cd9e70", "playground/spec-experiments"],
 ];
+
+/** The repository Settings offers to integrate, and the small board it brings once it has been set up. */
+const INTEGRATABLE: SampleRepo = {
+  id: "c4e70f52",
+  name: "sparrow-gateway",
+  branch: "main",
+  updated: 0,
+  integratable: true,
+  changes: [
+    { name: "retry-budget-per-route", written: "proposal", age: 0 },
+    { name: "drop-legacy-tls-ciphers", written: "none", age: 0 },
+  ],
+  archived: [],
+};
 
 function repoPath(name: string): string {
   return `${DEMO_ROOT}/${name}`;
@@ -313,19 +352,23 @@ export interface Sample {
   snapshot: Snapshot;
   config: Config;
   candidates: RepoConfig[];
+  /** Repositories without OpenSpec, offered for integration; not tracked and not candidates. */
+  integratable: IntegratableRepo[];
+  /** What each of those looks like once it has been set up — the board it brings with it. */
+  integrated: RepoSnapshot[];
 }
 
 export function buildSample(now: number): Sample {
   const iso = (ageMs: number) => new Date(now - ageMs).toISOString();
   const day = (ageDays: number) => iso(ageDays * DAY).slice(0, 10);
 
-  const repos: RepoSnapshot[] = REPOS.map((r) => {
+  const repos: RepoSnapshot[] = [...REPOS, INTEGRATABLE].map((r) => {
     const open: ChangeSnapshot[] = r.changes.map((c) => {
       const written = c.written ?? "planned";
       const input = {
         archived: false,
         artifacts: artifacts(written),
-        tasks: c.tasks ? { done: c.tasks[0], total: c.tasks[1] } : null,
+        tasks: c.tasks ? { done: c.tasks[0], awaiting: c.awaiting ?? 0, total: c.tasks[1] } : null,
       };
       return {
         repoId: r.id,
@@ -342,8 +385,8 @@ export function buildSample(now: number): Sample {
         ...deriveStage(input),
       };
     });
-    const archived: ChangeSnapshot[] = r.archived.map(([name, age, total]) => {
-      const input = { archived: true, artifacts: artifacts("planned"), tasks: { done: total, total } };
+    const archived: ChangeSnapshot[] = r.archived.map(([name, age, total, branch]) => {
+      const input = { archived: true, artifacts: artifacts("planned"), tasks: { done: total, awaiting: 0, total } };
       return {
         repoId: r.id,
         name,
@@ -353,6 +396,7 @@ export function buildSample(now: number): Sample {
         created: day(age + 20),
         archived: day(age),
         lastActivityAt: iso(age * DAY),
+        ...(branch ? { checkout: { path: worktreePath(r, branch), branch, isMain: false } } : {}),
         ...deriveStage(input),
       };
     });
@@ -388,12 +432,54 @@ export function buildSample(now: number): Sample {
     pollIntervalSeconds: 60,
     port: 4711,
     // On by default, so the session features show without setup. The agent is fictional; nothing is ever started.
-    agentSessions: { enabled: true, agents: [structuredClone(DEMO_AGENT)], defaultAgent: DEMO_AGENT.id },
+    agentSessions: { enabled: true, agents: [structuredClone(DEMO_AGENT)], defaultAgent: DEMO_AGENT.id, shortcuts: structuredClone(DEFAULT_SHORTCUTS) as Shortcut[] },
   } satisfies Config;
 
   const candidates = CANDIDATES.map(([id, name]) => ({ id, path: repoPath(name), name: name.split("/").pop() ?? name, enabled: false })) satisfies RepoConfig[];
+  // Kept out of the board and out of the activity log until the visitor integrates it: it is not an OpenSpec project yet.
+  const integrated = repos.filter((r) => r.id === INTEGRATABLE.id);
+  const integratable: IntegratableRepo[] = [{ id: INTEGRATABLE.id, path: repoPath(INTEGRATABLE.name), name: INTEGRATABLE.name }];
 
-  return { snapshot: { generatedAt: iso(0), repos }, config, candidates };
+  return { snapshot: { generatedAt: iso(0), repos: repos.filter((r) => r.id !== INTEGRATABLE.id) }, config, candidates, integratable, integrated };
+}
+
+/** Made-up locations: the demo never looks at the visitor's machine, so nothing here is found, it is written down. */
+const DEMO_TOOL_PATHS: Record<string, string> = {
+  git: "/usr/bin/git",
+  openspec: `${DEMO_HOME}/.bun/bin/openspec`,
+  gh: "/usr/local/bin/gh",
+};
+
+/**
+ * The demo's environment report: every check passes, and the checks the configuration makes unnecessary read as
+ * `not-needed`, exactly as in the dashboard. Derived from the config the visitor is looking at, so switching agent
+ * sessions off in the demo's Settings changes it the same way. Nothing is started, looked up or read for it.
+ */
+export function demoEnvironment(config: Config, now: number): EnvironmentReport {
+  const sessions = config.agentSessions.enabled;
+  const off = "not needed while agent sessions are off";
+  const needed = (check: EnvironmentCheck): EnvironmentCheck => (sessions ? check : { id: check.id, label: check.label, status: "not-needed", found: off });
+  const checks: EnvironmentCheck[] = [
+    { id: "dashboard-home", label: "Dashboard home", status: "ok", found: `writable: ${DEMO_HOME}/.openspec-dashboard` },
+    { id: "git", label: "git", status: "ok", found: DEMO_TOOL_PATHS.git },
+    needed({ id: "git-identity", label: "Git committer identity", status: "ok", found: "Demo User, configured for this user" }),
+    { id: "openspec-cli", label: "OpenSpec CLI", status: "ok", found: DEMO_TOOL_PATHS.openspec },
+    ...config.agentSessions.agents.map((agent) =>
+      needed({
+        id: `agent:${agent.id}`,
+        label: `Agent: ${agent.name}${agent.id === config.agentSessions.defaultAgent ? " (default)" : ""}`,
+        status: "ok",
+        found: `${DEMO_HOME}/.local/bin/${agent.command[0]}`,
+      }),
+    ),
+    needed({ id: "github-cli", label: "GitHub CLI", status: "ok", found: `${DEMO_TOOL_PATHS.gh}, credentials configured in ${DEMO_HOME}/.config/gh/hosts.yml` }),
+  ];
+  return {
+    checkedAt: new Date(now).toISOString(),
+    status: "ok",
+    checks,
+    ...(sessions ? { caveat: "GitHub credentials are only checked for being configured — whether they are still valid is known when the agent uses them." } : {}),
+  };
 }
 
 const FLOW = ["Backlog", "Drafts", "Ready", "Implementing", "Done"];

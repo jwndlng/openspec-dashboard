@@ -26,16 +26,23 @@ bun test test/scanner.test.ts   # a single test file
 
 1. **Read-only towards tracked repositories, with enumerated exceptions.** The dashboard writes to a tracked
    repository only in response to an explicit user action, only to the paths enumerated in the "never writes"
-   requirement of `openspec/specs/dashboard-api/spec.md`, deletes nothing there beyond the worktrees and branches enumerated below, and runs a git
-   command that writes only where enumerated below. Today that list has six entries: the managed sections of `openspec/config.yaml` (applying shared config profiles,
+   requirement of `openspec/specs/dashboard-api/spec.md`, deletes nothing there beyond the worktrees, branches, change directories and confirmed change leftovers enumerated below, and runs a git
+   command that writes only where enumerated below. Today that list has seven entries: the managed sections of `openspec/config.yaml` (applying shared config profiles,
    `src/server/sharedConfig.ts`); for agent sessions, off by default, a session's git worktree, created with
    `git worktree add` (directory under `~/.openspec-dashboard/worktrees/`, never inside the repository's working tree)
    and removed with a non-forcing `git worktree remove` after the user confirmed and read-only checks proved nothing
    would be lost (`src/server/sessions/worktree.ts`); the **pull action** — `git fetch` of the repository's own
    remote, then a fast-forward-only `git merge` of the main checkout's upstream, with hooks disabled, never a merge
    commit, rebase, stash, reset, force or branch switch, and only fetching when the checkout is off its default branch,
-   has no upstream, has diverged or has overlapping local edits (`src/server/pull.ts`, the only place that contacts a
-   remote or changes a main checkout); and the **create-change action** — a new `openspec/changes/<name>/` directory
+   has no upstream, has diverged or has overlapping local edits — and, when a fast-forward is refused because
+   uncommitted files would be overwritten, listing those blocking files and, only when every one of them is a **change
+   leftover** (inside `openspec/changes/<name>/`, not in the current commit, only added locally, an ordinary file, and
+   present in the incoming commit) and only after the user confirmed **Resolve and pull** and the whole classification
+   was re-proved without fetching again, copying every leftover that differs under
+   `~/.openspec-dashboard/pull-backups/`, removing exactly those files from the working tree and, for the staged ones,
+   from the index with `git rm --cached` (never `-f`), then retrying the fast-forward and, if it is still refused,
+   writing them back and re-staging them with `git add -- <those paths>` (`src/server/pull.ts`, the only place that
+   contacts a remote or changes a main checkout); and the **create-change action** — a new `openspec/changes/<name>/` directory
    with the schema marker `.openspec.yaml` and, when the user typed one, `prompt.md`, written directly with an
    exclusive-create so two concurrent requests cannot both succeed, and never through git or the `openspec` CLI
    (`src/server/createChange.ts`, `POST /api/repos/<id>/changes`); and, once those files are written, **staging that
@@ -47,19 +54,36 @@ bun test test/scanner.test.ts   # a single test file
    or pushed, `git worktree prune` of records whose directory is gone, and `git branch -D` of a local branch other than
    the default branch and the main checkout's branch whose work read-only checks proved is in the default branch and
    that still points at the commit the user saw (`src/server/cleanup.ts`, the only place that deletes a branch; never a
-   remote branch or remote-tracking ref). Those five modules are the only places that write to a tracked repository. Apart from the pull action and that one
-   `git add`, the main checkout's index and files are never touched and no remote is ever contacted; the main
+   remote branch or remote-tracking ref); and **dismissing a change** — on the user's confirmation, deleting an active
+   change's directory `openspec/changes/<name>/` from the main checkout (never under `archive/`, never a symbolic link
+   or its target, never anything in a linked worktree) after re-checking that its content is what the confirmation
+   showed and that no agent session for the change runs, then staging that removal with a single
+   `git add --all -- openspec/changes/<name>/`, best-effort and never followed by a commit
+   (`src/server/dismissChange.ts`, `POST /api/repos/<id>/changes/<name>/dismiss`, the only place that deletes a change
+   directory). Those six modules are the only places that write to a tracked repository. Apart from the pull action and
+   those two `git add`s, the main checkout's index and files are never touched and no remote is ever contacted; the main
    checkout's branch is never changed by anything; and the pull action runs only on the user's explicit request — never
    on a timer, during a scan, on page load or as a side effect (`test/pull.test.ts` proves scans leave a recording
    remote untouched). Starting the user's
    agent in that worktree on the user's click is not a write by the dashboard: what the agent changes is decided by its
-   own permission prompts. The same holds for the **main console** (`openConsole`, `src/server/sessions/consoleFolder.ts`):
+   own permission prompts. That is also why **Integrate** (`src/server/integration.ts`) needs no entry in the list
+   above: it starts the default agent in a git repository that is not tracked yet so the agent can run `openspec init`
+   there, while the dashboard runs no git command and writes no file in that repository and adds it to its own config
+   only once `openspec/config.yaml` is on disk. The same holds for the **main console** (`openConsole`, `src/server/sessions/consoleFolder.ts`):
    the default agent in the console folder — `~/.openspec-dashboard/console/` or a folder the user configured, which is
    refused when it is, or lies inside, a tracked repository — with no worktree, no branch and no git command. With agent sessions disabled no process that can modify a repository is ever started. Scanning, polling, discovery, previews and saving settings
-   write nothing to a repository. All other writes stay under `~/.openspec-dashboard/` (or `OPENSPEC_DASHBOARD_HOME`
-   in tests). Apart from the worktree commands, the pull action's `fetch` and `merge --ff-only`, the create-change
-   `add` and the cleanup's `branch -D`, git is invoked only with the read-only subcommands listed in that spec. Adding a path or a subcommand means
-   changing that spec first.
+   write nothing to a repository. In particular `tasks.md` is never written: the dashboard reads the three checkbox
+   states (`[x]`, `[~]` — finished, awaiting the user's confirmation — and `[ ]`) and shows them; only the agent, in its
+   own session under its own permission prompts, ticks a box or writes a `- [~]`. All other writes stay under `~/.openspec-dashboard/` (or `OPENSPEC_DASHBOARD_HOME`
+   in tests). Apart from the worktree commands, the pull action's `fetch`, `merge --ff-only`, leftover `rm --cached`
+   and restoring `add`, the create-change and dismissal `add` and the cleanup's `branch -D`, git is invoked only with
+   the read-only subcommands listed in that spec — among them `ls-tree`, `cat-file` and `hash-object` without `-w`,
+   which is how a leftover is told from the user's own work, and `merge-tree --write-tree`, which answers whether a
+   session's branch still merges into its base. That last one is the only read-only subcommand that writes anything at
+   all: it puts the tree it merges into an object database, so it is always invoked with `GIT_OBJECT_DIRECTORY` pointed
+   at a scratch store under `~/.openspec-dashboard/` and the repository's own objects offered only as
+   `GIT_ALTERNATE_OBJECT_DIRECTORIES` — it reads everything and writes nothing into the repository, and it is never
+   given a working tree, an index or a ref. Adding a path or a subcommand means changing that spec first.
 2. **Loopback only.** The server binds `127.0.0.1`; there is no auth because nothing else can reach it.
 2a. **Mutating API routes are same-origin only.** Every non-GET `/api/` request passes `crossSiteRefusal` in
    `src/server/api.ts` (JSON content type, loopback host, own origin); the terminal WebSocket has `webSocketRefusal`. Loopback binding alone does not stop a web page
@@ -97,6 +121,13 @@ bun test test/scanner.test.ts   # a single test file
   the text never appears, nothing is sent and the user is told it was typed but not confirmed. That echo check is the
   one thing the dashboard may read out of an agent's output, and only to decide about Enter. One running session per
   worktree; archiving has its own.
+- **Integrate** (`src/server/integration.ts`, `POST /api/integrations`) is the second in-place case, and the only one
+  in a git repository: the agent runs in the repository's **main checkout**, with no worktree and no branch, because
+  `openspec init` has to leave `openspec/config.yaml` where discovery looks for it — on a branch in a worktree the
+  repository would stay integratable. An `IntegrationSession` belongs to no tracked repository, no change and no
+  action, so `changeSessions()` keeps it out of Open work, the activity log, work status, Ship, pull and cleanup, the
+  same way it keeps the console out. The panel uses the same in-place wording. What decides that it worked is the
+  marker on disk, re-checked when the session ends and on every discovery run — never anything the agent printed.
 - A tracked folder **without git** is a supported repository, so its sessions run **in place**: the agent's working
   directory is the folder itself, no worktree and no branch are made, and no git command runs for the session
   (`Session.inPlace`). It is decided from the scan's `isGit`, never by letting a git command fail. Such a session has
@@ -106,7 +137,12 @@ bun test test/scanner.test.ts   # a single test file
 - **Work status** (`workStatus.ts`) is read per worktree *directory* — directories outlive session records — with
   read-only git and no network, so `merged` means "as of the user's last fetch"; squash merges are recognised by
   comparing the content of the files the branch touched. The dashboard never commits, pushes or calls `gh`: **Ship** only
-  hands the agent a prompt (`prompts.ship`, else `DEFAULT_SHIP_PROMPT`).
+  hands the agent a prompt (`prompts.ship`, else `DEFAULT_SHIP_PROMPT`). A status that holds work the base lacks also
+  carries a **conflict signal** — whether the branch still merges into that base, and which files clash — computed with
+  `merge-tree` as invariant 1 describes, and as stale as the last fetch, which the UI says. **Resolve conflicts** is the
+  second prompt-only action, shaped exactly like Ship (`prompts.resolveConflicts`, else
+  `DEFAULT_RESOLVE_CONFLICTS_PROMPT`): the dashboard merges, rebases, checks out, commits and pushes nothing for it —
+  it hands over the prompt and re-derives what came of it from git, never from what the agent said.
 - Tests never start a real agent or use the network: `test/fixtures/fake-agent.ts` is a tiny interactive program run in
   real pseudo-terminals and temp git repositories.
 - Anything here must also work in the compiled binary (`bun run build`), not just under `bun run`.

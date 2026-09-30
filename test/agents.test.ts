@@ -1,14 +1,14 @@
 import { expect, test } from "bun:test";
 import { defaultAgentSessions, defaultConfig, newRepoConfig, validateConfig } from "../src/server/config.ts";
-import { agentEnv, agentFor, launchCommand, openingPrompt } from "../src/server/sessions/agents.ts";
+import { agentEnv, agentFor, integratePrompt, launchCommand, openingPrompt, resolveConflictsPrompt, shipPrompt } from "../src/server/sessions/agents.ts";
 import { Scrollback, sessionBranch, worktreeName } from "../src/server/sessions/manager.ts";
-import { CLAUDE_PROFILE, FORMER_ARCHIVE_PROMPTS } from "../src/shared/agentDefaults.ts";
-import { availableActions, type ChangeSession, type Session } from "../src/shared/types.ts";
-import { agentForRepo, NEEDS_YOU_AFTER_MS, parseArgLines, sessionBadge, sessionForChange, sessionsEnabledFor, silenceDuration, slugId, startersFor } from "../src/ui/sessionState.ts";
+import { CLAUDE_PROFILE, DEFAULT_SHORTCUTS, FORMER_PROMPTS } from "../src/shared/agentDefaults.ts";
+import { availableActions, DEFAULT_RESOLVE_CONFLICTS_PROMPT, DEFAULT_SHIP_PROMPT, integrateUnavailable, type AgentAvailability, type ChangeSession, type Session } from "../src/shared/types.ts";
+import { agentForRepo, cardSessionControls, NEEDS_YOU_AFTER_MS, parseArgLines, sessionBadge, sessionForChange, sessionsEnabledFor, silenceDuration, slugId, startersFor } from "../src/ui/sessionState.ts";
 import { fakeProfile } from "./sessionHelpers.ts";
 
 const base = defaultConfig();
-const withAgents = (agents: unknown, defaultAgent = "claude") => ({ ...base, agentSessions: { enabled: true, agents, defaultAgent } });
+const withAgents = (agents: unknown, defaultAgent = "claude") => ({ ...base, agentSessions: { ...base.agentSessions, enabled: true, agents, defaultAgent } });
 
 test("defaults: disabled, Claude Code preconfigured on its own login", () => {
   const d = defaultAgentSessions();
@@ -18,25 +18,69 @@ test("defaults: disabled, Claude Code preconfigured on its own login", () => {
   expect(d.agents[0].unsetEnv).toContain("ANTHROPIC_API_KEY");
 });
 
+test("the shipped shortcuts: the four answers sent today, each sending exactly what its control reads", () => {
+  expect(DEFAULT_SHORTCUTS.map((s) => s.title)).toEqual(["Yes, go ahead", "Yes, create a PR", "Resolve PR conflicts", "No, stop here"]);
+  for (const shortcut of DEFAULT_SHORTCUTS) expect(shortcut.prompt).toBe(shortcut.title);
+  expect(new Set(DEFAULT_SHORTCUTS.map((s) => s.id)).size).toBe(DEFAULT_SHORTCUTS.length);
+});
+
+test("the default configuration carries the shipped shortcuts, freshly cloned each time", () => {
+  const first = defaultAgentSessions();
+  expect(first.shortcuts).toEqual([...DEFAULT_SHORTCUTS]);
+  first.shortcuts[0].title = "edited";
+  first.shortcuts.pop();
+  const second = defaultAgentSessions();
+  expect(second.shortcuts).toEqual([...DEFAULT_SHORTCUTS]);
+  expect(DEFAULT_SHORTCUTS[0].title).toBe("Yes, go ahead");
+});
+
 test("the preconfigured Archive prompt syncs the specs first without asking, as one line", () => {
   const archive = defaultAgentSessions().agents[0].prompts.archive ?? "";
   expect(archive.startsWith("/opsx:archive {change}")).toBe(true);
   expect(archive).toMatch(/sync the delta specs/);
   expect(archive).toMatch(/without asking/);
   expect(archive).toMatch(/already in sync, archive right away/);
+  // The user's confirmation during archiving is the validation, so it is what ticks the awaiting tasks off.
+  expect(archive).toMatch(/tick off the tasks left for me to validate once I have confirmed them/);
   expect(archive).not.toContain("\n");
-  expect(FORMER_ARCHIVE_PROMPTS).toEqual(["/opsx:archive {change}"]);
-  expect(FORMER_ARCHIVE_PROMPTS).not.toContain(archive);
+  expect(FORMER_PROMPTS.archive).toContain("/opsx:archive {change}");
+  expect(FORMER_PROMPTS.archive).not.toContain(archive);
   const prompt = openingPrompt(CLAUDE_PROFILE, "archive", "cache-api-calls") ?? "";
   expect(prompt.startsWith("/opsx:archive cache-api-calls — sync")).toBe(true);
   expect(launchCommand(CLAUDE_PROFILE, prompt)).toEqual({ argv: ["claude", prompt] }); // one argument
   expect(validateConfig(withAgents([CLAUDE_PROFILE])).agentSessions.agents[0].prompts.archive).toBe(archive); // passes the prompt rules
 });
 
+test("the preconfigured prompts carry what `- [~]` means, each on one line", () => {
+  const prompts = defaultAgentSessions().agents[0].prompts;
+  expect(Object.keys(prompts)).toEqual(["draft", "implement", "validate", "archive", "integrate"]);
+  for (const [key, text] of Object.entries(prompts)) {
+    expect([key, text.includes("\n")]).toEqual([key, false]); // a prompt may be typed into a terminal
+    // Every starter names its change; Integrate is the one prompt that must not, because it runs in a folder, not a change.
+    expect([key, text.includes("{change}")]).toEqual([key, key !== "integrate"]);
+  }
+  // Implement: do the work, then leave what only the user can judge for the user.
+  expect(prompts.implement).toMatch(/^\/opsx:apply \{change\}/);
+  expect(prompts.implement).toMatch(/only be verified by me/);
+  expect(prompts.implement).toMatch(/`- \[~\]` instead of `- \[x\]`/);
+  // Validate: one task at a time, tick off only what the user confirms.
+  expect(prompts.validate).toMatch(/`- \[~\]` tasks one at a time/);
+  expect(prompts.validate).toMatch(/tell me exactly what to check/);
+  expect(prompts.validate).toMatch(/tick off only the ones I confirm/);
+  // Both new texts survive the prompt rules, and reach the agent as one argument.
+  const config = validateConfig(withAgents([CLAUDE_PROFILE])).agentSessions.agents[0].prompts;
+  expect(config).toEqual(prompts);
+  const opened = openingPrompt(CLAUDE_PROFILE, "validate", "cache-api-calls") ?? "";
+  expect(opened).toContain("cache-api-calls");
+  expect(opened).not.toContain("{change}");
+  expect(launchCommand(CLAUDE_PROFILE, opened)).toEqual({ argv: ["claude", opened] });
+});
+
 test("configs from the transcript-based version load: their keys are dropped, defaults fill in", () => {
   const old = { ...base, agentSessions: { enabled: true, maxRunning: 2, idleMinutes: 30, claudePath: "claude", passApiKeyEnv: false, commands: { draft: "/opsx:ff {change}" } }, repos: [{ ...newRepoConfig("/w/demo-ops", true), agent: { enabled: true, allowedTools: ["Bash(x)"] } }] };
   const cfg = validateConfig(old);
-  expect(cfg.agentSessions).toEqual({ enabled: true, agents: defaultAgentSessions().agents, defaultAgent: "claude" });
+  // No `shortcuts` key at all: such a config carries the shipped ones, so nobody's console loses its buttons.
+  expect(cfg.agentSessions).toEqual({ enabled: true, agents: defaultAgentSessions().agents, defaultAgent: "claude", shortcuts: [...DEFAULT_SHORTCUTS] });
   expect(cfg.repos[0].agent).toEqual({ enabled: true });
   const { agentSessions: _drop, ...older } = base;
   expect(validateConfig(older).agentSessions.enabled).toBe(false);
@@ -55,6 +99,12 @@ test("profile validation", () => {
   expect(() => validateConfig(withAgents([{ ...ok, resumeCommand: ["claude", "--permission-mode", "bypassPermissions"] }], "other"))).toThrow(/bypass/);
   expect(() => validateConfig(withAgents([{ ...ok, prompts: { implement: "do it" } }], "other"))).toThrow(/must contain \{change\}/);
   expect(() => validateConfig(withAgents([{ ...ok, prompts: { implement: "{change} {branch}" } }], "other"))).toThrow(/only \{change\}/);
+  // Integrate names no change: the folder is the working directory, so no placeholder of any kind is substituted into it.
+  expect(validateConfig(withAgents([{ ...ok, prompts: { integrate: "set this project up" } }], "other")).agentSessions.agents[0].prompts.integrate).toBe("set this project up");
+  expect(() => validateConfig(withAgents([{ ...ok, prompts: { integrate: "set up {change}" } }], "other"))).toThrow(/no placeholder/);
+  expect(() => validateConfig(withAgents([{ ...ok, prompts: { integrate: "set up {prompt}" } }], "other"))).toThrow(/no placeholder/);
+  expect(() => validateConfig(withAgents([{ ...ok, prompts: { integrate: "set up --dangerously-skip-permissions" } }], "other"))).toThrow(/bypass/);
+  expect(validateConfig(withAgents([{ ...ok, prompts: {} }], "other")).agentSessions.agents[0].prompts.integrate).toBeUndefined();
   expect(() => validateConfig(withAgents([{ ...ok, id: "Bad Id" }], "other"))).toThrow(/lower-case/);
   expect(() => validateConfig({ ...withAgents([ok], "other"), repos: [{ ...newRepoConfig("/w/x", true), agent: { enabled: true, agentId: "nope" } }] })).toThrow(/unknown agent/);
 });
@@ -69,6 +119,63 @@ test("launch: the prompt is one whole argument, or typed when the command has no
   expect(() => openingPrompt(fakeProfile(), "implement", "x; rm -rf ~")).toThrow(/invalid change name/);
 });
 
+test("additional instructions extend a starter's prompt, and always as one line", () => {
+  const extended = fakeProfile({ promptSuffixes: { implement: "Run the linter before you finish." } });
+  expect(openingPrompt(extended, "implement", "cache-api-calls")).toBe("implement cache-api-calls Run the linter before you finish.");
+  // Nothing else is touched: a suffix for one action never reaches another.
+  expect(openingPrompt(extended, "draft", "cache-api-calls")).toBe("draft cache-api-calls");
+  expect(openingPrompt(fakeProfile(), "implement", "cache-api-calls")).toBe("implement cache-api-calls");
+
+  // One line, always: a prompt may be typed into a terminal, where a line break would submit it early.
+  const multiline = fakeProfile({ promptSuffixes: { archive: "  Sync first.\n\n\tThen tell me what you archived.  " } });
+  expect(openingPrompt(multiline, "archive", "cache-api-calls")).toBe("archive cache-api-calls Sync first. Then tell me what you archived.");
+
+  // A suffix may name the change, and is substituted in the same single pass as the prompt's own placeholder.
+  const naming = fakeProfile({ promptSuffixes: { implement: "Mention {change} in the commit message." } });
+  expect(openingPrompt(naming, "implement", "cache-api-calls")).toBe("implement cache-api-calls Mention cache-api-calls in the commit message.");
+  expect(() => openingPrompt(naming, "implement", "x; rm -rf ~")).toThrow(/invalid change name/);
+});
+
+test("Ship: additional instructions extend the profile's prompt, or the agent-neutral default", () => {
+  expect(shipPrompt(fakeProfile(), "cache-api-calls")).toBe(DEFAULT_SHIP_PROMPT);
+  // The case the feature exists for: a standing instruction about pull requests, without restating the whole prompt.
+  const extra = "Add the checklist from CONTRIBUTING.md to the pull request body.";
+  expect(shipPrompt(fakeProfile({ promptSuffixes: { ship: extra } }), "cache-api-calls")).toBe(`${DEFAULT_SHIP_PROMPT} ${extra}`);
+  // On top of the profile's own Ship prompt it behaves the same, `{change}` included.
+  const own = fakeProfile({ prompts: { ...fakeProfile().prompts, ship: "Ship {change}." }, promptSuffixes: { ship: "Title the PR after {change}." } });
+  expect(shipPrompt(own, "cache-api-calls")).toBe("Ship cache-api-calls. Title the PR after cache-api-calls.");
+});
+
+test("Integrate: prompt plus additional instructions, with nothing substituted into either", () => {
+  expect(integratePrompt(fakeProfile())).toBeUndefined(); // the stock fake agent has no Integrate prompt
+  const both = fakeProfile({ prompts: { integrate: "Set this project up for OpenSpec." }, promptSuffixes: { integrate: "Ask me before you commit." } });
+  expect(integratePrompt(both)).toBe("Set this project up for OpenSpec. Ask me before you commit.");
+  expect(integratePrompt(fakeProfile({ prompts: { integrate: "Set it up." } }))).toBe("Set it up.");
+  expect(integratePrompt(CLAUDE_PROFILE)).toBe(CLAUDE_PROFILE.prompts.integrate);
+});
+
+test("additional instructions are an addition, never a prompt: they make no action available", () => {
+  // No prompt for the action: the starter stays unoffered and nothing is composed, so the suffix goes nowhere.
+  const suffixOnly = fakeProfile({ prompts: { implement: "implement {change}" }, promptSuffixes: { archive: "Tell me what you archived.", integrate: "Ask me first." } });
+  expect(openingPrompt(suffixOnly, "archive", "cache-api-calls")).toBeUndefined();
+  expect(integratePrompt(suffixOnly)).toBeUndefined();
+  const repo = newRepoConfig("/w/demo-ops", true);
+  const cfg = { ...base, repos: [repo], agentSessions: { ...base.agentSessions, enabled: true, agents: [suffixOnly], defaultAgent: "fake" } };
+  const artifacts = [{ id: "a0", status: "done" as const }];
+  expect(startersFor(cfg, { repoId: repo.id, artifacts, stage: "done" })).toEqual([]);
+  expect(integrateUnavailable(cfg, [{ id: "fake", name: "Fake Agent", available: true }])).toMatch(/no Integrate prompt/);
+});
+
+test("a composed prompt still reaches the agent whole, whatever it contains", () => {
+  const nasty = 'Also: run `echo "; rm -rf ~ $(id)"` nowhere.';
+  const agent = fakeProfile({ command: ["agent", "-i", "{prompt}"], promptSuffixes: { implement: nasty } });
+  const prompt = openingPrompt(agent, "implement", "cache-api-calls") ?? "";
+  expect(prompt).toBe(`implement cache-api-calls ${nasty}`);
+  expect(launchCommand(agent, prompt)).toEqual({ argv: ["agent", "-i", prompt] }); // one argument, never shell text
+  expect(launchCommand(fakeProfile({ command: ["agent"], promptSuffixes: { implement: nasty } }), prompt)).toEqual({ argv: ["agent"], typed: prompt });
+  expect(prompt.includes("\n")).toBe(false); // so the typed path cannot submit it early
+});
+
 test("environment: listed variables are removed, a colour terminal is announced", () => {
   const env = agentEnv(fakeProfile(), { PATH: "/bin", ANTHROPIC_API_KEY: "k", OTHER: "1", GONE: undefined });
   expect(env).toEqual({ PATH: "/bin", OTHER: "1", TERM: "xterm-256color", COLORTERM: "truecolor" });
@@ -77,7 +184,7 @@ test("environment: listed variables are removed, a colour terminal is announced"
 
 test("agent per repository, falling back to the default", () => {
   const repo = newRepoConfig("/w/demo-ops", true);
-  const cfg = { ...base, repos: [{ ...repo, agent: { enabled: true, agentId: "b" } }], agentSessions: { enabled: true, agents: [fakeProfile({ id: "a" }), fakeProfile({ id: "b", name: "B" })], defaultAgent: "a" } };
+  const cfg = { ...base, repos: [{ ...repo, agent: { enabled: true, agentId: "b" } }], agentSessions: { ...base.agentSessions, enabled: true, agents: [fakeProfile({ id: "a" }), fakeProfile({ id: "b", name: "B" })], defaultAgent: "a" } };
   expect(agentFor(cfg, cfg.repos[0])?.id).toBe("b");
   expect(agentFor(cfg, repo)?.id).toBe("a");
   expect(agentForRepo(cfg, repo.id)?.name).toBe("B");
@@ -88,11 +195,11 @@ test("starters: stage decides, narrowed to the prompts the agent has", () => {
   expect(availableActions({ artifacts: a("done", "ready"), stage: "drafts" })).toEqual(["draft"]);
   expect(availableActions({ artifacts: a("done", "done"), stage: "ready" })).toEqual(["implement"]);
   expect(availableActions({ artifacts: a("done", "done"), stage: "done" })).toEqual(["archive"]);
-  expect(availableActions({ artifacts: a("done", "done"), stage: "done" })).toEqual(["archive"]);
+  expect(availableActions({ artifacts: a("done", "done"), stage: "done", subState: "complete" })).toEqual(["archive"]);
   expect(availableActions({ artifacts: a("done", "done"), stage: "implementing" })).toEqual(["implement"]);
   expect(availableActions({ artifacts: a("done", "done"), stage: "archived", archived: "2026-06-18" })).toEqual([]);
   const repo = newRepoConfig("/w/demo-ops", true);
-  const cfg = { ...base, repos: [repo], agentSessions: { enabled: true, agents: [fakeProfile({ prompts: { implement: "x {change}" } })], defaultAgent: "fake" } };
+  const cfg = { ...base, repos: [repo], agentSessions: { ...base.agentSessions, enabled: true, agents: [fakeProfile({ prompts: { implement: "x {change}" } })], defaultAgent: "fake" } };
   expect(startersFor(cfg, { repoId: repo.id, artifacts: a("done", "done"), stage: "ready" })).toEqual(["implement"]);
   expect(startersFor(cfg, { repoId: repo.id, artifacts: a("done", "done"), stage: "done" })).toEqual([]); // no archive prompt
   const archiving = { ...cfg, agentSessions: { ...cfg.agentSessions, agents: [fakeProfile({ prompts: { archive: "a {change}" } })] } };
@@ -103,6 +210,54 @@ test("starters: stage decides, narrowed to the prompts the agent has", () => {
 });
 
 const session = (patch: Partial<ChangeSession>): ChangeSession => ({ id: "s", repoId: "r", change: "c", action: "implement", agentId: "fake", agentName: "Fake Agent", state: "running", worktreePath: "/w/wt", branch: "feat/c", createdAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-01T00:00:00Z", resumable: true, ...patch });
+
+test("a card shows the running session's badge instead of a starter, and a failed one's badge beside it", () => {
+  const repo = newRepoConfig("/w/demo-ops", true);
+  const cfg = { ...base, repos: [repo], agentSessions: { ...base.agentSessions, enabled: true, agents: [fakeProfile()], defaultAgent: "fake" } };
+  const card = { repoId: repo.id, name: "c", artifacts: [{ id: "a0", status: "done" as const }], stage: "ready" as const };
+  const mine = (patch: Partial<ChangeSession>) => session({ repoId: repo.id, change: "c", ...patch });
+
+  // No session: the stage's starter, and nothing to show a badge for.
+  expect(cardSessionControls(cfg, [], card)).toEqual({ shown: [], starters: ["implement"] });
+
+  // A running session stands in for the starter, whatever its terminal is doing — the badge's words differ, the rule
+  // does not, so no button appears and vanishes as the terminal falls silent.
+  const printing = cardSessionControls(cfg, [mine({ lastOutputAt: "2026-01-01T00:00:00Z" })], card);
+  expect(printing.starters).toEqual([]);
+  expect(printing.shown.map((s) => s.id)).toEqual(["s"]);
+  const silent = cardSessionControls(cfg, [mine({ lastOutputAt: "2020-01-01T00:00:00Z" })], card);
+  expect(silent.starters).toEqual([]);
+  expect(sessionBadge(silent.shown[0]).label).toContain("may need you");
+
+  // Failed or badly ended and nothing running: the badge is shown and the starter stays, so a retry is one click away.
+  for (const patch of [{ state: "failed" as const, error: "no such file" }, { state: "exited" as const, exitCode: 3 }]) {
+    const after = cardSessionControls(cfg, [mine(patch)], card);
+    expect(after.starters).toEqual(["implement"]);
+    expect(after.shown).toHaveLength(1);
+  }
+  // A clean exit is not worth a badge, and leaves the starter on its own.
+  expect(cardSessionControls(cfg, [mine({ state: "exited", exitCode: 0 })], card)).toEqual({ shown: [], starters: ["implement"] });
+
+  // An archive session running next to the change's own one still counts as running: no starter.
+  expect(cardSessionControls(cfg, [mine({ id: "arch", action: "archive" })], { ...card, stage: "done" }).starters).toEqual([]);
+
+  // Another change's session is none of this card's business.
+  expect(cardSessionControls(cfg, [session({ repoId: repo.id, change: "other" })], card)).toEqual({ shown: [], starters: ["implement"] });
+
+  // `subState` has to reach `availableActions` through here, or a change awaiting confirmation would never offer
+  // Validate on its card. The stock fake agent has no validate prompt, so one that has is what shows the difference.
+  const done = { ...card, stage: "done" as const, subState: "validate" as const };
+  const validating = { ...cfg, agentSessions: { ...cfg.agentSessions, agents: [fakeProfile({ prompts: { validate: "v {change}", archive: "a {change}" } })] } };
+  expect(cardSessionControls(validating, [], done).starters).toEqual(["validate", "archive"]);
+  expect(cardSessionControls(validating, [], { ...done, subState: undefined }).starters).toEqual(["archive"]);
+  // And a running session still takes the starters' place, Validate included.
+  expect(cardSessionControls(validating, [mine({})], done).starters).toEqual([]);
+
+  // Feature off, or the repository switched off: no badge and no starter, as before.
+  for (const off of [{ ...cfg, agentSessions: { ...cfg.agentSessions, enabled: false } }, { ...cfg, repos: [{ ...repo, agent: { enabled: false } }] }]) {
+    expect(cardSessionControls(off, [mine({})], card)).toEqual({ shown: [], starters: [] });
+  }
+});
 
 test("badges are honest about what a terminal can tell", () => {
   const now = Date.parse("2026-01-01T01:00:00Z");
@@ -182,4 +337,76 @@ test("small helpers", () => {
   const sb = new Scrollback(10);
   for (const part of ["aaaa", "bbbb", "cccc", "dd"]) sb.push(new TextEncoder().encode(part));
   expect(new TextDecoder().decode(sb.bytes())).toBe("bbbbccccdd"); // oldest chunk dropped once over the limit
+});
+
+test("the Integrate row says why the action is unavailable, and offers it when nothing is in the way", () => {
+  const agent = fakeProfile({ prompts: { integrate: "set this project up" } });
+  const on = { ...base, agentSessions: { ...base.agentSessions, enabled: true, agents: [agent], defaultAgent: "fake" } };
+  const found: AgentAvailability[] = [{ id: "fake", name: "Fake Agent", available: true, path: "/usr/local/bin/fake" }];
+
+  expect(integrateUnavailable(on, found)).toBeUndefined();
+  expect(integrateUnavailable({ ...on, agentSessions: { ...on.agentSessions, enabled: false } }, found)).toBe("agent sessions are disabled");
+  expect(integrateUnavailable({ ...on, agentSessions: { ...on.agentSessions, defaultAgent: "gone" } }, found)).toBe("no agent is configured");
+  const noPrompt = { ...on, agentSessions: { ...on.agentSessions, agents: [fakeProfile()] } };
+  expect(integrateUnavailable(noPrompt, found)).toBe("Fake Agent has no Integrate prompt configured");
+  expect(integrateUnavailable(on, [{ ...found[0], available: false, path: undefined }])).toBe(`Fake Agent was not found (${agent.command[0]})`);
+  // Availability not known yet (the list has not been polled): the action is offered and the request decides.
+  expect(integrateUnavailable(on, [])).toBeUndefined();
+});
+
+test("starters: a change awaiting validation offers Validate and Archive, never Implement", () => {
+  const a = (...s: ("done" | "ready" | "blocked")[]) => s.map((status, i) => ({ id: `a${i}`, status }));
+  const done = a("done", "done");
+  expect(availableActions({ artifacts: done, stage: "done", subState: "validate" })).toEqual(["validate", "archive"]);
+  expect(availableActions({ artifacts: done, stage: "done", subState: "validate" })).not.toContain("implement");
+  // `validate` belongs to `Done` alone; nothing earlier offers it.
+  for (const stage of ["backlog", "drafts", "ready", "implementing", "unknown"] as const) {
+    expect(availableActions({ artifacts: done, stage })).not.toContain("validate");
+  }
+  // An archived change offers nothing, whatever a leftover sub-state says.
+  expect(availableActions({ artifacts: done, stage: "archived", subState: "validate", archived: "2026-06-18" })).toEqual([]);
+  // A snapshot cached before sub-states existed reads as `complete`.
+  expect(availableActions({ artifacts: done, stage: "done" })).toEqual(["archive"]);
+
+  // Narrowed to the prompts the agent has: without a Validate prompt only Archive is offered.
+  const repo = newRepoConfig("/w/demo-ops", true);
+  const card = { repoId: repo.id, artifacts: done, stage: "done" as const, subState: "validate" as const };
+  const withBoth = { ...base, repos: [repo], agentSessions: { ...base.agentSessions, enabled: true, agents: [fakeProfile({ prompts: { validate: "v {change}", archive: "a {change}" } })], defaultAgent: "fake" } };
+  expect(startersFor(withBoth, card)).toEqual(["validate", "archive"]);
+  const archiveOnly = { ...withBoth, agentSessions: { ...withBoth.agentSessions, agents: [fakeProfile({ prompts: { archive: "a {change}" } })] } };
+  expect(startersFor(archiveOnly, card)).toEqual(["archive"]);
+});
+
+test("the resolve-conflicts prompt falls back to the agent-neutral default, like Ship", () => {
+  const plain = fakeProfile({ prompts: {} });
+  expect(resolveConflictsPrompt(plain, "cache-api-calls")).toBe(DEFAULT_RESOLVE_CONFLICTS_PROMPT.replaceAll("{change}", "cache-api-calls"));
+  // It states the goal and leaves rebase-or-merge to the agent, which knows the repository's convention.
+  expect(resolveConflictsPrompt(plain, "cache-api-calls")).toContain("cache-api-calls");
+  expect(resolveConflictsPrompt(plain, "cache-api-calls")).not.toMatch(/\brebase\b/);
+  expect(shipPrompt(plain, "cache-api-calls")).not.toBe(resolveConflictsPrompt(plain, "cache-api-calls"));
+});
+
+test("a profile's own resolve-conflicts prompt wins and substitutes the change", () => {
+  const custom = fakeProfile({ prompts: { resolveConflicts: "fix {change} please, {change}" } });
+  expect(resolveConflictsPrompt(custom, "alpha-infra")).toBe("fix alpha-infra please, alpha-infra");
+});
+
+test("additional instructions are appended to the resolve-conflicts prompt, and to the default too", () => {
+  const withSuffix = fakeProfile({ prompts: { resolveConflicts: "fix {change}" }, promptSuffixes: { resolveConflicts: "We rebase here,\n  never merge." } });
+  // Collapsed to one line: the prompt may be typed into a terminal, where a newline would submit it early.
+  expect(resolveConflictsPrompt(withSuffix, "alpha-infra")).toBe("fix alpha-infra We rebase here, never merge.");
+
+  const onDefault = fakeProfile({ prompts: {}, promptSuffixes: { resolveConflicts: "Always run bun run check." } });
+  expect(resolveConflictsPrompt(onDefault, "alpha-infra")).toBe(`${DEFAULT_RESOLVE_CONFLICTS_PROMPT.replaceAll("{change}", "alpha-infra")} Always run bun run check.`);
+
+  // A suffix meant for another key is not borrowed.
+  const shipOnly = fakeProfile({ prompts: {}, promptSuffixes: { ship: "Mention the ticket." } });
+  expect(resolveConflictsPrompt(shipOnly, "alpha-infra")).toBe(DEFAULT_RESOLVE_CONFLICTS_PROMPT.replaceAll("{change}", "alpha-infra"));
+});
+
+test("an invalid change name never reaches a resolve-conflicts prompt", () => {
+  const plain = fakeProfile({ prompts: {} });
+  for (const bad of ["../escape", "a b", "", "x;rm -rf /", "sub/dir"]) {
+    expect(() => resolveConflictsPrompt(plain, bad)).toThrow("invalid change name");
+  }
 });

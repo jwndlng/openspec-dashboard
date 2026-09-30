@@ -1,19 +1,21 @@
 // One change with its artifacts, as an overlay over the board it belongs to. The header comes from the snapshot the
-// boards use; file lists and file text are fetched on demand from the read-only artifact endpoints. Nothing here
-// writes anywhere.
+// boards use; file lists and file text are fetched on demand from the read-only artifact endpoints. The one write is
+// dismissing the change, and only after the user confirmed it in its own dialog.
 import type { ComponentChildren, RefObject } from "preact";
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
-import type { ChangeArtifactEntry, ChangeArtifacts, ChangeSnapshot, RepoSnapshot, Snapshot, TaskProgress } from "../shared/types.ts";
+import type { ChangeArtifactEntry, ChangeArtifacts, ChangeSnapshot, DismissPreview, DismissResult, RepoSnapshot, Snapshot, TaskProgress } from "../shared/types.ts";
 import { ApiError, api } from "./api.ts";
 import { CopyButton, Meter } from "./kanban.tsx";
 import { renderMarkdown } from "./markdown.tsx";
 import { backTarget, CONSOLE_TAB, type DetailQuery, parseDetailQuery, repoPath, serializeDetailQuery } from "./routes.ts";
 import { ConsolePanel, ConsoleSessionList } from "./sessionPanel.tsx";
-import { consoleAvailable, consoleSession, consoleSessions } from "./sessionState.ts";
+import { consoleAvailable, consoleSession, consoleSessions, consoleTabAvailable } from "./sessionState.ts";
 import { useSessionUi, WorkStatus } from "./sessions.tsx";
 import { isComplete } from "../shared/columns.ts";
 import { promptBody } from "./boardMarks.ts";
 import { BranchBadge } from "./checkout.tsx";
+import { DismissDialog } from "./dismissChange.tsx";
+import { dismissedNotice, dismissOffer } from "./dismissState.ts";
 import { checkoutHint, daysSince, leftoverHint, pendingArchiveHint, relTime } from "./format.ts";
 import { currentQuery, followInApp, href, navigate, replaceQuery } from "./url.ts";
 
@@ -40,10 +42,15 @@ export function resolveSelection(artifacts: ChangeArtifactEntry[], query: Pick<D
   return { artifactId: artifact.id, file: file.path };
 }
 
-/** Same line shape the scanner counts, so the checklist's label cannot disagree with the boxes below it. */
+/** Same line shape and the same three states the scanner counts, so the checklist's label cannot disagree with the boxes below it. */
 export function taskProgress(markdown: string): TaskProgress {
-  const boxes = markdown.match(/^\s*(?:[-*+]|\d+[.)])\s+\[[ xX]\]/gm) ?? [];
-  return { done: boxes.filter((b) => !b.endsWith("[ ]")).length, total: boxes.length };
+  const boxes = markdown.match(/^\s*(?:[-*+]|\d+[.)])\s+\[\s*[^\]\s]?\s*\]/gm) ?? [];
+  const state = (box: string) => box.slice(box.indexOf("[") + 1, box.lastIndexOf("]")).trim();
+  return {
+    done: boxes.filter((b) => state(b).toLowerCase() === "x").length,
+    awaiting: boxes.filter((b) => state(b) === "~").length,
+    total: boxes.length,
+  };
 }
 
 export function absoluteFilePath(changeDir: string, file: string): string {
@@ -172,7 +179,20 @@ export function CloseButton({ onClose }: { onClose: () => void }) {
  * are the exception, because they say something is broken.
  */
 // The change is a full snapshot entry in the ordinary case, and just a name for a worktree whose change is gone.
-export function DetailHeader({ repo, change, from, onClose }: { repo: RepoSnapshot; change: ChangeSnapshot | Pick<ChangeSnapshot, "name" | "warnings">; from?: string; onClose: () => void }) {
+export function DetailHeader({
+  repo,
+  change,
+  from,
+  onClose,
+  onDismiss,
+}: {
+  repo: RepoSnapshot;
+  change: ChangeSnapshot | Pick<ChangeSnapshot, "name" | "warnings">;
+  from?: string;
+  onClose: () => void;
+  /** Opens the dismiss confirmation; absent where dismissing is not offered at all. */
+  onDismiss?: () => void;
+}) {
   // The repository's board, with its filters when that is the board the view was opened from.
   const back = backTarget(from, repo.id);
   const repoLink = back.path === repoPath(repo.id) ? back : { path: repoPath(repo.id), query: "" };
@@ -186,6 +206,7 @@ export function DetailHeader({ repo, change, from, onClose }: { repo: RepoSnapsh
           <span class="sep">/</span>
           <span class="mono change-name">{change.name}</span>
         </h1>
+        {onDismiss && "column" in change && <DismissButton change={change} failing={!repo.ok} onDismiss={onDismiss} />}
         <CloseButton onClose={onClose} />
       </div>
       {"column" in change && <ChangeFacts change={change} />}
@@ -195,6 +216,23 @@ export function DetailHeader({ repo, change, from, onClose }: { repo: RepoSnapsh
         </div>
       ))}
     </div>
+  );
+}
+
+/** Quiet until hovered or focused, so it never reads as the change's next step. */
+function DismissButton({ change, failing, onDismiss }: { change: ChangeSnapshot; failing: boolean; onDismiss: () => void }) {
+  const offer = dismissOffer(change);
+  if (!offer.shown || failing) return null;
+  return (
+    <button
+      type="button"
+      class="btn sm ghost dismiss-change"
+      disabled={offer.disabledReason !== undefined}
+      title={offer.disabledReason ?? "Delete this change's directory from the project, after you confirm"}
+      onClick={onDismiss}
+    >
+      Dismiss change
+    </button>
   );
 }
 
@@ -321,7 +359,13 @@ export function FileContent({ state, raw, isTasks, rendered, filePath }: { state
     <>
       {progress && progress.total > 0 && (
         <div class="detail-meter wide">
-          <Meter done={progress.done} total={progress.total} />
+          <Meter done={progress.done} total={progress.total} awaiting={progress.awaiting} />
+          {(progress.awaiting ?? 0) > 0 && (
+            <p class="awaiting-note">
+              {progress.awaiting} {progress.awaiting === 1 ? "task awaits" : "tasks await"} your validation. Only you can tick those off — start <strong>Validate</strong> on
+              the card, or tell your agent in a session.
+            </p>
+          )}
         </div>
       )}
       {raw ? <pre class="detail-raw">{state.text}</pre> : rendered}
@@ -329,8 +373,20 @@ export function FileContent({ state, raw, isTasks, rendered, filePath }: { state
   );
 }
 
-export function ChangeDetail({ snapshot, repoId, changeName }: { snapshot: Snapshot | null; repoId: string; changeName: string }) {
+export function ChangeDetail({
+  snapshot,
+  repoId,
+  changeName,
+  onDismissed,
+}: {
+  snapshot: Snapshot | null;
+  repoId: string;
+  changeName: string;
+  /** Told the notice to show once the change was dismissed; the app shows it and picks up the rescan. */
+  onDismissed?: (notice: string) => void;
+}) {
   const ui = useSessionUi();
+  const [dismissing, setDismissing] = useState(false);
   const [query, setQueryState] = useState<DetailQuery>(() => parseDetailQuery(currentQuery()));
   const [listing, setListing] = useState<ChangeArtifacts | null>(null);
   const [listError, setListError] = useState<string | null>(null);
@@ -351,7 +407,11 @@ export function ChangeDetail({ snapshot, repoId, changeName }: { snapshot: Snaps
   // have one — that is what keeps an interrupted archive session reachable once its change is gone from the board.
   const sessions = useMemo(() => consoleSessions(ui.sessions, repoId, changeName), [ui.sessions, repoId, changeName]);
   const worktrees = useMemo(() => ui.worktrees.filter((w) => w.repoId === repoId && w.change === changeName), [ui.worktrees, repoId, changeName]);
-  const hasConsole = consoleAvailable(ui.config, ui.sessions, ui.worktrees, repoId, changeName);
+  // Two questions, deliberately not one (see `sessionState.ts`): the tab exists for every change of a repository agent
+  // sessions apply to, while `hasWork` — a session or a worktree — is what makes a change the snapshot has lost worth a
+  // frame instead of "not found".
+  const hasConsole = consoleTabAvailable(ui.config, repoId);
+  const hasWork = consoleAvailable(ui.config, ui.sessions, ui.worktrees, repoId, changeName);
   const shownSession = consoleSession(sessions, query.session);
   const shownWorktree = worktrees.find((w) => w.path === shownSession?.worktreePath) ?? (shownSession ? undefined : worktrees[0]);
 
@@ -416,7 +476,7 @@ export function ChangeDetail({ snapshot, repoId, changeName }: { snapshot: Snaps
 
   // The change is gone from the snapshot but its worktree is not: show the frame with a working Console tab rather
   // than "not found", so the work left in that worktree stays reachable.
-  if (snapshot && repo && !change && hasConsole) {
+  if (snapshot && repo && !change && hasWork) {
     return (
       <DetailOverlay label={label} onClose={close} panelRef={panel}>
         <DetailHeader repo={repo} change={{ name: changeName }} from={query.from} onClose={close} />
@@ -447,12 +507,19 @@ export function ChangeDetail({ snapshot, repoId, changeName }: { snapshot: Snaps
   }
 
   const artifact = listing?.artifacts.find((a) => a.id === selection.artifactId);
+  const dismissed = (result: DismissResult, preview: DismissPreview) => {
+    setDismissing(false);
+    onDismissed?.(dismissedNotice(result, preview));
+    // A worktree's copy keeps the change on the board: stay, and show that copy after the rescan.
+    if (preview.copies.length === 0) close();
+  };
   const filePath = listing && file ? absoluteFilePath(listing.change.dir, file) : undefined;
   const current = fileState && fileState.path === file ? fileState : null;
 
   return (
+    <>
     <DetailOverlay label={label} onClose={close} panelRef={panel}>
-      <DetailHeader repo={repo} change={change} from={query.from} onClose={close} />
+      <DetailHeader repo={repo} change={change} from={query.from} onClose={close} onDismiss={onDismissed ? () => setDismissing(true) : undefined} />
       {(listing || hasConsole) && (
         <ArtifactTabs artifacts={listing?.artifacts ?? []} selected={selection.artifactId} onSelect={(id) => setQuery({ artifact: id, file: undefined })} console={hasConsole} />
       )}
@@ -464,7 +531,7 @@ export function ChangeDetail({ snapshot, repoId, changeName }: { snapshot: Snaps
         )}
         <section class="detail-content">
           {onConsole ? (
-            <ConsolePanel session={shownSession} worktree={shownWorktree} />
+            <ConsolePanel session={shownSession} worktree={shownWorktree} of={{ repoId, change: changeName }} />
           ) : (
             <>
           {file && (
@@ -492,5 +559,8 @@ export function ChangeDetail({ snapshot, repoId, changeName }: { snapshot: Snaps
         </section>
       </div>
     </DetailOverlay>
+    {/* Outside the panel: a dialog of its own over the detail view, whose Escape closes only this dialog. */}
+    {dismissing && <DismissDialog repoId={repo.id} repoName={repo.name} change={change.name} onClose={() => setDismissing(false)} onDismissed={dismissed} />}
+    </>
   );
 }

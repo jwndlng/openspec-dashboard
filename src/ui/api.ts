@@ -1,6 +1,6 @@
 import type { ActivityQuery } from "../shared/activity.ts";
-import type { ActivityPage, ConsoleSession, CleanupPreview, CleanupResult, CleanupSelection, CreateChangeResponse, PromptResult, PullResult, ShipResult, WorkStatus } from "../shared/types.ts";
-import type { AgentAvailability, ArtifactFileContent, ChangeArtifacts, Config, DiscoverResult, ScanTriggerResult, Session, SessionAction, SessionWorktree, SharedConfig, SharedConfigApplyResult, SharedConfigAssignment, SharedConfigPreview, Snapshot } from "../shared/types.ts";
+import type { ActivityPage, ConsoleSession, CleanupPreview, CleanupResult, CleanupSelection, CreateChangeResponse, DismissPreview, DismissResult, EnvironmentReport, PromptResult, PullResolve, PullResult, ShipResult, WorkStatus } from "../shared/types.ts";
+import type { AgentAvailability, ArtifactFileContent, ChangeArtifacts, Config, DiscoverResult, IntegrationSession, ScanTriggerResult, Session, SessionAction, SessionWorktree, SharedConfig, SharedConfigApplyResult, SharedConfigAssignment, SharedConfigPreview, Snapshot } from "../shared/types.ts";
 import { socketOrigin } from "./url.ts";
 
 export class ApiError extends Error {
@@ -41,6 +41,11 @@ export interface Api {
   discover(scanRoots?: string[], ignorePaths?: string[]): Promise<DiscoverResult>;
   scan(): Promise<ScanTriggerResult>;
   /**
+   * What this machine is missing (openspec/specs/environment-check). Read-only and local: it contacts no network and
+   * reads nothing in a tracked repository, so a configured credential is never proved to be valid.
+   */
+  environment(force?: boolean): Promise<EnvironmentReport>;
+  /**
    * Creates a new change directory in the repository: `openspec/changes/<name>/` with the schema marker and, when a
    * non-empty prompt is given, `prompt.md`. Atomic; a duplicate name is refused with `409`.
    */
@@ -51,10 +56,22 @@ export interface Api {
    */
   pullRepo(repoId: string): Promise<PullResult>;
   pullAll(): Promise<{ results: PullResult[] }>;
+  /**
+   * Confirms Resolve and pull for one repository: posts the offer back unchanged. Fetches nothing; the server
+   * re-determines every blocking file and refuses unless its own answer is still this one.
+   */
+  resolvePull(repoId: string, resolve: PullResolve): Promise<PullResult>;
   /** Read-only: the repository's worktrees, stale worktree records and branches, each removable or kept with a reason. */
   cleanupPreview(repoId: string): Promise<CleanupPreview>;
   /** Removes what the user selected and confirmed, re-checking each item; the only call that deletes a branch. */
   cleanup(repoId: string, selection: CleanupSelection): Promise<CleanupResult>;
+  /** Read-only: what dismissing the change would delete, file by file, and whether git could restore each. */
+  dismissPreview(repoId: string, change: string): Promise<DismissPreview>;
+  /**
+   * Deletes the change's directory from the main checkout and stages that removal — only when it is still what the
+   * preview with `fingerprint` showed; `ApiError` 409 otherwise. The only call that deletes a change.
+   */
+  dismissChange(repoId: string, change: string, fingerprint: string): Promise<DismissResult>;
   sharedConfig(): Promise<SharedConfig>;
   /** Stores the profiles in the dashboard home; never writes to a repository. */
   saveSharedConfig(config: SharedConfig): Promise<SharedConfig>;
@@ -67,10 +84,17 @@ export interface Api {
   openSession(repoId: string, change: string, action: SessionAction): Promise<Session>;
   /** Opens the main console, or returns the one that is running. */
   openConsole(): Promise<ConsoleSession>;
+  /**
+   * Starts an agent in a repository that does not use OpenSpec yet, to set it up — in that folder, with no worktree
+   * and no branch. Returns the one already running for the folder if there is one. `ApiError` 404 when the folder is
+   * not offered for integration, 403/400/503 when the action is unavailable.
+   */
+  startIntegration(path: string): Promise<IntegrationSession>;
   /** Continues the agent's latest conversation in the session's worktree. */
   resumeSession(id: string): Promise<Session>;
   /** Asks the session's agent to commit, push and open a pull request. */
   shipSession(id: string): Promise<ShipResult>;
+  resolveConflicts(id: string): Promise<ShipResult>;
   /** For a worktree whose session record is gone; refused unless that is safe. */
   removeWorktree(repoId: string, name: string): Promise<{ removable: boolean; reason?: string }>;
   /** Ends the agent if it is running; removes the worktree only when asked and safe. */
@@ -131,12 +155,17 @@ export const httpApi: Api = {
   discover: (scanRoots, ignorePaths) =>
     call<DiscoverResult>("/api/discover", { method: "POST", body: scanRoots || ignorePaths ? JSON.stringify({ scanRoots, ignorePaths }) : undefined }),
   scan: () => call<ScanTriggerResult>("/api/scan", { method: "POST" }),
+  environment: (force) => call<EnvironmentReport>(`/api/environment${force ? "?force=1" : ""}`),
   createChange: (repoId, name, prompt) =>
     call<CreateChangeResponse>(`/api/repos/${encodeURIComponent(repoId)}/changes`, { method: "POST", body: JSON.stringify(prompt !== undefined && prompt !== "" ? { name, prompt } : { name }) }),
   pullRepo: (repoId) => call<PullResult>(`/api/repos/${encodeURIComponent(repoId)}/pull`, { method: "POST" }),
   pullAll: () => call<{ results: PullResult[] }>("/api/pull", { method: "POST" }),
+  resolvePull: (repoId, resolve) => call<PullResult>(`/api/repos/${encodeURIComponent(repoId)}/pull`, { method: "POST", body: JSON.stringify({ resolve }) }),
   cleanupPreview: (repoId) => call<CleanupPreview>(`/api/repos/${encodeURIComponent(repoId)}/cleanup`),
   cleanup: (repoId, selection) => call<CleanupResult>(`/api/repos/${encodeURIComponent(repoId)}/cleanup`, { method: "POST", body: JSON.stringify(selection) }),
+  dismissPreview: (repoId, change) => call<DismissPreview>(`/api/repos/${encodeURIComponent(repoId)}/changes/${encodeURIComponent(change)}/dismiss`),
+  dismissChange: (repoId, change, fingerprint) =>
+    call<DismissResult>(`/api/repos/${encodeURIComponent(repoId)}/changes/${encodeURIComponent(change)}/dismiss`, { method: "POST", body: JSON.stringify({ fingerprint }) }),
   sharedConfig: () => call<SharedConfig>("/api/shared-config"),
   saveSharedConfig: (config) => call<SharedConfig>("/api/shared-config", { method: "PUT", body: JSON.stringify(config) }),
   previewSharedConfig: (assignments) => call<{ previews: SharedConfigPreview[] }>("/api/shared-config/preview", { method: "POST", body: JSON.stringify({ assignments }) }),
@@ -144,8 +173,10 @@ export const httpApi: Api = {
   sessions: () => call<{ sessions: Session[]; agents: AgentAvailability[]; worktrees: SessionWorktree[] }>("/api/sessions"),
   openSession: (repoId, change, action) => call<Session>("/api/sessions", { method: "POST", body: JSON.stringify({ repoId, change, action }) }),
   openConsole: () => call<ConsoleSession>("/api/console", { method: "POST" }),
+  startIntegration: (path) => call<IntegrationSession>("/api/integrations", { method: "POST", body: JSON.stringify({ path }) }),
   resumeSession: (id) => call<Session>(`/api/sessions/${id}/resume`, { method: "POST" }),
   shipSession: (id) => call<ShipResult>(`/api/sessions/${id}/ship`, { method: "POST" }),
+  resolveConflicts: (id) => call<ShipResult>(`/api/sessions/${id}/resolve-conflicts`, { method: "POST" }),
   removeWorktree: (repoId, name) => call("/api/worktrees/remove", { method: "POST", body: JSON.stringify({ repoId, name }) }),
   closeSession: (id, removeWorktree) => call(`/api/sessions/${id}/close`, { method: "POST", body: JSON.stringify({ removeWorktree }) }),
   deleteSession: (id) => call<{ deleted: boolean }>(`/api/sessions/${id}`, { method: "DELETE" }),
@@ -191,11 +222,15 @@ export const api: Api = {
   saveConfig: (config) => current.saveConfig(config),
   discover: (scanRoots, ignorePaths) => current.discover(scanRoots, ignorePaths),
   scan: () => current.scan(),
+  environment: (force) => current.environment(force),
   createChange: (...args) => current.createChange(...args),
   pullRepo: (repoId) => current.pullRepo(repoId),
   pullAll: () => current.pullAll(),
+  resolvePull: (...args) => current.resolvePull(...args),
   cleanupPreview: (...args) => current.cleanupPreview(...args),
   cleanup: (...args) => current.cleanup(...args),
+  dismissPreview: (...args) => current.dismissPreview(...args),
+  dismissChange: (...args) => current.dismissChange(...args),
   sharedConfig: () => current.sharedConfig(),
   saveSharedConfig: (config) => current.saveSharedConfig(config),
   previewSharedConfig: (assignments) => current.previewSharedConfig(assignments),
@@ -203,8 +238,10 @@ export const api: Api = {
   sessions: (...args) => current.sessions(...args),
   openSession: (...args) => current.openSession(...args),
   openConsole: () => current.openConsole(),
+  startIntegration: (path) => current.startIntegration(path),
   resumeSession: (...args) => current.resumeSession(...args),
   shipSession: (...args) => current.shipSession(...args),
+  resolveConflicts: (...args) => current.resolveConflicts(...args),
   removeWorktree: (...args) => current.removeWorktree(...args),
   closeSession: (...args) => current.closeSession(...args),
   deleteSession: (...args) => current.deleteSession(...args),

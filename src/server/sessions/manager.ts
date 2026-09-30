@@ -4,11 +4,12 @@
 import { randomUUID } from "node:crypto";
 import { realpath } from "node:fs/promises";
 import { join } from "node:path";
-import { availableActions, changeSessions, isConsole, OPEN_SESSION_STATES, repoAgentEnabled, SESSION_ACTIONS, SHIPPABLE_WORK, type AgentAvailability, type ChangeSession, type Config, type ConsoleSession, type Session, type SessionAction, type SessionWorktree, type Snapshot, type WorkStatus, type PromptResult, type ShipResult } from "../../shared/types.ts";
+import { availableActions, changeSessions, isChangeless, isConsole, isIntegration, OPEN_SESSION_STATES, repoAgentEnabled, SESSION_ACTIONS, SHIPPABLE_WORK, type AgentAvailability, type ChangeSession, type Config, type ConsoleSession, type IntegrationSession, type Session, type SessionAction, type SessionWorktree, type Snapshot, type WorkStatus, type PromptResult, type ShipResult } from "../../shared/types.ts";
 import { isCleaningUp } from "../cleanup.ts";
+import { isDismissing } from "../dismissChange.ts";
 import { worktreesDir } from "../paths.ts";
 import { CHANGE_NAME } from "../source.ts";
-import { agentEnv, agentFor, availability, defaultAgentOf, launchCommand, launchWithoutPrompt, openingPrompt, shipPrompt } from "./agents.ts";
+import { agentEnv, agentFor, availability, defaultAgentOf, integratePrompt, launchCommand, launchWithoutPrompt, openingPrompt, resolveConflictsPrompt, shipPrompt } from "./agents.ts";
 import { consoleFolderProblem, prepareConsoleFolder } from "./consoleFolder.ts";
 import type { SessionActivity } from "../activity/events.ts";
 import { SessionStore } from "./store.ts";
@@ -41,6 +42,8 @@ export function sessionBranch(action: SessionAction, change: string): string {
 }
 
 const NOT_A_CHANGE = "this is the main console, which belongs to no change";
+const NOT_A_CHANGE_INTEGRATING = "this session is setting a repository up for OpenSpec, so it belongs to no change";
+const notAChange = (session: Session) => (isIntegration(session) ? NOT_A_CHANGE_INTEGRATING : NOT_A_CHANGE);
 
 /** An adopted worktree was created outside the dashboard; removing it is its owner's call, however clean it is. */
 const NOT_OURS: Removable = { removable: false, reason: "this worktree was not created by the dashboard (the session adopted it), so it is kept" };
@@ -89,6 +92,8 @@ export interface ManagerDeps {
   submitTimings?: SubmitOptions;
   /** Told when a session starts, ends or ships, for the activity feed. Never consulted for any decision. */
   onActivity?: (session: ChangeSession, activity: SessionActivity) => void;
+  /** Told when an integration session has ended, so its folder can be re-checked for the marker. */
+  onIntegrationEnded?: (session: IntegrationSession) => void;
 }
 
 export class SessionManager {
@@ -138,13 +143,18 @@ export class SessionManager {
     const scanned = this.deps.getSnapshot().repos.find((r) => r.id === repo.id);
     if (!scanned?.ok) throw new SessionError(409, "the repository's last scan failed");
     if (isCleaningUp(repo.id)) throw new SessionError(409, "a cleanup of this repository is running");
+    if (isDismissing(repo.id, change)) throw new SessionError(409, "this change is being dismissed");
     const snapshot = scanned.changes.find((c) => c.name === change && !c.archived);
     if (!snapshot) throw new SessionError(404, "unknown change");
     if (!availableActions(snapshot).includes(action)) throw new SessionError(400, `"${action}" is not available for this change in its current stage`);
 
-    // One running session per worktree. Archiving has a worktree of its own, so it may run next to the change's other session.
-    const archiving = action === "archive";
-    const existing = this.list().find((s) => s.repoId === repo.id && s.change === change && (s.action === "archive") === archiving && OPEN_SESSION_STATES.includes(s.state));
+    // One open session per change, whatever the action: a change never has two consoles, and Archive is no exception.
+    // Nothing is typed here — a starter for a change whose agent is up goes through `prompt`, which reports whether
+    // the text was submitted; returning the session keeps a double-clicked starter from opening or typing anything
+    // twice. `list()` is newest first, so a process that still holds two running sessions from before this rule
+    // returns the one the user started last. In-place sessions need this as much as worktrees do: their working
+    // directory is the repository folder itself, which no per-worktree rule would have kept a second agent out of.
+    const existing = this.list().find((s) => s.repoId === repo.id && s.change === change && OPEN_SESSION_STATES.includes(s.state));
     if (existing) return existing;
 
     const agent = agentFor(config, repo);
@@ -237,6 +247,44 @@ export class SessionManager {
   }
 
   /**
+   * Setting a repository up for OpenSpec: the default agent with the `integrate` prompt, **in place** in the
+   * repository's main checkout — no worktree, no branch and no git command, because the marker the agent writes has to
+   * land where discovery looks for it. Whether the folder may be integrated at all is decided before this is called
+   * (`integration.ts`); here it is only ever one at a time per folder.
+   */
+  async openIntegration(folder: string): Promise<{ session: IntegrationSession; created: boolean }> {
+    const config = this.deps.getConfig();
+    if (!config.agentSessions.enabled) throw new SessionError(403, "agent sessions are disabled");
+    const running = this.list().find((s): s is IntegrationSession => isIntegration(s) && s.folder === folder && OPEN_SESSION_STATES.includes(s.state));
+    if (running) return { session: running, created: false };
+    const agent = defaultAgentOf(config);
+    if (!agent) throw new SessionError(503, "no agent is configured");
+    const prompt = integratePrompt(agent);
+    if (!prompt) throw new SessionError(400, `${agent.name} has no Integrate prompt configured`);
+    if (!Bun.which(agent.command[0])) throw new SessionError(503, `${agent.name} was not found (${agent.command[0]}); install it or change its command in Settings`);
+    const now = new Date().toISOString();
+    const session: IntegrationSession = {
+      id: randomUUID(),
+      integration: true,
+      folder,
+      agentId: agent.id,
+      agentName: agent.name,
+      state: "running",
+      worktreePath: folder,
+      inPlace: true,
+      createdAt: now,
+      updatedAt: now,
+      resumable: agent.resumeCommand !== undefined,
+    };
+    this.sessions.set(session.id, session);
+    await this.store.saveMeta(session);
+    const launch = launchCommand(agent, prompt);
+    this.start(session, launch.argv, agentEnv(agent, process.env), launch.typed);
+    for (const removed of await this.store.prune(this.list())) this.sessions.delete(removed);
+    return { session, created: true };
+  }
+
+  /**
    * Every session worktree with what became of its work. Cached briefly (the UI polls) and shared while in flight;
    * anything that changes a worktree's state drops the cache. With the feature off, no git runs at all.
    */
@@ -259,6 +307,11 @@ export class SessionManager {
     return new Set(await Promise.all(paths));
   }
 
+  /** Whether a session for the change is open; dismissing the change waits for it to end. */
+  hasOpenSession(repoId: string, change: string): boolean {
+    return changeSessions(this.list()).some((s) => s.repoId === repoId && s.change === change && OPEN_SESSION_STATES.includes(s.state));
+  }
+
   forgetWorktrees(): void {
     this.worktreeCache = undefined;
   }
@@ -271,6 +324,7 @@ export class SessionManager {
     const repo = config.repos.find((r) => r.id === session.repoId);
     if (!repo) throw new SessionError(409, "the repository is no longer configured");
     if (isCleaningUp(repo.id)) throw new SessionError(409, "a cleanup of this repository is running");
+    if (isDismissing(repo.id, session.change)) throw new SessionError(409, "this change is being dismissed");
     return { agent, repo };
   }
 
@@ -281,6 +335,13 @@ export class SessionManager {
     const agent = config.agentSessions.agents.find((a) => a.id === session.agentId);
     if (!agent) throw new SessionError(409, "this session's agent is no longer configured");
     return { agent, config };
+  }
+
+  /** An integration's folder is the repository itself: nothing to re-create, only that nothing else is running in it. */
+  private prepareIntegrationRestart(session: IntegrationSession) {
+    const { agent } = this.prepareAgainAnywhere(session);
+    if (this.list().some((s) => s.id !== session.id && s.worktreePath === session.worktreePath && s.state === "running")) throw new SessionError(409, "another session is running in this folder");
+    return { agent };
   }
 
   /** The console's folder is its own: no worktree to re-create, no git — only that it still is a usable folder. */
@@ -294,7 +355,7 @@ export class SessionManager {
 
   private async restart(session: Session, repoPath: string | undefined, argv: string[], env: Record<string, string>, typed?: string): Promise<void> {
     // An in-place session runs in the repository folder, the console in its own: no worktree to re-create, no git to ask.
-    if (!isConsole(session) && !session.inPlace && repoPath !== undefined) {
+    if (!isChangeless(session) && !session.inPlace && repoPath !== undefined) {
       const branch = session.branch as string;
       try {
         // An adopted worktree is not ours to re-create: if its owner removed it, the session has nowhere to continue.
@@ -309,7 +370,7 @@ export class SessionManager {
     session.error = undefined;
     await this.touch(session);
     this.start(session, argv, env, typed);
-    if (session.state === "running" && !isConsole(session)) this.report(session, { kind: "session-started", action: session.action, agentName: session.agentName, resumed: true });
+    if (session.state === "running" && !isChangeless(session)) this.report(session, { kind: "session-started", action: session.action, agentName: session.agentName, resumed: true });
   }
 
   /**
@@ -319,7 +380,7 @@ export class SessionManager {
    */
   async ship(id: string): Promise<ShipResult> {
     const session = this.get(id);
-    if (isConsole(session)) throw new SessionError(409, NOT_A_CHANGE);
+    if (isChangeless(session)) throw new SessionError(409, notAChange(session));
     if (session.inPlace) throw new SessionError(400, "this session runs in a folder that is not a git repository — there is no branch to commit or push");
     const { agent, repo } = await this.prepareRestart(session);
     const { work } = await readWorkStatus(repo.path, session.worktreePath);
@@ -341,19 +402,53 @@ export class SessionManager {
   }
 
   /**
+   * Asks the agent to make its branch merge into the base again (design D3). Deliberately shaped like `ship()` rather
+   * than sharing a helper with it: both are load-bearing, their refusals are specified one by one, and fifteen
+   * duplicated lines are cheaper to review than a parameterised abstraction over two callers.
+   *
+   * The dashboard resolves nothing itself — it merges, rebases, checks out, commits and pushes nothing. It hands over
+   * a prompt; the agent works under its own permission prompts.
+   */
+  async resolveConflicts(id: string): Promise<ShipResult> {
+    const session = this.get(id);
+    if (isChangeless(session)) throw new SessionError(409, notAChange(session));
+    if (session.inPlace) throw new SessionError(400, "this session runs in a folder that is not a git repository — there is no branch to merge");
+    const { agent, repo } = await this.prepareRestart(session);
+    // Re-read rather than trust the snapshot: the base or the branch may have moved since the user saw the badge.
+    const { work } = await readWorkStatus(repo.path, session.worktreePath);
+    if (!work.conflicts) throw new SessionError(409, `this branch has no conflicts to resolve (${work.state})`);
+    const prompt = resolveConflictsPrompt(agent, session.change);
+    this.forgetWorktrees();
+    const proc = this.live.get(id)?.proc;
+    if (session.state === "running" && proc) {
+      const { submitted } = await this.submit(id, prompt);
+      this.report(session, { kind: "session-conflicts-resolve", submitted });
+      return { ...session, submitted };
+    }
+    const launch = agent.resumeCommand ? { argv: [...agent.resumeCommand], typed: prompt } : launchCommand(agent, prompt);
+    if (!Bun.which(launch.argv[0])) throw new SessionError(503, `${agent.name} was not found (${launch.argv[0]})`);
+    await this.restart(session, repo.path, launch.argv, agentEnv(agent, process.env), launch.typed);
+    this.report(session, { kind: "session-conflicts-resolve", submitted: true });
+    return { ...session, submitted: true };
+  }
+
+  /**
    * The next step of a change, in the session that is already running for it: the starter's prompt is submitted to the
    * terminal under the rules for text sent on the user's behalf — typed, then Enter as a separate key press only once
-   * the agent has shown the text, so a selection menu is never confirmed. Archive is not sent here: it belongs in its
-   * own worktree.
+   * the agent has shown the text, so a selection menu is never confirmed.
+   *
+   * Every action the change's stage allows may be sent, Archive included — it is how a completed change is archived
+   * without ending the agent that worked on it — and the action the session was started with restricts nothing. The
+   * prompt runs where that session runs: the change's own worktree, or the folder itself for a repository without
+   * git. Nothing is created and no git command runs for it; what the agent then does there is the agent's own doing.
    */
   async prompt(id: string, input: { action?: unknown }): Promise<PromptResult> {
     const session = this.get(id);
-    if (isConsole(session)) throw new SessionError(409, NOT_A_CHANGE);
+    if (isChangeless(session)) throw new SessionError(409, notAChange(session));
     const config = this.deps.getConfig();
     if (!config.agentSessions.enabled) throw new SessionError(403, "agent sessions are disabled");
     if (!SESSION_ACTIONS.includes(input.action as SessionAction)) throw new SessionError(400, "unknown action");
     const action = input.action as SessionAction;
-    if (action === "archive" || session.action === "archive") throw new SessionError(400, "archiving runs in its own session");
     const proc = this.live.get(id)?.proc;
     if (session.state !== "running" || !proc) throw new SessionError(409, "the session is not running");
     const change = this.deps
@@ -389,7 +484,11 @@ export class SessionManager {
   async resume(id: string): Promise<Session> {
     const session = this.get(id);
     if (session.state === "running") return session;
-    const { agent, repoPath } = isConsole(session) ? { ...(await this.prepareConsoleRestart(session)), repoPath: undefined } : await this.prepareRestart(session).then(({ agent, repo }) => ({ agent, repoPath: repo.path }));
+    const { agent, repoPath } = isConsole(session)
+      ? { ...(await this.prepareConsoleRestart(session)), repoPath: undefined }
+      : isIntegration(session)
+        ? { ...this.prepareIntegrationRestart(session), repoPath: undefined }
+        : await this.prepareRestart(session).then(({ agent, repo }) => ({ agent, repoPath: repo.path }));
     if (!agent.resumeCommand) throw new SessionError(400, "this agent has no resume command configured");
     if (!Bun.which(agent.resumeCommand[0])) throw new SessionError(503, `${agent.name} was not found (${agent.resumeCommand[0]})`);
     await this.restart(session, repoPath, [...agent.resumeCommand], agentEnv(agent, process.env));
@@ -442,12 +541,19 @@ export class SessionManager {
     if (live) await this.store.saveOutput(session.id, live.scrollback.bytes()).catch(() => undefined);
     await this.touch(session);
     this.report(session, { kind: "session-ended", ...(exitCode === null ? {} : { exitCode }), ...(error ? { error } : {}) });
+    if (isIntegration(session)) {
+      try {
+        this.deps.onIntegrationEnded?.(session);
+      } catch {
+        // re-checking the marker is best effort; discovery checks it again anyway
+      }
+    }
     for (const viewer of live?.viewers ?? []) viewer(new Uint8Array()); // an empty chunk tells viewers the process ended
   }
 
-  /** The activity log is about repositories and changes; the console is neither, so it is never reported. */
+  /** The activity log is about repositories and changes; the console and an integration are neither, so neither is reported. */
   private report(session: Session, activity: SessionActivity): void {
-    if (isConsole(session)) return;
+    if (isChangeless(session)) return;
     try {
       this.deps.onActivity?.(session, activity);
     } catch {
@@ -515,8 +621,8 @@ export class SessionManager {
       for (let i = 0; i < 50 && session.state === "running"; i++) await new Promise((r) => setTimeout(r, 20));
     }
     let worktree: Removable | undefined;
-    if (isConsole(session)) {
-      // The console has no worktree: ending it ends the agent and nothing else.
+    if (isChangeless(session)) {
+      // Neither has a worktree of its own: ending it ends the agent and nothing else.
     } else if (options.removeWorktree && session.adopted) {
       worktree = NOT_OURS;
     } else if (options.removeWorktree) {
@@ -534,7 +640,7 @@ export class SessionManager {
   /** Read now, not from the list's cache: the end-session dialog warns on the strength of it. */
   async worktreeStatus(id: string): Promise<Removable & { work: WorkStatus }> {
     const session = this.get(id);
-    if (isConsole(session)) throw new SessionError(409, NOT_A_CHANGE);
+    if (isChangeless(session)) throw new SessionError(409, notAChange(session));
     const repo = this.deps.getConfig().repos.find((r) => r.id === session.repoId);
     const work: WorkStatus = repo ? (await readWorkStatus(repo.path, session.worktreePath)).work : { state: "missing" };
     if (session.adopted) return { ...NOT_OURS, work };

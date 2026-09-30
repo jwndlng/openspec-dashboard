@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
 import { createDemoApi } from "../src/ui/demo/demoApi.ts";
 import { DEMO_ROOT } from "../src/ui/demo/sampleData.ts";
 
@@ -123,6 +124,34 @@ test("pull in the demo: canned outcomes, the notice's repositories are only fetc
   expect((await demo().api.pullRepo(onMain.id)).update).toBe("fast-forwarded"); // a reload starts over
 });
 
+test("a blocked pull in the demo: the leftovers are listed, then Resolve and pull answers with a fast-forward", async () => {
+  const { api } = demo();
+  const repos = (await api.state()).repos;
+  const blocked = repos.find((r) => r.name === "quill-docs")!;
+
+  const refused = await api.pullRepo(blocked.id);
+  expect(refused).toMatchObject({ fetched: true, update: "refused" });
+  expect(refused.blocking?.map((b) => [b.path, b.kind, b.differs])).toEqual([
+    ["openspec/changes/add-import-redirects/.openspec.yaml", "leftover", false],
+    ["openspec/changes/add-import-redirects/prompt.md", "leftover", true],
+  ]);
+  expect(refused.resolvable?.files).toHaveLength(2);
+  expect(refused.hint).toContain("Resolve and pull replaces them");
+
+  // a claim that is not the one that was offered changes nothing
+  expect(await api.resolvePull(blocked.id, { upstream: "0".repeat(40), files: refused.resolvable!.files })).toMatchObject({ update: "refused" });
+
+  const resolved = await api.resolvePull(blocked.id, refused.resolvable!);
+  expect(resolved).toMatchObject({ fetched: false, update: "fast-forwarded" });
+  expect(resolved.resolved).toEqual([
+    { path: "openspec/changes/add-import-redirects/.openspec.yaml" },
+    { path: "openspec/changes/add-import-redirects/prompt.md", copy: expect.stringContaining("/home/demo/.openspec-dashboard/pull-backups/") },
+  ]);
+  expect((await api.pullRepo(blocked.id)).update).toBe("up-to-date"); // it stays resolved until a reload
+  await expect(api.resolvePull("nope", refused.resolvable!)).rejects.toThrow("not a tracked");
+  expect((await demo().api.pullRepo(blocked.id)).update).toBe("refused"); // a reload starts over
+});
+
 test("change artifacts in the demo: files follow the sample's state, tasks.md agrees with the card, errors match the server's", async () => {
   const { api } = demo();
   const [repo] = (await api.state()).repos;
@@ -187,4 +216,52 @@ test("the main checkout's branch is never offered in the demo either", async () 
   const preview = await api.cleanupPreview(repo.id);
   expect(preview.branches.find((b) => b.name === repo.currentBranch)).toMatchObject({ removable: false, reason: "it is checked out in the main checkout" });
   expect(preview.branches.find((b) => b.name === "fix/focus-ring-contrast")).toMatchObject({ removable: true });
+});
+
+test("dismissing is simulated: a draft shows a file lost for good, leaves the board, and a reload brings it back", async () => {
+  const { api } = demo();
+  const repos = (await api.state()).repos;
+  const repo = repos.find((r) => r.changes.some((c) => c.stage === "drafts" && !c.archived && (!c.checkout || c.checkout.isMain)))!;
+  const draft = repo.changes.find((c) => c.stage === "drafts" && !c.archived && (!c.checkout || c.checkout.isMain))!;
+  const preview = await api.dismissPreview(repo.id, draft.name);
+  expect(preview.files.some((f) => f.state === "lost")).toBe(true);
+  expect(preview.files.some((f) => f.path === ".openspec.yaml" && f.state === "restorable")).toBe(true);
+  await expect(api.dismissChange(repo.id, draft.name, "stale")).rejects.toMatchObject({ status: 409 });
+  expect(await api.dismissChange(repo.id, draft.name, preview.fingerprint)).toEqual({ name: draft.name, staged: true });
+  expect((await api.state()).repos.find((r) => r.id === repo.id)!.changes.some((c) => c.name === draft.name && !c.archived)).toBe(false);
+  await expect(api.dismissPreview(repo.id, draft.name)).rejects.toMatchObject({ status: 404 });
+
+  const fresh = demo().api;
+  expect((await fresh.state()).repos.find((r) => r.id === repo.id)!.changes.some((c) => c.name === draft.name)).toBe(true);
+});
+
+test("the demo's environment report passes and needs no process, file or connection", async () => {
+  const { api } = demo();
+  const report = await api.environment();
+  expect(report.status).toBe("ok");
+  for (const check of report.checks) expect([check.id, check.status]).toEqual([check.id, "ok"]);
+  expect(report.checks.map((c) => c.id)).toEqual(["dashboard-home", "git", "git-identity", "openspec-cli", "agent:demo-agent", "github-cli"]);
+  // Every path is made up and under the fictional home; nothing was looked up on the machine running this.
+  for (const check of report.checks) expect([check.id, /\/(Users|home)\/(?!demo\b)/.test(check.found)]).toEqual([check.id, false]);
+  // Pure: the same instance and clock give exactly the same report, so nothing was observed to produce it.
+  expect(await api.environment()).toEqual(report);
+  // And the module that builds it reaches for neither the filesystem nor a process.
+  const source = readFileSync(new URL("../src/ui/demo/sampleData.ts", import.meta.url), "utf8");
+  for (const forbidden of ["node:fs", "Bun.spawn", "Bun.which", "fetch("]) expect([forbidden, source.includes(forbidden)]).toEqual([forbidden, false]);
+});
+
+test("switching agent sessions off in the demo turns the checks it makes unnecessary into not-needed", async () => {
+  const { api } = demo();
+  const config = await api.config();
+  await api.saveConfig({ ...config, agentSessions: { ...config.agentSessions, enabled: false } });
+  const report = await api.environment();
+  for (const id of ["git-identity", "agent:demo-agent", "github-cli"]) {
+    const check = report.checks.find((c) => c.id === id);
+    expect([id, check?.status]).toEqual([id, "not-needed"]);
+    expect([id, check?.found]).toEqual([id, "not needed while agent sessions are off"]);
+  }
+  // The machine-level checks are unaffected, and nothing claims a GitHub credential either way.
+  expect(report.checks.find((c) => c.id === "git")?.status).toBe("ok");
+  expect(report.caveat).toBeUndefined();
+  expect(report.status).toBe("ok");
 });

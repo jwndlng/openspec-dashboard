@@ -1,6 +1,8 @@
 import { expect, test } from "bun:test";
 import type { ChangeSession, Session, SessionWorktree, WorkStatus } from "../src/shared/types.ts";
-import { consoleAvailable, consoleSession, consoleSessions, endSeverity, pullOffer, endWarning, nextStepFor, openWork, sessionsForChange, staleAge, workBadge, worktreeForChange, worktreeOfSession, worktreeRemovalPossible } from "../src/ui/sessionState.ts";
+import { ConflictBadge } from "../src/ui/sessions.tsx";
+import { byTag, textOf } from "./vnode.ts";
+import { conflictBadge, consoleAvailable, consoleSession, consoleSessions, consoleTabAvailable, endSeverity, pullOffer, endWarning, nextStepFor, openWork, resolvable, sessionsForChange, staleAge, workBadge, worktreeForChange, worktreeOfSession, worktreeRemovalPossible } from "../src/ui/sessionState.ts";
 
 const NOW = Date.parse("2026-09-21T12:00:00Z");
 const ago = (hours: number) => new Date(NOW - hours * 3_600_000).toISOString();
@@ -58,15 +60,15 @@ test("the open work list holds the running sessions, oldest first", () => {
   expect(openWork([], [], NOW).items).toEqual([]);
 });
 
-test("a starter goes into the change's running session; archive always gets its own", () => {
+test("every starter goes into the change's running session, whatever either of them is", () => {
   const draft = sess("d", { action: "draft" });
-  expect(nextStepFor([draft], "r", "add-x", "implement")).toEqual({ promptSessionId: "d" });
-  expect(nextStepFor([draft], "r", "add-x", "archive")).toEqual({ blocked: false });
-  expect(nextStepFor([sess("d", { state: "exited" })], "r", "add-x", "implement")).toEqual({ promptSessionId: undefined });
+  expect(nextStepFor([draft], "r", "add-x")).toEqual({ promptSessionId: "d" });
+  // Archive is no longer the exception, and a session started as Archive is a target like any other.
   const arch = sess("ar", { action: "archive" });
-  expect(nextStepFor([arch], "r", "add-x", "implement")).toEqual({ promptSessionId: undefined }); // never typed into an archive session
-  expect(nextStepFor([arch], "r", "add-x", "archive")).toEqual({ blocked: true });
-  expect(nextStepFor([draft], "r", "other", "implement")).toEqual({ promptSessionId: undefined });
+  expect(nextStepFor([arch], "r", "add-x")).toEqual({ promptSessionId: "ar" });
+  expect(nextStepFor([sess("d", { state: "exited" })], "r", "add-x")).toEqual({ promptSessionId: undefined });
+  expect(nextStepFor([draft], "r", "other")).toEqual({ promptSessionId: undefined });
+  expect(nextStepFor([], "r", "add-x")).toEqual({ promptSessionId: undefined });
 });
 
 test("a card shows every running session, else the latest one that went wrong", () => {
@@ -143,6 +145,24 @@ test("open work lists running sessions first, then worktrees nobody is working o
   expect(openWork([wt("idle", { state: "clean" })], [], NOW).items).toEqual([]);
 });
 
+test("a session that ends leaves the running rows and its worktree takes the entry's place", () => {
+  // The old dock-era rule was that an ended session simply dropped out and the count fell. With the dock gone this
+  // list is the only way back to that worktree, so the row moves rather than disappearing and the count holds.
+  const worktrees = [wt("add-x", { state: "unpushed", count: 2 }, 1, { sessionId: "s1", path: "/w/s1" })];
+  const while_running = openWork(worktrees, [sess("s1")], NOW);
+  expect(while_running.items.map((i) => i.key)).toEqual(["s1"]);
+  expect(while_running.running).toBe(1);
+  expect(while_running.unshipped).toBe(0);
+
+  const after_exit = openWork(worktrees, [sess("s1", { state: "exited", exitCode: 0 })], NOW);
+  expect(after_exit.items.map((i) => i.key)).toEqual(["/w/s1"]);
+  expect(after_exit.running).toBe(0);
+  expect(after_exit.unshipped).toBe(1);
+  // Same total, and the row still carries the session record so the Console tab is still reachable through it.
+  expect(after_exit.running + after_exit.unshipped).toBe(while_running.running + while_running.unshipped);
+  expect(after_exit.items[0].session?.id).toBe("s1");
+});
+
 test("a running session's own worktree is counted once, as running rather than as unshipped", () => {
   const worktrees = [wt("shipping", { state: "uncommitted", count: 3 }, 1, { sessionId: "s1", path: "/w/s1" })];
   const { items, unshipped, running: live } = openWork(worktrees, [sess("s1")], NOW);
@@ -180,6 +200,24 @@ test("a change gets a console when it has a session or a worktree, and a worktre
   expect(consoleAvailable(null, s, w, "r", "add-x")).toBe(false);
 });
 
+test("the Console tab exists per repository, before any agent has run — which is not what consoleAvailable answers", () => {
+  const cfg = { agentSessions: { enabled: true }, repos: [{ id: "r", enabled: true }] } as never;
+  const off = { agentSessions: { enabled: false }, repos: [{ id: "r", enabled: true }] } as never;
+  const excluded = { agentSessions: { enabled: true }, repos: [{ id: "r", enabled: false }] } as never;
+
+  // The one case the two predicates differ in, and the reason there are two: a change nothing has ever run for still
+  // gets the tab (it offers the starters), while `consoleAvailable` stays false so a name in no snapshot is "not found".
+  expect(consoleTabAvailable(cfg, "r")).toBe(true);
+  expect(consoleAvailable(cfg, [], [], "r", "add-x")).toBe(false);
+
+  // Where they agree: the feature off, the repository switched off, no config at all, another repository.
+  for (const config of [off, excluded, null]) {
+    expect(consoleTabAvailable(config, "r")).toBe(false);
+    expect(consoleAvailable(config, [sess("a")], [wt("add-x", { state: "uncommitted", count: 1 })], "r", "add-x")).toBe(false);
+  }
+  expect(consoleTabAvailable(cfg, "elsewhere")).toBe(false);
+});
+
 test("a session in a folder without git has no worktree, so no work status, no Ship and nothing to remove", () => {
   const worktrees = [wt("upgrade-runtime", { state: "uncommitted", count: 2 })];
   const inRepo = { inPlace: true, worktreePath: "/w/acme/demo-ops" } as Session;
@@ -197,4 +235,65 @@ test("a session in a folder without git has no worktree, so no work status, no S
   // Ending it offers no pull either: the pull action only runs in a git repository.
   expect(pullOffer({ isGit: false, ok: true }, undefined)).toEqual({ offered: false, preselected: false });
   expect(pullOffer({ isGit: true, ok: true }, { state: "merged" })).toEqual({ offered: true, preselected: true });
+});
+
+test("the conflict badge names the base, the files and how fresh the answer is", () => {
+  const one = conflictBadge(wt("a", { state: "pushed", base: "origin/main", conflicts: { base: "origin/main", files: ["src/router/table.ts"] } }));
+  expect(one).toMatchObject({ icon: "⚠", label: "conflicts with origin/main", tone: "warning" });
+  expect(one?.title).toContain("no longer merges into origin/main");
+  expect(one?.title).toContain("as of your last fetch"); // the caveat is never dropped (design D4)
+  expect(one?.title).toContain("Pull to refresh the base.");
+  expect(one?.title).toContain("1 file: src/router/table.ts");
+
+  const two = conflictBadge(wt("a", { state: "unpushed", count: 2, base: "origin/main", conflicts: { base: "origin/main", files: ["a.ts", "b.ts"] } }));
+  expect(two?.title).toContain("2 files: a.ts, b.ts");
+
+  const many = conflictBadge(wt("a", { state: "pushed", base: "origin/main", conflicts: { base: "origin/main", files: ["a.ts", "b.ts"], truncated: true } }));
+  expect(many?.title).toContain("2+ files");
+  expect(many?.title).toContain(", and more");
+});
+
+test("no conflict signal, no badge — whatever the work state is", () => {
+  for (const work of [
+    { state: "pushed", base: "origin/main" },
+    { state: "merged", base: "origin/main" },
+    { state: "clean" },
+    { state: "missing" },
+  ] as WorkStatus[]) {
+    expect(conflictBadge(wt("a", work))).toBeUndefined();
+  }
+  expect(conflictBadge(undefined)).toBeUndefined();
+});
+
+test("Resolve conflicts is offered only for a change session with a conflicting worktree", () => {
+  const session = { id: "s", state: "running" } as Session;
+  const conflicting = wt("a", { state: "pushed", base: "origin/main", conflicts: { base: "origin/main", files: ["a.ts"] } });
+  expect(resolvable(session, conflicting)).toBe(true);
+
+  // An ended session can still be asked: the agent is started again in the worktree.
+  expect(resolvable({ ...session, state: "exited" } as Session, conflicting)).toBe(true);
+
+  expect(resolvable(session, wt("a", { state: "pushed", base: "origin/main" }))).toBe(false); // merges cleanly
+  expect(resolvable(session, wt("a", { state: "merged", base: "origin/main" }))).toBe(false);
+  expect(resolvable(session, undefined)).toBe(false);
+  expect(resolvable(undefined, conflicting)).toBe(false);
+  // An in-place session has no branch, and the console belongs to no change.
+  expect(resolvable({ ...session, inPlace: true } as Session, conflicting)).toBe(false);
+  expect(resolvable({ ...session, console: true } as unknown as Session, conflicting)).toBe(false);
+});
+
+test("the rendered conflict badge carries the warning tone, the explanation and a decorative icon", () => {
+  const conflicting = wt("a", { state: "pushed", base: "origin/main", conflicts: { base: "origin/main", files: ["src/router/table.ts"] } });
+  const node = ConflictBadge({ worktree: conflicting });
+  const spans = byTag(node, "span");
+  expect(spans[0].props.class).toBe("badge warning");
+  expect(String(spans[0].props.title)).toContain("no longer merges into origin/main");
+  expect(String(spans[0].props.title)).toContain("as of your last fetch");
+  // Text, never colour alone; the glyph is decoration and stays out of the accessible name.
+  expect(textOf(node)).toContain("conflicts with origin/main");
+  expect(spans[1].props["aria-hidden"]).toBe("true");
+
+  // A branch that merges renders nothing at all.
+  expect(ConflictBadge({ worktree: wt("a", { state: "pushed", base: "origin/main" }) })).toBeNull();
+  expect(ConflictBadge({ worktree: undefined })).toBeNull();
 });
