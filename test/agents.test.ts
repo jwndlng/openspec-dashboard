@@ -1,9 +1,9 @@
 import { expect, test } from "bun:test";
 import { defaultAgentSessions, defaultConfig, newRepoConfig, validateConfig } from "../src/server/config.ts";
-import { agentEnv, agentFor, integratePrompt, launchCommand, openingPrompt, shipPrompt } from "../src/server/sessions/agents.ts";
+import { agentEnv, agentFor, integratePrompt, launchCommand, openingPrompt, resolveConflictsPrompt, shipPrompt } from "../src/server/sessions/agents.ts";
 import { Scrollback, sessionBranch, worktreeName } from "../src/server/sessions/manager.ts";
 import { CLAUDE_PROFILE, DEFAULT_SHORTCUTS, FORMER_PROMPTS } from "../src/shared/agentDefaults.ts";
-import { availableActions, DEFAULT_SHIP_PROMPT, integrateUnavailable, type AgentAvailability, type ChangeSession, type Session } from "../src/shared/types.ts";
+import { availableActions, DEFAULT_RESOLVE_CONFLICTS_PROMPT, DEFAULT_SHIP_PROMPT, integrateUnavailable, type AgentAvailability, type ChangeSession, type Session } from "../src/shared/types.ts";
 import { agentForRepo, cardSessionControls, NEEDS_YOU_AFTER_MS, parseArgLines, sessionBadge, sessionForChange, sessionsEnabledFor, silenceDuration, slugId, startersFor } from "../src/ui/sessionState.ts";
 import { fakeProfile } from "./sessionHelpers.ts";
 
@@ -375,4 +375,38 @@ test("starters: a change awaiting validation offers Validate and Archive, never 
   expect(startersFor(withBoth, card)).toEqual(["validate", "archive"]);
   const archiveOnly = { ...withBoth, agentSessions: { ...withBoth.agentSessions, agents: [fakeProfile({ prompts: { archive: "a {change}" } })] } };
   expect(startersFor(archiveOnly, card)).toEqual(["archive"]);
+});
+
+test("the resolve-conflicts prompt falls back to the agent-neutral default, like Ship", () => {
+  const plain = fakeProfile({ prompts: {} });
+  expect(resolveConflictsPrompt(plain, "cache-api-calls")).toBe(DEFAULT_RESOLVE_CONFLICTS_PROMPT.replaceAll("{change}", "cache-api-calls"));
+  // It states the goal and leaves rebase-or-merge to the agent, which knows the repository's convention.
+  expect(resolveConflictsPrompt(plain, "cache-api-calls")).toContain("cache-api-calls");
+  expect(resolveConflictsPrompt(plain, "cache-api-calls")).not.toMatch(/\brebase\b/);
+  expect(shipPrompt(plain, "cache-api-calls")).not.toBe(resolveConflictsPrompt(plain, "cache-api-calls"));
+});
+
+test("a profile's own resolve-conflicts prompt wins and substitutes the change", () => {
+  const custom = fakeProfile({ prompts: { resolveConflicts: "fix {change} please, {change}" } });
+  expect(resolveConflictsPrompt(custom, "alpha-infra")).toBe("fix alpha-infra please, alpha-infra");
+});
+
+test("additional instructions are appended to the resolve-conflicts prompt, and to the default too", () => {
+  const withSuffix = fakeProfile({ prompts: { resolveConflicts: "fix {change}" }, promptSuffixes: { resolveConflicts: "We rebase here,\n  never merge." } });
+  // Collapsed to one line: the prompt may be typed into a terminal, where a newline would submit it early.
+  expect(resolveConflictsPrompt(withSuffix, "alpha-infra")).toBe("fix alpha-infra We rebase here, never merge.");
+
+  const onDefault = fakeProfile({ prompts: {}, promptSuffixes: { resolveConflicts: "Always run bun run check." } });
+  expect(resolveConflictsPrompt(onDefault, "alpha-infra")).toBe(`${DEFAULT_RESOLVE_CONFLICTS_PROMPT.replaceAll("{change}", "alpha-infra")} Always run bun run check.`);
+
+  // A suffix meant for another key is not borrowed.
+  const shipOnly = fakeProfile({ prompts: {}, promptSuffixes: { ship: "Mention the ticket." } });
+  expect(resolveConflictsPrompt(shipOnly, "alpha-infra")).toBe(DEFAULT_RESOLVE_CONFLICTS_PROMPT.replaceAll("{change}", "alpha-infra"));
+});
+
+test("an invalid change name never reaches a resolve-conflicts prompt", () => {
+  const plain = fakeProfile({ prompts: {} });
+  for (const bad of ["../escape", "a b", "", "x;rm -rf /", "sub/dir"]) {
+    expect(() => resolveConflictsPrompt(plain, bad)).toThrow("invalid change name");
+  }
 });

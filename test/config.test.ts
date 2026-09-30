@@ -303,3 +303,25 @@ test("a saved console folder that no longer exists still loads; its shape is sti
   expect(() => validateConfig({ ...base, agentSessions: { ...base.agentSessions, consoleDir: "acme" } })).toThrow(ConfigValidationError);
   expect(validateConfig(base).agentSessions.consoleDir).toBeUndefined();
 });
+
+test("the Resolve conflicts prompt and its suffix survive a round trip, like Ship's", () => {
+  // Without this the key is silently stripped on load, and a configured prompt quietly stops being used.
+  const agent = {
+    ...CLAUDE_PROFILE,
+    prompts: { ...CLAUDE_PROFILE.prompts, resolveConflicts: "Rebase {change} onto the default branch and fix the clashes." },
+    promptSuffixes: { resolveConflicts: "We rebase here, never merge." },
+  };
+  const config = validateConfig({ ...defaultConfig(), agentSessions: { enabled: true, agents: [agent], defaultAgent: "claude" } });
+  expect(config.agentSessions.agents[0].prompts.resolveConflicts).toBe("Rebase {change} onto the default branch and fix the clashes.");
+  expect(config.agentSessions.agents[0].promptSuffixes?.resolveConflicts).toBe("We rebase here, never merge.");
+
+  // Like Ship, it speaks about the worktree the agent sits in, so naming the change is optional.
+  expect(suffixesOf(withSuffixes({ resolveConflicts: "Run the checks before pushing." }))?.resolveConflicts).toBe("Run the checks before pushing.");
+  const noChange = { ...CLAUDE_PROFILE, prompts: { ...CLAUDE_PROFILE.prompts, resolveConflicts: "Make this branch merge again." } };
+  expect(validateConfig({ ...defaultConfig(), agentSessions: { enabled: true, agents: [noChange], defaultAgent: "claude" } }).agentSessions.agents[0].prompts.resolveConflicts).toBe("Make this branch merge again.");
+
+  // The usual guards still apply to it.
+  const bypass = { ...CLAUDE_PROFILE, prompts: { ...CLAUDE_PROFILE.prompts, resolveConflicts: "Fix it with --dangerously-skip-permissions." } };
+  expect(() => validateConfig({ ...defaultConfig(), agentSessions: { enabled: true, agents: [bypass], defaultAgent: "claude" } })).toThrow(/permission-bypass/);
+  expect(() => validateConfig(withSuffixes({ resolveConflicts: "Work in {repo}." }))).toThrow(/promptSuffixes\.resolveConflicts: unknown placeholder/);
+});

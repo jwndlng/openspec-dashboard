@@ -81,6 +81,9 @@ track.
   button becomes its status — activate it to open the terminal, where the next step and **End session** are.
   **Open work** in the top bar lists every running agent and every worktree that still holds something
   (uncommitted, unpushed, pushed, merged) across all repositories.
+  A branch that no longer merges into the default branch says so, with the files that clash — worked out locally, so it
+  is as fresh as your last fetch — and **Resolve conflicts** hands your agent the job. The dashboard merges, rebases
+  and pushes nothing itself; it only asks, exactly as **Ship** does.
   A tracked folder that is not a git repository works too — there the agent runs in the folder itself, so it edits your
   files directly, with no branch and no undo, and the session says so. The same goes for an **Integrate** session.
   ([agent-sessions](openspec/specs/agent-sessions/spec.md))

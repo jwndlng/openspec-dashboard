@@ -104,7 +104,8 @@ export function diffSnapshots(previous: Snapshot, next: Snapshot, options: DiffO
 export type SessionActivity =
   | { kind: "session-started"; action: string; agentName: string; resumed?: boolean }
   | { kind: "session-ended"; exitCode?: number; error?: string }
-  | { kind: "session-shipped"; submitted?: boolean };
+  | { kind: "session-shipped"; submitted?: boolean }
+  | { kind: "session-conflicts-resolve"; submitted?: boolean };
 
 export function sessionEvent(session: { repoId: string; change: string }, repoName: string, activity: SessionActivity, now = new Date()): ActivityEvent {
   const at = now.toISOString();

@@ -3,7 +3,7 @@ import { existsSync, realpathSync } from "node:fs";
 import { mkdir, rm, symlink } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { canonicalPath, consoleDir } from "../src/server/paths.ts";
+import { canonicalPath, consoleDir, mergeScratchDir } from "../src/server/paths.ts";
 import { tempDir } from "./helpers.ts";
 
 let root: string;
@@ -54,6 +54,18 @@ test("the console's default folder lives in the dashboard home and follows OPENS
   process.env.OPENSPEC_DASHBOARD_HOME = "/w/acme/.dash";
   try {
     expect(consoleDir()).toBe("/w/acme/.dash/console");
+  } finally {
+    if (previous === undefined) delete process.env.OPENSPEC_DASHBOARD_HOME;
+    else process.env.OPENSPEC_DASHBOARD_HOME = previous;
+  }
+});
+
+test("the merge scratch store lives in the dashboard home and follows OPENSPEC_DASHBOARD_HOME", () => {
+  const previous = process.env.OPENSPEC_DASHBOARD_HOME;
+  process.env.OPENSPEC_DASHBOARD_HOME = "/w/acme/.dash";
+  try {
+    // Never inside a repository: the conflict check would otherwise write into the tree it is meant to only read.
+    expect(mergeScratchDir()).toBe("/w/acme/.dash/merge-scratch");
   } finally {
     if (previous === undefined) delete process.env.OPENSPEC_DASHBOARD_HOME;
     else process.env.OPENSPEC_DASHBOARD_HOME = previous;

@@ -8,8 +8,8 @@ import { SHIPPABLE_WORK, type ChangeSession, type Session, type SessionAction, t
 import { api, type TerminalMessage } from "./api.ts";
 import { cdCommand } from "./format.ts";
 import { NOT_SUBMITTED_NOTICE, shortcutHint, shortcutMessage, visibleShortcuts } from "./quickReplies.ts";
-import { nextStepFor, sessionBadge, startersFor, workBadge, worktreeOfSession } from "./sessionState.ts";
-import { SessionBadgeView, SessionControls, useSessionUi } from "./sessions.tsx";
+import { nextStepFor, resolvable, sessionBadge, startersFor, workBadge, worktreeOfSession } from "./sessionState.ts";
+import { ConflictBadge, SessionBadgeView, SessionControls, useSessionUi } from "./sessions.tsx";
 
 export function Copy({ text, label }: { text: string; label: string }) {
   const [done, setDone] = useState(false);
@@ -252,6 +252,8 @@ export function ConsolePanel({ session, worktree, of }: { session?: ChangeSessio
   const tree = worktreeOfSession(session, ui.worktrees) ?? (session ? undefined : worktree);
   const work = tree && workBadge(tree, ui.sessions);
   const shippable = session !== undefined && tree !== undefined && SHIPPABLE_WORK.includes(tree.work.state);
+  // The badge sits beside the work badge, not instead of it: "pushed" and "no longer merges" are both true.
+  const canResolve = resolvable(session, tree);
   const merged = tree?.work.state === "merged";
   // The change as the snapshot has it: what both the next steps and the empty state's starters are decided from.
   const card = repoId && change ? ui.snapshot?.repos.find((r) => r.id === repoId)?.changes.find((c) => c.name === change && !c.archived) : undefined;
@@ -291,6 +293,7 @@ export function ConsolePanel({ session, worktree, of }: { session?: ChangeSessio
               {work.label}
             </span>
           )}
+          <ConflictBadge worktree={tree} />
           {session?.adopted && (
             <span
               class="badge"
@@ -318,6 +321,25 @@ export function ConsolePanel({ session, worktree, of }: { session?: ChangeSessio
               }
             >
               ⇪ Ship
+            </button>
+          )}
+          {canResolve && session && (
+            <button
+              type="button"
+              class="btn sm"
+              title={
+                session.state === "running"
+                  ? `Sends ${session.agentName} a prompt asking it to bring the branch up to date and resolve the conflicts. The dashboard merges nothing itself.`
+                  : `Starts ${session.agentName} in this worktree with a prompt to bring the branch up to date and resolve the conflicts. The dashboard merges nothing itself.`
+              }
+              onClick={() =>
+                act(async () => {
+                  const result = await api.resolveConflicts(session.id);
+                  ui.reportUnsent(result.submitted ? undefined : session.id);
+                })
+              }
+            >
+              ⚠ Resolve conflicts
             </button>
           )}
           {session && session.state !== "running" && session.resumable && (

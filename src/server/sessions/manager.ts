@@ -9,7 +9,7 @@ import { isCleaningUp } from "../cleanup.ts";
 import { isDismissing } from "../dismissChange.ts";
 import { worktreesDir } from "../paths.ts";
 import { CHANGE_NAME } from "../source.ts";
-import { agentEnv, agentFor, availability, defaultAgentOf, integratePrompt, launchCommand, launchWithoutPrompt, openingPrompt, shipPrompt } from "./agents.ts";
+import { agentEnv, agentFor, availability, defaultAgentOf, integratePrompt, launchCommand, launchWithoutPrompt, openingPrompt, resolveConflictsPrompt, shipPrompt } from "./agents.ts";
 import { consoleFolderProblem, prepareConsoleFolder } from "./consoleFolder.ts";
 import type { SessionActivity } from "../activity/events.ts";
 import { SessionStore } from "./store.ts";
@@ -398,6 +398,37 @@ export class SessionManager {
     await this.restart(session, repo.path, launch.argv, agentEnv(agent, process.env), launch.typed);
     this.report(session, { kind: "session-shipped", submitted: true });
     // Handed to a starting agent (as its argument, or submitted once it has started); the terminal shows how that went.
+    return { ...session, submitted: true };
+  }
+
+  /**
+   * Asks the agent to make its branch merge into the base again (design D3). Deliberately shaped like `ship()` rather
+   * than sharing a helper with it: both are load-bearing, their refusals are specified one by one, and fifteen
+   * duplicated lines are cheaper to review than a parameterised abstraction over two callers.
+   *
+   * The dashboard resolves nothing itself — it merges, rebases, checks out, commits and pushes nothing. It hands over
+   * a prompt; the agent works under its own permission prompts.
+   */
+  async resolveConflicts(id: string): Promise<ShipResult> {
+    const session = this.get(id);
+    if (isChangeless(session)) throw new SessionError(409, notAChange(session));
+    if (session.inPlace) throw new SessionError(400, "this session runs in a folder that is not a git repository — there is no branch to merge");
+    const { agent, repo } = await this.prepareRestart(session);
+    // Re-read rather than trust the snapshot: the base or the branch may have moved since the user saw the badge.
+    const { work } = await readWorkStatus(repo.path, session.worktreePath);
+    if (!work.conflicts) throw new SessionError(409, `this branch has no conflicts to resolve (${work.state})`);
+    const prompt = resolveConflictsPrompt(agent, session.change);
+    this.forgetWorktrees();
+    const proc = this.live.get(id)?.proc;
+    if (session.state === "running" && proc) {
+      const { submitted } = await this.submit(id, prompt);
+      this.report(session, { kind: "session-conflicts-resolve", submitted });
+      return { ...session, submitted };
+    }
+    const launch = agent.resumeCommand ? { argv: [...agent.resumeCommand], typed: prompt } : launchCommand(agent, prompt);
+    if (!Bun.which(launch.argv[0])) throw new SessionError(503, `${agent.name} was not found (${launch.argv[0]})`);
+    await this.restart(session, repo.path, launch.argv, agentEnv(agent, process.env), launch.typed);
+    this.report(session, { kind: "session-conflicts-resolve", submitted: true });
     return { ...session, submitted: true };
   }
 

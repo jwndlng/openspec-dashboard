@@ -3,7 +3,7 @@
 import { Fragment } from "preact";
 import { useEffect, useState } from "preact/hooks";
 import { CLAUDE_PROFILE } from "../shared/agentDefaults.ts";
-import { DEFAULT_SHIP_PROMPT, repoAgentEnabled, SESSION_ACTIONS, type AgentAvailability, type AgentProfile, type AgentSessionsConfig, type Config, type PromptKey, type RepoConfig, type Session, type SessionAction, type Shortcut } from "../shared/types.ts";
+import { DEFAULT_RESOLVE_CONFLICTS_PROMPT, DEFAULT_SHIP_PROMPT, repoAgentEnabled, SESSION_ACTIONS, type AgentAvailability, type AgentProfile, type AgentSessionsConfig, type Config, type PromptKey, type RepoConfig, type Session, type SessionAction, type Shortcut } from "../shared/types.ts";
 import { api } from "./api.ts";
 import { addShortcut, moveShortcut, removeShortcut, restoredShortcuts } from "./quickReplies.ts";
 import { parseArgLines, slugId } from "./sessionState.ts";
@@ -94,6 +94,38 @@ export function AgentEditor({ agent, found, isDefault, canRemove, onChange, onRe
             about pull requests needs no prompt of its own. <code>{"{change}"}</code> may be used.
           </span>
           <textarea class="input mono" rows={2} placeholder="nothing is appended" value={agent.promptSuffixes?.ship ?? ""} onInput={(e) => setSuffix("ship", e.currentTarget.value)} />
+        </label>
+        <label class="agent-tools">
+          <span class="hint">
+            Resolve conflicts prompt (optional): what <strong>Resolve conflicts</strong> asks this agent when a session's branch no longer merges into the default branch. Empty
+            uses the default shown; <code>{"{change}"}</code> may be used. The dashboard merges nothing itself — it only asks.
+          </span>
+          <textarea
+            class="input mono"
+            rows={3}
+            placeholder={DEFAULT_RESOLVE_CONFLICTS_PROMPT}
+            value={agent.prompts.resolveConflicts ?? ""}
+            onInput={(e) => {
+              const prompts = { ...agent.prompts };
+              const value = e.currentTarget.value;
+              if (value.trim()) prompts.resolveConflicts = value;
+              else delete prompts.resolveConflicts;
+              onChange({ prompts });
+            }}
+          />
+        </label>
+        <label class="agent-tools">
+          <span class="hint">
+            Additional <strong>Resolve conflicts</strong> instructions (optional): appended as one line to the prompt above — or to the default shown there, so a standing
+            instruction about how this project reconciles a branch needs no prompt of its own. <code>{"{change}"}</code> may be used.
+          </span>
+          <textarea
+            class="input mono"
+            rows={2}
+            placeholder="nothing is appended"
+            value={agent.promptSuffixes?.resolveConflicts ?? ""}
+            onInput={(e) => setSuffix("resolveConflicts", e.currentTarget.value)}
+          />
         </label>
         <label class="agent-tools">
           <span class="hint">
