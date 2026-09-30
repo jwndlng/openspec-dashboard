@@ -94,6 +94,7 @@ export interface Api {
   resumeSession(id: string): Promise<Session>;
   /** Asks the session's agent to commit, push and open a pull request. */
   shipSession(id: string): Promise<ShipResult>;
+  resolveConflicts(id: string): Promise<ShipResult>;
   /** For a worktree whose session record is gone; refused unless that is safe. */
   removeWorktree(repoId: string, name: string): Promise<{ removable: boolean; reason?: string }>;
   /** Ends the agent if it is running; removes the worktree only when asked and safe. */
@@ -175,6 +176,7 @@ export const httpApi: Api = {
   startIntegration: (path) => call<IntegrationSession>("/api/integrations", { method: "POST", body: JSON.stringify({ path }) }),
   resumeSession: (id) => call<Session>(`/api/sessions/${id}/resume`, { method: "POST" }),
   shipSession: (id) => call<ShipResult>(`/api/sessions/${id}/ship`, { method: "POST" }),
+  resolveConflicts: (id) => call<ShipResult>(`/api/sessions/${id}/resolve-conflicts`, { method: "POST" }),
   removeWorktree: (repoId, name) => call("/api/worktrees/remove", { method: "POST", body: JSON.stringify({ repoId, name }) }),
   closeSession: (id, removeWorktree) => call(`/api/sessions/${id}/close`, { method: "POST", body: JSON.stringify({ removeWorktree }) }),
   deleteSession: (id) => call<{ deleted: boolean }>(`/api/sessions/${id}`, { method: "DELETE" }),
@@ -239,6 +241,7 @@ export const api: Api = {
   startIntegration: (path) => current.startIntegration(path),
   resumeSession: (...args) => current.resumeSession(...args),
   shipSession: (...args) => current.shipSession(...args),
+  resolveConflicts: (...args) => current.resolveConflicts(...args),
   removeWorktree: (...args) => current.removeWorktree(...args),
   closeSession: (...args) => current.closeSession(...args),
   deleteSession: (...args) => current.deleteSession(...args),

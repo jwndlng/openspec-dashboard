@@ -377,6 +377,7 @@ export function createDemoApi({ now = Date.now, latencyMs = 150, clock }: DemoAp
     startIntegration: (path) => attempt(() => demoSessions.openIntegration(path)),
     resumeSession: (id) => attempt(() => demoSessions.resume(id)),
     shipSession: (id) => attempt(() => demoSessions.ship(id)),
+    resolveConflicts: (id) => attempt(() => demoSessions.resolveConflicts(id)),
     removeWorktree: (repoId, name) => attempt(() => demoSessions.removeWorktree(repoId, name)),
     closeSession: (id, removeWorktree) => attempt(() => demoSessions.close(id, removeWorktree)),
     deleteSession: (id) => attempt(() => demoSessions.delete(id)),

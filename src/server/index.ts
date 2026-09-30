@@ -8,6 +8,7 @@ import { loadConfig } from "./config.ts";
 import { Scanner } from "./scanner.ts";
 import { confirmIntegration } from "./integration.ts";
 import { SessionManager } from "./sessions/manager.ts";
+import { pruneMergeScratch } from "./sessions/workStatus.ts";
 import { VERSION } from "./version.ts";
 
 // With `type: "text"` Bun hands us the file contents; bun-types only knows the HTMLBundle shape.
@@ -56,6 +57,8 @@ async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
   const { config, warning } = await loadConfig();
   if (warning) console.warn(`warning: ${warning}`);
+  // Merges of previous runs; they are a scratch store, never state.
+  await pruneMergeScratch();
 
   // History for the Activity view: what changed between consecutive snapshots, plus what the session manager reports.
   const activity = new ActivityLog();

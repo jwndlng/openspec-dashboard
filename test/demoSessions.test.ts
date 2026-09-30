@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { changeSessions, SHIPPABLE_WORK } from "../src/shared/types.ts";
 import { ApiError, type TerminalHandlers } from "../src/ui/api.ts";
 import { createDemoApi } from "../src/ui/demo/demoApi.ts";
-import { NEEDS_YOU_AFTER_MS, openWork, sessionBadge } from "../src/ui/sessionState.ts";
+import { conflictBadge, NEEDS_YOU_AFTER_MS, openWork, resolvable, sessionBadge } from "../src/ui/sessionState.ts";
 import type { Clock } from "../src/ui/demo/transcripts.ts";
 
 /** The demo API on a wall clock and a timer clock the test advances by hand. */
@@ -322,4 +322,38 @@ test("the demo refuses an integration for anything but a repository that is wait
   await api.saveConfig({ ...config, agentSessions: { ...config.agentSessions, enabled: false } });
   expect(await refusal(api.startIntegration(integratable[0].path))).toBe("403: agent sessions are disabled");
   expect((await api.sessions()).sessions).toEqual([]);
+});
+
+test("Resolve conflicts: the sample shows a conflicting branch on first load, and resolving plays out without a network", async () => {
+  const { api, advance, terminal } = demo();
+  const conflicting = await byChange(api, "versioned-api-reference");
+  const work = await workOf(api, conflicting.change);
+  expect(work).toEqual({ state: "pushed", base: "origin/main", conflicts: { base: "origin/main", files: ["src/router/table.ts", "src/router/table.test.ts"] } });
+
+  // What the UI decides from: the badge shows, and the control is offered.
+  const worktree = (await api.sessions()).worktrees.find((w) => w.change === conflicting.change);
+  expect(conflictBadge(worktree)).toMatchObject({ tone: "warning", label: "conflicts with origin/main" });
+  expect(resolvable(conflicting, worktree)).toBe(true);
+
+  // A branch that merges cleanly is refused, with the dashboard's own wording.
+  const merged = await byChange(api, "deprecate-v1-auth");
+  expect(await refusal(api.resolveConflicts(merged.id))).toBe("409: this branch has no conflicts to resolve (merged)");
+
+  const view = terminal(conflicting.id);
+  advance(0);
+  expect((await api.resolveConflicts(conflicting.id)).state).toBe("running");
+  advance(60_000);
+  expect(view.text()).toContain("no longer merges into the default branch");
+  expect(view.text()).toContain("Conflicts resolved");
+  expect(view.events).toContain("<exit>");
+
+  // The conflict is gone once the recording's agent has pushed; the branch is merely pushed again.
+  expect(await workOf(api, conflicting.change)).toEqual({ state: "pushed", base: "origin/main" });
+  expect(resolvable(await byChange(api, conflicting.change), (await api.sessions()).worktrees.find((w) => w.change === conflicting.change))).toBe(false);
+});
+
+test("Resolve conflicts in the demo does not survive a reload", async () => {
+  const fresh = await byChange(demo().api, "versioned-api-reference");
+  expect(fresh.state).toBe("exited");
+  expect((await workOf(demo().api, "versioned-api-reference"))?.conflicts?.files).toHaveLength(2);
 });

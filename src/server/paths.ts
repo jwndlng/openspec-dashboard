@@ -39,6 +39,16 @@ export function cachePath(): string {
   return join(dashboardHome(), "cache", "snapshot.json");
 }
 
+/**
+ * Object store for the in-memory merges that decide a work status's conflict signal. `git merge-tree --write-tree`
+ * writes the tree it produces somewhere; pointing it here (with the repository's own objects offered only as an
+ * alternate) is what keeps the check a read of the tracked repository. Nothing in it is worth keeping: it is created
+ * on demand and emptied on start-up.
+ */
+export function mergeScratchDir(): string {
+  return join(dashboardHome(), "merge-scratch");
+}
+
 /** Expands a leading `~` and normalises; relative paths stay relative so validation can reject them. */
 export function expandPath(p: string): string {
   if (p === "~") return homedir();

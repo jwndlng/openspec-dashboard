@@ -1,5 +1,5 @@
 // Agent profiles (design.md D16): an agent is a command line plus opening prompts. Nothing here knows any vendor.
-import { DEFAULT_SHIP_PROMPT, type AgentAvailability, type AgentProfile, type Config, type PromptKey, type RepoConfig, type SessionAction } from "../../shared/types.ts";
+import { DEFAULT_RESOLVE_CONFLICTS_PROMPT, DEFAULT_SHIP_PROMPT, type AgentAvailability, type AgentProfile, type Config, type PromptKey, type RepoConfig, type SessionAction } from "../../shared/types.ts";
 import { whichOnPath } from "../paths.ts";
 import { CHANGE_NAME } from "../source.ts";
 
@@ -48,6 +48,12 @@ export function integratePrompt(agent: AgentProfile): string | undefined {
   const template = agent.prompts.integrate;
   if (!template) return undefined;
   return compose(agent, "integrate", template);
+}
+
+/** Like Ship: every agent can be asked to resolve conflicts, configured for it or not — suffix and all. */
+export function resolveConflictsPrompt(agent: AgentProfile, change: string): string {
+  if (!CHANGE_NAME.test(change)) throw new Error("invalid change name");
+  return compose(agent, "resolveConflicts", agent.prompts.resolveConflicts ?? DEFAULT_RESOLVE_CONFLICTS_PROMPT).replaceAll("{change}", change);
 }
 
 export interface Launch {

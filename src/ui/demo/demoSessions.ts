@@ -40,7 +40,15 @@ const SEEDS: Seed[] = [
   { repo: "harbor-web", change: "keyboard-shortcuts", action: "implement", transcript: "implementAsking", startedAgo: 12 * MINUTE },
   { repo: "lantern-infra", change: "pin-terraform-providers", action: "implement", transcript: "implement", startedAgo: 4 * HOUR, ended: { ago: 3 * HOUR, work: { state: "uncommitted", count: 3 } } },
   { repo: "harbor-web", change: "dark-mode-tokens", action: "implement", transcript: "implement", startedAgo: 2 * DAY + 2 * HOUR, ended: { ago: 2 * DAY, work: { state: "unpushed", count: 2, base: "origin/main" } } },
-  { repo: "quill-docs", change: "versioned-api-reference", action: "implement", transcript: "implement", startedAgo: 6 * HOUR, ended: { ago: 5 * HOUR, work: { state: "pushed", base: "origin/main" } } },
+  // Pushed, and the default branch has moved under it since: the conflict badge and Resolve conflicts on first load.
+  {
+    repo: "quill-docs",
+    change: "versioned-api-reference",
+    action: "implement",
+    transcript: "implement",
+    startedAgo: 6 * HOUR,
+    ended: { ago: 5 * HOUR, work: { state: "pushed", base: "origin/main", conflicts: { base: "origin/main", files: ["src/router/table.ts", "src/router/table.test.ts"] } } },
+  },
   { repo: "atlas-api", change: "deprecate-v1-auth", action: "archive", transcript: "archive", startedAgo: 1 * DAY, ended: { ago: 23 * HOUR, work: { state: "merged", base: "origin/main" } } },
   { repo: "lantern-infra", change: "cost-allocation-tags", action: "draft", transcript: "draft", startedAgo: 50 * MINUTE, ended: { ago: 45 * MINUTE, work: { state: "clean", base: "origin/main" } } },
   { repo: "ember-mobile", change: "offline-sync-queue", action: "implement", transcript: "implement", startedAgo: 20 * MINUTE, ended: { ago: 20 * MINUTE, work: { state: "missing" }, failed: "could not create the worktree: the branch is checked out elsewhere" } },
@@ -386,6 +394,15 @@ export function createDemoSessions({ now, getConfig, getSnapshot, integratable, 
       const work = workOf(s);
       if (!SHIPPABLE_WORK.includes(work.state)) throw new ApiError(409, `there is nothing to ship (${work.state})`);
       run(s, "ship");
+      return { ...s.session, submitted: true };
+    },
+
+    resolveConflicts(id: string): ShipResult {
+      const s = find(id);
+      if (isChangeless(s.session)) throw new ApiError(409, notAChange(s.session));
+      const work = workOf(s);
+      if (!work.conflicts) throw new ApiError(409, `this branch has no conflicts to resolve (${work.state})`);
+      run(s, "resolveConflicts");
       return { ...s.session, submitted: true };
     },
 

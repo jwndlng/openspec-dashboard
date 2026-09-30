@@ -248,9 +248,10 @@ export const SESSION_ACTIONS: readonly SessionAction[] = ["draft", "implement", 
  * `ship` is a prompt, not a starter: it asks the agent of an existing session to commit, push and open a pull request.
  * `integrate` is not a starter for a change either: it opens an integration session in a repository that does not use
  * OpenSpec yet. Unlike every other prompt it carries no placeholder — the folder is the agent's working directory, so
- * no text from the browser reaches the command line.
+ * no text from the browser reaches the command line. `resolveConflicts` is a prompt of the same kind as `ship`: it
+ * asks the agent of an existing session to make its branch merge into the base again.
  */
-export type PromptKey = SessionAction | "ship" | "integrate";
+export type PromptKey = SessionAction | "ship" | "integrate" | "resolveConflicts";
 /** Agent-neutral on purpose, so every profile can ship without being configured for it. */
 /** What Ship answers: the session, and whether the prompt was submitted. `false` means the agent of a running session
  *  did not show the typed prompt (it may be showing a menu), so Enter was not pressed and nothing was confirmed. */
@@ -261,12 +262,29 @@ export type PromptResult = ShipResult;
 export const DEFAULT_SHIP_PROMPT =
   "Ship the work in this worktree: commit everything that belongs to it with a Conventional Commit message, push the branch, and open a pull request against the default branch if there is none yet. Do not merge it. Tell me the pull request URL.";
 
+/** Agent-neutral like Ship's, and deliberately silent about method: rebase or merge is the repository's convention,
+ *  which the agent knows and the dashboard does not. */
+export const DEFAULT_RESOLVE_CONFLICTS_PROMPT =
+  "The branch for {change} in this worktree no longer merges into the default branch. Bring it up to date with the default branch and resolve every conflict, keeping what this branch set out to do. Then run the project's checks and push the branch. Do not merge the pull request.";
+
 /**
  * What became of the work in a session's worktree, from local git only (nothing is fetched, so `merged` is as of the
  * user's last fetch). `clean`: no commit the base lacks; `missing`: the directory is not a worktree (any more).
  */
 export type WorkState = "missing" | "clean" | "uncommitted" | "unpushed" | "pushed" | "merged";
 export const SHIPPABLE_WORK: readonly WorkState[] = ["uncommitted", "unpushed", "pushed"];
+/** States holding work the base does not have yet — the only ones where merging into the base is worth checking. */
+export const CONFLICTABLE_WORK: readonly WorkState[] = ["uncommitted", "unpushed", "pushed"];
+
+/** That merging the branch into the base would conflict. Absent means it merges cleanly *or* could not be checked. */
+export interface WorkConflicts {
+  /** What it would be merged into, e.g. `origin/main`. */
+  base: string;
+  /** Conflicting paths, capped; never empty. */
+  files: string[];
+  /** Set when the cap cut the list short. */
+  truncated?: boolean;
+}
 
 export interface WorkStatus {
   state: WorkState;
@@ -274,6 +292,8 @@ export interface WorkStatus {
   count?: number;
   /** What the branch was compared with, e.g. `origin/main`. */
   base?: string;
+  /** Only for `CONFLICTABLE_WORK`, and only when the check could be made. As of the user's last fetch, like `merged`. */
+  conflicts?: WorkConflicts;
 }
 
 /** A directory under the dashboard's worktrees folder; it outlives session records, so it is listed on its own. */
@@ -599,6 +619,8 @@ export type ActivityEvent = ActivityBase &
     | { kind: "session-started"; change: string; action: string; agentName: string; resumed?: boolean }
     | { kind: "session-ended"; change: string; exitCode?: number; error?: string }
     | { kind: "session-shipped"; change: string; submitted?: boolean }
+    /** The resolve prompt was handed over — not that the conflict was resolved: that is re-derived from git. */
+    | { kind: "session-conflicts-resolve"; change: string; submitted?: boolean }
   );
 
 export type ActivityKind = ActivityEvent["kind"];
@@ -616,13 +638,14 @@ export const ACTIVITY_KINDS: readonly ActivityKind[] = [
   "session-started",
   "session-ended",
   "session-shipped",
+  "session-conflicts-resolve",
 ];
 
 /** The filter groups of the Activity view. */
 export const ACTIVITY_GROUPS: Readonly<Record<"changes" | "tasks" | "sessions" | "repositories", readonly ActivityKind[]>> = {
   changes: ["change-created", "change-moved", "change-archived", "change-removed"],
   tasks: ["tasks-progress"],
-  sessions: ["session-started", "session-ended", "session-shipped"],
+  sessions: ["session-started", "session-ended", "session-shipped", "session-conflicts-resolve"],
   repositories: ["repo-tracked", "repo-untracked", "repo-failing", "repo-recovered"],
 };
 

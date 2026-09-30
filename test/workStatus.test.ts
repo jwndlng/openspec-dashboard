@@ -5,10 +5,10 @@ import { createFetchHandler, type AppState } from "../src/server/api.ts";
 import { defaultConfig, loadConfig } from "../src/server/config.ts";
 import { configPath, worktreesDir } from "../src/server/paths.ts";
 import { Scanner } from "../src/server/scanner.ts";
-import { shipPrompt } from "../src/server/sessions/agents.ts";
+import { resolveConflictsPrompt, shipPrompt } from "../src/server/sessions/agents.ts";
 import { changeOfWorktree, readWorkStatus } from "../src/server/sessions/workStatus.ts";
 import { ensureWorktree } from "../src/server/sessions/worktree.ts";
-import { DEFAULT_SHIP_PROMPT, type Session, type SessionWorktree } from "../src/shared/types.ts";
+import { DEFAULT_RESOLVE_CONFLICTS_PROMPT, DEFAULT_SHIP_PROMPT, type Session, type SessionWorktree } from "../src/shared/types.ts";
 import { tempDir, useTempHome } from "./helpers.ts";
 import { FAKE_AGENT, fakeProfile, git, harness, tempGitRepo, waitFor, watch, type Harness } from "./sessionHelpers.ts";
 
@@ -263,4 +263,76 @@ test("config: a ship prompt is optional, need not name the change, and cannot ca
   expect(ok.config.agentSessions.agents[0].prompts.ship).toBe("commit, push and open a PR");
   await write("push with --dangerously-skip-permissions");
   expect((await loadConfig()).warning).toBeDefined();
+});
+
+/** Makes the worktree's branch and the repository's base touch the same line, so the branch no longer merges. */
+async function conflictWith(repoPath: string, worktreePath: string): Promise<void> {
+  await writeFile(join(worktreePath, "shared.txt"), "branch side\n");
+  git(worktreePath, "add", "-A");
+  git(worktreePath, "commit", "-q", "-m", "branch edit");
+  await writeFile(join(repoPath, "shared.txt"), "main side\n");
+  git(repoPath, "add", "-A");
+  git(repoPath, "commit", "-q", "-m", "main edit");
+}
+
+test("resolve conflicts types the prompt into a running agent, and starts an ended one again with it", async () => {
+  const h = await harness({ agent: { prompts: { ...fakeProfile().prompts, resolveConflicts: "unstick {change} now" } } });
+  managers.push(h.manager);
+  const s = await h.manager.open({ repoId: h.repoId, change: "upgrade-runtime", action: "implement" });
+  const seen = await watch(h.manager, s.id);
+  await waitFor(() => seen.text().includes("fake-agent ready"), "the agent");
+
+  // Nothing to resolve while the branch still merges.
+  await expect(h.manager.resolveConflicts(s.id)).rejects.toMatchObject({ status: 409 });
+  await conflictWith(h.repoPath, s.worktreePath);
+  expect((await readWorkStatus(h.repoPath, s.worktreePath)).work.conflicts?.files).toEqual(["shared.txt"]);
+
+  expect((await h.manager.resolveConflicts(s.id)).submitted).toBe(true);
+  await waitFor(() => seen.text().includes("you said: unstick upgrade-runtime now"), "the submitted prompt");
+  expect(h.manager.list().filter((x) => x.state === "running")).toHaveLength(1);
+
+  h.manager.write(s.id, "exit\r");
+  await waitFor(() => h.manager.get(s.id).state === "exited", "exit");
+  const again = await h.manager.resolveConflicts(s.id);
+  expect(again.id).toBe(s.id);
+  expect(again.state).toBe("running");
+  await waitFor(() => seen.text().includes('args=["--resumed"]') && seen.text().split("you said: unstick upgrade-runtime now").length === 3, "resume command plus typed prompt");
+});
+
+test("resolve conflicts into an agent showing a menu is typed, not confirmed", async () => {
+  const h = await harness({ agent: { command: [FAKE_AGENT, "--menu", "{prompt}"] } });
+  const manager = h.newManager({ submitTimings: { echoTimeoutMs: 600, settleMs: 20 } });
+  managers.push(manager);
+  const s = await manager.open({ repoId: h.repoId, change: "upgrade-runtime", action: "implement" });
+  const seen = await watch(manager, s.id);
+  await waitFor(() => seen.text().includes("Enter to confirm"), "the menu");
+  await conflictWith(h.repoPath, s.worktreePath);
+
+  const result = await manager.resolveConflicts(s.id);
+  expect(result.submitted).toBe(false);
+  await new Promise((r) => setTimeout(r, 200));
+  expect(seen.text()).not.toContain("menu confirmed by Enter");
+});
+
+test("resolve conflicts without a resume command starts the agent with the default prompt, and never writes to the repository", async () => {
+  const h = await harness({ agent: { resumeCommand: undefined } });
+  managers.push(h.manager);
+  expect(resolveConflictsPrompt(h.config.agentSessions.agents[0], "upgrade-runtime")).toBe(DEFAULT_RESOLVE_CONFLICTS_PROMPT.replaceAll("{change}", "upgrade-runtime"));
+  const s = await h.manager.open({ repoId: h.repoId, change: "upgrade-runtime", action: "implement" });
+  h.manager.write(s.id, "exit\r");
+  await waitFor(() => h.manager.get(s.id).state === "exited", "exit");
+  await conflictWith(h.repoPath, s.worktreePath);
+
+  // What the dashboard must not do: the repository's HEAD, branch and tree are the same afterwards.
+  const head = git(h.repoPath, "rev-parse", "HEAD");
+  const branch = git(h.repoPath, "rev-parse", "--abbrev-ref", "HEAD");
+  const wtHead = git(s.worktreePath, "rev-parse", "HEAD");
+
+  await h.manager.resolveConflicts(s.id);
+  const seen = await watch(h.manager, s.id);
+  await waitFor(() => seen.text().includes(JSON.stringify([DEFAULT_RESOLVE_CONFLICTS_PROMPT.replaceAll("{change}", "upgrade-runtime")])), "the default prompt as the opening argument");
+
+  expect(git(h.repoPath, "rev-parse", "HEAD")).toBe(head);
+  expect(git(h.repoPath, "rev-parse", "--abbrev-ref", "HEAD")).toBe(branch);
+  expect(git(s.worktreePath, "rev-parse", "HEAD")).toBe(wtHead); // no rebase, no merge, no commit by the dashboard
 });

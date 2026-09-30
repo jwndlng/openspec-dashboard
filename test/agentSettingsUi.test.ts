@@ -17,14 +17,14 @@ function suffixFields(agent: AgentProfile) {
   return { fields, type, tree };
 }
 
-const KEYS: PromptKey[] = ["draft", "implement", "validate", "archive", "ship", "integrate"];
+const KEYS: PromptKey[] = ["draft", "implement", "validate", "archive", "ship", "resolveConflicts", "integrate"];
 
 test("the editor offers additional instructions beside every prompt, and shows what is saved", () => {
   const { fields, tree } = suffixFields(profile({ promptSuffixes: { implement: "Run the linter.", ship: "Add the checklist." } }));
-  // One per prompt: the four starters, Ship and Integrate.
+  // One per prompt: the four starters, Ship, Resolve conflicts and Integrate.
   expect(fields).toHaveLength(KEYS.length);
-  expect(fields.filter((f) => f.type === "textarea")).toHaveLength(2); // Ship and Integrate keep their textareas
-  expect(fields.map((f) => f.props.value)).toEqual(["", "Run the linter.", "", "", "Add the checklist.", ""]);
+  expect(fields.filter((f) => f.type === "textarea")).toHaveLength(3); // Ship, Resolve conflicts and Integrate keep their textareas
+  expect(fields.map((f) => f.props.value)).toEqual(["", "Run the linter.", "", "", "Add the checklist.", "", ""]);
 
   // Each field says what it does, so the one-line rule and the placeholder rules are not a surprise.
   const hints = textOf(tree);
