@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
 import { createDemoApi } from "../src/ui/demo/demoApi.ts";
 import { DEMO_ROOT } from "../src/ui/demo/sampleData.ts";
 
@@ -232,4 +233,35 @@ test("dismissing is simulated: a draft shows a file lost for good, leaves the bo
 
   const fresh = demo().api;
   expect((await fresh.state()).repos.find((r) => r.id === repo.id)!.changes.some((c) => c.name === draft.name)).toBe(true);
+});
+
+test("the demo's environment report passes and needs no process, file or connection", async () => {
+  const { api } = demo();
+  const report = await api.environment();
+  expect(report.status).toBe("ok");
+  for (const check of report.checks) expect([check.id, check.status]).toEqual([check.id, "ok"]);
+  expect(report.checks.map((c) => c.id)).toEqual(["dashboard-home", "git", "git-identity", "openspec-cli", "agent:demo-agent", "github-cli"]);
+  // Every path is made up and under the fictional home; nothing was looked up on the machine running this.
+  for (const check of report.checks) expect([check.id, /\/(Users|home)\/(?!demo\b)/.test(check.found)]).toEqual([check.id, false]);
+  // Pure: the same instance and clock give exactly the same report, so nothing was observed to produce it.
+  expect(await api.environment()).toEqual(report);
+  // And the module that builds it reaches for neither the filesystem nor a process.
+  const source = readFileSync(new URL("../src/ui/demo/sampleData.ts", import.meta.url), "utf8");
+  for (const forbidden of ["node:fs", "Bun.spawn", "Bun.which", "fetch("]) expect([forbidden, source.includes(forbidden)]).toEqual([forbidden, false]);
+});
+
+test("switching agent sessions off in the demo turns the checks it makes unnecessary into not-needed", async () => {
+  const { api } = demo();
+  const config = await api.config();
+  await api.saveConfig({ ...config, agentSessions: { ...config.agentSessions, enabled: false } });
+  const report = await api.environment();
+  for (const id of ["git-identity", "agent:demo-agent", "github-cli"]) {
+    const check = report.checks.find((c) => c.id === id);
+    expect([id, check?.status]).toEqual([id, "not-needed"]);
+    expect([id, check?.found]).toEqual([id, "not needed while agent sessions are off"]);
+  }
+  // The machine-level checks are unaffected, and nothing claims a GitHub credential either way.
+  expect(report.checks.find((c) => c.id === "git")?.status).toBe("ok");
+  expect(report.caveat).toBeUndefined();
+  expect(report.status).toBe("ok");
 });

@@ -63,3 +63,12 @@ export function canonicalPath(p: string): string {
   }
   return resolved.length > parse(resolved).root.length ? resolved.replace(/[\\/]+$/, "") : resolved;
 }
+
+/**
+ * Where an executable is found on the PATH, or undefined. Deliberately passes `PATH` explicitly: `Bun.which(cmd)` uses
+ * the PATH captured when the process started, so it would not see a PATH the process changed — which is exactly what a
+ * test does, and what an environment check has to be able to observe.
+ */
+export function whichOnPath(command: string): string | undefined {
+  return Bun.which(command, { PATH: process.env.PATH ?? "" }) ?? undefined;
+}

@@ -6,7 +6,7 @@ import { ApiError, type Api } from "../api.ts";
 import { demoApply, demoPreview, newCleanupState, remainingWorktrees } from "./demoCleanup.ts";
 import { createDemoSessions } from "./demoSessions.ts";
 import { sampleArtifactFiles } from "./sampleArtifacts.ts";
-import { buildActivity, buildSample, DEMO_CARRIED, DEMO_PROFILES, DEMO_ROOT } from "./sampleData.ts";
+import { buildActivity, buildSample, DEMO_CARRIED, demoEnvironment, DEMO_PROFILES, DEMO_ROOT } from "./sampleData.ts";
 import type { Clock } from "./transcripts.ts";
 
 
@@ -286,6 +286,8 @@ export function createDemoApi({ now = Date.now, latencyMs = 150, clock }: DemoAp
     // Built once from the sample, like a log that was written while the sample came about; filtered and paged like the real one.
     activity: (query) => reply(pageEvents(activityLog, query)),
     config: () => reply(config),
+    // Fixed sample data, derived from the config the visitor is looking at: no process, no PATH, no file, no connection.
+    environment: () => reply(demoEnvironment(config, now())),
     saveConfig: (next) => {
       config = structuredClone(next);
       return reply(config);

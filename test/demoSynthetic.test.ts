@@ -59,9 +59,9 @@ test("no transcript contains anything that looks real, and names only come from 
   expect(looksReal(RECORDING_NOTICE)).toBeUndefined();
 });
 
-test("no seeded session, worktree, agent or profile contains anything that looks real; every path is under the fictional root", async () => {
+test("no seeded session, worktree, agent, profile or environment check contains anything that looks real; every path is under the fictional root", async () => {
   const api = createDemoApi({ now: () => Date.parse("2026-06-01T12:00:00.000Z"), latencyMs: 0 });
-  const everything = [await api.sessions(), (await api.config()).agentSessions, DEMO_AGENT, DEMO_PROFILES, DEMO_CARRIED, await api.sharedConfig()];
+  const everything = [await api.sessions(), (await api.config()).agentSessions, DEMO_AGENT, DEMO_PROFILES, DEMO_CARRIED, await api.sharedConfig(), await api.environment()];
   for (const text of strings(everything)) expect([text, looksReal(text)]).toEqual([text, undefined]);
   const { sessions, worktrees, agents } = await api.sessions();
   const paths = [...sessions.map((s) => s.worktreePath), ...worktrees.map((w) => w.path), ...agents.flatMap((a) => (a.path ? [a.path] : []))];

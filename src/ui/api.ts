@@ -1,5 +1,5 @@
 import type { ActivityQuery } from "../shared/activity.ts";
-import type { ActivityPage, ConsoleSession, CleanupPreview, CleanupResult, CleanupSelection, CreateChangeResponse, DismissPreview, DismissResult, PromptResult, PullResolve, PullResult, ShipResult, WorkStatus } from "../shared/types.ts";
+import type { ActivityPage, ConsoleSession, CleanupPreview, CleanupResult, CleanupSelection, CreateChangeResponse, DismissPreview, DismissResult, EnvironmentReport, PromptResult, PullResolve, PullResult, ShipResult, WorkStatus } from "../shared/types.ts";
 import type { AgentAvailability, ArtifactFileContent, ChangeArtifacts, Config, DiscoverResult, IntegrationSession, ScanTriggerResult, Session, SessionAction, SessionWorktree, SharedConfig, SharedConfigApplyResult, SharedConfigAssignment, SharedConfigPreview, Snapshot } from "../shared/types.ts";
 import { socketOrigin } from "./url.ts";
 
@@ -40,6 +40,11 @@ export interface Api {
   /** Read-only; pass the draft roots and ignore paths to discover against unsaved edits. */
   discover(scanRoots?: string[], ignorePaths?: string[]): Promise<DiscoverResult>;
   scan(): Promise<ScanTriggerResult>;
+  /**
+   * What this machine is missing (openspec/specs/environment-check). Read-only and local: it contacts no network and
+   * reads nothing in a tracked repository, so a configured credential is never proved to be valid.
+   */
+  environment(force?: boolean): Promise<EnvironmentReport>;
   /**
    * Creates a new change directory in the repository: `openspec/changes/<name>/` with the schema marker and, when a
    * non-empty prompt is given, `prompt.md`. Atomic; a duplicate name is refused with `409`.
@@ -149,6 +154,7 @@ export const httpApi: Api = {
   discover: (scanRoots, ignorePaths) =>
     call<DiscoverResult>("/api/discover", { method: "POST", body: scanRoots || ignorePaths ? JSON.stringify({ scanRoots, ignorePaths }) : undefined }),
   scan: () => call<ScanTriggerResult>("/api/scan", { method: "POST" }),
+  environment: (force) => call<EnvironmentReport>(`/api/environment${force ? "?force=1" : ""}`),
   createChange: (repoId, name, prompt) =>
     call<CreateChangeResponse>(`/api/repos/${encodeURIComponent(repoId)}/changes`, { method: "POST", body: JSON.stringify(prompt !== undefined && prompt !== "" ? { name, prompt } : { name }) }),
   pullRepo: (repoId) => call<PullResult>(`/api/repos/${encodeURIComponent(repoId)}/pull`, { method: "POST" }),
@@ -214,6 +220,7 @@ export const api: Api = {
   saveConfig: (config) => current.saveConfig(config),
   discover: (scanRoots, ignorePaths) => current.discover(scanRoots, ignorePaths),
   scan: () => current.scan(),
+  environment: (force) => current.environment(force),
   createChange: (...args) => current.createChange(...args),
   pullRepo: (repoId) => current.pullRepo(repoId),
   pullAll: () => current.pullAll(),

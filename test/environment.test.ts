@@ -1,0 +1,369 @@
+import { afterEach, expect, test } from "bun:test";
+import { chmod, mkdir, readdir, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import { defaultConfig } from "../src/server/config.ts";
+import { environmentReport, resetEnvironmentCache } from "../src/server/environment.ts";
+import type { Config, EnvironmentCheck, EnvironmentReport, RepoSnapshot, Snapshot } from "../src/shared/types.ts";
+import { tempDir, useTempHome } from "./helpers.ts";
+
+/** Every tool the report looks for, as a stub that is never meant to be run — except `git`, which answers `config --get`. */
+const TOOLS = ["git", "openspec", "gh", "claude"] as const;
+
+interface Machine {
+  bin: string;
+  /** One line per `git` invocation, so a memoised report can be told from a recomputed one. */
+  gitLog: string;
+}
+
+/**
+ * A PATH holding only the stubs asked for. The `git` stub answers `config --get user.name`/`user.email` from files in
+ * its own directory, so an identity can be present or absent without touching the machine's real git configuration.
+ */
+async function machine(tools: readonly string[] = TOOLS, identity: { name?: string; email?: string } = { name: "Demo User", email: "demo@example.invalid" }): Promise<Machine> {
+  const bin = await tempDir("osd-bin-");
+  const gitLog = join(bin, "git.log");
+  if (identity.name !== undefined) await writeFile(join(bin, "user.name"), identity.name);
+  if (identity.email !== undefined) await writeFile(join(bin, "user.email"), identity.email);
+  for (const tool of tools) {
+    const script =
+      tool === "git"
+        ? // Only `bin` is on the PATH while this runs, so the stub uses shell builtins alone — no `cat`.
+          `#!/bin/sh\necho "$@" >> "${gitLog}"\n[ "$1" = config ] || exit 0\nf="${bin}/$3"\n[ -f "$f" ] || exit 1\nIFS= read -r value < "$f"\necho "$value"\n`
+        : "#!/bin/sh\nexit 0\n";
+    await writeFile(join(bin, tool), script);
+    await chmod(join(bin, tool), 0o755);
+  }
+  return { bin, gitLog };
+}
+
+const originalPath = process.env.PATH;
+const cleanups: (() => Promise<void> | void)[] = [];
+
+afterEach(async () => {
+  process.env.PATH = originalPath;
+  resetEnvironmentCache();
+  for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
+});
+
+/** Runs the report with `bin` as the whole PATH and the dashboard home in a temp directory. */
+async function report(bin: string, config: Config = defaultConfig(), snapshot: Snapshot = { generatedAt: "2026-09-30T10:00:00.000Z", repos: [] }): Promise<EnvironmentReport> {
+  const home = await useTempHome();
+  cleanups.push(home.cleanup);
+  process.env.PATH = bin;
+  resetEnvironmentCache();
+  return environmentReport(config, snapshot);
+}
+
+function byId(result: EnvironmentReport, id: string): EnvironmentCheck {
+  const check = result.checks.find((c) => c.id === id);
+  if (!check) throw new Error(`no check ${id} in ${result.checks.map((c) => c.id).join(", ")}`);
+  return check;
+}
+
+function withAgents(config: Config = defaultConfig()): Config {
+  return { ...config, agentSessions: { ...config.agentSessions, enabled: true } };
+}
+
+function repoSnapshot(id: string, isGit: boolean): RepoSnapshot {
+  return { id, name: id, path: `/w/acme/${id}`, ok: true, scannedAt: "2026-09-30T10:00:00.000Z", isGit, worktrees: [], changes: [] };
+}
+
+// 2.1 — the report's shape, order and fold.
+test("a fully equipped machine yields ok, in a stable order", async () => {
+  const { bin } = await machine();
+  const result = await report(bin, withAgents());
+  expect(result.status).toBe("ok");
+  expect(result.checks.map((c) => c.id)).toEqual(["dashboard-home", "git", "git-identity", "openspec-cli", "agent:claude", "github-cli"]);
+  for (const check of result.checks) expect(check.remedy).toBeUndefined();
+  expect(Date.parse(result.checkedAt)).toBeGreaterThan(0);
+});
+
+test("the worst status wins", async () => {
+  // No tools at all: the home is fine, so `problem` can only come from the default agent being missing.
+  const { bin } = await machine([]);
+  const result = await report(bin, withAgents());
+  expect(byId(result, "agent:claude").status).toBe("problem");
+  expect(byId(result, "openspec-cli").status).toBe("warning");
+  expect(result.status).toBe("problem");
+});
+
+test("ok and not-needed together are ok overall", async () => {
+  const { bin } = await machine(["git", "openspec"]);
+  const result = await report(bin);
+  expect(result.checks.map((c) => c.status).sort()).toEqual(["not-needed", "not-needed", "not-needed", "ok", "ok", "ok"]);
+  expect(result.status).toBe("ok");
+});
+
+// 2.2 — the dashboard home check.
+test("the dashboard home is ok and the probe leaves nothing behind", async () => {
+  const { bin } = await machine();
+  const home = await useTempHome();
+  cleanups.push(home.cleanup);
+  process.env.PATH = bin;
+  resetEnvironmentCache();
+  const result = await environmentReport(defaultConfig(), { generatedAt: "2026-09-30T10:00:00.000Z", repos: [] });
+  expect(byId(result, "dashboard-home").status).toBe("ok");
+  expect(byId(result, "dashboard-home").found).toContain(home.home);
+  expect((await readdir(home.home)).filter((n) => n.startsWith(".env-check-"))).toEqual([]);
+});
+
+test("a home that cannot be written is a problem naming the directory", async () => {
+  const { bin } = await machine();
+  const parent = await tempDir("osd-ro-");
+  const home = join(parent, "home");
+  await mkdir(home);
+  await chmod(home, 0o500);
+  cleanups.push(() => chmod(home, 0o700));
+  const previous = process.env.OPENSPEC_DASHBOARD_HOME;
+  process.env.OPENSPEC_DASHBOARD_HOME = home;
+  cleanups.push(() => {
+    if (previous === undefined) delete process.env.OPENSPEC_DASHBOARD_HOME;
+    else process.env.OPENSPEC_DASHBOARD_HOME = previous;
+  });
+  process.env.PATH = bin;
+  resetEnvironmentCache();
+  const result = await environmentReport(defaultConfig(), { generatedAt: "2026-09-30T10:00:00.000Z", repos: [] });
+  const check = byId(result, "dashboard-home");
+  expect(check.status).toBe("problem");
+  expect(check.found).toContain(home);
+  expect(check.remedy).toBeDefined();
+  expect(result.status).toBe("problem");
+});
+
+// 2.3 — the PATH lookups.
+test("git and the openspec CLI report where they were found", async () => {
+  const { bin } = await machine();
+  const result = await report(bin);
+  expect(byId(result, "git").found).toBe(join(bin, "git"));
+  expect(byId(result, "openspec-cli").found).toBe(join(bin, "openspec"));
+});
+
+test("a missing openspec CLI is a warning with a remedy", async () => {
+  const { bin } = await machine(["git", "gh", "claude"]);
+  const result = await report(bin);
+  const check = byId(result, "openspec-cli");
+  expect(check.status).toBe("warning");
+  expect(check.found).toContain("not found on the PATH");
+  expect(check.remedy).toContain("openspec");
+});
+
+// 2.4 — the committer identity.
+test("a missing user.name alone is the one named", async () => {
+  const { bin } = await machine(TOOLS, { email: "demo@example.invalid" });
+  const check = byId(await report(bin, withAgents()), "git-identity");
+  expect(check.status).toBe("warning");
+  expect(check.found).toContain("user.name");
+  expect(check.found).not.toContain("user.email");
+  expect(check.found).toContain("is not configured");
+});
+
+test("both missing are reported together", async () => {
+  const { bin } = await machine(TOOLS, {});
+  const check = byId(await report(bin, withAgents()), "git-identity");
+  expect(check.found).toContain("user.name and user.email");
+  expect(check.found).toContain("are not configured");
+});
+
+test("a configured identity is shown", async () => {
+  const { bin } = await machine();
+  expect(byId(await report(bin, withAgents()), "git-identity")).toMatchObject({ status: "ok", found: "Demo User <demo@example.invalid>" });
+});
+
+test("the identity is read outside every tracked repository, which nothing in them notices", async () => {
+  const { bin, gitLog } = await machine();
+  const repo = await tempDir("osd-repo-");
+  await mkdir(join(repo, "openspec"), { recursive: true });
+  await writeFile(join(repo, "openspec", "config.yaml"), "schema: spec-driven\n");
+  const config: Config = { ...withAgents(), repos: [{ id: "r1", path: repo, name: "demo-ops", enabled: true }] };
+  const before = await treeOf(repo);
+  const result = await report(bin, config, { generatedAt: "2026-09-30T10:00:00.000Z", repos: [repoSnapshot("r1", true)] });
+  expect(byId(result, "git-identity").status).toBe("ok");
+  expect(await treeOf(repo)).toEqual(before);
+  // The stub logs its own cwd nowhere, so the proof that it ran outside the repository is that the repository is untouched
+  // and that the only git invocations were `config --get`.
+  const lines = (await Bun.file(gitLog).text()).trim().split("\n");
+  expect(lines.every((line) => line.startsWith("config --get user."))).toBe(true);
+});
+
+test("without git the identity says it could not be read", async () => {
+  const { bin } = await machine(["openspec", "gh", "claude"]);
+  const check = byId(await report(bin, withAgents()), "git-identity");
+  expect(check.found).toContain("git was not found");
+  expect(check.status).toBe("warning");
+});
+
+// 2.5 — the GitHub CLI.
+test("gh not installed is distinct from gh without credentials", async () => {
+  const withoutGh = byId(await report((await machine(["git", "openspec", "claude"])).bin, withAgents()), "github-cli");
+  expect(withoutGh.found).toContain("`gh` not found");
+  expect(withoutGh.found).not.toContain("no credentials");
+
+  const ghDir = await tempDir("osd-gh-");
+  const previous = process.env.GH_CONFIG_DIR;
+  process.env.GH_CONFIG_DIR = ghDir;
+  cleanups.push(() => {
+    if (previous === undefined) delete process.env.GH_CONFIG_DIR;
+    else process.env.GH_CONFIG_DIR = previous;
+  });
+  const bare = byId(await report((await machine()).bin, withAgents()), "github-cli");
+  expect(bare.found).toContain("no credentials were found");
+  expect(bare.remedy).toContain("gh auth login");
+});
+
+test("an existing host file reads as configured without being opened", async () => {
+  const ghDir = await tempDir("osd-gh-");
+  const hosts = join(ghDir, "hosts.yml");
+  await writeFile(hosts, "github.com:\n    oauth_token: gho_SECRETVALUE\n");
+  await chmod(hosts, 0o000); // Unreadable: a check that opened it would fail.
+  cleanups.push(() => chmod(hosts, 0o600));
+  const previous = process.env.GH_CONFIG_DIR;
+  process.env.GH_CONFIG_DIR = ghDir;
+  cleanups.push(() => {
+    if (previous === undefined) delete process.env.GH_CONFIG_DIR;
+    else process.env.GH_CONFIG_DIR = previous;
+  });
+  const result = await report((await machine()).bin, withAgents());
+  expect(byId(result, "github-cli").status).toBe("ok");
+  expect(byId(result, "github-cli").found).toContain(hosts);
+  expect(JSON.stringify(result)).not.toContain("gho_SECRET");
+});
+
+test("a token in the environment is named, never shown", async () => {
+  const previousToken = process.env.GH_TOKEN;
+  const previousDir = process.env.GH_CONFIG_DIR;
+  process.env.GH_TOKEN = "gho_TOPSECRET_VALUE";
+  process.env.GH_CONFIG_DIR = await tempDir("osd-gh-");
+  cleanups.push(() => {
+    if (previousToken === undefined) delete process.env.GH_TOKEN;
+    else process.env.GH_TOKEN = previousToken;
+    if (previousDir === undefined) delete process.env.GH_CONFIG_DIR;
+    else process.env.GH_CONFIG_DIR = previousDir;
+  });
+  const result = await report((await machine()).bin, withAgents());
+  expect(byId(result, "github-cli").status).toBe("ok");
+  expect(byId(result, "github-cli").found).toContain("GH_TOKEN is set");
+  expect(JSON.stringify(result)).not.toContain("TOPSECRET");
+});
+
+// 2.6 — one check per configured agent.
+test("one check per configured agent, with the default marked", async () => {
+  const base = withAgents();
+  const config: Config = {
+    ...base,
+    agentSessions: {
+      ...base.agentSessions,
+      agents: [
+        ...base.agentSessions.agents,
+        { id: "aider", name: "Aider", command: ["aider", "{prompt}"], prompts: { implement: "do {change}" } },
+        { id: "custom", name: "Custom", command: ["custom-cli", "{prompt}"], prompts: { implement: "do {change}" } },
+      ],
+    },
+  };
+  const result = await report((await machine()).bin, config);
+  expect(result.checks.filter((c) => c.id.startsWith("agent:")).map((c) => c.id)).toEqual(["agent:claude", "agent:aider", "agent:custom"]);
+  expect(byId(result, "agent:claude").label).toContain("(default)");
+  expect(byId(result, "agent:aider").label).not.toContain("(default)");
+});
+
+// 2.7 — relevance derived from the configuration.
+test("with agent sessions off the agent, identity and GitHub checks are not needed", async () => {
+  const result = await report((await machine([])).bin);
+  for (const id of ["agent:claude", "git-identity", "github-cli"]) {
+    expect(byId(result, id)).toMatchObject({ status: "not-needed", found: "not needed while agent sessions are off" });
+  }
+  expect(result.status).not.toBe("problem");
+});
+
+test("a missing default agent is a problem, a missing unused one a warning", async () => {
+  const base = withAgents();
+  const config: Config = {
+    ...base,
+    agentSessions: { ...base.agentSessions, agents: [...base.agentSessions.agents, { id: "aider", name: "Aider", command: ["aider"], prompts: { implement: "do {change}" } }] },
+  };
+  const result = await report((await machine(["git", "openspec", "gh"])).bin, config);
+  expect(byId(result, "agent:claude").status).toBe("problem");
+  expect(byId(result, "agent:aider").status).toBe("warning");
+});
+
+test("an agent a tracked repository selects is a problem too", async () => {
+  const base = withAgents();
+  const config: Config = {
+    ...base,
+    agentSessions: { ...base.agentSessions, agents: [...base.agentSessions.agents, { id: "aider", name: "Aider", command: ["aider"], prompts: { implement: "do {change}" } }] },
+    repos: [{ id: "r1", path: "/w/acme/demo-ops", name: "demo-ops", enabled: true, agent: { enabled: true, agentId: "aider" } }],
+  };
+  const result = await report((await machine(["git", "openspec", "gh", "claude"])).bin, config, { generatedAt: "2026-09-30T10:00:00.000Z", repos: [repoSnapshot("r1", true)] });
+  expect(byId(result, "agent:aider").status).toBe("problem");
+});
+
+test("missing git is a problem with a git repository tracked and a warning without", async () => {
+  const bin = (await machine(["openspec", "gh", "claude"])).bin;
+  const config: Config = { ...defaultConfig(), repos: [{ id: "r1", path: "/w/acme/demo-ops", name: "demo-ops", enabled: true }] };
+  const withGit = await report(bin, config, { generatedAt: "2026-09-30T10:00:00.000Z", repos: [repoSnapshot("r1", true)] });
+  expect(byId(withGit, "git").status).toBe("problem");
+  const withoutGit = await report(bin, config, { generatedAt: "2026-09-30T10:00:00.000Z", repos: [repoSnapshot("r1", false)] });
+  expect(byId(withoutGit, "git").status).toBe("warning");
+});
+
+test("a disabled repository does not make git a problem", async () => {
+  const bin = (await machine(["openspec", "gh", "claude"])).bin;
+  const config: Config = { ...defaultConfig(), repos: [{ id: "r1", path: "/w/acme/demo-ops", name: "demo-ops", enabled: false }] };
+  const result = await report(bin, config, { generatedAt: "2026-09-30T10:00:00.000Z", repos: [repoSnapshot("r1", true)] });
+  expect(byId(result, "git").status).toBe("warning");
+});
+
+// 2.8 — what the report cannot know.
+test("the caveat is present unless the GitHub check is not needed", async () => {
+  const { bin } = await machine();
+  expect((await report(bin, withAgents())).caveat).toContain("valid");
+  expect((await report(bin)).caveat).toBeUndefined();
+});
+
+// 2.9 — memoisation.
+test("an identical report is reused for ten seconds and Re-check forces a fresh one", async () => {
+  const { bin, gitLog } = await machine();
+  const config = withAgents();
+  const snapshot: Snapshot = { generatedAt: "2026-09-30T10:00:00.000Z", repos: [] };
+  const home = await useTempHome();
+  cleanups.push(home.cleanup);
+  process.env.PATH = bin;
+  resetEnvironmentCache();
+
+  const first = await environmentReport(config, snapshot);
+  const second = await environmentReport(config, snapshot);
+  expect(second).toBe(first);
+  expect((await Bun.file(gitLog).text()).trim().split("\n")).toHaveLength(2); // user.name and user.email, once
+
+  const forced = await environmentReport(config, snapshot, { force: true });
+  expect(forced).not.toBe(first);
+  expect((await Bun.file(gitLog).text()).trim().split("\n")).toHaveLength(4);
+});
+
+test("a changed configuration is reflected by the next report", async () => {
+  const { bin } = await machine();
+  const snapshot: Snapshot = { generatedAt: "2026-09-30T10:00:00.000Z", repos: [] };
+  const home = await useTempHome();
+  cleanups.push(home.cleanup);
+  process.env.PATH = bin;
+  resetEnvironmentCache();
+
+  const off = await environmentReport(defaultConfig(), snapshot);
+  expect(byId(off, "github-cli").status).toBe("not-needed");
+  const on = await environmentReport(withAgents(), snapshot);
+  expect(byId(on, "github-cli").status).not.toBe("not-needed");
+});
+
+/** Names, sizes and mtimes under `root`; equal before and after means nothing was created, modified or deleted. */
+async function treeOf(root: string): Promise<string> {
+  const lines: string[] = [];
+  const visit = async (dir: string): Promise<void> => {
+    for (const entry of (await readdir(dir, { withFileTypes: true })).sort((a, b) => a.name.localeCompare(b.name))) {
+      const path = join(dir, entry.name);
+      const info = await Bun.file(path).exists();
+      lines.push(`${entry.isDirectory() ? "d" : "f"} ${path} ${info}`);
+      if (entry.isDirectory()) await visit(path);
+    }
+  };
+  await visit(root);
+  return lines.join("\n");
+}

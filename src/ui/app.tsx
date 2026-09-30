@@ -16,8 +16,9 @@ import { enabledOnly } from "./overviewState.ts";
 import { backTarget, parseDetailQuery, repoPath, type Route, routeFromPath } from "./routes.ts";
 import { EndSessionDialog } from "./endSessionDialog.tsx";
 import { OpenWork, SessionProvider } from "./sessions.tsx";
+import { environmentWarning, type EnvironmentState } from "./environmentState.ts";
 import { Settings } from "./settings.tsx";
-import { currentPath, currentQuery, href, navigate, onRouteChange } from "./url.ts";
+import { currentPath, currentQuery, followInApp, href, hrefWithQuery, navigate, onRouteChange } from "./url.ts";
 import { applyTheme, loadPreference, nextPreference, resolveTheme, savePreference, type ThemePreference } from "./theme.ts";
 import { IconActivity, IconChevronDown, IconClock, IconKanban, IconLayoutGrid, IconMonitor, IconMoon, IconRefresh, IconSettings, IconSun } from "./icons.tsx";
 import { LogoMark } from "./logo.tsx";
@@ -46,6 +47,8 @@ export function App() {
   const [consoleOpen, showConsole] = useState(false);
   // The terminal of an integration started from Settings; same reasoning, and the same need to make the page inert.
   const [integrationId, showIntegration] = useState<string>();
+  /** What this machine is missing. Owned here because both Settings and the hero read the same report. */
+  const [environment, setEnvironment] = useState<EnvironmentState>({ loading: true });
 
   useEffect(() => onRouteChange(() => setRoute(routeFromPath(currentPath()))), []);
 
@@ -102,6 +105,24 @@ export function App() {
     void loadState();
     api.config().then(setConfig).catch(() => undefined);
   }, [loadState]);
+
+  /**
+   * Asks for the environment report. On load, after the configuration was saved, and from **Re-check** — never from the
+   * poll or the auto-refresh loop: the report is about this machine, not about the repositories, and computing it starts
+   * a process. A failed request keeps the previous report, so the section can say what went wrong beside it.
+   */
+  const loadEnvironment = useCallback(async (force = false) => {
+    setEnvironment((was) => ({ ...was, loading: true }));
+    try {
+      setEnvironment({ report: await api.environment(force), loading: false });
+    } catch (err) {
+      setEnvironment((was) => ({ report: was.report, loading: false, error: err instanceof Error ? err.message : String(err) }));
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadEnvironment();
+  }, [loadEnvironment]);
 
   // Re-fetch on the configured poll interval, and re-render the relative ages every minute.
   useEffect(() => {
@@ -173,6 +194,8 @@ export function App() {
   // Views only ever see repositories that are enabled right now, even if the last scan predates a Settings change.
   const shown = enabledOnly(snapshot, config);
   const failing = shown?.repos.filter((r) => !r.ok) ?? [];
+  // Only shown when a check actually failed: a report that has not arrived, or could not be, warns about nothing.
+  const envWarning = environmentWarning(environment);
 
   // The server rescans after a shared-config save or apply; pick the result up without waiting for the next poll.
   const reloadSoon = () => {
@@ -228,6 +251,16 @@ export function App() {
                 ⚠ {r.name}
               </span>
             ))}
+            {envWarning && (
+              <a
+                class="badge warning"
+                href={hrefWithQuery("/settings", "?section=environment")}
+                title={envWarning.title}
+                onClick={(e) => followInApp(e, "/settings", "?section=environment")}
+              >
+                ⚠ Environment {envWarning.count}
+              </a>
+            )}
             {error && <span class="badge danger">API: {error}</span>}
             <ConsoleButton />
             <button type="button" class="btn sm ghost" onClick={cycleTheme} title="Cycle theme: System → Light → Dark">
@@ -306,7 +339,19 @@ export function App() {
           </div>
         )}
         {route.view === "settings" ? (
-          <Settings config={config} snapshot={shown} onSaved={(c) => { setConfig(c); void loadState(); }} onRescan={reloadSoon} />
+          <Settings
+            config={config}
+            snapshot={shown}
+            onSaved={(c) => {
+              setConfig(c);
+              void loadState();
+              // The configuration decides which checks are needed at all, so a fresh report is asked for.
+              void loadEnvironment();
+            }}
+            onRescan={reloadSoon}
+            environment={environment}
+            onRecheckEnvironment={() => void loadEnvironment(true)}
+          />
         ) : route.view === "activity" ? (
           <Activity snapshot={shown} onSeen={markSeen} />
         ) : route.view === "overview" ? (

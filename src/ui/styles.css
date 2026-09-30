@@ -865,6 +865,21 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: 
 .list .item { display: grid; grid-template-columns: auto minmax(120px, 200px) 1fr auto; gap: var(--gap-1); align-items: center; padding: 4px 6px; border-radius: var(--radius-sm); }
 .list .item:hover { background: var(--bg-raised); }
 .list .item .path { color: var(--fg-subtle); font-family: var(--font-mono); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* One environment check: status badge, what is checked, what was found, and how to fix it. The status badge carries the
+   colour; every row also says its status in words, so the de-emphasis below never becomes the only difference. */
+.list .item.env-check { grid-template-columns: auto minmax(140px, 220px) minmax(0, 1fr); align-items: baseline; }
+/* Only when at least one check has a remedy: with none, the found column takes the width instead. */
+.list.with-remedies .item.env-check { grid-template-columns: auto minmax(140px, 220px) minmax(0, 1fr) minmax(0, 1.2fr); }
+.list .item.env-check .label { font-weight: 500; }
+.list .item.env-check .remedy { font-size: 12px; }
+/* A check the configuration makes unnecessary: quieter, never hidden, and its text still meets the contrast rules. */
+.list .item.env-check.muted { opacity: 0.72; }
+.list .item.env-check.muted .label { font-weight: 400; color: var(--fg-subtle); }
+@media (max-width: 720px) {
+  /* Narrow: the four columns become two rows rather than shrinking the paths to nothing. */
+  .list .item.env-check { grid-template-columns: auto minmax(0, 1fr); }
+  .list .item.env-check .path, .list .item.env-check .remedy { grid-column: 1 / -1; }
+}
 .list .item.candidate { grid-template-columns: minmax(120px, 200px) 1fr auto; }
 .list .item.candidate .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* A repository waiting to be set up: the same row, with the refusal (when there is one) wrapping onto its own line. */

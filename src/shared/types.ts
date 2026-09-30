@@ -769,3 +769,41 @@ export interface DismissResult {
   /** Whether the removal was staged; false for a repository without git, an untracked change, or a failed `git add`. */
   staged: boolean;
 }
+
+/**
+ * Status of one environment check (openspec/specs/environment-check). `not-needed` is not a weaker `ok`: it means the
+ * configuration switched off the feature that would need it, so nothing was looked at.
+ */
+export type EnvironmentStatus = "ok" | "warning" | "problem" | "not-needed";
+
+/** Worst first; `not-needed` last, so a report of only disabled features is not reported as `ok`. */
+export const ENVIRONMENT_STATUS_ORDER: readonly EnvironmentStatus[] = ["problem", "warning", "ok", "not-needed"];
+
+/** One prerequisite of the machine the dashboard runs on, as the environment report states it. */
+export interface EnvironmentCheck {
+  /** Stable: `git`, `git-identity`, `openspec-cli`, `github-cli`, `dashboard-home`, or `agent:<agent id>`. */
+  id: string;
+  label: string;
+  status: EnvironmentStatus;
+  /** What was found, in one line. Never a credential, and never a claim that something will work. */
+  found: string;
+  /** How to fix it, in one line; absent when the status is `ok` or `not-needed`. */
+  remedy?: string;
+}
+
+export interface EnvironmentReport {
+  checkedAt: string;
+  /** The worst status of any check, in `ENVIRONMENT_STATUS_ORDER`. */
+  status: EnvironmentStatus;
+  checks: EnvironmentCheck[];
+  /**
+   * What the report cannot know, because it contacts no network: present whenever the GitHub CLI check looked at
+   * anything at all.
+   */
+  caveat?: string;
+}
+
+/** Checks the user is meant to act on: a `not-needed` check is not a problem, and an `ok` one needs nothing. */
+export function environmentProblems(report: EnvironmentReport): number {
+  return report.checks.filter((c) => c.status === "warning" || c.status === "problem").length;
+}
