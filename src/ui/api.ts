@@ -1,5 +1,5 @@
 import type { ActivityQuery } from "../shared/activity.ts";
-import type { ActivityPage, ConsoleSession, CleanupPreview, CleanupResult, CleanupSelection, CreateChangeResponse, DismissPreview, DismissResult, EnvironmentReport, PromptResult, PullResolve, PullResult, ShipResult, WorkStatus } from "../shared/types.ts";
+import type { ActivityPage, ConsoleSession, CleanupPreview, CleanupResult, CleanupSelection, CreateChangeResponse, DismissPreview, DismissResult, EnvironmentReport, PromptResult, PullRequestsResponse, PullResolve, PullResult, ShipResult, WorkStatus } from "../shared/types.ts";
 import type { AgentAvailability, ArtifactFileContent, ChangeArtifacts, Config, DiscoverResult, IntegrationSession, ScanTriggerResult, Session, SessionAction, SessionWorktree, SharedConfig, SharedConfigApplyResult, SharedConfigAssignment, SharedConfigPreview, Snapshot } from "../shared/types.ts";
 import { socketOrigin } from "./url.ts";
 
@@ -61,6 +61,13 @@ export interface Api {
    * re-determines every blocking file and refuses unless its own answer is still this one.
    */
   resolvePull(repoId: string, resolve: PullResolve): Promise<PullResult>;
+  /** Read-only: the cached pull-request lists. Contacts no network host and starts no process. */
+  pullRequests(): Promise<PullRequestsResponse>;
+  /**
+   * Refreshes the pull-request lists through the GitHub CLI — the only call besides a pull that reaches a network,
+   * and only ever from a Refresh control or from opening a pull-request list whose cache is stale.
+   */
+  refreshPullRequests(options?: { repoId?: string; force?: boolean }): Promise<PullRequestsResponse>;
   /** Read-only: the repository's worktrees, stale worktree records and branches, each removable or kept with a reason. */
   cleanupPreview(repoId: string): Promise<CleanupPreview>;
   /** Removes what the user selected and confirmed, re-checking each item; the only call that deletes a branch. */
@@ -161,6 +168,8 @@ export const httpApi: Api = {
   pullRepo: (repoId) => call<PullResult>(`/api/repos/${encodeURIComponent(repoId)}/pull`, { method: "POST" }),
   pullAll: () => call<{ results: PullResult[] }>("/api/pull", { method: "POST" }),
   resolvePull: (repoId, resolve) => call<PullResult>(`/api/repos/${encodeURIComponent(repoId)}/pull`, { method: "POST", body: JSON.stringify({ resolve }) }),
+  pullRequests: () => call<PullRequestsResponse>("/api/pull-requests"),
+  refreshPullRequests: (options = {}) => call<PullRequestsResponse>("/api/pull-requests/refresh", { method: "POST", body: JSON.stringify(options) }),
   cleanupPreview: (repoId) => call<CleanupPreview>(`/api/repos/${encodeURIComponent(repoId)}/cleanup`),
   cleanup: (repoId, selection) => call<CleanupResult>(`/api/repos/${encodeURIComponent(repoId)}/cleanup`, { method: "POST", body: JSON.stringify(selection) }),
   dismissPreview: (repoId, change) => call<DismissPreview>(`/api/repos/${encodeURIComponent(repoId)}/changes/${encodeURIComponent(change)}/dismiss`),
@@ -227,6 +236,8 @@ export const api: Api = {
   pullRepo: (repoId) => current.pullRepo(repoId),
   pullAll: () => current.pullAll(),
   resolvePull: (...args) => current.resolvePull(...args),
+  pullRequests: () => current.pullRequests(),
+  refreshPullRequests: (options) => current.refreshPullRequests(options),
   cleanupPreview: (...args) => current.cleanupPreview(...args),
   cleanup: (...args) => current.cleanup(...args),
   dismissPreview: (...args) => current.dismissPreview(...args),

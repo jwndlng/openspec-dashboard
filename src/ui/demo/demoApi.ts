@@ -6,7 +6,7 @@ import { ApiError, type Api } from "../api.ts";
 import { demoApply, demoPreview, newCleanupState, remainingWorktrees } from "./demoCleanup.ts";
 import { createDemoSessions } from "./demoSessions.ts";
 import { sampleArtifactFiles } from "./sampleArtifacts.ts";
-import { buildActivity, buildSample, DEMO_CARRIED, demoEnvironment, DEMO_PROFILES, DEMO_ROOT } from "./sampleData.ts";
+import { buildActivity, buildPullRequests, buildSample, DEMO_CARRIED, demoEnvironment, DEMO_PROFILES, DEMO_ROOT } from "./sampleData.ts";
 import type { Clock } from "./transcripts.ts";
 
 
@@ -51,6 +51,8 @@ export function createDemoApi({ now = Date.now, latencyMs = 150, clock }: DemoAp
   const sample = buildSample(now());
   let config: Config = sample.config;
   let generatedAt = sample.snapshot.generatedAt;
+  // The demo's pull requests are synthetic and in memory: "refreshing" only moves this forward, nothing is fetched.
+  let pullRequestsFetchedAt = now() - 2 * 60_000;
 
   const reply = <T>(value: T): Promise<T> => new Promise((resolve) => setTimeout(() => resolve(structuredClone(value)), latencyMs));
 
@@ -310,6 +312,15 @@ export function createDemoApi({ now = Date.now, latencyMs = 150, clock }: DemoAp
       generatedAt = new Date(now()).toISOString();
       return new Promise((resolve) => setTimeout(() => resolve(structuredClone(result)), PULL_MS));
     },
+    pullRequests: () => reply(buildPullRequests(sample.snapshot, now(), pullRequestsFetchedAt)),
+    // A refresh takes long enough for the control's running state to be visible, and answers with the same data.
+    refreshPullRequests: () =>
+      new Promise((resolve) =>
+        setTimeout(() => {
+          pullRequestsFetchedAt = now();
+          resolve(structuredClone(buildPullRequests(sample.snapshot, now(), pullRequestsFetchedAt)));
+        }, 600),
+      ),
     pullAll: () => {
       const results = snapshot().repos.flatMap((r) => simulatedPull(r.id) ?? []);
       generatedAt = new Date(now()).toISOString();

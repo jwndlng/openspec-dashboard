@@ -848,3 +848,55 @@ export interface EnvironmentReport {
 export function environmentProblems(report: EnvironmentReport): number {
   return report.checks.filter((c) => c.status === "warning" || c.status === "problem").length;
 }
+
+/**
+ * One pull request of a GitHub repository, as the dashboard reads it from `gh pr list` (openspec/specs/pull-requests).
+ * Display only: nothing here is an input to scanning, columns or actions.
+ */
+export interface PullRequest {
+  number: number;
+  title: string;
+  /** The pull request on github.com; the UI links to it and never fetches it. */
+  url: string;
+  /** Login of the author; empty when GitHub reports none (a deleted account). */
+  author: string;
+  head: string;
+  base: string;
+  draft: boolean;
+  state: "open" | "merged" | "closed";
+  createdAt: string;
+  mergedAt?: string;
+  closedAt?: string;
+  /** GitHub's review decision; `none` when it has none (drafts, repositories without review rules). */
+  review: "approved" | "changes_requested" | "review_required" | "none";
+  /** The signed-in user is among the requested reviewers. Team requests are not resolved and do not count. */
+  reviewRequestedFromViewer: boolean;
+  checks: "passing" | "failing" | "pending" | "none";
+}
+
+/** What one tracked repository's pull-request list looks like right now. `pullRequests` is the last good list, also when `failed`. */
+export interface RepoPullRequests {
+  repoId: string;
+  /** `owner/name` when the repository's `origin` is on github.com. */
+  github?: string;
+  /** `never`: not fetched yet. `unavailable`: cannot be queried at all (not on GitHub, no `gh`, not signed in). */
+  status: "ok" | "unavailable" | "failed" | "never";
+  /** Why it is `unavailable` or `failed`; credentials in any text from `gh` are masked. */
+  reason?: string;
+  /**
+   * Set when the reason is the machine's `gh` rather than this repository, so the view can explain it once instead of
+   * listing every repository as failing.
+   */
+  setup?: "gh-missing" | "gh-signed-out";
+  /** When the list was last fetched successfully. */
+  fetchedAt?: string;
+  /** A limit was reached, so the list is not complete. */
+  truncated?: { open: boolean; closed: boolean };
+  pullRequests: PullRequest[];
+}
+
+export interface PullRequestsResponse {
+  /** The signed-in GitHub login, when `gh api user` answered. */
+  viewer?: string;
+  repos: RepoPullRequests[];
+}

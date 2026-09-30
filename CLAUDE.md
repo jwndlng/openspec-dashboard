@@ -83,7 +83,14 @@ bun test test/scanner.test.ts   # a single test file
    all: it puts the tree it merges into an object database, so it is always invoked with `GIT_OBJECT_DIRECTORY` pointed
    at a scratch store under `~/.openspec-dashboard/` and the repository's own objects offered only as
    `GIT_ALTERNATE_OBJECT_DIRECTORIES` — it reads everything and writes nothing into the repository, and it is never
-   given a working tree, an index or a ref. Adding a path or a subcommand means changing that spec first.
+   given a working tree, an index or a ref. The **pull-request query** (`src/server/pullRequests.ts`) is the one other
+   thing that leaves this machine, and it is not a write: it runs the GitHub CLI's read-only `gh pr list` and
+   `gh api user` and no other subcommand, without a shell, with its working directory in the dashboard home and the
+   repository named with `--repo owner/name`, so no `gh` process ever runs inside a tracked repository, runs no git and
+   changes nothing on GitHub. It runs only when the user opens or refreshes a pull-request list — never on a timer,
+   during a scan or from the projects overview (`test/pullRequestsApi.test.ts` proves a scan, discovery and both
+   endpoints' reads start no `gh`, and that a full refresh leaves every fixture repository byte-for-byte unchanged).
+   Adding a path or a subcommand means changing that spec first.
 2. **Loopback only.** The server binds `127.0.0.1`; there is no auth because nothing else can reach it.
 2a. **Mutating API routes are same-origin only.** Every non-GET `/api/` request passes `crossSiteRefusal` in
    `src/server/api.ts` (JSON content type, loopback host, own origin); the terminal WebSocket has `webSocketRefusal`. Loopback binding alone does not stop a web page
@@ -92,10 +99,15 @@ bun test test/scanner.test.ts   # a single test file
    `resolveSchema`/`loadChangeContext`: they locate files via `import.meta.url`, which does not exist inside the
    compiled binary. The adapter embeds the schema at build time. Anything that works under `bun run` but reads files
    relative to a module path must also be verified in `dist/openspec-dashboard`.
-4. **No network at runtime, except the pull action.** The UI is one HTML file with inlined JS, CSS and fonts; do not
-   add CDN links, remote fonts or fetches to other hosts. The server reaches a network only when git does, inside the
-   pull action of invariant 1, on the user's click, using git's own credentials — the dashboard never sees, stores or
-   asks for them, never prompts, and masks credentials in any error text it passes on.
+4. **No network at runtime, except the pull action and the pull-request query.** The UI is one HTML file with inlined
+   JS, CSS and fonts; do not add CDN links, remote fonts or fetches to other hosts — the links to github.com in the
+   Pull requests view are links the user follows, not requests the page makes. The server reaches a network in exactly
+   two places, both on the user's own action: when git does, inside the pull action of invariant 1, and when `gh` does,
+   inside the pull-request query of invariant 1 (`src/server/pullRequests.ts`) — the user activated Refresh, or opened
+   the Pull requests view or a repository's pull-request dialog with a list older than five minutes. Both use the
+   tool's own credentials: the dashboard never sees, stores or asks for them, never prompts, and masks credentials in
+   any error text it passes on. Without `gh`, or without it being signed in, the feature reports itself unavailable and
+   nothing else changes.
 5. **The repository is the source of truth.** The dashboard indexes; everything it shows about the *current state* of a
    change is derived from the repositories. The one thing it keeps that cannot be re-derived is history: the activity
    log (`~/.openspec-dashboard/activity.jsonl`, `src/server/activity/`) records what the dashboard observed and when.
@@ -136,7 +148,8 @@ bun test test/scanner.test.ts   # a single test file
   that was never created has no panel to report itself in.
 - **Work status** (`workStatus.ts`) is read per worktree *directory* — directories outlive session records — with
   read-only git and no network, so `merged` means "as of the user's last fetch"; squash merges are recognised by
-  comparing the content of the files the branch touched. The dashboard never commits, pushes or calls `gh`: **Ship** only
+  comparing the content of the files the branch touched. The dashboard never commits or pushes, and the only `gh` it ever
+  runs is the read-only pull-request query of invariant 1, which is not part of a session: **Ship** only
   hands the agent a prompt (`prompts.ship`, else `DEFAULT_SHIP_PROMPT`). A status that holds work the base lacks also
   carries a **conflict signal** — whether the branch still merges into that base, and which files clash — computed with
   `merge-tree` as invariant 1 describes, and as stale as the last fetch, which the UI says. **Resolve conflicts** is the
@@ -144,7 +157,8 @@ bun test test/scanner.test.ts   # a single test file
   `DEFAULT_RESOLVE_CONFLICTS_PROMPT`): the dashboard merges, rebases, checks out, commits and pushes nothing for it —
   it hands over the prompt and re-derives what came of it from git, never from what the agent said.
 - Tests never start a real agent or use the network: `test/fixtures/fake-agent.ts` is a tiny interactive program run in
-  real pseudo-terminals and temp git repositories.
+  real pseudo-terminals and temp git repositories, and `test/fixtures/fake-gh.ts` (behind a shim `test/ghHelpers.ts`
+  puts first on `PATH`) answers the pull-request queries from a JSON scenario.
 - Anything here must also work in the compiled binary (`bun run build`), not just under `bun run`.
 
 ## One agent, one worktree

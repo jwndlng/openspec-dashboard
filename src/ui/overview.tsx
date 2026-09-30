@@ -25,6 +25,7 @@ import { Stat } from "./band.tsx";
 import { IconChevronDown, IconFolderGit, IconGitBranch, IconSearch, IconX } from "./icons.tsx";
 import { assignRepoHues } from "./repoGroups.ts";
 import { PullAllButton, PullButton } from "./pull.tsx";
+import { OpenPrCount } from "./pullRequests.tsx";
 import { branchNotice } from "./pullState.ts";
 import { repoPath } from "./routes.ts";
 import { summarize } from "./sharedConfigState.ts";
@@ -131,6 +132,10 @@ function Row({ row, stages, now }: { row: OverviewRow; stages: string[]; now: nu
           <td class="num">{row.toArchive > 0 ? <span class="badge warning">{row.toArchive} to archive</span> : <span class="zero">·</span>}</td>
         </>
       )}
+      {/* Cached only: the overview never contacts GitHub. The figure links to the Pull requests view. */}
+      <td class="num pr-cell">
+        <OpenPrCount repoId={row.id} />
+      </td>
       <td class="wip-cell">
         <WipIndicator summary={row.workInProgress} />
       </td>
@@ -193,6 +198,10 @@ function Tile({ row, stages, now, hue }: { row: OverviewRow; stages: string[]; n
       <div class="tile-badges">
         <RepoBadges row={row} />
         <WipIndicator summary={row.workInProgress} />
+      </div>
+      <div class="tile-prs">
+        <OpenPrCount repoId={row.id} compact />
+        <span class="label">open PRs</span>
       </div>
       {idle ? (
         <p class="tile-body none">no open changes</p>
@@ -346,6 +355,9 @@ export function Overview({ snapshot, config }: { snapshot: Snapshot | null; conf
                 ))}
                 {header("open", SORT_LABEL.open, "num")}
                 {header("archive", SORT_LABEL.archive, "num")}
+                <th scope="col" class="num" title="Open pull requests from the last fetch; the overview never contacts GitHub">
+                  PRs
+                </th>
                 {header("wip", SORT_LABEL.wip)}
                 {header("updated", SORT_LABEL.updated, "when")}
                 <th scope="col" class="row-actions">
