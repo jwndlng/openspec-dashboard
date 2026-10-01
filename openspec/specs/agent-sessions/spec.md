@@ -131,7 +131,7 @@ A profile SHALL be able to carry **additional instructions** for each of its pro
 
 The composed text SHALL be one line: additional instructions SHALL be trimmed and any run of whitespace in them, including a line break, SHALL become a single space before they are appended, separated from the prompt by one space. Placeholders SHALL be substituted in the composed text under the rules of the prompt being extended, so additional instructions for a starter or for Ship MAY use `{change}` and MUST use no other placeholder, additional Integrate instructions MUST contain no placeholder at all, and no additional instructions may carry a permission-bypass mode or flag. Additional instructions that break these rules SHALL be refused when the configuration is saved, with a message naming the field, leaving the stored configuration unchanged.
 
-Additional instructions SHALL be an addition, never a prompt of their own: an action whose prompt is not configured SHALL stay unavailable and its additional instructions SHALL NOT be sent anywhere. Ship SHALL be the one exception in effect, because it has an agent-neutral default prompt: additional Ship instructions SHALL be appended to the profile's Ship prompt, or to that default when the profile has none. Settings SHALL offer the additional instructions of each prompt beside that prompt, saying that the text is appended to it; empty additional instructions SHALL be stored as absent.
+Additional instructions SHALL be an addition, never a prompt of their own: an action whose prompt is not configured SHALL stay unavailable and its additional instructions SHALL NOT be sent anywhere. Ship, Resolve conflicts and Integrate SHALL be the exceptions in effect, because each has an agent-neutral default prompt: their additional instructions SHALL be appended to the profile's own prompt for that action, or to that action's default when the profile has none. Settings SHALL offer the additional instructions of each prompt beside that prompt, saying that the text is appended to it; empty additional instructions SHALL be stored as absent.
 
 #### Scenario: Additional instructions reach a starter's prompt
 - **WHEN** the repository's agent has the Implement prompt `/opsx:apply {change}` and additional Implement instructions `Run the linter before you finish.`, and Implement is started for change `cache-api-calls`
@@ -140,6 +140,10 @@ Additional instructions SHALL be an addition, never a prompt of their own: an ac
 #### Scenario: Additional instructions extend the default Ship prompt
 - **WHEN** a profile has no Ship prompt of its own but additional Ship instructions `Add the checklist from CONTRIBUTING.md to the pull request body.`, and Ship is used on a session whose work is `unpushed`
 - **THEN** the text submitted to the agent is the agent-neutral default Ship prompt followed by one space and that sentence
+
+#### Scenario: Additional instructions extend the default Integrate prompt
+- **WHEN** the default agent's profile has no Integrate prompt of its own but additional Integrate instructions `Commit nothing.`, and **Integrate** is activated
+- **THEN** the agent receives the agent-neutral default Integrate prompt followed by one space and `Commit nothing.`
 
 #### Scenario: Additional instructions are one line
 - **WHEN** additional Archive instructions are saved as two lines with trailing blanks

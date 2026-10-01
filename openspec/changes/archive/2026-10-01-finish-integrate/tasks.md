@@ -14,7 +14,7 @@
 
 ## 3. Settings
 
-- [~] 3.1 In `src/ui/agentSettings.tsx`, use `DEFAULT_INTEGRATE_PROMPT` as the Integrate field's placeholder, change its hint to say empty uses the default shown, and change the additional Integrate instructions hint to say they are appended to the prompt or to the default; verify by running `bun run dev`, opening Settings, clearing the Integrate prompt and confirming the hint and placeholder, and that Integrate stays active on an integratable row
+- [x] 3.1 In `src/ui/agentSettings.tsx`, use `DEFAULT_INTEGRATE_PROMPT` as the Integrate field's placeholder, change its hint to say empty uses the default shown, and change the additional Integrate instructions hint to say they are appended to the prompt or to the default; verify by running `bun run dev`, opening Settings, clearing the Integrate prompt and confirming the hint and placeholder, and that Integrate stays active on an integratable row
 
 ## 4. Wrap-up
 

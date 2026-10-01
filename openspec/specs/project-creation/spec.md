@@ -14,8 +14,9 @@ its "No repositories tracked yet" empty state next to the link to Settings. Acti
 one of the configured workspace roots (scan roots) and types a folder name; the dialog SHALL show the full path that
 will be created and SHALL preselect the root when exactly one is configured. Confirming the dialog SHALL create the
 project as specified below. The action SHALL be unavailable, with the reason stated in its tooltip and accessible name,
-when no workspace root is configured, when agent sessions are off, when the default agent has no `integrate` prompt, or
-when the default agent's executable was not found on this machine.
+when no workspace root is configured, when agent sessions are off, when no default agent is configured, or when the
+default agent's executable was not found on this machine. A default agent without an `integrate` prompt of its own MUST
+NOT make it unavailable: the integration session then uses the agent-neutral default Integrate prompt.
 
 #### Scenario: One root configured
 - **WHEN** the only workspace root is `/w/acme` and the user opens **New project** and types `gamma-tools`
@@ -36,6 +37,10 @@ when the default agent's executable was not found on this machine.
 #### Scenario: Agent sessions are off
 - **WHEN** agent sessions are disabled
 - **THEN** **New project** is inactive and its reason says that agent sessions are off
+
+#### Scenario: The agent has no Integrate prompt of its own
+- **WHEN** a workspace root is configured, agent sessions are on, the default agent's executable is found and its profile carries no `integrate` prompt
+- **THEN** **New project** is active
 
 ### Requirement: Only a new folder directly inside a workspace root is accepted
 
@@ -68,9 +73,9 @@ directory. Every refusal SHALL give its reason in the dialog and SHALL leave the
 
 ### Requirement: Every precondition is checked before anything is written
 
-The dashboard SHALL check every condition that would stop the project from being set up — agent sessions on, the
-default agent's `integrate` prompt present and its executable found, `git` found, the root and name accepted — before it
-creates the folder. A refused request MUST create no folder, run no git command and start no process.
+The dashboard SHALL check every condition that would stop the project from being set up — agent sessions on, a default
+agent configured and its executable found, `git` found, the root and name accepted — before it creates the folder. A
+refused request MUST create no folder, run no git command and start no process.
 
 #### Scenario: Agent missing
 - **WHEN** the default agent's executable is not found and the user confirms a valid name
