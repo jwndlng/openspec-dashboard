@@ -532,9 +532,10 @@ it: the running integration session for that folder if there is one, otherwise a
 absolute path that discovery currently reports as integratable; anything else MUST be refused with `404`, including a
 path that is already a tracked repository, holds `openspec/config.yaml`, is not a git repository, is a linked worktree
 or lies outside the configured roots or below an ignore path. The request MUST be refused with `403` when agent
-sessions are disabled, with `400` when the default agent has no `integrate` prompt, and with `503` when the default
-agent's executable is not found — each with a reason and without starting a process. It is a mutating request under the
-same-origin protection.
+sessions are disabled, and with `503` when no default agent is configured or the default agent's executable is not
+found — each with a reason and without starting a process. A default agent without an `integrate` prompt of its own
+MUST NOT be refused: the session is started with the agent-neutral default Integrate prompt. It is a mutating request
+under the same-origin protection.
 
 `GET /api/sessions` SHALL include integration sessions, marked as such, carrying the folder and no repository id,
 change, action or branch; resume, close, delete and the terminal WebSocket SHALL accept an integration session's id
@@ -550,6 +551,10 @@ be unchanged.
 #### Scenario: Opening an integration
 - **WHEN** `POST /api/integrations` is sent with the path of a repository discovery reports as integratable
 - **THEN** the response is the integration session, with the folder as its working directory and no branch
+
+#### Scenario: Opening with an agent that has no Integrate prompt
+- **WHEN** `POST /api/integrations` is sent for an integratable repository and the default agent's profile carries no `integrate` prompt
+- **THEN** the response is the integration session, and the agent was started with the agent-neutral default Integrate prompt
 
 #### Scenario: Opening twice
 - **WHEN** `POST /api/integrations` is sent for a folder whose integration session is running
@@ -585,15 +590,20 @@ be unchanged.
 and return `201` with the new folder's canonical `path` and the integration session started in it. It is a mutating
 request under the same-origin protection. Before anything is written the request MUST be refused, each with a reason and
 without creating a folder, running git or starting a process: with `403` when agent sessions are disabled; with `400`
-when `name` is not a valid folder name or the default agent has no `integrate` prompt; with `404` when `root` is not a
-configured workspace root or is not an existing directory; with `409` when the target path exists or lies in or below a
-tracked repository, an ignore path or the dashboard's home directory; and with `503` when the default agent's executable
-or `git` is not found. When the folder was created but `git init` failed, the response SHALL be `500` with git's error
-and the folder's path, and no process SHALL have been started.
+when `name` is not a valid folder name; with `404` when `root` is not a configured workspace root or is not an existing
+directory; with `409` when the target path exists or lies in or below a tracked repository, an ignore path or the
+dashboard's home directory; and with `503` when no default agent is configured or the default agent's executable or
+`git` is not found. A default agent without an `integrate` prompt of its own MUST NOT be refused. When the folder was
+created but `git init` failed, the response SHALL be `500` with git's error and the folder's path, and no process SHALL
+have been started.
 
 #### Scenario: Creating a project
 - **WHEN** `POST /api/projects` is sent with `{ "root": "/w/acme", "name": "gamma-tools" }`, `/w/acme` is a workspace root and agent sessions are on
 - **THEN** the response is `201` with `path` `/w/acme/gamma-tools` and a running integration session whose folder is that path
+
+#### Scenario: Creating a project with an agent that has no Integrate prompt
+- **WHEN** `POST /api/projects` is sent with a valid root and name and the default agent's profile carries no `integrate` prompt
+- **THEN** the response is `201` and the integration session was started with the agent-neutral default Integrate prompt
 
 #### Scenario: Existing folder
 - **WHEN** `POST /api/projects` names a folder that already exists
