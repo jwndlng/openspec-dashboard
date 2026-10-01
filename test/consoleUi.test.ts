@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import type { ChangeSession, ConsoleSession } from "../src/shared/types.ts";
-import { CONSOLE_CONTROL_NAME, consoleControl, consoleToShow, NEEDS_YOU_AFTER_MS, openWork } from "../src/ui/sessionState.ts";
+import { CONSOLE_CONTROL_NAME, consoleControl, consoleToShow, NEEDS_YOU_AFTER_MS, openWork, startShowsConsole } from "../src/ui/sessionState.ts";
 
 const NOW = Date.parse("2026-09-23T12:00:00Z");
 const at = (msAgo: number) => new Date(NOW - msAgo).toISOString();
@@ -38,4 +38,9 @@ test("a running console is neither counted nor listed as open work", () => {
   expect(items.map((i) => i.key)).toEqual(["s1", "s2"]);
   expect(running).toBe(2);
   expect(unshipped).toBe(0);
+});
+
+test("a starter on a card stays on the board, one in the Console tab shows the started session", () => {
+  expect(startShowsConsole("card")).toBe(false);
+  expect(startShowsConsole("console")).toBe(true);
 });

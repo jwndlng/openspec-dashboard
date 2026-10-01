@@ -359,7 +359,7 @@ export function ConsolePanel({ session, worktree, of }: { session?: ChangeSessio
                 class="btn sm session-start"
                 key={action}
                 title={`Sends the “${STEP_LABEL[action]}” prompt to this session’s agent`}
-                onClick={() => act(() => ui.start(session.repoId, session.change, action))}
+                onClick={() => act(() => ui.start(session.repoId, session.change, action, true))}
               >
                 ↳ {STEP_LABEL[action]}
               </button>
@@ -385,7 +385,7 @@ export function ConsolePanel({ session, worktree, of }: { session?: ChangeSessio
           <p class="detail-hint">No agent has worked on this change yet. Start one here and its terminal takes this tab.</p>
           {card && (
             <div class="console-starters">
-              <SessionControls card={card} />
+              <SessionControls card={card} place="console" />
             </div>
           )}
         </div>
