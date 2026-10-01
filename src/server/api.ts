@@ -11,6 +11,7 @@ import { discoverRepos } from "./discover.ts";
 import { environmentReport } from "./environment.ts";
 import { confirmPendingIntegrations, startIntegration } from "./integration.ts";
 import { MAX_BLOCKING_FILES, PullBusyError, pullAll, pullRepository, resolvePullRepository } from "./pull.ts";
+import { PullRequests, type RepoTarget } from "./pullRequests.ts";
 import type { Scanner } from "./scanner.ts";
 import { applyTo, EMPTY_SHARED_CONFIG, loadSharedConfig, previewFor, SharedConfigValidationError, saveSharedConfig } from "./sharedConfig.ts";
 import { SessionError, type SessionManager } from "./sessions/manager.ts";
@@ -23,6 +24,8 @@ export interface AppState {
   sessions?: SessionManager;
   /** History for the Activity view. Absent in contexts that record none; the endpoint then answers with an empty feed. */
   activity?: ActivityLog;
+  /** Cached pull-request lists; created on first use, so a state without one still serves the endpoints. */
+  pullRequests?: PullRequests;
 }
 
 /** The part of Bun's server object the handler needs: upgrading the terminal request to a WebSocket. */
@@ -65,6 +68,8 @@ async function putConfig(state: AppState, req: Request): Promise<Response> {
   if (consoleProblem) return json({ error: `invalid config: agentSessions.consoleDir: ${consoleProblem}`, issues: [`agentSessions.consoleDir: ${consoleProblem}`] }, 400);
   const previous = state.config;
   state.config = await saveConfig(next);
+  // A repository may have been added, removed or re-pointed: look its `origin` up again when it is next projected.
+  state.pullRequests?.forgetOrigins();
   if (state.config.pollIntervalSeconds !== previous.pollIntervalSeconds) {
     state.scanner.start(); // reschedules and kicks off a scan
   } else if (enabledIds(state.config) !== enabledIds(previous)) {
@@ -563,6 +568,40 @@ async function postCleanup(state: AppState, req: Request, repoId: string): Promi
   }
 }
 
+/**
+ * Pull requests are read for every enabled repository — a folder without git or without a GitHub `origin` is reported
+ * as unavailable rather than left out. `isGit` comes from the scan, never from letting a git command fail.
+ */
+function pullRequestTargets(state: AppState): RepoTarget[] {
+  const scanned = new Map(state.scanner.snapshot.repos.map((r) => [r.id, r]));
+  return state.config.repos.filter((r) => r.enabled).map((r) => ({ id: r.id, path: r.path, isGit: scanned.get(r.id)?.isGit === true }));
+}
+
+function pullRequestStore(state: AppState): PullRequests {
+  state.pullRequests ??= new PullRequests();
+  return state.pullRequests;
+}
+
+/** Read-only: the cache as it is. Starts no process and contacts nothing. */
+async function getPullRequests(state: AppState): Promise<Response> {
+  return json(await pullRequestStore(state).list(pullRequestTargets(state)));
+}
+
+/**
+ * The only route besides the pull action that reaches a network, and only because the user opened or refreshed a
+ * pull-request list. It runs read-only `gh` queries, writes to no repository and triggers no scan.
+ */
+async function postPullRequestsRefresh(state: AppState, req: Request): Promise<Response> {
+  const body = await readJson(req);
+  const targets = pullRequestTargets(state);
+  const repoId = body.repoId;
+  if (repoId !== undefined) {
+    if (typeof repoId !== "string") return json({ error: "repoId must be a string" }, 400);
+    if (!targets.some((t) => t.id === repoId)) return json({ error: "unknown or disabled repository" }, 404);
+  }
+  return json(await pullRequestStore(state).refresh(targets, { repoId: repoId as string | undefined, force: body.force === true }));
+}
+
 const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "[::1]"]);
 
 /**
@@ -652,6 +691,8 @@ export function createFetchHandler({ state, indexHtml }: AppOptions): (req: Requ
       if (req.method === "PUT" && pathname === "/api/shared-config") return putSharedConfig(state, req);
       if (req.method === "POST" && pathname === "/api/shared-config/preview") return postSharedConfigPreview(state, req);
       if (req.method === "POST" && pathname === "/api/shared-config/apply") return postSharedConfigApply(state, req);
+      if (req.method === "GET" && pathname === "/api/pull-requests") return getPullRequests(state);
+      if (req.method === "POST" && pathname === "/api/pull-requests/refresh") return postPullRequestsRefresh(state, req);
       if (req.method === "POST" && pathname === "/api/pull") return postPullAll(state);
       const pullOne = /^\/api\/repos\/([^/]+)\/pull$/.exec(pathname);
       if (req.method === "POST" && pullOne) return postPull(state, req, decodeURIComponent(pullOne[1]));

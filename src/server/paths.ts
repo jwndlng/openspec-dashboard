@@ -82,3 +82,8 @@ export function canonicalPath(p: string): string {
 export function whichOnPath(command: string): string | undefined {
   return Bun.which(command, { PATH: process.env.PATH ?? "" }) ?? undefined;
 }
+
+/** Last fetched pull-request lists. Display-only: deleting it loses the cached lists and nothing else. */
+export function pullRequestsCachePath(): string {
+  return join(dashboardHome(), "pull-requests.json");
+}

@@ -3,6 +3,7 @@ export type Route =
   | { view: "overview" }
   | { view: "board" }
   | { view: "activity" }
+  | { view: "pullRequests" }
   | { view: "repo"; repoId: string }
   | { view: "change"; repoId: string; changeName: string }
   | { view: "settings" };
@@ -12,6 +13,7 @@ export function routeFromPath(pathname: string): Route {
   if (path === "/settings") return { view: "settings" };
   if (path === "/board") return { view: "board" };
   if (path === "/activity") return { view: "activity" };
+  if (path === "/pull-requests") return { view: "pullRequests" };
   try {
     const change = /^\/repo\/([^/]+)\/change\/([^/]+)$/.exec(path);
     if (change) return { view: "change", repoId: decodeURIComponent(change[1]), changeName: decodeURIComponent(change[2]) };
@@ -22,6 +24,9 @@ export function routeFromPath(pathname: string): Route {
   }
   return { view: "overview" };
 }
+
+/** The Pull requests view; `pullRequestsQuery` builds the query that filters it to one repository. */
+export const PULL_REQUESTS_PATH = "/pull-requests";
 
 export function repoPath(repoId: string): string {
   return `/repo/${encodeURIComponent(repoId)}`;

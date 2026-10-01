@@ -60,6 +60,13 @@ track.
   by hand or through an agent session. ([change-detail](openspec/specs/change-detail/spec.md))
 - **Activity**: a feed of changes created, moved, archived and tasks ticked, including what happened while the
   dashboard was not running. ([activity-feed](openspec/specs/activity-feed/spec.md))
+- **Pull requests**: every open pull request of your tracked GitHub repositories, plus those merged or closed in the
+  last 7 days, with state, review decision, checks and a "review requested from you" marker; filter by repository,
+  state or what awaits your review. Each repository's open count also shows on Projects, and its board header opens
+  that repository's list. It reads them with your own [GitHub CLI](https://cli.github.com) (`gh pr list`, `gh api
+  user` — nothing else, and nothing is ever changed on GitHub), and only when you open the view or a repository's
+  dialog with a list older than five minutes, or activate **Refresh**. Without `gh`, without being signed in, or for a
+  repository that is not on `github.com`, it simply says so. ([pull-requests](openspec/specs/pull-requests/spec.md))
 - **New change**: create and stage `openspec/changes/<name>/` from a repository's board, or from the combined
   board with a project dropdown, optionally with a prompt.
   Nothing is committed.
@@ -105,8 +112,10 @@ track.
   send `Content-Type: application/json`.
 - It reads repositories with read-only git commands. Scanning, polling and discovery never write anything or contact
   a remote.
-- It writes to a repository only when you click something: **Pull** (the only network access, using git's own
-  credentials) and, when you confirm **Resolve and pull**, removing the change files it created here that the incoming
+- It reaches the network in two places, both when you click something: **Pull**, using git's own credentials, and the
+  **Pull requests** query, using your `gh` sign-in. Neither ever sees, stores or asks for a credential, and the
+  pull-request query runs `gh` outside every repository, writes nothing and changes nothing on GitHub.
+- It writes to a repository only when you click something: **Pull** (using git's own credentials) and, when you confirm **Resolve and pull**, removing the change files it created here that the incoming
   commits already contain — a copy of anything that differs is kept under `~/.openspec-dashboard/` first; **New
   change**, **Dismiss change** (deleting that change's directory), **applying shared config**, creating or removing an
   **agent session's worktree**, and **Clean up** (removing worktrees and deleting merged local branches you selected).

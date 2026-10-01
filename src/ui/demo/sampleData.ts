@@ -6,7 +6,7 @@
 // same rules the scanner uses, so the sample cannot disagree with the board.
 import { DEFAULT_SHORTCUTS } from "../../shared/agentDefaults.ts";
 import { deriveStage } from "../../shared/columns.ts";
-import type { ActivityEvent, AgentProfile, ArtifactStatus, ChangeSnapshot, CheckoutStatus, Config, EnvironmentCheck, EnvironmentReport, IntegratableRepo, RepoConfig, RepoSnapshot, SharedProfile, Shortcut, Snapshot, Worktree } from "../../shared/types.ts";
+import type { ActivityEvent, AgentProfile, ArtifactStatus, ChangeSnapshot, CheckoutStatus, Config, EnvironmentCheck, EnvironmentReport, IntegratableRepo, PullRequest, PullRequestsResponse, RepoConfig, RepoPullRequests, RepoSnapshot, SharedProfile, Shortcut, Snapshot, Worktree } from "../../shared/types.ts";
 import { summarizeWorkInProgress } from "../../shared/workInProgress.ts";
 
 /** Appears in the demo bundle only; test/demoBundle.test.ts uses it to tell the two bundles apart. */
@@ -521,4 +521,84 @@ export function buildActivity(snapshot: Snapshot, now: number): ActivityEvent[] 
       const at = new Date(d.at).toISOString();
       return { v: 1, id: `demo${String(i).padStart(6, "0")}`, at, detectedAt: at, repoId: d.repo.id, repoName: d.repo.name, ...d.rest } as ActivityEvent;
     });
+}
+
+// ---- pull requests ----
+
+interface SamplePr {
+  number: number;
+  title: string;
+  author: string;
+  head: string;
+  /** Hours since it was opened, or — for a closed one — since it was merged or closed. */
+  age: number;
+  draft?: boolean;
+  state?: PullRequest["state"];
+  review?: PullRequest["review"];
+  checks?: PullRequest["checks"];
+  /** Review is requested from the demo's simulated viewer. */
+  mine?: boolean;
+}
+
+/** The demo's signed-in GitHub user; fictional, like everything else here. */
+export const DEMO_VIEWER = "demo-user";
+
+/**
+ * Made-up pull requests per sample repository, under an invented `acme` organisation. `quill-docs` has no entry: it
+ * stands for a tracked repository whose `origin` is not on GitHub.
+ */
+const SAMPLE_PRS: Record<string, SamplePr[]> = {
+  "atlas-api": [
+    { number: 482, title: "Add rate limiting to the public API", author: "demo-rae", head: "feat/add-rate-limiting", age: 3, review: "review_required", checks: "pending" },
+    { number: 479, title: "Paginate the list endpoints", author: "demo-kit", head: "feat/paginate-list-endpoints", age: 26, review: "approved", checks: "passing" },
+    { number: 474, title: "Structured error codes", author: "demo-user", head: "feat/structured-error-codes", age: 50, draft: true },
+    { number: 471, title: "Deprecate v1 auth", author: "demo-kit", head: "chore/deprecate-v1-auth", age: 40, state: "merged", checks: "passing" },
+  ],
+  "harbor-web": [
+    { number: 311, title: "Redesign the settings page", author: "demo-nils", head: "feat/redesign-settings-page", age: 5, review: "review_required", checks: "failing", mine: true },
+    { number: 305, title: "Dark mode tokens", author: "demo-user", head: "feat/dark-mode-tokens", age: 70, review: "approved", checks: "passing" },
+  ],
+  "lantern-infra": [
+    { number: 128, title: "Centralize log shipping", author: "demo-rae", head: "feat/centralize-log-shipping", age: 22, review: "changes_requested", checks: "passing" },
+    { number: 124, title: "Pin the terraform providers", author: "demo-user", head: "chore/pin-terraform-providers", age: 140, state: "merged", checks: "passing" },
+  ],
+  "ember-mobile": [{ number: 57, title: "Biometric login", author: "demo-nils", head: "feat/biometric-login", age: 9, review: "review_required", checks: "pending", mine: true }],
+  "orbit-data": [
+    { number: 93, title: "Partition the events table", author: "demo-kit", head: "feat/partition-events-table", age: 96 },
+    { number: 90, title: "Nightly quality report", author: "demo-rae", head: "feat/nightly-quality-report", age: 30, state: "closed" },
+  ],
+};
+
+/**
+ * The demo's pull-request lists, in the shape the API answers with. Ages are relative to `now`, so the sample stays
+ * recent; `fetchedAt` is when the demo last "queried GitHub" — nothing leaves the page either way.
+ */
+export function buildPullRequests(snapshot: Snapshot, now: number, fetchedAt: number): PullRequestsResponse {
+  const iso = (ageMs: number) => new Date(now - ageMs).toISOString();
+  const repos: RepoPullRequests[] = snapshot.repos.map((repo) => {
+    const sample = SAMPLE_PRS[repo.name];
+    if (!sample) return { repoId: repo.id, status: "unavailable", reason: "not on GitHub", pullRequests: [] };
+    const pullRequests: PullRequest[] = sample.map((pr) => {
+      const at = iso(pr.age * HOUR);
+      const state = pr.state ?? "open";
+      return {
+        number: pr.number,
+        title: pr.title,
+        url: `https://github.com/acme/${repo.name}/pull/${pr.number}`,
+        author: pr.author,
+        head: pr.head,
+        base: "main",
+        draft: pr.draft === true,
+        state,
+        createdAt: state === "open" ? at : iso((pr.age + 60) * HOUR),
+        mergedAt: state === "merged" ? at : undefined,
+        closedAt: state === "open" ? undefined : at,
+        review: pr.review ?? "none",
+        reviewRequestedFromViewer: pr.mine === true,
+        checks: pr.checks ?? "none",
+      };
+    });
+    return { repoId: repo.id, github: `acme/${repo.name}`, status: "ok", fetchedAt: new Date(fetchedAt).toISOString(), truncated: { open: false, closed: false }, pullRequests };
+  });
+  return { viewer: DEMO_VIEWER, repos };
 }

@@ -12,6 +12,7 @@ import { relTime } from "./format.ts";
 import { Kanban } from "./kanban.tsx";
 import { Overview } from "./overview.tsx";
 import { PullProvider } from "./pull.tsx";
+import { PullRequestsProvider, PullRequestsView } from "./pullRequests.tsx";
 import { enabledOnly } from "./overviewState.ts";
 import { backTarget, parseDetailQuery, repoPath, type Route, routeFromPath } from "./routes.ts";
 import { EndSessionDialog } from "./endSessionDialog.tsx";
@@ -20,7 +21,7 @@ import { environmentWarning, type EnvironmentState } from "./environmentState.ts
 import { Settings } from "./settings.tsx";
 import { currentPath, currentQuery, followInApp, href, hrefWithQuery, navigate, onRouteChange } from "./url.ts";
 import { applyTheme, loadPreference, nextPreference, resolveTheme, savePreference, type ThemePreference } from "./theme.ts";
-import { IconActivity, IconChevronDown, IconClock, IconKanban, IconLayoutGrid, IconMonitor, IconMoon, IconRefresh, IconSettings, IconSun } from "./icons.tsx";
+import { IconActivity, IconChevronDown, IconClock, IconGitPullRequest, IconKanban, IconLayoutGrid, IconMonitor, IconMoon, IconRefresh, IconSettings, IconSun } from "./icons.tsx";
 import { LogoMark } from "./logo.tsx";
 
 const THEME_LABEL: Record<ThemePreference, string> = { system: "System", light: "Light", dark: "Dark" };
@@ -227,6 +228,8 @@ export function App() {
 
   return (
     <PullProvider onPulled={reloadSoon}>
+    {/* The pull-request cache, read by this view, the projects overview and each repository board. */}
+    <PullRequestsProvider>
     {/* Above both the page and the overlay: the detail view's Console tab reads sessions from here too, and the
         end-session dialog it opens must not sit inside the part that goes inert. */}
     <SessionProvider config={config} snapshot={shown} consoleOpen={consoleShown} showConsole={showConsole} integrationId={integrationShown ? integrationId : undefined} showIntegration={showIntegration}>
@@ -320,6 +323,14 @@ export function App() {
             route.view === "activity",
           )}
           {link(
+            "/pull-requests",
+            <>
+              <IconGitPullRequest />
+              Pull requests
+            </>,
+            route.view === "pullRequests",
+          )}
+          {link(
             "/settings",
             <>
               <IconSettings />
@@ -354,6 +365,8 @@ export function App() {
           />
         ) : route.view === "activity" ? (
           <Activity snapshot={shown} onSeen={markSeen} />
+        ) : route.view === "pullRequests" ? (
+          <PullRequestsView snapshot={shown} />
         ) : route.view === "overview" ? (
           <Overview snapshot={shown} config={config} />
         ) : (
@@ -389,6 +402,7 @@ export function App() {
     <ConsoleOverlay />
     <IntegrationOverlay />
     </SessionProvider>
+    </PullRequestsProvider>
     </PullProvider>
   );
 }
