@@ -33,5 +33,5 @@
 ## 7. Validation
 
 - [x] 7.1 Run `bun run check`; verify it passes.
-- [~] 7.2 Run `bun run build` and exercise `dist/openspec-dashboard` against a repository with a real open pull request whose head branch matches a change: the card shows `PR #<number>` and links to it, the detail header shows its state, review decision and checks, and a change on a branch with no pull request shows neither (invariant: the product build, not only `bun run dev`).
+- [x] 7.2 Run `bun run build` and exercise `dist/openspec-dashboard` against a repository with a real open pull request whose head branch matches a change: the card shows `PR #<number>` and links to it, the detail header shows its state, review decision and checks, and a change on a branch with no pull request shows neither (invariant: the product build, not only `bun run dev`).
 - [~] 7.3 Confirm with `gh` uninstalled or signed out that no card shows a link, no card shows an error, the detail header explains once, and the board still opens without contacting anything.
