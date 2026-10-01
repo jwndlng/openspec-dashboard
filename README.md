@@ -29,14 +29,17 @@ bun run build                  # → dist/openspec-dashboard
 bun run dev                    # or run from source on http://127.0.0.1:4711
 ```
 
-On first run, open **Settings**, add a workspace root such as `~/Workspace`, and enable the repositories you want to
-track.
+On first run, open **Settings** and add a workspace root such as `~/Workspace`. Then go back to **Projects**: the
+repositories found under it are listed below your tracked ones, and **Enable** starts tracking one right away.
 
 ## Features
 
 - **Projects**: one row per repository, showing open changes per stage, changes ready to archive, work in progress
   and when it was last updated, as a table or as tiles (`view=tiles`). Click a row or tile to open that repository's
-  board. ([project-overview](openspec/specs/project-overview/spec.md))
+  board. Below them, **Untracked & disabled** lists what you could bring in — disabled repositories, OpenSpec
+  repositories found under your workspace roots, and git repositories without OpenSpec — with **Enable**, **Ignore**
+  and **Integrate**, each saved at once; **Disable** on a row or tile moves a repository down there.
+  ([project-overview](openspec/specs/project-overview/spec.md))
 - **Work in progress**: for the main checkout and every git worktree of a repository, whether it holds uncommitted
   changes or unpushed commits, or is stale, e.g. `2 worktrees · 1 uncommitted · 1 unpushed`. Sort by it or filter to
   it. Chips on tiles and on a repository's header show each checkout's branch with `●N` uncommitted items, `↑N`
@@ -97,8 +100,8 @@ track.
   A tracked folder that is not a git repository works too — there the agent runs in the folder itself, so it edits your
   files directly, with no branch and no undo, and the session says so. The same goes for an **Integrate** session.
   ([agent-sessions](openspec/specs/agent-sessions/spec.md))
-- **Integrate a repository**: Settings lists the git repositories under your workspace roots that do not use OpenSpec
-  yet, next to the candidates that already do. **Integrate** starts your agent in that repository to run
+- **Integrate a repository**: Projects lists the git repositories under your workspace roots that do not use OpenSpec
+  yet, next to the discovered ones that already do. **Integrate** starts your agent in that repository to run
   `openspec init` there and answer its questions. The dashboard writes nothing itself, and starts tracking the
   repository only once `openspec/config.yaml` is actually on disk — never on the agent's word. That one session runs
   in the checkout itself, with no branch and no undo, because that is where the marker has to land.

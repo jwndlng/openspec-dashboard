@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { realpathSync } from "node:fs";
 import { mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { ConfigValidationError, defaultAgentSessions, defaultConfig, loadConfig, newRepoConfig, repoId, saveConfig, validateConfig, validateIgnorePaths } from "../src/server/config.ts";
+import { ConfigValidationError, defaultAgentSessions, defaultConfig, loadConfig, newRepoConfig, repoId, saveConfig, updateConfig, validateConfig, validateIgnorePaths } from "../src/server/config.ts";
 import { CLAUDE_PROFILE, DEFAULT_SHORTCUTS, FORMER_PROMPTS } from "../src/shared/agentDefaults.ts";
 import { tempDir, useTempHome } from "./helpers.ts";
 
@@ -324,4 +324,39 @@ test("the Resolve conflicts prompt and its suffix survive a round trip, like Shi
   const bypass = { ...CLAUDE_PROFILE, prompts: { ...CLAUDE_PROFILE.prompts, resolveConflicts: "Fix it with --dangerously-skip-permissions." } };
   expect(() => validateConfig({ ...defaultConfig(), agentSessions: { enabled: true, agents: [bypass], defaultAgent: "claude" } })).toThrow(/permission-bypass/);
   expect(() => validateConfig(withSuffixes({ resolveConflicts: "Work in {repo}." }))).toThrow(/promptSuffixes\.resolveConflicts: unknown placeholder/);
+});
+
+test("concurrent config updates are applied one after another, so neither is lost", async () => {
+  const a = newRepoConfig("/tmp/serial/a", true);
+  const b = newRepoConfig("/tmp/serial/b", false);
+  const state = { config: await saveConfig({ ...defaultConfig(), repos: [a, b] }) };
+  // The first update is slow: without the queue the second would read the config before the first is saved.
+  const slow = updateConfig(state, async (current) => {
+    await Bun.sleep(20);
+    return { ...current, repos: current.repos.map((r) => (r.id === a.id ? { ...r, enabled: false } : r)) };
+  });
+  const fast = updateConfig(state, (current) => ({ ...current, repos: current.repos.map((r) => (r.id === b.id ? { ...r, enabled: true } : r)) }));
+  await Promise.all([slow, fast]);
+  const { config } = await loadConfig();
+  expect(config.repos.map((r) => [r.path, r.enabled])).toEqual([
+    ["/tmp/serial/a", false],
+    ["/tmp/serial/b", true],
+  ]);
+  expect(state.config).toEqual(config);
+});
+
+test("a failed config update reaches its caller, saves nothing and does not block the next one", async () => {
+  const state = { config: await saveConfig(defaultConfig()) };
+  await expect(updateConfig(state, () => ({ ...state.config, pollIntervalSeconds: 1 }))).rejects.toThrow(ConfigValidationError);
+  await expect(
+    updateConfig(state, () => {
+      throw new Error("refused");
+    }),
+  ).rejects.toThrow("refused");
+  const { previous, saved } = await updateConfig(state, (current) => ({ ...current, pollIntervalSeconds: 30 }));
+  expect(previous.pollIntervalSeconds).toBe(60);
+  expect(saved.pollIntervalSeconds).toBe(30);
+  expect((await loadConfig()).config.pollIntervalSeconds).toBe(30);
+  const unchanged = await updateConfig(state, () => undefined);
+  expect(unchanged.saved).toBe(unchanged.previous);
 });

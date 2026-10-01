@@ -4,7 +4,7 @@
 // on disk, never anything the agent printed — and it then tracks the repository, a write to `~/.openspec-dashboard/` only.
 import { integrateUnavailable, type Config, type IntegrationSession } from "../shared/types.ts";
 import { availableName } from "../shared/nameHints.ts";
-import { saveConfig, newRepoConfig } from "./config.ts";
+import { newRepoConfig, updateConfig } from "./config.ts";
 import { discoverRepos, isOpenSpecRepo } from "./discover.ts";
 import { canonicalPath } from "./paths.ts";
 import { SessionError, type SessionManager } from "./sessions/manager.ts";
@@ -47,11 +47,15 @@ const NOT_INTEGRATABLE = "this folder is not a repository waiting to be set up f
  */
 export async function confirmIntegration(state: IntegrationState, folder: string): Promise<boolean> {
   const path = canonicalPath(folder);
-  if (state.config.repos.some((r) => canonicalPath(r.path) === path)) return false;
   if (!(await isOpenSpecRepo(path))) return false;
-  const repo = newRepoConfig(path, true);
-  const named = { ...repo, name: availableName(repo, state.config.repos.map((r) => r.name)) };
-  state.config = await saveConfig({ ...state.config, repos: [...state.config.repos, named] });
+  // Checked again inside the write: a concurrent Enable or an earlier confirmation may have added it meanwhile.
+  const { previous, saved } = await updateConfig(state, (current) => {
+    if (current.repos.some((r) => canonicalPath(r.path) === path)) return undefined;
+    const repo = newRepoConfig(path, true);
+    const named = { ...repo, name: availableName(repo, current.repos.map((r) => r.name)) };
+    return { ...current, repos: [...current.repos, named] };
+  });
+  if (saved === previous) return false;
   state.scanner.trigger();
   return true;
 }

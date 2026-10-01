@@ -26,7 +26,7 @@ const broken = report([
 // 4.1 — the deep-link contract.
 test("the section list gains environment without changing any existing link", () => {
   expect(SECTION_IDS[SECTION_IDS.length - 1]).toBe("environment");
-  expect(SECTION_IDS.slice(0, -1)).toEqual(["roots", "tracked", "discovered", "integratable", "scanning", "agents", "shared-config"]);
+  expect(SECTION_IDS.slice(0, -1)).toEqual(["roots", "tracked", "scanning", "agents", "shared-config"]);
   // Appended, so the first section is still the one left out of the URL.
   expect(serializeSection("", "roots", "roots")).toBe("");
   expect(serializeSection("", "environment", "roots")).toBe("?section=environment");

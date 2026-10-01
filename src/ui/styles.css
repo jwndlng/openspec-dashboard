@@ -889,10 +889,6 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: 
   .list .item.env-check { grid-template-columns: auto minmax(0, 1fr); }
   .list .item.env-check .path, .list .item.env-check .remedy { grid-column: 1 / -1; }
 }
-.list .item.candidate { grid-template-columns: minmax(120px, 200px) 1fr auto; }
-.list .item.candidate .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-/* A repository waiting to be set up: the same row, with the refusal (when there is one) wrapping onto its own line. */
-.list .item.integratable .hint.danger { grid-column: 1 / -1; color: var(--danger); font-size: 11px; }
 .list .item.off .path, .list .item.off .name { color: var(--fg-disabled); }
 .savebar { position: sticky; bottom: 0; display: flex; gap: var(--gap-1); align-items: center; padding: var(--gap-1) var(--gap-2); background: var(--bg-section); border-top: 1px solid var(--border-light); }
 
@@ -907,8 +903,6 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: 
   .settings-link[aria-current="true"] { border-bottom-color: var(--brand); }
   .shared-config .profiles { grid-template-columns: 1fr; }
   .list .item { grid-template-columns: auto 1fr; }
-  .list .item.candidate { grid-template-columns: 1fr auto; }
-  .list .item.integratable .row { grid-column: 1 / -1; }
   .list .item .path { grid-column: 1 / -1; }
 }
 
@@ -1212,4 +1206,46 @@ body:has(.detail-overlay) { overflow: hidden; }
 @media (max-width: 720px) {
   .pull-requests { padding: 16px var(--gap-2) var(--gap-3); }
   .pr-meta .pr-branch { max-width: 140px; }
+}
+
+/* ---- Projects overview: tracking ---- */
+/* Disable beside Pull, a pending row while the first scan runs, and the Untracked & disabled section below. Own class
+   names throughout, so none of these rules competes with the generic .name/.path/.count ones elsewhere. */
+.disable { display: inline-flex; align-items: center; gap: 6px; margin-left: 4px; }
+.disable-error { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--danger); font-size: 11px; }
+.btn.icon-only { padding-left: 6px; padding-right: 6px; }
+.tile-actions { flex: none; display: inline-flex; align-items: center; }
+.pending-name { color: var(--fg-subtle); font-weight: 400; }
+.projects tr.pending { cursor: default; }
+.projects tr.pending .none { font-style: italic; }
+.tile.pending { cursor: default; grid-template-rows: 40px minmax(0, 1fr); }
+.tile.pending:hover { transform: none; background: var(--bg-raised); border-color: var(--border-light); }
+.overview .empty.inline { margin: 0 auto var(--gap-3); }
+.nothing-tracked-title { margin: 0; font-size: 16px; }
+.untracked { margin-top: var(--gap-3); display: flex; flex-direction: column; gap: var(--gap-1); }
+.untracked .hint { text-align: left; padding: 0; margin: 0; font-size: 12px; }
+.untracked-head { display: flex; align-items: baseline; gap: var(--gap-1); }
+.untracked-head .spacer { flex: 1; }
+.untracked-title { margin: 0; font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--fg-heading); }
+.untracked-count { color: var(--fg-subtle); font-weight: 400; }
+.untracked-group { display: flex; flex-direction: column; gap: 4px; margin-top: var(--gap-1); }
+.untracked-group-title { margin: 0; font-size: 12px; font-weight: 600; color: var(--fg-heading); }
+.untracked-list { list-style: none; margin: 4px 0 0; padding: 0; background: var(--bg-section); border: 1px solid var(--border-light); border-radius: var(--radius-lg); }
+.untracked-entry {
+  display: grid; grid-template-columns: minmax(120px, max-content) minmax(0, 1fr) auto; align-items: center; column-gap: var(--gap-1); row-gap: 4px;
+  padding: 7px 10px; border-bottom: 1px solid var(--border-light);
+}
+.untracked-entry:last-child { border-bottom: 0; }
+.untracked-name { font-weight: 500; color: var(--fg-heading); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.untracked-entry.disabled .untracked-name { color: var(--fg-subtle); }
+/* Hint and badge sit with the path, so the three columns stay put whatever an entry carries. */
+.untracked-meta { grid-column: 2; justify-self: start; font-size: 11px; }
+.untracked-path { grid-column: 2; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg-subtle); font-size: 12px; }
+.untracked-actions { grid-column: 3; grid-row: 1; display: inline-flex; gap: 6px; justify-content: flex-end; }
+.untracked-error { grid-column: 1 / -1; color: var(--danger); font-size: 11px; }
+@media (max-width: 720px) {
+  .untracked-entry { grid-template-columns: minmax(0, 1fr) auto; }
+  .untracked-meta, .untracked-path { grid-column: 1 / -1; }
+  .untracked-actions { grid-column: 2; }
+  .disable-error { max-width: 120px; }
 }

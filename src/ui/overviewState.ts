@@ -1,6 +1,6 @@
 // Projects overview: URL state, row derivation and sorting. Pure, shared by the view and its tests.
 import { isComplete } from "../shared/columns.ts";
-import type { Config, RepoSharedConfig, RepoSnapshot, Snapshot, WorkInProgress, Worktree } from "../shared/types.ts";
+import type { Config, DiscoveredRepo, DiscoverResult, RepoSharedConfig, RepoSnapshot, Snapshot, WorkInProgress, Worktree } from "../shared/types.ts";
 
 /**
  * The snapshot restricted to repositories enabled in the config. Saving Settings triggers a rescan without waiting
@@ -126,9 +126,16 @@ function parentSegments(path: string): string[] {
   return path.split(/[\\/]+/).filter(Boolean).slice(0, -1).reverse();
 }
 
-/** For rows sharing a name: the shortest trailing run of parent segments that is unique within the group. */
-function addHints(rows: OverviewRow[]): void {
-  const groups = new Map<string, OverviewRow[]>();
+/** Anything listed on the overview with a name and a path: rows, pending rows and untracked entries. */
+interface Hinted {
+  name: string;
+  path: string;
+  hint?: string;
+}
+
+/** For entries sharing a name: the shortest trailing run of parent segments that is unique within the group. */
+function addHints(rows: Hinted[]): void {
+  const groups = new Map<string, Hinted[]>();
   for (const row of rows) {
     const key = row.name.toLowerCase();
     groups.set(key, [...(groups.get(key) ?? []), row]);
@@ -204,10 +211,77 @@ export function sortRows(rows: OverviewRow[], sort: SortKey, dir: SortDir): Over
   });
 }
 
+/** A repository enabled in the config that the snapshot does not hold yet: it was enabled a moment ago. */
+export interface PendingRow {
+  id: string;
+  name: string;
+  path: string;
+  hint?: string;
+}
+
+/** Enabled repositories the scan has not reached yet, by name. None while the snapshot is still loading. */
+export function pendingRows(config: Config | null, snapshot: Snapshot | null): PendingRow[] {
+  if (!config || !snapshot) return [];
+  const scanned = new Set(snapshot.repos.map((r) => r.id));
+  return config.repos
+    .filter((r) => r.enabled && !scanned.has(r.id))
+    .map((r) => ({ id: r.id, name: r.name, path: r.path }))
+    .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }) || a.path.localeCompare(b.path));
+}
+
+/** The groups of the Untracked & disabled section, in the order they are shown. */
+export const UNTRACKED_KINDS = ["disabled", "discovered", "integratable"] as const;
+export type UntrackedKind = (typeof UNTRACKED_KINDS)[number];
+
+export interface UntrackedEntry {
+  kind: UntrackedKind;
+  id: string;
+  name: string;
+  path: string;
+  hint?: string;
+  /** Discovered entries only: other known repositories with the same `origin`. */
+  sameRemoteAs?: DiscoveredRepo["sameRemoteAs"];
+}
+
+/**
+ * Everything the overview offers to bring in: disabled repositories from the config, then the latest discovery's
+ * candidates and repositories without OpenSpec — minus anything the config already holds, which covers the moment
+ * between an Enable and the next discovery result. Grouped in `UNTRACKED_KINDS` order, by name, then path.
+ */
+export function untrackedEntries(config: Config | null, discover: DiscoverResult | undefined): UntrackedEntry[] {
+  const configured = new Set(config?.repos.map((r) => r.id));
+  const entries: UntrackedEntry[] = [
+    ...(config?.repos ?? []).filter((r) => !r.enabled).map((r): UntrackedEntry => ({ kind: "disabled", id: r.id, name: r.name, path: r.path })),
+    ...(discover?.candidates ?? [])
+      .filter((c) => !configured.has(c.id))
+      .map((c): UntrackedEntry => ({ kind: "discovered", id: c.id, name: c.name, path: c.path, sameRemoteAs: c.sameRemoteAs })),
+    ...(discover?.integratable ?? [])
+      .filter((r) => !configured.has(r.id))
+      .map((r): UntrackedEntry => ({ kind: "integratable", id: r.id, name: r.name, path: r.path })),
+  ];
+  const rank = (e: UntrackedEntry) => UNTRACKED_KINDS.indexOf(e.kind);
+  return entries.sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name, undefined, { sensitivity: "base" }) || a.path.localeCompare(b.path));
+}
+
+/**
+ * Path hints across everything on the overview — a tracked row, a pending row and a discovered entry with the same name
+ * must tell each other apart too. Replaces the hints `overviewRows` computed among the rows alone.
+ */
+export function hintAcross(...lists: Hinted[][]): void {
+  const all = lists.flat();
+  for (const entry of all) entry.hint = undefined;
+  addHints(all);
+}
+
+/** The overview's search over anything with a name and a hint: the same rule as for rows. */
+export function matchesSearch(entry: Pick<Hinted, "name" | "hint">, q: string): boolean {
+  const needle = q.trim().toLowerCase();
+  return !needle || entry.name.toLowerCase().includes(needle) || (entry.hint?.toLowerCase().includes(needle) ?? false);
+}
+
 /** Search and the work-in-progress filter combine. */
 export function filterRows(rows: OverviewRow[], q: string, wip = false): OverviewRow[] {
-  const needle = q.trim().toLowerCase();
-  return rows.filter((r) => (!wip || attentionCount(r) > 0) && (!needle || r.name.toLowerCase().includes(needle) || r.hint?.toLowerCase().includes(needle)));
+  return rows.filter((r) => (!wip || attentionCount(r) > 0) && matchesSearch(r, q));
 }
 
 /** A tile's monogram: the initials of up to two words of the repository name (`atlas-api` → `AA`, `docs` → `D`). */

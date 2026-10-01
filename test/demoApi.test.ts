@@ -51,6 +51,30 @@ test("discovery offers only untracked candidates, and an enabled one appears as 
   expect((await api.state()).repos.find((r) => r.id === picked.id)?.changes).toEqual([]);
 });
 
+test("the overview's Enable, Disable and Ignore change the demo's config at once, for this instance only", async () => {
+  const { api } = demo();
+  const [picked] = (await api.discover()).candidates;
+  const tracked = await api.trackRepo(picked.path);
+  expect(tracked.repos.find((r) => r.id === picked.id)).toMatchObject({ enabled: true, name: picked.name });
+  expect((await api.discover()).candidates.map((c) => c.id)).not.toContain(picked.id);
+  expect((await api.state()).repos.map((r) => r.id)).toContain(picked.id);
+
+  const disabled = await api.setRepoEnabled(picked.id, false);
+  expect(disabled.repos.find((r) => r.id === picked.id)?.enabled).toBe(false);
+  expect((await api.state()).repos.map((r) => r.id)).not.toContain(picked.id);
+  await expect(api.setRepoEnabled("000000000000", true)).rejects.toMatchObject({ status: 404 });
+
+  const [plain] = (await api.discover()).integratable;
+  await expect(api.trackRepo(plain.path)).rejects.toMatchObject({ status: 404 });
+  expect((await api.ignorePath(plain.path)).ignorePaths).toContain(plain.path);
+  expect((await api.discover()).integratable.map((r) => r.id)).not.toContain(plain.id);
+
+  // What a reload does: a fresh instance has the original sample again.
+  const fresh = demo().api;
+  expect((await fresh.discover()).candidates.map((c) => c.id)).toContain(picked.id);
+  expect((await fresh.discover()).integratable.map((r) => r.id)).toContain(plain.id);
+});
+
 test("discovery outside the sample workspace explains itself instead of pretending", async () => {
   const { api } = demo();
   const result = await api.discover(["/somewhere/else"]);

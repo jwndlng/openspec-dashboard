@@ -368,7 +368,15 @@ export function App() {
         ) : route.view === "pullRequests" ? (
           <PullRequestsView snapshot={shown} />
         ) : route.view === "overview" ? (
-          <Overview snapshot={shown} config={config} />
+          <Overview
+            snapshot={shown}
+            config={config}
+            onConfig={(c) => {
+              setConfig(c);
+              // An enabled repository is scanned by the server; the snapshot follows as soon as the scan is done.
+              reloadSoon();
+            }}
+          />
         ) : (
           // One board for the board, repository and change routes, keyed by its path: opening and closing a change keeps
           // this very instance — its filters, minimized groups and scroll position — while moving between boards starts

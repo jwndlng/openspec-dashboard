@@ -3,9 +3,11 @@ import { currentSection, navOffset, parseSection, rowScrollLeft, SECTION_IDS, se
 import { hrefWithQuery } from "../src/ui/url.ts";
 
 test("parseSection accepts known ids only", () => {
-  expect(parseSection("?section=discovered", SECTION_IDS)).toBe("discovered");
+  expect(parseSection("?section=tracked", SECTION_IDS)).toBe("tracked");
   expect(parseSection("?q=x&section=shared-config", SECTION_IDS)).toBe("shared-config");
-  expect(parseSection("?section=integratable", SECTION_IDS)).toBe("integratable");
+  // Moved to the projects overview: old links open Settings at the top, like any unknown id.
+  expect(parseSection("?section=discovered", SECTION_IDS)).toBeUndefined();
+  expect(parseSection("?section=integratable", SECTION_IDS)).toBeUndefined();
   expect(parseSection("?section=nope", SECTION_IDS)).toBeUndefined();
   expect(parseSection("", SECTION_IDS)).toBeUndefined();
   // A section that is not on the page right now is not a valid target.
@@ -30,11 +32,11 @@ test("at the top of the page the first section is current, even when the next on
 test("a section becomes current when its start reaches the top of the view", () => {
   expect(currentSection(rects(-174, 100, 810, 1210), false)).toBe("roots");
   expect(currentSection(rects(-180, 94, 804, 1204), false)).toBe("tracked");
-  expect(currentSection(rects(-900, -700, 0, 400), false)).toBe("discovered");
+  expect(currentSection(rects(-900, -700, 0, 400), false)).toBe("scanning");
 });
 
 test("at the end of the scroll range the last section is current, however short it is", () => {
-  expect(currentSection(rects(-1500, -1300, -400, -200, 300, 420, 600), true)).toBe("shared-config");
+  expect(currentSection(rects(-1500, -1300, -400, 300, 420), true)).toBe("shared-config");
 });
 
 test("one section is always current; none is when there are no sections", () => {
