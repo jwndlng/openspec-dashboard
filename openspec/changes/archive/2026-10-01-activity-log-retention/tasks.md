@@ -13,7 +13,7 @@
 
 ## 3. Activity view and demo
 
-- [~] 3.1 In `src/ui/activity.tsx`, show "Activity is kept for 7 days." (days derived from `RETENTION_MS`) after the last entry when there is no `nextBefore`, and add it to the unfiltered empty state; verify with `bun run dev` that the note appears at the end of the feed and in an empty feed, in light and dark theme
+- [x] 3.1 In `src/ui/activity.tsx`, show "Activity is kept for 7 days." (days derived from `RETENTION_MS`) after the last entry when there is no `nextBefore`, and add it to the unfiltered empty state; verify with `bun run dev` that the note appears at the end of the feed and in an empty feed, in light and dark theme
 - [x] 3.2 Keep the demo feed within the window: in `src/ui/demo/sampleData.ts` move the baseline `repo-tracked` events and the archive cut-off inside 7 days, and apply `retained` before `pageEvents` in `src/ui/demo/demoApi.ts`; verify the demo tests pass and the demo feed shows no date older than a week
 
 ## 4. Wrap-up
