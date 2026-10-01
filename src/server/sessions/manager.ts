@@ -5,6 +5,7 @@ import { randomUUID } from "node:crypto";
 import { realpath } from "node:fs/promises";
 import { join } from "node:path";
 import { availableActions, changeSessions, isChangeless, isConsole, isIntegration, OPEN_SESSION_STATES, repoAgentEnabled, SESSION_ACTIONS, SHIPPABLE_WORK, type AgentAvailability, type ChangeSession, type Config, type ConsoleSession, type IntegrationSession, type Session, type SessionAction, type SessionWorktree, type Snapshot, type WorkStatus, type PromptResult, type ShipResult } from "../../shared/types.ts";
+import { sessionBranch } from "../../shared/sessionBranch.ts";
 import { isCleaningUp } from "../cleanup.ts";
 import { isDismissing } from "../dismissChange.ts";
 import { worktreesDir } from "../paths.ts";
@@ -37,9 +38,7 @@ export function worktreeName(action: SessionAction, change: string): string {
   return action === "archive" ? `archive-${change}` : change;
 }
 
-export function sessionBranch(action: SessionAction, change: string): string {
-  return action === "archive" ? `chore/archive-${change}` : `feat/${change}`;
-}
+export { sessionBranch };
 
 const NOT_A_CHANGE = "this is the main console, which belongs to no change";
 const NOT_A_CHANGE_INTEGRATING = "this session is setting a repository up for OpenSpec, so it belongs to no change";

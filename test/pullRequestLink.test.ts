@@ -1,6 +1,6 @@
 // The one rule that ties a cached pull request to a change: exact head branch, own repository, open first.
 import { expect, test } from "bun:test";
-import { linkedPullRequest } from "../src/shared/pullRequestLink.ts";
+import { candidateBranches, linkedPullRequest } from "../src/shared/pullRequestLink.ts";
 import type { PullRequest, RepoPullRequests } from "../src/shared/types.ts";
 
 const HOUR = 3600_000;
@@ -30,7 +30,8 @@ const list = (repoId: string, pullRequests: PullRequest[], patch: Partial<RepoPu
   ...patch,
 });
 
-const change = (branchMatch?: string, repoId = "alpha") => ({ repoId, branchMatch });
+// A name no test branch is derived from, so these cases exercise `branchMatch` alone.
+const change = (branchMatch?: string, repoId = "alpha") => ({ repoId, name: "unrelated-change", branchMatch });
 
 test("a pull request whose head branch is exactly the change's branch is its pull request", () => {
   const lists = [list("alpha", [pr({ number: 125 })])];
@@ -113,4 +114,59 @@ test("it is pure: the input is left as it was", () => {
   const before = structuredClone(lists);
   linkedPullRequest(change("feat/add-validate-phase"), lists);
   expect(lists).toEqual(before);
+});
+
+// ---- candidate branches: `branchMatch` plus the dashboard's own session branches ----
+
+const named = (name: string, patch: { branchMatch?: string; created?: string; repoId?: string } = {}) => ({ repoId: "alpha", name, ...patch });
+
+test("the candidates are branchMatch, then the session branches, without duplicates", () => {
+  expect(candidateBranches(named("add-validate-phase"))).toEqual(["feat/add-validate-phase", "chore/archive-add-validate-phase"]);
+  expect(candidateBranches(named("add-validate-phase", { branchMatch: "fix/add-validate-phase" }))).toEqual([
+    "fix/add-validate-phase",
+    "feat/add-validate-phase",
+    "chore/archive-add-validate-phase",
+  ]);
+  expect(candidateBranches(named("add-validate-phase", { branchMatch: "feat/add-validate-phase" }))).toEqual(["feat/add-validate-phase", "chore/archive-add-validate-phase"]);
+});
+
+test("after its worktree is removed, a change still finds the merged pull request on its session branch", () => {
+  const merged = pr({ number: 125, state: "merged", mergedAt: at(1) });
+  expect(linkedPullRequest(named("add-validate-phase"), [list("alpha", [merged])])?.number).toBe(125);
+});
+
+test("the session branches are exact too: no containment, no off-convention name, no other repository", () => {
+  const lists = [list("alpha", [pr({ number: 125, head: "feat/add-validate-phase" }), pr({ number: 131, head: "chore/archive-add-validate-phase" })])];
+  expect(linkedPullRequest(named("add-validate", { branchMatch: "feat/add-validate" }), lists)).toBeUndefined();
+  expect(linkedPullRequest(named("add-validate"), lists)).toBeUndefined();
+  const offConvention = [list("alpha", [pr({ number: 125, head: "jan/125-add-validate-phase" })])];
+  expect(linkedPullRequest(named("add-validate-phase", { branchMatch: "feat/add-validate-phase" }), offConvention)).toBeUndefined();
+  expect(linkedPullRequest(named("add-validate-phase", { repoId: "beta" }), lists)).toBeUndefined();
+});
+
+test("a settled pull request older than the change belongs to an earlier change of that name", () => {
+  const old = pr({ number: 90, head: "feat/rotate-keys", state: "merged", mergedAt: "2026-09-10T10:00:00Z", createdAt: "2026-09-08T10:00:00Z" });
+  expect(linkedPullRequest(named("rotate-keys", { created: "2026-09-20" }), [list("alpha", [old])])).toBeUndefined();
+  const closed = pr({ number: 91, head: "feat/rotate-keys", state: "closed", closedAt: "2026-09-10T10:00:00Z" });
+  expect(linkedPullRequest(named("rotate-keys", { created: "2026-09-20" }), [list("alpha", [closed])])).toBeUndefined();
+  // Merged the day the change was created, or the evening before in UTC: the day of slack keeps it.
+  const sameDay = pr({ number: 92, head: "feat/rotate-keys", state: "merged", mergedAt: "2026-09-20T18:00:00Z" });
+  expect(linkedPullRequest(named("rotate-keys", { created: "2026-09-20" }), [list("alpha", [sameDay])])?.number).toBe(92);
+  const eveningBefore = pr({ number: 93, head: "feat/rotate-keys", state: "merged", mergedAt: "2026-09-19T22:30:00Z" });
+  expect(linkedPullRequest(named("rotate-keys", { created: "2026-09-20" }), [list("alpha", [eveningBefore])])?.number).toBe(93);
+  // An open pull request, and a change without a creation date, are never filtered.
+  const open = pr({ number: 94, head: "feat/rotate-keys", createdAt: "2026-09-01T10:00:00Z" });
+  expect(linkedPullRequest(named("rotate-keys", { created: "2026-09-20" }), [list("alpha", [open])])?.number).toBe(94);
+  expect(linkedPullRequest(named("rotate-keys"), [list("alpha", [old])])?.number).toBe(90);
+});
+
+test("across candidates: an open archive pull request wins, and once both are merged the later one does", () => {
+  const implementation = pr({ number: 125, state: "merged", mergedAt: "2026-10-01T09:00:00Z", createdAt: "2026-09-30T09:00:00Z" });
+  const archiveOpen = pr({ number: 131, head: "chore/archive-add-validate-phase", createdAt: "2026-10-01T12:00:00Z" });
+  expect(linkedPullRequest(named("add-validate-phase"), [list("alpha", [implementation, archiveOpen])])?.number).toBe(131);
+  const archiveMerged = { ...archiveOpen, state: "merged" as const, mergedAt: "2026-10-02T09:00:00Z" };
+  expect(linkedPullRequest(named("add-validate-phase"), [list("alpha", [archiveMerged, implementation])])?.number).toBe(131);
+  // Merged the other way round, the implementation pull request is the later one.
+  const lateImplementation = { ...implementation, mergedAt: "2026-10-03T09:00:00Z" };
+  expect(linkedPullRequest(named("add-validate-phase"), [list("alpha", [archiveMerged, lateImplementation])])?.number).toBe(125);
 });

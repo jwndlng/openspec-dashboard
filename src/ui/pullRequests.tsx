@@ -193,7 +193,7 @@ export function CardPullRequest({ pr, repoName }: { pr: PullRequest; repoName: s
 export type DetailPr = { pr: PullRequest; unavailable?: undefined } | { pr?: undefined; unavailable: string };
 
 /** The linked pull request; else, when the repository's pull requests cannot be read, the reason — said once. */
-export function detailPullRequest(change: Pick<ChangeSnapshot, "repoId" | "branchMatch">, response: PullRequestsResponse | undefined): DetailPr | undefined {
+export function detailPullRequest(change: Pick<ChangeSnapshot, "repoId" | "name" | "branchMatch" | "created">, response: PullRequestsResponse | undefined): DetailPr | undefined {
   const pr = linkedPullRequest(change, response?.repos);
   if (pr) return { pr };
   const list = response?.repos.find((r) => r.repoId === change.repoId);
