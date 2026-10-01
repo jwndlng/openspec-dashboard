@@ -360,3 +360,40 @@ test("a failed config update reaches its caller, saves nothing and does not bloc
   const unchanged = await updateConfig(state, () => undefined);
   expect(unchanged.saved).toBe(unchanged.previous);
 });
+
+const withLabels = (fields: { labels?: unknown; hiddenLabels?: unknown }) => ({ ...defaultConfig(), repos: [{ ...newRepoConfig("/w/acme/alpha-infra", true), ...fields }] });
+const issuesOf = (input: unknown): string[] => {
+  try {
+    validateConfig(input);
+  } catch (err) {
+    if (err instanceof ConfigValidationError) return err.issues;
+    throw err;
+  }
+  return [];
+};
+
+test("labels are trimmed and keep their case and order", () => {
+  const [repo] = validateConfig(withLabels({ labels: [" client ", "Infra"], hiddenLabels: ["docker"] })).repos;
+  expect(repo.labels).toEqual(["client", "Infra"]);
+  expect(repo.hiddenLabels).toEqual(["docker"]);
+});
+
+test("a label listed twice, ignoring case, is refused naming the repository and the label", () => {
+  expect(issuesOf(withLabels({ labels: ["Infra", "infra"] })).join(" ")).toContain('alpha-infra: label "infra" is listed twice');
+  refuse(withLabels({ hiddenLabels: ["Go", "go"] }));
+});
+
+test("empty, over-long, comma, control-character and too many labels are refused", () => {
+  refuse(withLabels({ labels: ["  "] }));
+  refuse(withLabels({ labels: ["x".repeat(40)] }));
+  refuse(withLabels({ labels: ["a,b"] }));
+  refuse(withLabels({ labels: ["a\nb"] }));
+  refuse(withLabels({ labels: Array.from({ length: 21 }, (_, i) => `l${i}`) }));
+  expect(validateConfig(withLabels({ labels: ["x".repeat(32)] })).repos[0].labels).toEqual(["x".repeat(32)]);
+});
+
+test("a config without labels gains no label keys", () => {
+  const [repo] = validateConfig(withLabels({})).repos;
+  expect("labels" in repo).toBe(false);
+  expect("hiddenLabels" in repo).toBe(false);
+});

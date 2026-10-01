@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useState } from "preact/hooks";
+import { displayedLabels } from "../shared/labels.ts";
+import { LabelChips } from "./labels.tsx";
 import { boardColumns, isComplete } from "../shared/columns.ts";
 import { linkedPullRequest } from "../shared/pullRequestLink.ts";
 import type { ChangeSnapshot, Config, PullRequest, PullRequestsResponse, RepoSnapshot, Snapshot } from "../shared/types.ts";
@@ -307,7 +309,8 @@ function Column({ label, cards, now, hot, showRepo, from, countLabel, groups }: 
   );
 }
 
-function RepoHeader({ repo, now, stats, onCreated }: { repo: RepoSnapshot; now: number; stats: { open: number; toArchive: number }; onCreated: () => void }) {
+function RepoHeader({ repo, config, now, stats, onCreated }: { repo: RepoSnapshot; config: Config | null; now: number; stats: { open: number; toArchive: number }; onCreated: () => void }) {
+  const labels = displayedLabels(config?.repos.find((r) => r.id === repo.id), repo.detectedLabels);
   const updated = repo.lastUpdatedAt ? relTime(repo.lastUpdatedAt, now) : undefined;
   const notice = branchNotice(repo);
   const [creating, setCreating] = useState(false);
@@ -339,6 +342,7 @@ function RepoHeader({ repo, now, stats, onCreated }: { repo: RepoSnapshot; now: 
           {hasCheckoutInfo(repo.worktrees) ? <CheckoutSummaryButton checkouts={repo.worktrees} repoName={repo.name} /> : repo.currentBranch && <BranchBadge branch={repo.currentBranch} hint="current branch" />}
           {/* A repository without git has no remote and no pull requests, so it gets no control. */}
           {repo.isGit && <RepoPullRequestsButton repoId={repo.id} repoName={repo.name} />}
+          <LabelChips labels={labels} />
           {repo.sharedConfig?.unreadable && (
             <span class="badge danger" title="openspec/config.yaml is missing, not valid YAML, or has malformed shared-config markers">
               ⚙ config unreadable
@@ -477,7 +481,7 @@ export function Kanban({ snapshot, config, repoId, query, onReload }: { snapshot
 
   return (
     <>
-      {single && repos[0] && <RepoHeader repo={repos[0]} now={now} stats={stats} onCreated={() => onReload?.()} />}
+      {single && repos[0] && <RepoHeader repo={repos[0]} config={config} now={now} stats={stats} onCreated={() => onReload?.()} />}
       {!single && (
         <div class="band">
           <div class="band-main">

@@ -9,6 +9,8 @@ import { relTime } from "./format.ts";
 import {
   filterRows,
   hintAcross,
+  isLabelActive,
+  labelOptions,
   matchesSearch,
   naturalDir,
   type OverviewLayout,
@@ -24,12 +26,15 @@ import {
   sortRows,
   checkoutSummary,
   monogram,
+  ROW_LABEL_LIMIT,
+  toggleLabel,
   toggleSort,
   untrackedEntries,
   wipIndicator,
 } from "./overviewState.ts";
 import { Stat } from "./band.tsx";
 import { IconChevronDown, IconFolderGit, IconGitBranch, IconSearch, IconX } from "./icons.tsx";
+import { LabelChips } from "./labels.tsx";
 import { assignRepoHues } from "./repoGroups.ts";
 import { PullAllButton, PullButton } from "./pull.tsx";
 import { OpenPrCount } from "./pullRequests.tsx";
@@ -113,11 +118,17 @@ function RepoBadges({ row }: { row: OverviewRow }) {
   );
 }
 
+/** Rows and tiles toggle the overview's label filter through their chips. */
+export interface LabelFilter {
+  isActive: (label: string) => boolean;
+  onToggle: (label: string) => void;
+}
+
 function lastUpdated(row: OverviewRow, now: number): string {
   return row.lastUpdatedAt ? `${relTime(row.lastUpdatedAt, now)} ago`.replace("just now ago", "just now") : "—";
 }
 
-export function Row({ row, stages, now, tracking }: { row: OverviewRow; stages: string[]; now: number; tracking: Tracking }) {
+export function Row({ row, stages, now, tracking, labelFilter }: { row: OverviewRow; stages: string[]; now: number; tracking: Tracking; labelFilter?: LabelFilter }) {
   const idle = row.open === 0;
   return (
     <tr class={idle ? "idle" : ""} title={`${row.path} · ${row.archived} archived`} onClick={openOnPlainClick(row)}>
@@ -125,6 +136,7 @@ export function Row({ row, stages, now, tracking }: { row: OverviewRow; stages: 
         <RepoLink row={row} />
         {row.hint && <span class="path-hint mono">{row.hint}/</span>}
         <RepoBadges row={row} />
+        <LabelChips labels={row.labels} limit={ROW_LABEL_LIMIT} isActive={labelFilter?.isActive} onToggle={labelFilter?.onToggle} />
       </th>
       {idle ? (
         <td class="none" colSpan={stages.length + 2}>
@@ -237,7 +249,7 @@ function TileCheckouts({ row }: { row: OverviewRow }) {
  * Everything a row shows, plus the room a row lacks: one chip per checkout. Every tile has the same size and places its
  * parts in the same spots; the badge and checkout areas scroll inside the tile instead of growing it.
  */
-export function Tile({ row, stages, now, hue, tracking }: { row: OverviewRow; stages: string[]; now: number; hue?: number; tracking: Tracking }) {
+export function Tile({ row, stages, now, hue, tracking, labelFilter }: { row: OverviewRow; stages: string[]; now: number; hue?: number; tracking: Tracking; labelFilter?: LabelFilter }) {
   const idle = row.open === 0;
   return (
     // biome-ignore lint/a11y/useKeyWithClickEvents: the click is a pointer shortcut, as on a table row; the keyboard path is the repository link inside
@@ -263,6 +275,8 @@ export function Tile({ row, stages, now, hue, tracking }: { row: OverviewRow; st
       <div class="tile-badges">
         <RepoBadges row={row} />
         <WipIndicator summary={row.workInProgress} />
+        {/* In the badge area, which wraps and scrolls inside the tile, so every tile keeps one size. */}
+        <LabelChips labels={row.labels} isActive={labelFilter?.isActive} onToggle={labelFilter?.onToggle} />
       </div>
       <div class="tile-prs">
         <OpenPrCount repoId={row.id} compact />
@@ -304,6 +318,20 @@ function useDiscovery(): DiscoveryState {
   return state;
 }
 
+function toggleLabelsOff(state: OverviewState): OverviewState {
+  const { labels: _labels, ...rest } = state;
+  return rest;
+}
+
+/** Why nothing is listed, in the words of the filters that are on. */
+export function noMatch(state: OverviewState): string {
+  const parts: string[] = [];
+  if (state.q.trim()) parts.push(`matches “${state.q}”`);
+  if (state.labels?.length) parts.push(`displays ${state.labels.map((l) => `“${l}”`).join(" and ")}`);
+  if (state.wip) parts.push("has uncommitted, unpushed or stale work");
+  return parts.length ? `No repository ${parts.join(" and ")}.` : "No repository to show.";
+}
+
 export function Overview({ snapshot, config, onConfig }: { snapshot: Snapshot | null; config: Config | null; onConfig: (config: Config) => void }) {
   const [state, setStateRaw] = useState<OverviewState>(() => parseOverviewState(currentQuery()));
   const now = Date.now();
@@ -313,7 +341,7 @@ export function Overview({ snapshot, config, onConfig }: { snapshot: Snapshot | 
     replaceQuery(serializeOverviewState(next));
   };
 
-  const rows = useMemo(() => (snapshot ? overviewRows(snapshot) : []), [snapshot]);
+  const rows = useMemo(() => (snapshot ? overviewRows(snapshot, config) : []), [snapshot, config]);
   const discovered = useDiscovery();
   const ui = useSessionUi();
   const hasRoots = (config?.scanRoots.length ?? 0) > 0;
@@ -346,13 +374,16 @@ export function Overview({ snapshot, config, onConfig }: { snapshot: Snapshot | 
   hintAcross(rows, pending, untracked);
   // Same stage columns, in the same order, as the combined board.
   const stages = useMemo(() => (snapshot ? boardColumns(snapshot).filter((c) => c !== "Archived") : []), [snapshot]);
-  const visible = sortRows(filterRows(rows, state.q, state.wip), state.sort, state.dir);
+  const visible = sortRows(filterRows(rows, state.q, state.wip, state.labels), state.sort, state.dir);
+  const labelFilter: LabelFilter = { isActive: (label) => isLabelActive(state, label), onToggle: (label) => setState(toggleLabel(state, label)) };
+  const labelChoices = labelOptions(rows, state.labels);
+  const labelsActive = (state.labels?.length ?? 0) > 0;
   // Over every repository, as on the board, so a tile's colour matches its cards and group headers.
   const hues = useMemo(() => assignRepoHues((snapshot?.repos ?? []).map((r) => r.id)), [snapshot]);
 
   const toArchive = rows.reduce((n, r) => n + r.toArchive, 0);
-  // Nothing pending or untracked has work in progress, so that filter hides both.
-  const pendingShown = state.wip ? [] : pending.filter((r) => matchesSearch(r, state.q));
+  // Nothing pending or untracked has work in progress or labels to show, so those filters hide both.
+  const pendingShown = state.wip || labelsActive ? [] : pending.filter((r) => matchesSearch(r, state.q));
   const untrackedShown = untracked.filter((e) => matchesSearch(e, state.q));
   const nothingTracked = snapshot !== null && rows.length === 0 && pending.length === 0;
   const runningIntegration = (path: string) => ui.integrations.find((s) => s.folder === path && s.state === "running")?.id;
@@ -444,6 +475,33 @@ export function Overview({ snapshot, config, onConfig }: { snapshot: Snapshot | 
             Showing <strong>{visible.length}</strong> of {rows.length}
           </span>
         </div>
+        {labelChoices.length > 0 && (
+          // biome-ignore lint/a11y/useSemanticElements: a fieldset would bring legend/border styling the control does not want
+          <div class="filterbar-row label-filter" role="group" aria-label="Filter by label">
+            <span class="label-filter-title">Labels</span>
+            {labelChoices.map((option) => {
+              const active = isLabelActive(state, option.label);
+              return (
+                <button
+                  key={option.label}
+                  type="button"
+                  class={`label-chip ${active ? "on" : ""} ${option.count === 0 ? "unmatched" : ""}`}
+                  aria-pressed={active}
+                  title={option.count === 0 ? "No repository displays this label" : `${option.count} ${option.count === 1 ? "repository" : "repositories"}`}
+                  onClick={() => setState(toggleLabel(state, option.label))}
+                >
+                  {option.label}
+                  <span class="label-count">{option.count}</span>
+                </button>
+              );
+            })}
+            {labelsActive && (
+              <button type="button" class="btn sm ghost" onClick={() => setState(toggleLabelsOff(state))}>
+                Clear labels
+              </button>
+            )}
+          </div>
+        )}
       </div>
       <div class="overview">
         <header class="overview-section-head">
@@ -459,7 +517,7 @@ export function Overview({ snapshot, config, onConfig }: { snapshot: Snapshot | 
               <PendingTile key={row.id} row={row} />
             ))}
             {visible.map((row) => (
-              <Tile key={row.id} row={row} stages={stages} now={now} hue={hues.get(row.id)} tracking={tracking} />
+              <Tile key={row.id} row={row} stages={stages} now={now} hue={hues.get(row.id)} tracking={tracking} labelFilter={labelFilter} />
             ))}
           </div>
         ) : (
@@ -489,13 +547,13 @@ export function Overview({ snapshot, config, onConfig }: { snapshot: Snapshot | 
                 <PendingTableRow key={row.id} row={row} columns={stages.length + 6} />
               ))}
               {visible.map((row) => (
-                <Row key={row.id} row={row} stages={stages} now={now} tracking={tracking} />
+                <Row key={row.id} row={row} stages={stages} now={now} tracking={tracking} labelFilter={labelFilter} />
               ))}
             </tbody>
           </table>
         )}
-        {snapshot && !nothingTracked && visible.length === 0 && pendingShown.length === 0 && <p class="hint">{state.q.trim() ? `No repository matches “${state.q}”${state.wip ? " with work in progress" : ""}.` : "No repository has uncommitted, unpushed or stale work."}</p>}
-        {!state.wip && config && (
+        {snapshot && !nothingTracked && visible.length === 0 && pendingShown.length === 0 && <p class="hint">{noMatch(state)}</p>}
+        {!state.wip && !labelsActive && config && (
           <UnmanagedSection
             entries={untrackedShown}
             discovery={discovered}

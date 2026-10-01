@@ -1,6 +1,7 @@
 import { join, sep } from "node:path";
 import { deriveStage } from "../shared/columns.ts";
-import type { ChangeSnapshot, Config, RepoConfig, RepoSnapshot, SharedConfig, Snapshot, Worktree } from "../shared/types.ts";
+import { detectLabels } from "../shared/labels.ts";
+import type { ChangeSnapshot, Config, DetectedLabel, RepoConfig, RepoSnapshot, SharedConfig, Snapshot, Worktree } from "../shared/types.ts";
 import { summarizeWorkInProgress } from "../shared/workInProgress.ts";
 import { emptySnapshot, writeSnapshot } from "./cache.ts";
 import { type ChangeCopy, foldLeftovers, mergeChanges } from "./mergeChanges.ts";
@@ -219,6 +220,7 @@ export async function scanRepo(repo: RepoConfig, source: RepoSource = new LocalR
     ? latestIso(await source.lastActivity(openspecDir), newestDirty(dirty, openspecDir))
     : await source.newestMtime(openspecDir);
   const ctx: RepoContext = { repo, source, root: repo.path, isMain: true, isGit, branch, worktrees, dirty, projectSchema };
+  const detectedLabels = await scanLabels(source, repo.path);
 
   const listing = await source.listChanges();
   const warnings = [...listing.warnings];
@@ -255,8 +257,28 @@ export async function scanRepo(repo: RepoConfig, source: RepoSource = new LocalR
     // A repository whose only activity is in a worktree is still an active repository.
     lastUpdatedAt: latestIso(lastUpdatedAt, ...active.map((c) => c.lastActivityAt)),
     sharedConfig,
+    detectedLabels,
     changes,
   };
+}
+
+const LABEL_SKIP_DIRS = new Set(["node_modules", "vendor", "dist", "build", "target", "openspec"]);
+const LABEL_MAX_SUBDIRS = 64;
+const LABEL_MAX_ENTRIES = 500;
+
+/**
+ * Technology labels of a project folder: the names of its entries and of its immediate subdirectories' entries, and
+ * nothing deeper. Lists directories only — no file is opened, no git runs — so a scan stays read-only.
+ */
+export async function scanLabels(source: Pick<RepoSource, "listEntries">, root: string): Promise<DetectedLabel[]> {
+  const top = (await source.listEntries(root)).slice(0, LABEL_MAX_ENTRIES);
+  const subdirs = top
+    .filter((e) => e.kind === "dir" && !e.name.startsWith(".") && !LABEL_SKIP_DIRS.has(e.name))
+    .map((e) => e.name)
+    .sort()
+    .slice(0, LABEL_MAX_SUBDIRS);
+  const nested = await Promise.all(subdirs.map(async (name) => (await source.listEntries(join(root, name))).slice(0, LABEL_MAX_ENTRIES)));
+  return detectLabels([...top, ...nested.flat()]);
 }
 
 const worktreeLabel = (w: Worktree) => w.branch ?? w.path;

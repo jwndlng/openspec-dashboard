@@ -1251,3 +1251,32 @@ body:has(.detail-overlay) { overflow: hidden; }
   .untracked-actions { grid-column: 2; }
   .disable-error { max-width: 120px; }
 }
+
+/* Repository labels (project-labels). Neutral chips: a label is a grouping, not a status, so it takes no role colour.
+   Detected labels carry an icon and a dashed edge; the tooltip names the marker. */
+.label-chips { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px; min-width: 0; }
+.repo-name .label-chips { margin-left: 6px; vertical-align: middle; }
+.label-chip {
+  display: inline-flex; align-items: center; gap: 3px;
+  padding: 0 6px; border-radius: 999px;
+  font: inherit; font-size: 11px; line-height: 16px; font-weight: 500;
+  border: 1px solid var(--border); color: var(--fg-body); background: var(--bg-section);
+  white-space: nowrap;
+}
+.label-chip.detected { border-style: dashed; color: var(--fg-subtle); }
+button.label-chip { cursor: pointer; }
+button.label-chip:hover { border-color: var(--border-strong); color: var(--fg-heading); }
+button.label-chip:focus-visible { outline: 2px solid var(--brand-ring); outline-offset: 1px; }
+.label-chip.on { border-style: solid; border-color: var(--brand); color: var(--fg-heading); background: var(--brand-softer); }
+.label-chip.unmatched { text-decoration: line-through; }
+.label-chip.unmatched.on { text-decoration: none; font-style: italic; }
+.label-chip .label-count { color: var(--fg-subtle); font-variant-numeric: tabular-nums; }
+.label-more { font-size: 11px; color: var(--fg-subtle); cursor: default; }
+.label-filter { margin-top: 6px; gap: 4px 6px; }
+.label-filter-title { font-size: 11px; font-weight: 600; color: var(--fg-subtle); text-transform: uppercase; letter-spacing: .04em; margin-right: 2px; }
+.repo-labels-edit { grid-column: 2 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; }
+.repo-labels-edit .input.label-input { width: 140px; padding-top: 1px; padding-bottom: 1px; font-size: 12px; }
+.repo-labels-edit .label-chip button { all: unset; cursor: pointer; display: inline-flex; color: var(--fg-subtle); }
+.repo-labels-edit .label-chip button:hover { color: var(--fg-heading); }
+.repo-labels-edit .label-chip.hidden-label { opacity: .55; text-decoration: line-through; }
+.repo-labels-edit .label-error { font-size: 11px; color: var(--danger); }
