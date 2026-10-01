@@ -71,12 +71,18 @@ bun test test/scanner.test.ts   # a single test file
    there, while the dashboard runs no git command and writes no file in that repository and adds it to its own config
    only once `openspec/config.yaml` is on disk. The same holds for the **main console** (`openConsole`, `src/server/sessions/consoleFolder.ts`):
    the default agent in the console folder — `~/.openspec-dashboard/console/` or a folder the user configured, which is
-   refused when it is, or lies inside, a tracked repository — with no worktree, no branch and no git command. With agent sessions disabled no process that can modify a repository is ever started. Scanning, polling, discovery, previews and saving settings
+   refused when it is, or lies inside, a tracked repository — with no worktree, no branch and no git command. Outside every tracked
+   repository, **creating a new project** (`src/server/createProject.ts`, `POST /api/projects`) is the one other
+   write beyond the dashboard home: on the user's confirmation, one new, empty folder directly inside a configured
+   workspace root, made with a non-recursive (exclusive) `mkdir` and refused in or below a tracked repository, an
+   ignore path or the dashboard home, then `git init` in that folder and nothing else — no other file, no commit, no
+   remote, nothing deleted even when `git init` fails. Every precondition is checked before the folder exists, and the
+   folder is then handed to an integration session, so `openspec init` is the agent's, exactly as for **Integrate**. With agent sessions disabled no process that can modify a repository is ever started. Scanning, polling, discovery, previews and saving settings
    write nothing to a repository. In particular `tasks.md` is never written: the dashboard reads the three checkbox
    states (`[x]`, `[~]` — finished, awaiting the user's confirmation — and `[ ]`) and shows them; only the agent, in its
    own session under its own permission prompts, ticks a box or writes a `- [~]`. All other writes stay under `~/.openspec-dashboard/` (or `OPENSPEC_DASHBOARD_HOME`
-   in tests). Apart from the worktree commands, the pull action's `fetch`, `merge --ff-only`, leftover `rm --cached`
-   and restoring `add`, the create-change and dismissal `add` and the cleanup's `branch -D`, git is invoked only with
+   in tests), apart from that new project folder. Apart from the worktree commands, the pull action's `fetch`, `merge --ff-only`, leftover `rm --cached`
+   and restoring `add`, the create-change and dismissal `add`, the cleanup's `branch -D` and the new project's `git init`, git is invoked only with
    the read-only subcommands listed in that spec — among them `ls-tree`, `cat-file` and `hash-object` without `-w`,
    which is how a leftover is told from the user's own work, and `merge-tree --write-tree`, which answers whether a
    session's branch still merges into its base. That last one is the only read-only subcommand that writes anything at

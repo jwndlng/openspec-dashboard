@@ -3,6 +3,7 @@ import { boardColumns } from "../shared/columns.ts";
 import type { Config, Snapshot, WorkInProgress } from "../shared/types.ts";
 import { hasCheckoutInfo } from "./checkoutMarkers.ts";
 import { NoRepos } from "./empty.tsx";
+import { NewProjectButton } from "./newProject.tsx";
 import { relTime } from "./format.ts";
 import {
   filterRows,
@@ -279,6 +280,7 @@ export function Overview({ snapshot, config }: { snapshot: Snapshot | null; conf
           </div>
         </div>
         <div class="band-actions">
+          <NewProjectButton config={config} />
           <PullAllButton repoIds={rows.filter((r) => r.isGit && r.ok).map((r) => r.id)} />
         </div>
       </div>

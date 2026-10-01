@@ -6,6 +6,7 @@ import { changeDirFor, listArtifactFiles, readArtifactFile } from "./artifacts.t
 import { consoleFolderProblem } from "./sessions/consoleFolder.ts";
 import { ConfigValidationError, saveConfig, validateConfig, validateIgnorePaths, validateScanRoots } from "./config.ts";
 import { createChange } from "./createChange.ts";
+import { createProject, CreateProjectError } from "./createProject.ts";
 import { dismissChange, DismissError, isDismissableName, previewDismiss } from "./dismissChange.ts";
 import { discoverRepos } from "./discover.ts";
 import { environmentReport } from "./environment.ts";
@@ -219,6 +220,16 @@ async function integrationRoute(state: AppState, req: Request): Promise<Response
     return json(session, created ? 201 : 200);
   } catch (err) {
     if (err instanceof SessionError) return json({ error: err.message }, err.status);
+    throw err;
+  }
+}
+
+/** New project (project-creation spec): one folder in a workspace root, `git init`, then an integration session. */
+async function projectRoute(state: AppState, req: Request): Promise<Response> {
+  try {
+    return json(await createProject(state, await readJson(req)), 201);
+  } catch (err) {
+    if (err instanceof CreateProjectError || err instanceof SessionError) return json({ error: err.message }, err.status);
     throw err;
   }
 }
@@ -674,6 +685,7 @@ export function createFetchHandler({ state, indexHtml }: AppOptions): (req: Requ
       if (pathname === "/api/sessions" || pathname.startsWith("/api/sessions/")) return sessionRoutes(state, req, url, server);
       if (pathname === "/api/console" && req.method === "POST") return consoleRoute(state);
       if (pathname === "/api/integrations" && req.method === "POST") return integrationRoute(state, req);
+      if (pathname === "/api/projects" && req.method === "POST") return projectRoute(state, req);
       const artifactMatch = req.method === "GET" ? ARTIFACT_ROUTE.exec(pathname) : null;
       if (artifactMatch) return artifactRoutes(state, url, artifactMatch);
       if (req.method === "POST" && pathname === "/api/worktrees/remove") return postWorktreeRemove(state, req);

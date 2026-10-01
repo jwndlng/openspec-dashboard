@@ -386,6 +386,7 @@ export function createDemoApi({ now = Date.now, latencyMs = 150, clock }: DemoAp
     openSession: (repoId, change, action) => attempt(() => demoSessions.open(repoId, change, action)),
     openConsole: () => attempt(() => demoSessions.openConsole()),
     startIntegration: (path) => attempt(() => demoSessions.openIntegration(path)),
+    createProject: () => new Promise((_, reject) => setTimeout(() => reject(new ApiError(503, "the demo does not create folders")), latencyMs)),
     resumeSession: (id) => attempt(() => demoSessions.resume(id)),
     shipSession: (id) => attempt(() => demoSessions.ship(id)),
     resolveConflicts: (id) => attempt(() => demoSessions.resolveConflicts(id)),

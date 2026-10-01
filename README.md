@@ -100,6 +100,10 @@ track.
   repository only once `openspec/config.yaml` is actually on disk — never on the agent's word. That one session runs
   in the checkout itself, with no branch and no undo, because that is where the marker has to land.
   ([repo-integration](openspec/specs/repo-integration/spec.md))
+- **New project**: from the projects overview, pick one of your workspace roots and type a folder name. The dashboard
+  creates that one empty folder, runs `git init` in it — no commit, no remote — and starts your agent there exactly as
+  **Integrate** does, to run `openspec init`; the project is tracked once `openspec/config.yaml` exists, and you carry
+  on in the same terminal. ([project-creation](openspec/specs/project-creation/spec.md))
 - **Console**: the terminal button next to the theme control opens your default agent outside every change, with no
   prompt — for drafting a new change, looking across repositories or any chore. It runs in a console folder
   (`~/.openspec-dashboard/console/` unless you pick another one in Settings, never inside a tracked repository), one at
@@ -120,6 +124,8 @@ track.
   change**, **Dismiss change** (deleting that change's directory), **applying shared config**, creating or removing an
   **agent session's worktree**, and **Clean up** (removing worktrees and deleting merged local branches you selected).
   The full list is in the [dashboard-api spec](openspec/specs/dashboard-api/spec.md).
+- Outside repositories, it creates a folder only for **New project**: one empty folder directly inside a workspace root
+  you picked, never inside a tracked repository, with `git init` run in it.
 - Its own state lives in `~/.openspec-dashboard/`.
 
 ## Contributing
