@@ -14,6 +14,7 @@ import { useSessionUi, WorkStatus } from "./sessions.tsx";
 import { isComplete } from "../shared/columns.ts";
 import { promptBody } from "./boardMarks.ts";
 import { BranchBadge } from "./checkout.tsx";
+import { type DetailPr, DetailPullRequest, detailPullRequest, usePullRequests } from "./pullRequests.tsx";
 import { DismissDialog } from "./dismissChange.tsx";
 import { dismissedNotice, dismissOffer } from "./dismissState.ts";
 import { checkoutHint, daysSince, leftoverHint, pendingArchiveHint, relTime } from "./format.ts";
@@ -185,6 +186,7 @@ export function DetailHeader({
   from,
   onClose,
   onDismiss,
+  pullRequest,
 }: {
   repo: RepoSnapshot;
   change: ChangeSnapshot | Pick<ChangeSnapshot, "name" | "warnings">;
@@ -192,6 +194,8 @@ export function DetailHeader({
   onClose: () => void;
   /** Opens the dismiss confirmation; absent where dismissing is not offered at all. */
   onDismiss?: () => void;
+  /** The change's pull request, or why pull requests are unavailable; absent when there is nothing to say. */
+  pullRequest?: DetailPr;
 }) {
   // The repository's board, with its filters when that is the board the view was opened from.
   const back = backTarget(from, repo.id);
@@ -209,7 +213,7 @@ export function DetailHeader({
         {onDismiss && "column" in change && <DismissButton change={change} failing={!repo.ok} onDismiss={onDismiss} />}
         <CloseButton onClose={onClose} />
       </div>
-      {"column" in change && <ChangeFacts change={change} />}
+      {"column" in change && <ChangeFacts change={change} pullRequest={pullRequest} />}
       {change.warnings?.map((w) => (
         <div key={w} class="notice warn">
           {w}
@@ -241,7 +245,7 @@ function DismissButton({ change, failing, onDismiss }: { change: ChangeSnapshot;
  * has been complete, its branch and checkouts, an archive the main checkout lacks or an active copy left next to one,
  * its worktree's work status — and the prompt it was started with. The artifact tabs below say which phases are written.
  */
-function ChangeFacts({ change, now = Date.now() }: { change: ChangeSnapshot; now?: number }) {
+function ChangeFacts({ change, pullRequest, now = Date.now() }: { change: ChangeSnapshot; pullRequest?: DetailPr; now?: number }) {
   const age = daysSince(change.lastActivityAt, now);
   const pending = pendingArchiveHint(change);
   const leftover = leftoverHint(change);
@@ -268,6 +272,7 @@ function ChangeFacts({ change, now = Date.now() }: { change: ChangeSnapshot; now
           </span>
         )}
         {change.branchMatch && <BranchBadge branch={change.branchMatch} hint={checkoutHint(change)} />}
+        {pullRequest && <DetailPullRequest info={pullRequest} />}
         <WorkStatus repoId={change.repoId} name={change.name} />
       </div>
       {prompt && (
@@ -386,6 +391,8 @@ export function ChangeDetail({
   onDismissed?: (notice: string) => void;
 }) {
   const ui = useSessionUi();
+  // Cached only: the board this view opens over already refreshed a stale cache when it opened.
+  const pullRequests = usePullRequests();
   const [dismissing, setDismissing] = useState(false);
   const [query, setQueryState] = useState<DetailQuery>(() => parseDetailQuery(currentQuery()));
   const [listing, setListing] = useState<ChangeArtifacts | null>(null);
@@ -519,7 +526,14 @@ export function ChangeDetail({
   return (
     <>
     <DetailOverlay label={label} onClose={close} panelRef={panel}>
-      <DetailHeader repo={repo} change={change} from={query.from} onClose={close} onDismiss={onDismissed ? () => setDismissing(true) : undefined} />
+      <DetailHeader
+        repo={repo}
+        change={change}
+        from={query.from}
+        onClose={close}
+        onDismiss={onDismissed ? () => setDismissing(true) : undefined}
+        pullRequest={detailPullRequest(change, pullRequests.data)}
+      />
       {(listing || hasConsole) && (
         <ArtifactTabs artifacts={listing?.artifacts ?? []} selected={selection.artifactId} onSelect={(id) => setQuery({ artifact: id, file: undefined })} console={hasConsole} />
       )}

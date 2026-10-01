@@ -181,9 +181,9 @@ const REPOS: SampleRepo[] = [
       { name: "add-rate-limiting", tasks: [9, 14], age: 0.1, branch: "feat/add-rate-limiting", onMain: "Drafts" },
       { name: "paginate-list-endpoints", tasks: [3, 22], age: 2 },
       { name: "migrate-to-postgres-16", tasks: [0, 31], age: 5 },
-      { name: "structured-error-codes", written: "specs", age: 1 },
+      { name: "structured-error-codes", written: "specs", age: 1, branch: "feat/structured-error-codes" },
       { name: "idempotency-keys", written: "proposal", age: 9 },
-      { name: "deprecate-v1-auth", tasks: [12, 12], age: 3 },
+      { name: "deprecate-v1-auth", tasks: [12, 12], age: 3, branch: "chore/deprecate-v1-auth" },
       // Code-complete, two checks only a person can make: `Done`, sub-state `validate`.
       { name: "verify-rate-limit-headers", tasks: [11, 13], awaiting: 2, age: 0.5 },
       { name: "openapi-examples", tasks: [8, 8], age: 6, synced: true },
@@ -545,7 +545,8 @@ export const DEMO_VIEWER = "demo-user";
 
 /**
  * Made-up pull requests per sample repository, under an invented `acme` organisation. `quill-docs` has no entry: it
- * stands for a tracked repository whose `origin` is not on GitHub.
+ * stands for a tracked repository whose `origin` is not on GitHub. Some head branches are sample changes' branches, so
+ * those cards link to their pull request (open, draft and merged); `push-token-refresh` has a branch and none.
  */
 const SAMPLE_PRS: Record<string, SamplePr[]> = {
   "atlas-api": [

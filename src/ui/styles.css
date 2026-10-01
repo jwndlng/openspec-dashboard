@@ -544,6 +544,12 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: 
 .card .meta > * { min-width: 0; }
 /* The running session's badge stands in for the starter here, so it sits on the starter's line and at its height. */
 .card .meta .session-badge { padding-block: 3px; }
+/* The change's pull request: a link on the status line, its state a symbol and a word; quieter once merged or closed. */
+.card .card-pr { display: inline-flex; align-items: center; gap: 5px; padding: 2px 7px; font-size: 11px; font-family: var(--font-mono); color: var(--fg-heading); border: 1px solid var(--border); border-radius: var(--radius-sm); text-decoration: none; white-space: nowrap; }
+.card .card-pr:hover { color: var(--brand-fg); border-color: var(--brand-soft); background: var(--brand-softer); }
+.card .card-pr:focus-visible { outline: 2px solid var(--brand); outline-offset: 1px; }
+.card .card-pr-state { font-family: var(--font-sans); color: var(--fg-subtle); }
+.card .card-pr.settled { color: var(--fg-subtle); border-color: var(--border-light); }
 /* The age is quiet text, not a chip. */
 .card .warn-text { color: var(--warning); font-size: 11px; }
 
@@ -1039,6 +1045,8 @@ body:has(.detail-overlay) { overflow: hidden; }
 /* The change's state and where it lives, which the card leaves out. */
 .detail-facts { flex-wrap: wrap; gap: 8px; }
 .detail-facts .meter { width: 220px; }
+.detail-pr { display: inline-flex; flex-wrap: wrap; align-items: baseline; gap: 4px 6px; min-width: 0; }
+.detail-pr-unavailable { font-size: 12px; }
 .detail-prompt {
   display: flex; gap: 10px; align-items: baseline; max-width: 860px; padding: 10px 14px;
   background: var(--bg-raised); border: 1px solid var(--border-light); border-radius: var(--radius);

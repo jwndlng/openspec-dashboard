@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useState } from "preact/hooks";
 import { boardColumns, isComplete } from "../shared/columns.ts";
-import type { ChangeSnapshot, Config, RepoSnapshot, Snapshot } from "../shared/types.ts";
+import { linkedPullRequest } from "../shared/pullRequestLink.ts";
+import type { ChangeSnapshot, Config, PullRequest, PullRequestsResponse, RepoSnapshot, Snapshot } from "../shared/types.ts";
 import { NoRepos } from "./empty.tsx";
 import { parseFilters, resolveLayout, serializeFilters, STACK_BELOW_PX, type Filters } from "./filters.ts";
 import { FilterBar } from "./boardFilters.tsx";
 import { Stat } from "./band.tsx";
 import { BranchBadge, CheckoutSummaryButton } from "./checkout.tsx";
-import { RepoPullRequestsButton } from "./pullRequests.tsx";
+import { CardPullRequest, RepoPullRequestsButton, usePullRequests } from "./pullRequests.tsx";
 import { hasCheckoutInfo } from "./checkoutMarkers.ts";
 import { CleanupButton } from "./cleanup.tsx";
 import { NewChangeDialog } from "./newChangeForm.tsx";
@@ -29,6 +30,23 @@ export interface Card extends ChangeSnapshot {
   repoPath: string;
   /** Repository hue from assignRepoHues; the theme turns it into a colour in CSS. */
   hue: number;
+  /** The change's pull request, derived for display from the cached lists; never on an archived change. */
+  pullRequest?: PullRequest;
+}
+
+/**
+ * A board's cards in the snapshot's order. The pull request is looked up per card and changes nothing else — not the
+ * order, the column or any count — so lists arriving later only add the link in place.
+ */
+export function boardCards(repos: RepoSnapshot[], hues: Map<string, number>, pullRequests?: PullRequestsResponse): Card[] {
+  return repos.flatMap((r) =>
+    r.changes.map((c) => {
+      const card: Card = { ...c, repoName: r.name, repoPath: r.path, hue: hues.get(r.id) ?? 0 };
+      const pr = c.archived ? undefined : linkedPullRequest(c, pullRequests?.repos);
+      if (pr) card.pullRequest = pr;
+      return card;
+    }),
+  );
 }
 
 /** Sets --repo-hue for the `repo-tint` class. */
@@ -133,6 +151,7 @@ export function ChangeCard({ card, now, from }: { card: Card; now: number; from:
             ⚠ error
           </span>
         ))}
+        {card.pullRequest && <CardPullRequest pr={card.pullRequest} repoName={card.repoName} />}
         <SessionControls card={card} />
         <a class="show-details" href={href(link.path, undefined, link.query)} onClick={(e) => followInApp(e, link.path, link.query)} aria-label={`Show details of ${card.name}`}>
           Show details
@@ -162,6 +181,25 @@ export function ConsoleLink({ card, from }: { card: Card; from: string }) {
       <IconTerminal size={14} />
     </a>
   );
+}
+
+/** The cards the filters let through: repositories (on the combined board), the search text and the idle threshold. */
+export function visibleCards(cards: Card[], filters: Filters, single: boolean, now: number): Card[] {
+  const q = filters.q.trim().toLowerCase();
+  return cards.filter((c) => {
+    if (!single && filters.repos.length && !filters.repos.includes(c.repoId)) return false;
+    if (q && !c.name.toLowerCase().includes(q) && !c.repoName.toLowerCase().includes(q)) return false;
+    if (filters.staleDays > 0) {
+      const age = daysSince(c.lastActivityAt, now);
+      if (age === undefined || age < filters.staleDays) return false;
+    }
+    return true;
+  });
+}
+
+/** The band's figures: open changes among the visible cards, and every complete change waiting to be archived. */
+export function boardStats(cards: Card[], visible: Card[]): { open: number; toArchive: number } {
+  return { open: visible.filter((c) => !c.archived).length, toArchive: cards.filter((c) => isComplete(c.stage)).length };
 }
 
 /** The counts every board's band shows: open changes matching the filters, and complete changes waiting to be archived. */
@@ -407,23 +445,17 @@ export function Kanban({ snapshot, config, repoId, query, onReload }: { snapshot
   const repos: RepoSnapshot[] = useMemo(() => (snapshot?.repos ?? []).filter((r) => !single || r.id === repoId), [snapshot, single, repoId]);
   // Hues come from every repository in the snapshot — not the filtered ones, nor just this board's — so a colour never depends on the view.
   const hues = useMemo(() => assignRepoHues((snapshot?.repos ?? []).map((r) => r.id)), [snapshot]);
-  const cards: Card[] = useMemo(
-    () => repos.flatMap((r) => r.changes.map((c) => ({ ...c, repoName: r.name, repoPath: r.path, hue: hues.get(r.id) ?? 0 }))),
-    [repos, hues],
-  );
+  // The cached pull requests at once; a refresh, when opening this board started one, adds links in place.
+  const prs = usePullRequests();
+  const cards: Card[] = useMemo(() => boardCards(repos, hues, prs.data), [repos, hues, prs.data]);
+  // Opening a board is the third way a view showing pull requests may refresh a stale cache — once, here, and never on
+  // a timer or after a scan: the board's instance outlives scans and an open detail view (openspec/specs/pull-requests).
+  const { loading: prsLoading, openBoard } = prs;
+  useEffect(() => {
+    if (!prsLoading) openBoard(repoId);
+  }, [prsLoading, openBoard, repoId]);
 
-  const visible = useMemo(() => {
-    const q = filters.q.trim().toLowerCase();
-    return cards.filter((c) => {
-      if (!single && filters.repos.length && !filters.repos.includes(c.repoId)) return false;
-      if (q && !c.name.toLowerCase().includes(q) && !c.repoName.toLowerCase().includes(q)) return false;
-      if (filters.staleDays > 0) {
-        const age = daysSince(c.lastActivityAt, now);
-        if (age === undefined || age < filters.staleDays) return false;
-      }
-      return true;
-    });
-  }, [cards, filters, now]);
+  const visible = useMemo(() => visibleCards(cards, filters, single, now), [cards, filters, single, now]);
 
   // A single-repository board follows that repository's own schemas, not the majority across all repos.
   const columns = useMemo(() => (snapshot ? boardColumns({ ...snapshot, repos }) : []), [snapshot, repos]);
@@ -432,7 +464,7 @@ export function Kanban({ snapshot, config, repoId, query, onReload }: { snapshot
   const targets = useMemo(() => newChangeTargets(single ? [] : repos, filters.repos), [single, repos, filters.repos]);
   const [creating, setCreating] = useState<{ preselected?: string } | null>(null);
 
-  const stats = { open: visible.filter((c) => !c.archived).length, toArchive: cards.filter((c) => isComplete(c.stage)).length };
+  const stats = boardStats(cards, visible);
   // The Archived column's candidates: with Hide merged on, only archives that still have to be pushed or merged.
   const archivedCards = visible.filter((c) => c.column === "Archived" && (!filters.hideMerged || archivePending(c, worktrees)));
   // What the columns on screen hold: archived cards only while their column is shown, and at most its bound.

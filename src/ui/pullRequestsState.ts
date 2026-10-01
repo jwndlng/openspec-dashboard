@@ -180,3 +180,69 @@ export function openCount(response: PullRequestsResponse | undefined, repoId: st
   const open = list.pullRequests.filter((pr) => pr.state === "open");
   return { open: open.length, awaitingMe: open.filter((pr) => pr.reviewRequestedFromViewer).length, fetchedAt: list.fetchedAt, reason: list.reason };
 }
+
+/** The server's own freshness window; the UI only uses it to decide whether opening a view is worth a refresh. */
+export const FRESHNESS_MS = 5 * 60_000;
+
+/** The lists a view shows: one repository's for a repository board or dialog, every list otherwise. */
+export function shownLists(response: PullRequestsResponse | undefined, repoId?: string): PullRequestsResponse | undefined {
+  return repoId && response ? { ...response, repos: response.repos.filter((r) => r.repoId === repoId) } : response;
+}
+
+export interface PrRefresher {
+  /** Asks the server now; joins the refresh in flight instead of starting a second one. */
+  refresh(options?: { repoId?: string; force?: boolean }): Promise<void>;
+  /**
+   * What opening a view that shows pull requests does: refresh when a shown list is older than the freshness window or
+   * was never fetched, else nothing. Returns the refresh it started or joined.
+   */
+  refreshIfStale(repoId?: string, now?: number): Promise<void> | undefined;
+  /**
+   * What opening a Kanban board does — the third view that shows pull requests (on its cards): the same as
+   * `refreshIfStale`, except that synthetic lists (the demo) are never refreshed from a board.
+   */
+  openBoard(repoId?: string, now?: number): Promise<void> | undefined;
+}
+
+/**
+ * The one place the UI starts a pull-request refresh: at most one runs at a time, and a view opening while one runs
+ * joins it. Free of Preact, so the rule is tested directly; the provider only wires it to state.
+ */
+export function createPrRefresher(io: {
+  /** The lists the UI holds right now. */
+  current(): PullRequestsResponse | undefined;
+  fetch(options: { repoId?: string; force?: boolean }): Promise<PullRequestsResponse>;
+  onStart(running: string | "all"): void;
+  onAnswer(answer: PullRequestsResponse): void;
+  onError(message: string): void;
+  onSettled(): void;
+  freshnessMs?: number;
+  /** The lists are made up (the demo): a board's opening then asks for nothing. */
+  synthetic?: boolean;
+}): PrRefresher {
+  let inFlight: Promise<void> | undefined;
+  const refresh = (options: { repoId?: string; force?: boolean } = {}): Promise<void> => {
+    if (inFlight) return inFlight;
+    io.onStart(options.repoId ?? "all");
+    const done = io
+      .fetch(options)
+      .then(io.onAnswer)
+      .catch((err) => io.onError(err instanceof Error ? err.message : String(err)))
+      .finally(() => {
+        inFlight = undefined;
+        io.onSettled();
+      });
+    inFlight = done;
+    return done;
+  };
+  const refreshIfStale = (repoId?: string, now = Date.now()): Promise<void> | undefined => {
+    if (inFlight) return inFlight;
+    if (!isStale(shownLists(io.current(), repoId), io.freshnessMs ?? FRESHNESS_MS, now)) return undefined;
+    return refresh(repoId ? { repoId } : {});
+  };
+  return {
+    refresh,
+    refreshIfStale,
+    openBoard: (repoId, now) => (io.synthetic ? undefined : refreshIfStale(repoId, now)),
+  };
+}

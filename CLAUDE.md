@@ -87,7 +87,7 @@ bun test test/scanner.test.ts   # a single test file
    thing that leaves this machine, and it is not a write: it runs the GitHub CLI's read-only `gh pr list` and
    `gh api user` and no other subcommand, without a shell, with its working directory in the dashboard home and the
    repository named with `--repo owner/name`, so no `gh` process ever runs inside a tracked repository, runs no git and
-   changes nothing on GitHub. It runs only when the user opens or refreshes a pull-request list — never on a timer,
+   changes nothing on GitHub. It runs only when the user opens or refreshes a view that shows pull requests — never on a timer,
    during a scan or from the projects overview (`test/pullRequestsApi.test.ts` proves a scan, discovery and both
    endpoints' reads start no `gh`, and that a full refresh leaves every fixture repository byte-for-byte unchanged).
    Adding a path or a subcommand means changing that spec first.
@@ -101,10 +101,11 @@ bun test test/scanner.test.ts   # a single test file
    relative to a module path must also be verified in `dist/openspec-dashboard`.
 4. **No network at runtime, except the pull action and the pull-request query.** The UI is one HTML file with inlined
    JS, CSS and fonts; do not add CDN links, remote fonts or fetches to other hosts — the links to github.com in the
-   Pull requests view are links the user follows, not requests the page makes. The server reaches a network in exactly
+   Pull requests view, on cards and in the detail header are links the user follows, not requests the page makes. The server reaches a network in exactly
    two places, both on the user's own action: when git does, inside the pull action of invariant 1, and when `gh` does,
    inside the pull-request query of invariant 1 (`src/server/pullRequests.ts`) — the user activated Refresh, or opened
-   the Pull requests view or a repository's pull-request dialog with a list older than five minutes. Both use the
+   the Pull requests view, a repository's pull-request dialog or a Kanban board (whose cards link to their change's pull
+   request) with a list older than five minutes, at most one refresh at a time. Both use the
    tool's own credentials: the dashboard never sees, stores or asks for them, never prompts, and masks credentials in
    any error text it passes on. Without `gh`, or without it being signed in, the feature reports itself unavailable and
    nothing else changes.
