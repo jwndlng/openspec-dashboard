@@ -23,7 +23,7 @@
 - [x] 3.6 Add Rename (pencil beside the name, input in place, Enter/blur save, Escape cancels, blank refused with a message, unchanged name sends nothing, one field open at a time, no row navigation) to rows and tiles, and verify in `test/overview.test.ts`
 - [x] 3.7 Add a **Labels** action to rows and tiles opening a `Modal` around `RepoLabelsEditor` whose edits save at once through `setRepoLabels` (busy and error shown in the dialog; tooltip text in `src/ui/labels.tsx` no longer points to Settings), and verify in `test/overview.test.ts` or a new `test/labelsUi.test.ts`
 - [x] 3.8 Make sure pending `Scanning…` entries offer none of these controls, and verify in `test/overview.test.ts`
-- [~] 3.9 Style the toggle, the picker, the pencil and Forget in `src/ui/styles.css` for both themes and both layouts, and verify with `bun run dev` in the browser at desktop width and at 400px that no row overflows
+- [x] 3.9 Style the toggle, the picker, the pencil and Forget in `src/ui/styles.css` for both themes and both layouts, and verify with `bun run dev` in the browser at desktop width and at 400px that no row overflows
 
 ## 4. Settings cleanup
 
@@ -35,5 +35,5 @@
 ## 5. Verification
 
 - [x] 5.1 Run `bun run check` and verify lint, typecheck and all tests pass
-- [~] 5.2 Run `bun run build` and verify the compiled `dist/openspec-dashboard` serves the overview with the new controls and that rename, agent toggle, picker and Forget work against a temporary `OPENSPEC_DASHBOARD_HOME`
+- [x] 5.2 Run `bun run build` and verify the compiled `dist/openspec-dashboard` serves the overview with the new controls and that rename, agent toggle, picker and Forget work against a temporary `OPENSPEC_DASHBOARD_HOME`
 - [x] 5.3 Run `openspec validate cleanup-settings --strict` and verify the change is valid
