@@ -267,6 +267,12 @@ export const DEFAULT_SHIP_PROMPT =
 export const DEFAULT_RESOLVE_CONFLICTS_PROMPT =
   "The branch for {change} in this worktree no longer merges into the default branch. Bring it up to date with the default branch and resolve every conflict, keeping what this branch set out to do. Then run the project's checks and push the branch. Do not merge the pull request.";
 
+/** Like Ship's, so every agent can integrate without being configured for it. It names no change and carries no
+ *  placeholder: the repository folder is the agent's working directory. Which tools OpenSpec is installed for is the
+ *  agent's question to the user, not ours. */
+export const DEFAULT_INTEGRATE_PROMPT =
+  "Set this project up for OpenSpec: run `openspec init` in this folder, ask me which tools to install it for, and tell me what it created when you are done.";
+
 /**
  * What became of the work in a session's worktree, from local git only (nothing is fetched, so `merged` is as of the
  * user's last fetch). `clean`: no commit the base lacks; `missing`: the directory is not a worktree (any more).
@@ -430,7 +436,6 @@ export function integrateUnavailable(config: Config, agents: readonly AgentAvail
   if (!config.agentSessions.enabled) return "agent sessions are disabled";
   const agent = config.agentSessions.agents.find((a) => a.id === config.agentSessions.defaultAgent);
   if (!agent) return "no agent is configured";
-  if (!agent.prompts.integrate) return `${agent.name} has no Integrate prompt configured`;
   if (agents.find((a) => a.id === agent.id)?.available === false) return `${agent.name} was not found (${agent.command[0]})`;
   return undefined;
 }

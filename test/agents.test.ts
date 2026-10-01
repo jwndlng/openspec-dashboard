@@ -3,7 +3,7 @@ import { defaultAgentSessions, defaultConfig, newRepoConfig, validateConfig } fr
 import { agentEnv, agentFor, integratePrompt, launchCommand, openingPrompt, resolveConflictsPrompt, shipPrompt } from "../src/server/sessions/agents.ts";
 import { Scrollback, sessionBranch, worktreeName } from "../src/server/sessions/manager.ts";
 import { CLAUDE_PROFILE, DEFAULT_SHORTCUTS, FORMER_PROMPTS } from "../src/shared/agentDefaults.ts";
-import { availableActions, DEFAULT_RESOLVE_CONFLICTS_PROMPT, DEFAULT_SHIP_PROMPT, integrateUnavailable, type AgentAvailability, type ChangeSession, type Session } from "../src/shared/types.ts";
+import { availableActions, DEFAULT_INTEGRATE_PROMPT, DEFAULT_RESOLVE_CONFLICTS_PROMPT, DEFAULT_SHIP_PROMPT, integrateUnavailable, type AgentAvailability, type ChangeSession, type Session } from "../src/shared/types.ts";
 import { agentForRepo, cardSessionControls, NEEDS_YOU_AFTER_MS, parseArgLines, sessionBadge, sessionForChange, sessionsEnabledFor, silenceDuration, slugId, startersFor } from "../src/ui/sessionState.ts";
 import { fakeProfile } from "./sessionHelpers.ts";
 
@@ -53,12 +53,15 @@ test("the preconfigured Archive prompt syncs the specs first without asking, as 
 
 test("the preconfigured prompts carry what `- [~]` means, each on one line", () => {
   const prompts = defaultAgentSessions().agents[0].prompts;
-  expect(Object.keys(prompts)).toEqual(["draft", "implement", "validate", "archive", "integrate"]);
+  // Ship, Resolve conflicts and Integrate are not here: the preset uses their agent-neutral defaults.
+  expect(Object.keys(prompts)).toEqual(["draft", "implement", "validate", "archive"]);
   for (const [key, text] of Object.entries(prompts)) {
     expect([key, text.includes("\n")]).toEqual([key, false]); // a prompt may be typed into a terminal
-    // Every starter names its change; Integrate is the one prompt that must not, because it runs in a folder, not a change.
-    expect([key, text.includes("{change}")]).toEqual([key, key !== "integrate"]);
+    expect([key, text.includes("{change}")]).toEqual([key, true]); // every starter names its change
   }
+  // Integrate is the one prompt that must not name a change, because it runs in a folder, not a change.
+  expect(DEFAULT_INTEGRATE_PROMPT).not.toContain("\n");
+  expect(DEFAULT_INTEGRATE_PROMPT).not.toContain("{change}");
   // Implement: do the work, then leave what only the user can judge for the user.
   expect(prompts.implement).toMatch(/^\/opsx:apply \{change\}/);
   expect(prompts.implement).toMatch(/only be verified by me/);
@@ -105,6 +108,9 @@ test("profile validation", () => {
   expect(() => validateConfig(withAgents([{ ...ok, prompts: { integrate: "set up {prompt}" } }], "other"))).toThrow(/no placeholder/);
   expect(() => validateConfig(withAgents([{ ...ok, prompts: { integrate: "set up --dangerously-skip-permissions" } }], "other"))).toThrow(/bypass/);
   expect(validateConfig(withAgents([{ ...ok, prompts: {} }], "other")).agentSessions.agents[0].prompts.integrate).toBeUndefined();
+  // A Claude Code profile saved while the preset still carried its own Integrate prompt keeps it, as it was written.
+  const savedClaude = { ...structuredClone(CLAUDE_PROFILE), prompts: { ...CLAUDE_PROFILE.prompts, integrate: DEFAULT_INTEGRATE_PROMPT } };
+  expect(validateConfig(withAgents([savedClaude])).agentSessions.agents[0].prompts.integrate).toBe(DEFAULT_INTEGRATE_PROMPT);
   expect(() => validateConfig(withAgents([{ ...ok, id: "Bad Id" }], "other"))).toThrow(/lower-case/);
   expect(() => validateConfig({ ...withAgents([ok], "other"), repos: [{ ...newRepoConfig("/w/x", true), agent: { enabled: true, agentId: "nope" } }] })).toThrow(/unknown agent/);
 });
@@ -147,23 +153,26 @@ test("Ship: additional instructions extend the profile's prompt, or the agent-ne
 });
 
 test("Integrate: prompt plus additional instructions, with nothing substituted into either", () => {
-  expect(integratePrompt(fakeProfile())).toBeUndefined(); // the stock fake agent has no Integrate prompt
+  // Like Ship: a profile without its own Integrate prompt gets the agent-neutral default — suffix and all.
+  expect(integratePrompt(fakeProfile())).toBe(DEFAULT_INTEGRATE_PROMPT);
+  expect(integratePrompt(fakeProfile({ promptSuffixes: { integrate: " Commit\n nothing. " } }))).toBe(`${DEFAULT_INTEGRATE_PROMPT} Commit nothing.`);
+  expect(DEFAULT_INTEGRATE_PROMPT).not.toMatch(/\{[a-z]+\}/);
   const both = fakeProfile({ prompts: { integrate: "Set this project up for OpenSpec." }, promptSuffixes: { integrate: "Ask me before you commit." } });
   expect(integratePrompt(both)).toBe("Set this project up for OpenSpec. Ask me before you commit.");
   expect(integratePrompt(fakeProfile({ prompts: { integrate: "Set it up." } }))).toBe("Set it up.");
-  expect(integratePrompt(CLAUDE_PROFILE)).toBe(CLAUDE_PROFILE.prompts.integrate);
+  // The preset carries no copy of its own: it uses the default, as it does for Ship.
+  expect(CLAUDE_PROFILE.prompts.integrate).toBeUndefined();
+  expect(integratePrompt(CLAUDE_PROFILE)).toBe(DEFAULT_INTEGRATE_PROMPT);
 });
 
 test("additional instructions are an addition, never a prompt: they make no action available", () => {
   // No prompt for the action: the starter stays unoffered and nothing is composed, so the suffix goes nowhere.
-  const suffixOnly = fakeProfile({ prompts: { implement: "implement {change}" }, promptSuffixes: { archive: "Tell me what you archived.", integrate: "Ask me first." } });
+  const suffixOnly = fakeProfile({ prompts: { implement: "implement {change}" }, promptSuffixes: { archive: "Tell me what you archived." } });
   expect(openingPrompt(suffixOnly, "archive", "cache-api-calls")).toBeUndefined();
-  expect(integratePrompt(suffixOnly)).toBeUndefined();
   const repo = newRepoConfig("/w/demo-ops", true);
   const cfg = { ...base, repos: [repo], agentSessions: { ...base.agentSessions, enabled: true, agents: [suffixOnly], defaultAgent: "fake" } };
   const artifacts = [{ id: "a0", status: "done" as const }];
   expect(startersFor(cfg, { repoId: repo.id, artifacts, stage: "done" })).toEqual([]);
-  expect(integrateUnavailable(cfg, [{ id: "fake", name: "Fake Agent", available: true }])).toMatch(/no Integrate prompt/);
 });
 
 test("a composed prompt still reaches the agent whole, whatever it contains", () => {
@@ -347,8 +356,9 @@ test("the Integrate row says why the action is unavailable, and offers it when n
   expect(integrateUnavailable(on, found)).toBeUndefined();
   expect(integrateUnavailable({ ...on, agentSessions: { ...on.agentSessions, enabled: false } }, found)).toBe("agent sessions are disabled");
   expect(integrateUnavailable({ ...on, agentSessions: { ...on.agentSessions, defaultAgent: "gone" } }, found)).toBe("no agent is configured");
+  // No Integrate prompt of its own is no reason: the default applies.
   const noPrompt = { ...on, agentSessions: { ...on.agentSessions, agents: [fakeProfile()] } };
-  expect(integrateUnavailable(noPrompt, found)).toBe("Fake Agent has no Integrate prompt configured");
+  expect(integrateUnavailable(noPrompt, found)).toBeUndefined();
   expect(integrateUnavailable(on, [{ ...found[0], available: false, path: undefined }])).toBe(`Fake Agent was not found (${agent.command[0]})`);
   // Availability not known yet (the list has not been polled): the action is offered and the request decides.
   expect(integrateUnavailable(on, [])).toBeUndefined();

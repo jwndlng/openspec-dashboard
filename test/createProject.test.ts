@@ -11,7 +11,7 @@ import { dashboardHome } from "../src/server/paths.ts";
 import { Scanner } from "../src/server/scanner.ts";
 import { SessionManager } from "../src/server/sessions/manager.ts";
 import type { AgentProfile, Config, CreateProjectResponse, RepoConfig, Snapshot } from "../src/shared/types.ts";
-import { changeSessions, isProjectName, newProjectUnavailable } from "../src/shared/types.ts";
+import { changeSessions, DEFAULT_INTEGRATE_PROMPT, isProjectName, newProjectUnavailable } from "../src/shared/types.ts";
 import { tempDir, treeFingerprint, useTempHome } from "./helpers.ts";
 import { fakeProfile, git, waitFor, watch } from "./sessionHelpers.ts";
 
@@ -125,7 +125,7 @@ test("New project says why it is unavailable", () => {
   expect(newProjectUnavailable({ ...on, scanRoots: [] }, found)).toBe("add a workspace root in Settings first");
   expect(newProjectUnavailable({ ...on, agentSessions: { ...on.agentSessions, enabled: false } }, found)).toBe("agent sessions are disabled");
   const noPrompt = fakeProfile();
-  expect(newProjectUnavailable({ ...on, agentSessions: { ...on.agentSessions, agents: [noPrompt] } }, found)).toMatch(/no Integrate prompt/);
+  expect(newProjectUnavailable({ ...on, agentSessions: { ...on.agentSessions, agents: [noPrompt] } }, found)).toBeUndefined(); // the default prompt applies
   expect(newProjectUnavailable(on, [{ ...found[0], available: false }])).toMatch(/was not found/);
 });
 
@@ -152,14 +152,22 @@ test("creating a project makes one folder holding only an empty git repository a
   view.detach();
 });
 
+test("an agent without an Integrate prompt of its own still sets up a new project, with the default prompt", async () => {
+  const h = await harness({ agent: fakeProfile() }); // the stock fake profile carries no `integrate` prompt
+  const { path, session } = await createProject(h, { root: h.root, name: "gamma-tools" });
+  expect(session).toMatchObject({ integration: true, folder: path, state: "running" });
+  const view = await watch(h.sessions, session.id);
+  await waitFor(() => view.text().includes("fake-agent ready"), "agent start");
+  expect(view.text()).toContain(`args=${JSON.stringify([DEFAULT_INTEGRATE_PROMPT])}`);
+  view.detach();
+});
+
 test("every refusal leaves the workspace root as it was and starts nothing", async () => {
   const cases: { h: Harness; input: Record<string, unknown>; status: number; message?: RegExp }[] = [];
   const add = (h: Harness, input: Record<string, unknown>, status: number, message?: RegExp) => cases.push({ h, input, status, message });
 
   const off = await harness({ enabled: false });
   add(off, { root: off.root, name: "gamma" }, 403, /agent sessions are disabled/);
-  const noPrompt = await harness({ agent: fakeProfile() });
-  add(noPrompt, { root: noPrompt.root, name: "gamma" }, 400, /no Integrate prompt/);
   const missing = await harness({ agent: withIntegrate({ command: [join(await tempDir("osd-gone-"), "no-such-agent"), "{prompt}"] }) });
   add(missing, { root: missing.root, name: "gamma" }, 503, /was not found/);
 
