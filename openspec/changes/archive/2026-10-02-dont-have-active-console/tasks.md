@@ -12,4 +12,4 @@
 ## 3. Checks
 
 - [x] 3.1 Run `openspec validate dont-have-active-console --strict` and `bun run check`; both pass.
-- [~] 3.2 Manually with `bun run dev`: with **Hide merged** on, a merged archived change with a running session appears in `Archived`; ending the session from its console removes it after the next poll.
+- [x] 3.2 Manually with `bun run dev`: with **Hide merged** on, a merged archived change with a running session appears in `Archived`; ending the session from its console removes it after the next poll.
