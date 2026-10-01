@@ -229,3 +229,19 @@ export const IconScan = ({ size }: { size?: number }) => (
     <path d="M7 21H5a2 2 0 0 1-2-2v-2" />
   </Icon>
 );
+
+/** Lucide `pencil`: Rename on an overview row or tile. */
+export const IconPencil = ({ size }: { size?: number }) => (
+  <Icon size={size}>
+    <path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z" />
+    <path d="m15 5 4 4" />
+  </Icon>
+);
+
+/** Lucide `tag`: a project's labels dialog on the overview. */
+export const IconTag = ({ size }: { size?: number }) => (
+  <Icon size={size}>
+    <path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z" />
+    <circle cx="7.5" cy="7.5" r=".5" fill="currentColor" />
+  </Icon>
+);

@@ -4,13 +4,19 @@ import { type DisplayedLabel, displayedLabels, labelKey } from "../shared/labels
 import type { Config, DiscoveredRepo, DiscoverResult, RepoSharedConfig, RepoSnapshot, Snapshot, WorkInProgress, Worktree } from "../shared/types.ts";
 
 /**
- * The snapshot restricted to repositories enabled in the config. Saving Settings triggers a rescan without waiting
- * for it, so a just-disabled repository would otherwise linger until the next poll.
+ * The snapshot as the config describes it now: only repositories it enables, under the names it gives them. A config
+ * change triggers a rescan without waiting for it, if any, so a just-disabled repository would otherwise linger and a
+ * rename show only after the next poll.
  */
 export function enabledOnly(snapshot: Snapshot | null, config: Config | null): Snapshot | null {
   if (!snapshot || !config) return snapshot;
-  const enabled = new Set(config.repos.filter((r) => r.enabled).map((r) => r.id));
-  return { ...snapshot, repos: snapshot.repos.filter((r) => enabled.has(r.id)) };
+  const names = new Map(config.repos.filter((r) => r.enabled).map((r) => [r.id, r.name]));
+  const repos = snapshot.repos.flatMap((r) => {
+    const name = names.get(r.id);
+    if (name === undefined) return [];
+    return [name === r.name ? r : { ...r, name }];
+  });
+  return { ...snapshot, repos };
 }
 
 export type SortKey = "updated" | "name" | "open" | "archive" | "wip";

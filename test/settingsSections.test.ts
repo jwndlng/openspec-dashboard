@@ -2,16 +2,21 @@ import { expect, test } from "bun:test";
 import { currentSection, navOffset, parseSection, rowScrollLeft, SECTION_IDS, serializeSection } from "../src/ui/settingsSections.ts";
 import { hrefWithQuery } from "../src/ui/url.ts";
 
+test("Settings lists no repository section", () => {
+  expect([...SECTION_IDS]).toEqual(["roots", "scanning", "agents", "shared-config", "environment"]);
+});
+
 test("parseSection accepts known ids only", () => {
-  expect(parseSection("?section=tracked", SECTION_IDS)).toBe("tracked");
+  expect(parseSection("?section=scanning", SECTION_IDS)).toBe("scanning");
   expect(parseSection("?q=x&section=shared-config", SECTION_IDS)).toBe("shared-config");
   // Moved to the projects overview: old links open Settings at the top, like any unknown id.
   expect(parseSection("?section=discovered", SECTION_IDS)).toBeUndefined();
+  expect(parseSection("?section=tracked", SECTION_IDS)).toBeUndefined();
   expect(parseSection("?section=integratable", SECTION_IDS)).toBeUndefined();
   expect(parseSection("?section=nope", SECTION_IDS)).toBeUndefined();
   expect(parseSection("", SECTION_IDS)).toBeUndefined();
   // A section that is not on the page right now is not a valid target.
-  expect(parseSection("?section=shared-config", ["roots", "tracked"])).toBeUndefined();
+  expect(parseSection("?section=shared-config", ["roots", "scanning"])).toBeUndefined();
 });
 
 test("serializeSection keeps other parameters and leaves the first section out of the URL", () => {
@@ -20,7 +25,7 @@ test("serializeSection keeps other parameters and leaves the first section out o
   expect(serializeSection("?section=agents&q=x", "scanning", "roots")).toBe("?section=scanning&q=x");
   expect(serializeSection("?section=agents&q=x", "roots", "roots")).toBe("?q=x");
   expect(serializeSection("?section=agents", undefined)).toBe("");
-  expect(parseSection(serializeSection("", "tracked", "roots"), SECTION_IDS)).toBe("tracked");
+  expect(parseSection(serializeSection("", "scanning", "roots"), SECTION_IDS)).toBe("scanning");
 });
 
 const rects = (...tops: number[]) => tops.map((top, i) => ({ id: SECTION_IDS[i], top }));
@@ -31,12 +36,12 @@ test("at the top of the page the first section is current, even when the next on
 
 test("a section becomes current when its start reaches the top of the view", () => {
   expect(currentSection(rects(-174, 100, 810, 1210), false)).toBe("roots");
-  expect(currentSection(rects(-180, 94, 804, 1204), false)).toBe("tracked");
-  expect(currentSection(rects(-900, -700, 0, 400), false)).toBe("scanning");
+  expect(currentSection(rects(-180, 94, 804, 1204), false)).toBe("scanning");
+  expect(currentSection(rects(-900, -700, 0, 400), false)).toBe("agents");
 });
 
 test("at the end of the scroll range the last section is current, however short it is", () => {
-  expect(currentSection(rects(-1500, -1300, -400, 300, 420), true)).toBe("shared-config");
+  expect(currentSection(rects(-1500, -1300, -400, 300, 420), true)).toBe("environment");
 });
 
 test("one section is always current; none is when there are no sections", () => {
@@ -130,4 +135,22 @@ test("the product sizes the mount point, so .settings-scroll is the page's scrol
   expect(css).toMatch(/^#app \{[^}]*height: 100%/m);
   expect(css).toMatch(/^\.app \{[^}]*height: 100%/m);
   expect(css).toMatch(/^\.settings-scroll \{[^}]*flex: 1; min-height: 0; overflow: auto;/m);
+});
+
+test("Settings saves its draft with the repositories as the app last received them", async () => {
+  const { withLatestRepos } = await import("../src/ui/settings.tsx");
+  const { defaultConfig } = await import("../src/server/config.ts");
+  const myAgent = { id: "my-agent", name: "My agent", command: ["my-agent-cli", "{prompt}"], prompts: {} };
+  const base = defaultConfig();
+  const repo = { id: "0123456789ab", path: "/w/acme/beta-soc", name: "beta-soc", enabled: true };
+  // Settings was opened, the poll interval edited, then beta-soc renamed on the overview.
+  const draft = { ...base, pollIntervalSeconds: 120, repos: [repo] };
+  const latest = { ...base, repos: [{ ...repo, name: "Beta SOC", agent: { enabled: false } }] };
+  expect(withLatestRepos(draft, latest)).toEqual({ ...draft, repos: latest.repos });
+
+  // A profile removed in the draft: the repository that used it goes back to the default agent, keeping its switch.
+  const withProfile = { ...base, agentSessions: { ...base.agentSessions, agents: [...base.agentSessions.agents, myAgent] } };
+  const using = { ...withProfile, repos: [{ ...repo, agent: { enabled: true, agentId: "my-agent" } }] };
+  const saved = withLatestRepos({ ...using, agentSessions: base.agentSessions }, using);
+  expect(saved.repos[0].agent).toEqual({ enabled: true });
 });

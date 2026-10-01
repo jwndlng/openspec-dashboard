@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { type AppState, createFetchHandler } from "../src/server/api.ts";
 import { defaultConfig, newRepoConfig, repoId, saveConfig } from "../src/server/config.ts";
 import { configPath } from "../src/server/paths.ts";
-import type { Config } from "../src/shared/types.ts";
+import { type Config, repoAgentEnabled } from "../src/shared/types.ts";
 import { tempDir, useTempHome } from "./helpers.ts";
 
 let cleanup: () => Promise<void>;
@@ -161,4 +161,119 @@ test("the tracking routes are refused cross-site and change nothing", async () =
   }
   expect(await saved()).toEqual(before);
   expect(triggered).toBe(0);
+});
+
+// Per-repository settings on the overview: name, agent sessions, labels, forget (dashboard-api, per-repository settings).
+const alphaId = () => repoId(paths().alpha);
+const alphaEntry = async () => (await saved()).repos.find((r) => r.id === alphaId());
+
+test("a rename trims the name and keeps everything else, without a scan", async () => {
+  state.config = await saveConfig({ ...state.config, repos: [{ ...newRepoConfig(paths().alpha, true), name: "Alpha", agent: { enabled: false } }] });
+  const res = await send(`/api/repos/${alphaId()}/name`, { name: "  Beta SOC " });
+  expect(res.status).toBe(200);
+  expect(await alphaEntry()).toEqual({ ...newRepoConfig(paths().alpha, true), name: "Beta SOC", agent: { enabled: false } });
+  expect(triggered).toBe(0);
+});
+
+test("a blank or missing name is refused and changes nothing", async () => {
+  const before = await saved();
+  for (const body of [{ name: "   " }, { name: 3 }, {}]) expect((await send(`/api/repos/${alphaId()}/name`, body)).status).toBe(400);
+  expect(await saved()).toEqual(before);
+});
+
+test("agent sessions are switched off for one repository, which then counts as excluded", async () => {
+  const res = await send(`/api/repos/${alphaId()}/agent`, { enabled: false });
+  expect(res.status).toBe(200);
+  const repo = await alphaEntry();
+  expect(repo?.agent).toEqual({ enabled: false });
+  expect(repoAgentEnabled({ ...repo!, enabled: true })).toBe(false);
+  expect(triggered).toBe(0);
+});
+
+test("an agent is selected and cleared, keeping the on/off setting", async () => {
+  const second = { id: "my-agent", name: "My agent", command: ["my-agent-cli", "{prompt}"], prompts: {} };
+  state.config = await saveConfig({ ...state.config, agentSessions: { ...state.config.agentSessions, agents: [...state.config.agentSessions.agents, second] } });
+  expect((await send(`/api/repos/${alphaId()}/agent`, { agentId: "my-agent" })).status).toBe(200);
+  expect((await alphaEntry())?.agent).toEqual({ enabled: true, agentId: "my-agent" });
+  expect((await send(`/api/repos/${alphaId()}/agent`, { agentId: null })).status).toBe(200);
+  expect((await alphaEntry())?.agent).toEqual({ enabled: true });
+});
+
+test("an unknown agent, a wrong type or an empty agent body is refused", async () => {
+  const before = await saved();
+  for (const body of [{ agentId: "nope" }, { enabled: "no" }, { agentId: 3 }, {}]) expect((await send(`/api/repos/${alphaId()}/agent`, body)).status).toBe(400);
+  expect(await saved()).toEqual(before);
+});
+
+test("labels are replaced per list, and an empty list removes the key", async () => {
+  state.config = await saveConfig({ ...state.config, repos: [{ ...newRepoConfig(paths().alpha, true), name: "Alpha", hiddenLabels: ["docker"] }] });
+  expect((await send(`/api/repos/${alphaId()}/labels`, { labels: ["client"] })).status).toBe(200);
+  expect(await alphaEntry()).toMatchObject({ labels: ["client"], hiddenLabels: ["docker"] });
+  expect((await send(`/api/repos/${alphaId()}/labels`, { labels: [] })).status).toBe(200);
+  const repo = await alphaEntry();
+  expect(repo && "labels" in repo).toBe(false);
+  expect(repo?.hiddenLabels).toEqual(["docker"]);
+  expect(triggered).toBe(0);
+});
+
+test("labels that break the rules are refused naming the label", async () => {
+  const before = await saved();
+  const res = await send(`/api/repos/${alphaId()}/labels`, { labels: ["Infra", "infra"] });
+  expect(res.status).toBe(400);
+  expect((await res.json()).error).toContain("infra");
+  for (const body of [{}, { labels: "client" }, { hiddenLabels: [1] }]) expect((await send(`/api/repos/${alphaId()}/labels`, body)).status).toBe(400);
+  expect(await saved()).toEqual(before);
+});
+
+test("a disabled repository is forgotten and offered by discovery again; an enabled one is refused", async () => {
+  expect((await send(`/api/repos/${alphaId()}/forget`, {})).status).toBe(200);
+  expect((await saved()).repos).toEqual([]);
+  expect(triggered).toBe(0);
+  const found = await (await send("/api/discover", {})).json();
+  expect(found.candidates.map((c: { path: string }) => c.path)).toContain(paths().alpha);
+
+  state.config = await saveConfig({ ...state.config, repos: [newRepoConfig(paths().alpha, true)] });
+  expect((await send(`/api/repos/${alphaId()}/forget`, {})).status).toBe(409);
+  expect((await saved()).repos).toHaveLength(1);
+});
+
+test("the settings routes refuse an unknown repository", async () => {
+  const before = await saved();
+  const id = "0123456789ab";
+  const routes: [string, unknown][] = [
+    [`/api/repos/${id}/name`, { name: "x" }],
+    [`/api/repos/${id}/agent`, { enabled: false }],
+    [`/api/repos/${id}/labels`, { labels: ["x"] }],
+    [`/api/repos/${id}/forget`, {}],
+  ];
+  for (const [path, body] of routes) expect((await send(path, body)).status).toBe(404);
+  expect(await saved()).toEqual(before);
+});
+
+test("a rename and an agent switch for two repositories arriving together both persist", async () => {
+  const beta = newRepoConfig(paths().beta, true);
+  state.config = await saveConfig({ ...state.config, repos: [{ ...newRepoConfig(paths().alpha, true), name: "Alpha" }, beta] });
+  const [rename, agent] = await Promise.all([send(`/api/repos/${alphaId()}/name`, { name: "Renamed" }), send(`/api/repos/${beta.id}/agent`, { enabled: false })]);
+  expect([rename.status, agent.status]).toEqual([200, 200]);
+  const config = await saved();
+  expect(config.repos.map((r) => [r.name, r.agent?.enabled ?? true])).toEqual([
+    ["Renamed", true],
+    ["beta-soc", false],
+  ]);
+  expect(state.config).toEqual(config);
+});
+
+test("the settings routes are refused cross-site and change nothing", async () => {
+  const before = await saved();
+  const routes: [string, unknown][] = [
+    [`/api/repos/${alphaId()}/name`, { name: "x" }],
+    [`/api/repos/${alphaId()}/agent`, { enabled: false }],
+    [`/api/repos/${alphaId()}/labels`, { labels: ["x"] }],
+    [`/api/repos/${alphaId()}/forget`, {}],
+  ];
+  for (const [path, body] of routes) {
+    expect((await send(path, body, { origin: "https://example.com" })).status).toBe(403);
+    expect((await fetch(`${base}${path}`, { method: "POST", body: JSON.stringify(body), headers: { "content-type": "text/plain" } })).status).toBe(403);
+  }
+  expect(await saved()).toEqual(before);
 });

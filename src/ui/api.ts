@@ -1,6 +1,6 @@
 import type { ActivityQuery } from "../shared/activity.ts";
 import type { ActivityPage, ConsoleSession, CleanupPreview, CleanupResult, CleanupSelection, CreateChangeResponse, DismissPreview, DismissResult, EnvironmentReport, PromptResult, PullRequestsResponse, PullResolve, PullResult, ShipResult, WorkStatus } from "../shared/types.ts";
-import type { AgentAvailability, ArtifactFileContent, ChangeArtifacts, Config, CreateProjectResponse, DiscoverResult, IntegrationSession, ScanTriggerResult, Session, SessionAction, SessionWorktree, SharedConfig, SharedConfigApplyResult, SharedConfigAssignment, SharedConfigPreview, Snapshot } from "../shared/types.ts";
+import type { AgentAvailability, ArtifactFileContent, ChangeArtifacts, Config, CreateProjectResponse, DiscoverResult, IntegrationSession, RepoConfig, ScanTriggerResult, Session, SessionAction, SessionWorktree, SharedConfig, SharedConfigApplyResult, SharedConfigAssignment, SharedConfigPreview, Snapshot } from "../shared/types.ts";
 import { socketOrigin } from "./url.ts";
 
 export class ApiError extends Error {
@@ -27,6 +27,22 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 /** Everything the UI asks of a backend. The demo build implements it in memory, so a new operation needs both. */
+/** What the agent toggle and picker change; `agentId: null` clears the project's own choice. */
+export interface RepoAgentPatch {
+  enabled?: boolean;
+  agentId?: string | null;
+}
+
+/**
+ * The labels editor reports "no labels left" as a key set to `undefined` (a config never stores an empty list); on the
+ * wire that is an empty list, which the route turns back into no key. Keys the patch does not have are left out.
+ */
+export function labelLists(patch: Pick<RepoConfig, "labels" | "hiddenLabels">): { labels?: string[]; hiddenLabels?: string[] } {
+  const out: { labels?: string[]; hiddenLabels?: string[] } = {};
+  for (const key of ["labels", "hiddenLabels"] as const) if (key in patch) out[key] = patch[key] ?? [];
+  return out;
+}
+
 export interface Api {
   state(): Promise<Snapshot>;
   /** Read-only: a change's artifacts and their existing files. Rejects with `ApiError` 404 for an unknown repository or change. */
@@ -46,6 +62,14 @@ export interface Api {
   setRepoEnabled(repoId: string, enabled: boolean): Promise<Config>;
   /** Ignore on the projects overview, saved at once: one more ignore path. */
   ignorePath(path: string): Promise<Config>;
+  /** Rename on the projects overview, saved at once. `ApiError` 400 for a blank name. */
+  renameRepo(repoId: string, name: string): Promise<Config>;
+  /** A project's agent-session toggle and agent picker, saved at once; `agentId: null` means the default agent. */
+  setRepoAgent(repoId: string, patch: RepoAgentPatch): Promise<Config>;
+  /** A project's labels dialog, saved at once: either list replaced, an empty one removed. */
+  setRepoLabels(repoId: string, patch: Pick<RepoConfig, "labels" | "hiddenLabels">): Promise<Config>;
+  /** Forget on a disabled entry, saved at once. `ApiError` 409 for an enabled repository. */
+  forgetRepo(repoId: string): Promise<Config>;
   /** Read-only; pass the draft roots and ignore paths to discover against unsaved edits. */
   discover(scanRoots?: string[], ignorePaths?: string[]): Promise<DiscoverResult>;
   scan(): Promise<ScanTriggerResult>;
@@ -178,6 +202,11 @@ export const httpApi: Api = {
   trackRepo: (path) => call<Config>("/api/repos/track", { method: "POST", body: JSON.stringify({ path }) }),
   setRepoEnabled: (repoId, enabled) => call<Config>(`/api/repos/${encodeURIComponent(repoId)}/enabled`, { method: "POST", body: JSON.stringify({ enabled }) }),
   ignorePath: (path) => call<Config>("/api/ignore-paths", { method: "POST", body: JSON.stringify({ path }) }),
+  renameRepo: (repoId, name) => call<Config>(`/api/repos/${encodeURIComponent(repoId)}/name`, { method: "POST", body: JSON.stringify({ name }) }),
+  setRepoAgent: (repoId, patch) => call<Config>(`/api/repos/${encodeURIComponent(repoId)}/agent`, { method: "POST", body: JSON.stringify(patch) }),
+  // An absent list is sent as an empty one: the route removes the key, which is what "no labels left" means.
+  setRepoLabels: (repoId, patch) => call<Config>(`/api/repos/${encodeURIComponent(repoId)}/labels`, { method: "POST", body: JSON.stringify(labelLists(patch)) }),
+  forgetRepo: (repoId) => call<Config>(`/api/repos/${encodeURIComponent(repoId)}/forget`, { method: "POST", body: "{}" }),
   discover: (scanRoots, ignorePaths) =>
     call<DiscoverResult>("/api/discover", { method: "POST", body: scanRoots || ignorePaths ? JSON.stringify({ scanRoots, ignorePaths }) : undefined }),
   scan: () => call<ScanTriggerResult>("/api/scan", { method: "POST" }),
@@ -252,6 +281,10 @@ export const api: Api = {
   trackRepo: (path) => current.trackRepo(path),
   setRepoEnabled: (...args) => current.setRepoEnabled(...args),
   ignorePath: (path) => current.ignorePath(path),
+  renameRepo: (...args) => current.renameRepo(...args),
+  setRepoAgent: (...args) => current.setRepoAgent(...args),
+  setRepoLabels: (...args) => current.setRepoLabels(...args),
+  forgetRepo: (repoId) => current.forgetRepo(repoId),
   discover: (scanRoots, ignorePaths) => current.discover(scanRoots, ignorePaths),
   scan: () => current.scan(),
   environment: (force) => current.environment(force),

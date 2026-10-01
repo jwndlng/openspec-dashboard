@@ -341,3 +341,29 @@ test("the demo links pull requests to changes on cards and in the header, shows 
   expect(refresher.openBoard(snapshot.repos[0].id, Date.parse("2026-06-01T14:00:00.000Z"))).toBeUndefined();
   expect(asked).toBe(0);
 });
+
+test("the overview's per-project settings change the in-memory config at once, with the dashboard's refusals", async () => {
+  const { api } = demo();
+  const [first, second] = (await api.config()).repos;
+  expect((await api.renameRepo(first.id, "  Renamed ")).repos[0].name).toBe("Renamed");
+  expect((await api.state()).repos.find((r) => r.id === first.id)?.name).toBe("Renamed");
+  await expect(api.renameRepo(first.id, " ")).rejects.toMatchObject({ status: 400 });
+
+  expect((await api.setRepoAgent(first.id, { enabled: false })).repos[0].agent).toEqual({ enabled: false });
+  await expect(api.setRepoAgent(first.id, { agentId: "nope" })).rejects.toMatchObject({ status: 400 });
+  await expect(api.setRepoAgent(first.id, {})).rejects.toMatchObject({ status: 400 });
+
+  const labelled = await api.setRepoLabels(second.id, { labels: ["client"] });
+  expect(labelled.repos.find((r) => r.id === second.id)?.labels).toEqual(["client"]);
+  const cleared = await api.setRepoLabels(second.id, { labels: undefined });
+  expect("labels" in (cleared.repos.find((r) => r.id === second.id) ?? {})).toBe(false);
+  await expect(api.setRepoLabels(second.id, { labels: ["Infra", "infra"] })).rejects.toMatchObject({ status: 400 });
+
+  await expect(api.forgetRepo(first.id)).rejects.toMatchObject({ status: 409 });
+  await api.setRepoEnabled(first.id, false);
+  expect((await api.forgetRepo(first.id)).repos.map((r) => r.id)).not.toContain(first.id);
+  await expect(api.forgetRepo(first.id)).rejects.toMatchObject({ status: 404 });
+
+  // What a reload does: a fresh instance has the original sample again.
+  expect((await demo().api.config()).repos[0]).toEqual(first);
+});

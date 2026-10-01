@@ -120,6 +120,21 @@ test("enabledOnly drops repositories the config no longer enables, before any re
   expect(enabledOnly(null, config)).toBeNull();
 });
 
+test("enabledOnly shows the configured name before the next scan, and leaves unchanged repositories alone", () => {
+  const config: Config = {
+    version: 1,
+    scanRoots: [],
+    ignorePaths: [],
+    pollIntervalSeconds: 60,
+    port: 4711,
+    agentSessions: defaultAgentSessions(),
+    repos: snapshot.repos.map((r, i) => ({ id: r.id, path: r.path, name: i === 0 ? "Renamed" : r.name, enabled: true })),
+  };
+  const shown = enabledOnly(snapshot, config);
+  expect(shown?.repos[0].name).toBe("Renamed");
+  expect(shown?.repos[1]).toBe(snapshot.repos[1]);
+});
+
 test("same-named repositories get the shortest distinguishing parent path as a hint", () => {
   const at = (id: string, name: string, path: string) => ({ ...repo(id, name, []), path });
   const rows = overviewRows({
