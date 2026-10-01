@@ -1,10 +1,10 @@
 import { expect, test } from "bun:test";
-import type { ChangeSnapshot, Config, RepoSnapshot, Snapshot, WorkInProgress } from "../src/shared/types.ts";
+import type { ChangeSnapshot, Config, DiscoverResult, RepoSnapshot, Snapshot, WorkInProgress } from "../src/shared/types.ts";
 import { defaultAgentSessions } from "../src/server/config.ts";
 import { checkoutMarkers, hasCheckoutInfo } from "../src/ui/checkoutMarkers.ts";
 import { cdCommand } from "../src/ui/format.ts";
 import { checkoutsNeedingAttention } from "../src/ui/checkout.tsx";
-import { attentionCount, checkoutSummary, enabledOnly, filterRows, monogram, overviewRows, parseOverviewState, serializeOverviewState, sortRows, toggleSort, wipIndicator } from "../src/ui/overviewState.ts";
+import { attentionCount, checkoutSummary, enabledOnly, filterRows, hintAcross, matchesSearch, monogram, overviewRows, parseOverviewState, pendingRows, serializeOverviewState, sortRows, toggleSort, untrackedEntries, wipIndicator } from "../src/ui/overviewState.ts";
 import { repoPath, routeFromPath } from "../src/ui/routes.ts";
 import { isComplete } from "../src/shared/columns.ts";
 
@@ -293,4 +293,81 @@ test("the Done column and every 'to archive' count cover both sub-states", () =>
   expect([row.open, row.toArchive, row.archived]).toEqual([4, 3, 0]);
   // And the board's own "To archive" stat is the same rule (`isComplete`), which is per stage, not per sub-state.
   expect(changes.filter((c) => isComplete(c.stage)).length).toBe(3);
+});
+
+const configWith = (repos: Config["repos"]): Config => ({
+  version: 1,
+  scanRoots: ["/w"],
+  ignorePaths: [],
+  pollIntervalSeconds: 60,
+  port: 4711,
+  agentSessions: defaultAgentSessions(),
+  repos,
+});
+
+test("a repository enabled but not in the snapshot yet is a pending row; none while the snapshot loads", () => {
+  const config = configWith([
+    { id: "a", path: "/w/alpha-infra", name: "alpha-infra", enabled: true },
+    { id: "z", path: "/w/zeta", name: "zeta", enabled: true },
+    { id: "n", path: "/w/new-one", name: "New one", enabled: true },
+    { id: "off", path: "/w/off", name: "off", enabled: false },
+  ]);
+  expect(pendingRows(config, snapshot).map((r) => r.id)).toEqual(["n", "z"]);
+  expect(pendingRows(config, null)).toEqual([]);
+  expect(pendingRows(null, snapshot)).toEqual([]);
+});
+
+test("untracked entries: disabled, then discovered, then without OpenSpec, each by name then path, configured ones left out", () => {
+  const config = configWith([
+    { id: "a", path: "/w/alpha-infra", name: "alpha-infra", enabled: true },
+    { id: "m", path: "/w/mu", name: "mu", enabled: false },
+    { id: "d", path: "/w/demo-agent", name: "demo-agent", enabled: false },
+  ]);
+  const remote = [{ name: "alpha-infra", path: "/w/alpha-infra", tracked: true }];
+  const discover: DiscoverResult = {
+    candidates: [
+      { id: "a", path: "/w/alpha-infra", name: "alpha-infra", enabled: false }, // enabled a moment ago, discovery not re-run yet
+      { id: "x2", path: "/w/z/beta-soc", name: "beta-soc", enabled: false },
+      { id: "x1", path: "/w/a/beta-soc", name: "beta-soc", enabled: false, sameRemoteAs: remote },
+    ],
+    integratable: [
+      { id: "c", path: "/w/chat-groups", name: "chat-groups" },
+      { id: "m", path: "/w/mu", name: "mu" },
+    ],
+    errors: [],
+  };
+  const entries = untrackedEntries(config, discover);
+  expect(entries.map((e) => [e.kind, e.id])).toEqual([
+    ["disabled", "d"],
+    ["disabled", "m"],
+    ["discovered", "x1"],
+    ["discovered", "x2"],
+    ["integratable", "c"],
+  ]);
+  expect(entries[2].sameRemoteAs).toEqual(remote);
+  // Before the first discovery result, only the disabled ones.
+  expect(untrackedEntries(config, undefined).map((e) => e.id)).toEqual(["d", "m"]);
+  expect(untrackedEntries(null, undefined)).toEqual([]);
+});
+
+test("path hints are computed across rows, pending rows and untracked entries, and search matches them", () => {
+  const rows = overviewRows({
+    generatedAt: "2026-09-19T00:00:00Z",
+    repos: [{ ...repo("1", "chat-groups", []), path: "/w/acme/chat-groups" }, repo("2", "beta-soc", [])],
+  });
+  expect(rows[0].hint).toBeUndefined();
+  const pending = [{ id: "p", name: "Beta-SOC", path: "/w/mirror/beta-soc" }];
+  const untracked = untrackedEntries(configWith([]), {
+    candidates: [{ id: "3", path: "/w/ops/repo-mirror/repos/chat-groups", name: "chat-groups", enabled: false }],
+    integratable: [],
+    errors: [],
+  });
+  hintAcross(rows, pending, untracked);
+  expect(rows.map((r) => r.hint)).toEqual(["acme", "w"]);
+  expect(pending[0]).toMatchObject({ hint: "mirror" });
+  expect(untracked[0].hint).toBe("repos");
+  expect(matchesSearch(untracked[0], "REPOS")).toBe(true);
+  expect(matchesSearch(untracked[0], "chat")).toBe(true);
+  expect(matchesSearch(untracked[0], "acme")).toBe(false);
+  expect(matchesSearch(untracked[0], "  ")).toBe(true);
 });

@@ -1,13 +1,13 @@
 import { useEffect, useRef, useState } from "preact/hooks";
-import { availableName, nameHints } from "../shared/nameHints.ts";
-import { integrateUnavailable, type Config, type DiscoveredRepo, type DiscoverResult, type IntegratableRepo, type RepoConfig, type Snapshot } from "../shared/types.ts";
+import { nameHints } from "../shared/nameHints.ts";
+import type { Config, DiscoveredRepo, DiscoverResult, IntegratableRepo, RepoConfig, Snapshot } from "../shared/types.ts";
 import { AgentSettings } from "./agentSettings.tsx";
 import { api, ApiError } from "./api.ts";
 import { EnvironmentPanel } from "./environment.tsx";
 import { environmentAttention, environmentCount, type EnvironmentState } from "./environmentState.ts";
-import { useSessionUi } from "./sessions.tsx";
 import { SettingsNav, type SettingsSection, SettingsSections, useSectionNav } from "./settingsNav.tsx";
 import { SharedConfigPanel } from "./sharedConfig.tsx";
+import { followInApp, href } from "./url.ts";
 
 interface Props {
   config: Config | null;
@@ -29,8 +29,6 @@ export function Settings({ config, snapshot, onSaved, onRescan, environment, onR
   const [discovering, setDiscovering] = useState(false);
   const [candidates, setCandidates] = useState<DiscoveredRepo[]>([]);
   const [integratable, setIntegratable] = useState<IntegratableRepo[]>([]);
-  const [integrating, setIntegrating] = useState<string>();
-  const [integrateError, setIntegrateError] = useState<{ path: string; reason: string }>();
   const [discovered, setDiscovered] = useState(false);
   const discoverSeq = useRef(0);
   const [discoverErrors, setDiscoverErrors] = useState<DiscoverResult["errors"]>([]);
@@ -73,7 +71,6 @@ export function Settings({ config, snapshot, onSaved, onRescan, environment, onR
     }
   };
 
-  const ui = useSessionUi();
   const loaded = config !== null;
   useEffect(() => {
     if (config && config.scanRoots.length > 0) void runDiscovery(config.scanRoots, config.ignorePaths);
@@ -81,7 +78,7 @@ export function Settings({ config, snapshot, onSaved, onRescan, environment, onR
 
   // Hooks first: the ids are all the hook needs, and they are known before the draft is.
   const scroller = useRef<HTMLDivElement>(null);
-  const sectionIds = draft ? ["roots", "tracked", "discovered", "integratable", "scanning", "agents", ...(config ? ["shared-config"] : []), "environment"] : [];
+  const sectionIds = draft ? ["roots", "tracked", "scanning", "agents", ...(config ? ["shared-config"] : []), "environment"] : [];
   const nav = useSectionNav(scroller, sectionIds);
 
   if (!draft) return <div class="settings">Loading…</div>;
@@ -120,12 +117,6 @@ export function Settings({ config, snapshot, onSaved, onRescan, environment, onR
     setNewIgnore("");
   };
 
-  // `sameRemoteAs` describes one discovery run; it is not part of the config.
-  const enableCandidate = ({ sameRemoteAs: _info, ...candidate }: DiscoveredRepo) => {
-    const name = availableName(candidate, draft.repos.map((r) => r.name));
-    update({ repos: [...draft.repos, { ...candidate, name, enabled: true }].sort((x, y) => x.path.localeCompare(y.path)) });
-  };
-
   const save = async () => {
     setSaving(true);
     try {
@@ -142,34 +133,16 @@ export function Settings({ config, snapshot, onSaved, onRescan, environment, onR
     }
   };
 
-  // Candidates come from the saved config's point of view; hide the ones already enabled in the draft.
+  // Discovery here only answers "what is under these roots": the repositories themselves are listed, enabled and
+  // integrated on the projects overview. Anything already in the draft is not untracked any more.
   const draftIds = new Set(draft.repos.map((r) => r.id));
-  const newCandidates = candidates.filter((c) => !draftIds.has(c.id));
+  const untrackedCandidates = candidates.filter((c) => !draftIds.has(c.id)).length;
+  const untrackedIntegratable = integratable.filter((r) => !draftIds.has(r.id)).length;
   const enabledCount = draft.repos.filter((r) => r.enabled).length;
-  // Already tracked in the draft, or already being set up: neither is still waiting for OpenSpec.
-  const newIntegratable = integratable.filter((r) => !draftIds.has(r.id));
-  const hints = nameHints([...draft.repos, ...newCandidates, ...newIntegratable]);
-  // Why Integrate cannot be offered at all. The rows are listed either way: knowing the repository is there is useful
-  // before deciding to turn agent sessions on.
-  const integrateOff = integrateUnavailable(draft, ui.agents);
-  const runningFor = (path: string) => ui.integrations.find((s) => s.folder === path && s.state === "running");
-  const integrate = async (repo: IntegratableRepo) => {
-    setIntegrating(repo.path);
-    setIntegrateError(undefined);
-    try {
-      const session = await api.startIntegration(repo.path);
-      await ui.refresh();
-      ui.showIntegration(session.id);
-    } catch (err) {
-      // A session that was never created has no panel to report itself in, so the row says why.
-      setIntegrateError({ path: repo.path, reason: err instanceof Error ? err.message : String(err) });
-    } finally {
-      setIntegrating(undefined);
-    }
-  };
+  const hints = nameHints(draft.repos);
   const hintBadge = (id: string) => {
     const hint = hints.get(id);
-    return hint ? <span class="badge mono" title="another listed repository has the same name">{hint}</span> : null;
+    return hint ? <span class="badge mono" title="another tracked repository has the same name">{hint}</span> : null;
   };
 
   // One list drives both the navigation and the page, so a panel cannot exist without its navigation entry.
@@ -180,7 +153,7 @@ export function Settings({ config, snapshot, onSaved, onRescan, environment, onR
       content: (
         <section class="panel">
           <h2>Workspace roots</h2>
-          <p class="hint">Directories to search (4 levels deep) for repositories containing <code>openspec/config.yaml</code>. Discovery runs whenever the roots change and only previews what it finds — nothing is tracked until you enable it.</p>
+          <p class="hint">Directories to search (4 levels deep) for repositories containing <code>openspec/config.yaml</code>. Discovery runs whenever the roots change and only previews what it finds — nothing is tracked until you enable it on Projects.</p>
           <div class="list">
             {draft.scanRoots.map((root) => (
               <div class="row">
@@ -206,6 +179,11 @@ export function Settings({ config, snapshot, onSaved, onRescan, environment, onR
               {e.root}: {e.message}
             </div>
           ))}
+          {draft.scanRoots.length > 0 && (
+            <p class="hint found-summary" aria-live="polite">
+              {discovering ? "Discovering…" : discovered ? <FoundSummary candidates={untrackedCandidates} integratable={untrackedIntegratable} /> : null}
+            </p>
+          )}
           <h2>Ignored paths</h2>
           <p class="hint">Discovery skips these directories and everything below them. Ignored paths only affect discovery: a repository that is already tracked stays tracked until you forget it.</p>
           <div class="list">
@@ -235,7 +213,7 @@ export function Settings({ config, snapshot, onSaved, onRescan, environment, onR
       content: (
         <section class="panel">
           <h2>Tracked repositories · {enabledCount} of {draft.repos.length} enabled</h2>
-          <p class="hint">Only enabled repositories are scanned and shown on the board. Names are display-only. Forgetting (×) a repository returns it to the discovered list.</p>
+          <p class="hint">Only enabled repositories are scanned and shown on the board. Names are display-only. Forgetting (×) a repository returns it to the Untracked &amp; disabled list on Projects.</p>
           <div class="list">
             {draft.repos.map((repo) => (
               <div class={`item ${repo.enabled ? "" : "off"}`} key={repo.id}>
@@ -251,99 +229,7 @@ export function Settings({ config, snapshot, onSaved, onRescan, environment, onR
                 </button>
               </div>
             ))}
-            {draft.repos.length === 0 && <span class="hint">Nothing tracked yet — enable a discovered repository below.</span>}
-          </div>
-        </section>
-      ),
-    },
-    {
-      id: "discovered",
-      label: "Discovered",
-      count: discovering ? "…" : String(newCandidates.length),
-      attention: !discovering && newCandidates.length > 0,
-      countNote: "new",
-      countTitle: "waiting to be enabled",
-      content: (
-        <section class="panel">
-          <h2>Discovered · {newCandidates.length} not tracked{discovering ? " · discovering…" : ""}</h2>
-          <p class="hint">Repositories found under the workspace roots. Enable the ones to track, then save. "Same remote" marks a probable second clone; it is information only.</p>
-          <div class="list">
-            {newCandidates.map((repo) => (
-              <div class="item candidate" key={repo.id}>
-                <span class="name">{repo.name}</span>
-                <span class="path" title={repo.path}>
-                  {hintBadge(repo.id)}{" "}
-                  {repo.sameRemoteAs && (
-                    <span class="badge" title={`same origin remote as:\n${repo.sameRemoteAs.map((r) => `${r.path}${r.tracked ? " (tracked)" : ""}`).join("\n")}`}>
-                      same remote as {[...new Set(repo.sameRemoteAs.map((r) => r.name))].join(", ")}
-                    </span>
-                  )}{" "}
-                  {repo.path}
-                </span>
-                <span class="row">
-                  <button type="button" class="btn sm" onClick={() => enableCandidate(repo)}>
-                    Enable
-                  </button>
-                  <button type="button" class="btn sm ghost" title="add this path to the ignored paths" onClick={() => ignore(repo.path)}>
-                    Ignore
-                  </button>
-                </span>
-              </div>
-            ))}
-            {newCandidates.length === 0 && (
-              <span class="hint">
-                {draft.scanRoots.length === 0 ? "Add a workspace root to discover repositories." : discovering ? "Discovering…" : discovered ? "No untracked repositories found." : ""}
-              </span>
-            )}
-          </div>
-        </section>
-      ),
-    },
-    {
-      id: "integratable",
-      label: "Without OpenSpec",
-      count: discovering ? "…" : String(newIntegratable.length),
-      content: (
-        <section class="panel">
-          <h2>Without OpenSpec · {newIntegratable.length} repositories{discovering ? " · discovering…" : ""}</h2>
-          <p class="hint">
-            Git repositories under the workspace roots that do not use OpenSpec yet — the list above is for repositories that already do. <strong>Integrate</strong> starts your
-            agent in the repository to run <code>openspec init</code> there; the dashboard tracks it once{" "}
-            <code>openspec/config.yaml</code> exists. The agent works <strong>in the checkout itself</strong>, with no branch and no undo.
-          </p>
-          {integrateOff && <div class="notice">Integrate is unavailable: {integrateOff}.</div>}
-          <div class="list">
-            {newIntegratable.map((repo) => {
-              const running = runningFor(repo.path);
-              return (
-                <div class="item candidate integratable" key={repo.id}>
-                  <span class="name">{repo.name}</span>
-                  <span class="path" title={repo.path}>
-                    {hintBadge(repo.id)} {repo.path}
-                  </span>
-                  <span class="row">
-                    {running ? (
-                      <button type="button" class="btn sm" onClick={() => ui.showIntegration(running.id)}>
-                        Setting up…
-                      </button>
-                    ) : (
-                      <button type="button" class="btn sm" disabled={integrateOff !== undefined || integrating === repo.path} title={integrateOff ?? `Run openspec init in ${repo.path}`} onClick={() => void integrate(repo)}>
-                        {integrating === repo.path ? "Starting…" : "Integrate"}
-                      </button>
-                    )}
-                    <button type="button" class="btn sm ghost" title="add this path to the ignored paths" onClick={() => ignore(repo.path)}>
-                      Ignore
-                    </button>
-                  </span>
-                  {integrateError?.path === repo.path && <span class="hint danger">{integrateError.reason}</span>}
-                </div>
-              );
-            })}
-            {newIntegratable.length === 0 && (
-              <span class="hint">
-                {draft.scanRoots.length === 0 ? "Add a workspace root to discover repositories." : discovering ? "Discovering…" : discovered ? "Every repository under the roots already uses OpenSpec." : ""}
-              </span>
-            )}
+            {draft.repos.length === 0 && <span class="hint">Nothing tracked yet — enable discovered repositories on Projects.</span>}
           </div>
         </section>
       ),
@@ -403,6 +289,21 @@ export function Settings({ config, snapshot, onSaved, onRescan, environment, onR
           </span>
         )}
       </div>
+    </>
+  );
+}
+
+/** The Workspace roots section's answer to "what did discovery find": counts and the way to Projects, never a list. */
+export function FoundSummary({ candidates, integratable }: { candidates: number; integratable: number }) {
+  if (candidates === 0 && integratable === 0) return <>Every repository under these roots is tracked.</>;
+  const parts = [candidates > 0 ? `${candidates} using OpenSpec` : "", integratable > 0 ? `${integratable} without OpenSpec` : ""].filter(Boolean);
+  return (
+    <>
+      Found {parts.join(" and ")}, not tracked yet —{" "}
+      <a href={href("/")} onClick={(e) => followInApp(e, "/")}>
+        enable or integrate them on Projects
+      </a>
+      . Save first if you changed the roots.
     </>
   );
 }

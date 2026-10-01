@@ -1,5 +1,6 @@
 // In-memory stand-in for the dashboard server. Nothing is read from or written to anywhere: a reload starts over.
 import { pageEvents, retained } from "../../shared/activity.ts";
+import { availableName } from "../../shared/nameHints.ts";
 import { summarizeWorkInProgress } from "../../shared/workInProgress.ts";
 import type { ChangeSnapshot, Config, DismissFile, DismissPreview, PullBlockingFile, PullResult, RepoSharedConfig, RepoSnapshot, SharedConfigApplyResult, SharedConfigPreview, SharedProfile, Snapshot } from "../../shared/types.ts";
 import { ApiError, type Api } from "../api.ts";
@@ -294,6 +295,41 @@ export function createDemoApi({ now = Date.now, latencyMs = 150, clock }: DemoAp
     saveConfig: (next) => {
       config = structuredClone(next);
       return reply(config);
+    },
+    // The overview's instant actions, on the page's own copy of the config: gone after a reload, like every edit here.
+    trackRepo: (path) =>
+      failing(() => {
+        const configured = config.repos.find((r) => r.path === path);
+        if (configured) {
+          config = { ...config, repos: config.repos.map((r) => (r === configured ? { ...r, enabled: true } : r)) };
+          return config;
+        }
+        const ignored = config.ignorePaths.some((p) => path === p || path.startsWith(`${p}/`));
+        const candidate = sample.candidates.find((c) => c.path === path);
+        if (!candidate || ignored) throw new ApiError(404, "this folder is not a repository discovery offers for tracking");
+        const name = availableName(
+          candidate,
+          config.repos.map((r) => r.name),
+        );
+        config = {
+          ...config,
+          repos: [...config.repos, { id: candidate.id, path: candidate.path, name, enabled: true }].sort((x, y) => x.path.localeCompare(y.path)),
+        };
+        return config;
+      }),
+    setRepoEnabled: (repoId, enabled) =>
+      failing(() => {
+        if (!config.repos.some((r) => r.id === repoId)) throw new ApiError(404, "repository not found");
+        config = { ...config, repos: config.repos.map((r) => (r.id === repoId ? { ...r, enabled } : r)) };
+        return config;
+      }),
+    ignorePath: (path) => {
+      const trimmed = path.replace(/\/+$/, "");
+      return failing(() => {
+        if (!trimmed.startsWith("/")) throw new ApiError(400, "path must be an absolute path");
+        if (!config.ignorePaths.includes(trimmed)) config = { ...config, ignorePaths: [...config.ignorePaths, trimmed] };
+        return config;
+      });
     },
     discover: (scanRoots, ignorePaths) => {
       const roots = scanRoots ?? config.scanRoots;

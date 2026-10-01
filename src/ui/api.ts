@@ -37,6 +37,15 @@ export interface Api {
   activity(query?: ActivityQuery): Promise<ActivityPage>;
   config(): Promise<Config>;
   saveConfig(config: Config): Promise<Config>;
+  /**
+   * Enable on the projects overview, saved at once: re-enables a configured repository, or adds a discovered candidate
+   * enabled with its default name. `ApiError` 404 for a path discovery does not offer.
+   */
+  trackRepo(path: string): Promise<Config>;
+  /** Enable or Disable of a configured repository, saved at once; its name is kept. */
+  setRepoEnabled(repoId: string, enabled: boolean): Promise<Config>;
+  /** Ignore on the projects overview, saved at once: one more ignore path. */
+  ignorePath(path: string): Promise<Config>;
   /** Read-only; pass the draft roots and ignore paths to discover against unsaved edits. */
   discover(scanRoots?: string[], ignorePaths?: string[]): Promise<DiscoverResult>;
   scan(): Promise<ScanTriggerResult>;
@@ -166,6 +175,9 @@ export const httpApi: Api = {
   activity: (query = {}) => call<ActivityPage>(`/api/activity${activityQueryString(query)}`),
   config: () => call<Config>("/api/config"),
   saveConfig: (config) => call<Config>("/api/config", { method: "PUT", body: JSON.stringify(config) }),
+  trackRepo: (path) => call<Config>("/api/repos/track", { method: "POST", body: JSON.stringify({ path }) }),
+  setRepoEnabled: (repoId, enabled) => call<Config>(`/api/repos/${encodeURIComponent(repoId)}/enabled`, { method: "POST", body: JSON.stringify({ enabled }) }),
+  ignorePath: (path) => call<Config>("/api/ignore-paths", { method: "POST", body: JSON.stringify({ path }) }),
   discover: (scanRoots, ignorePaths) =>
     call<DiscoverResult>("/api/discover", { method: "POST", body: scanRoots || ignorePaths ? JSON.stringify({ scanRoots, ignorePaths }) : undefined }),
   scan: () => call<ScanTriggerResult>("/api/scan", { method: "POST" }),
@@ -237,6 +249,9 @@ export const api: Api = {
   activity: (query) => current.activity(query),
   config: () => current.config(),
   saveConfig: (config) => current.saveConfig(config),
+  trackRepo: (path) => current.trackRepo(path),
+  setRepoEnabled: (...args) => current.setRepoEnabled(...args),
+  ignorePath: (path) => current.ignorePath(path),
   discover: (scanRoots, ignorePaths) => current.discover(scanRoots, ignorePaths),
   scan: () => current.scan(),
   environment: (force) => current.environment(force),

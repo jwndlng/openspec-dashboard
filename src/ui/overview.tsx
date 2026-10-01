@@ -1,18 +1,23 @@
-import { useMemo, useState } from "preact/hooks";
+import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { boardColumns } from "../shared/columns.ts";
-import type { Config, Snapshot, WorkInProgress } from "../shared/types.ts";
+import { integrateUnavailable, type Config, type Snapshot, type WorkInProgress } from "../shared/types.ts";
+import { api } from "./api.ts";
 import { hasCheckoutInfo } from "./checkoutMarkers.ts";
-import { NoRepos } from "./empty.tsx";
+import { createDiscoveryStore, type DiscoveryState } from "./discoveryState.ts";
 import { NewProjectButton } from "./newProject.tsx";
 import { relTime } from "./format.ts";
 import {
   filterRows,
+  hintAcross,
+  matchesSearch,
   naturalDir,
   type OverviewLayout,
   type OverviewRow,
   type OverviewState,
   overviewRows,
   parseOverviewState,
+  type PendingRow,
+  pendingRows,
   SORT_KEYS,
   type SortKey,
   serializeOverviewState,
@@ -20,6 +25,7 @@ import {
   checkoutSummary,
   monogram,
   toggleSort,
+  untrackedEntries,
   wipIndicator,
 } from "./overviewState.ts";
 import { Stat } from "./band.tsx";
@@ -29,8 +35,10 @@ import { PullAllButton, PullButton } from "./pull.tsx";
 import { OpenPrCount } from "./pullRequests.tsx";
 import { branchNotice } from "./pullState.ts";
 import { repoPath } from "./routes.ts";
+import { useSessionUi } from "./sessions.tsx";
 import { summarize } from "./sharedConfigState.ts";
-import { currentQuery, href, navigate, replaceQuery } from "./url.ts";
+import { DisableButton, type Tracking, UntrackedSection, useTracking } from "./untracked.tsx";
+import { currentQuery, followInApp, href, hrefWithQuery, navigate, replaceQuery } from "./url.ts";
 
 /** Plain left-click only, so modifier-clicks and text selection keep their browser behaviour. */
 function isPlainClick(e: MouseEvent): boolean {
@@ -109,7 +117,7 @@ function lastUpdated(row: OverviewRow, now: number): string {
   return row.lastUpdatedAt ? `${relTime(row.lastUpdatedAt, now)} ago`.replace("just now ago", "just now") : "—";
 }
 
-function Row({ row, stages, now }: { row: OverviewRow; stages: string[]; now: number }) {
+export function Row({ row, stages, now, tracking }: { row: OverviewRow; stages: string[]; now: number; tracking: Tracking }) {
   const idle = row.open === 0;
   return (
     <tr class={idle ? "idle" : ""} title={`${row.path} · ${row.archived} archived`} onClick={openOnPlainClick(row)}>
@@ -143,8 +151,61 @@ function Row({ row, stages, now }: { row: OverviewRow; stages: string[]; now: nu
       <td class="when" title={row.lastUpdatedAt ?? "no activity date"}>
         {lastUpdated(row, now)}
       </td>
-      <td class="row-actions">{row.isGit && row.ok && <PullButton repoId={row.id} repoName={row.name} compact />}</td>
+      <td class="row-actions">
+        {row.isGit && row.ok && <PullButton repoId={row.id} repoName={row.name} compact />}
+        <DisableButton id={row.id} name={row.name} tracking={tracking} />
+      </td>
     </tr>
+  );
+}
+
+/** A repository enabled a moment ago: in the list at once, with its counts once the scan that includes it is done. */
+export function PendingTableRow({ row, columns }: { row: PendingRow; columns: number }) {
+  return (
+    <tr class="pending" title={row.path}>
+      <th scope="row" class="repo-name">
+        <span class="pending-name">{row.name}</span>
+        {row.hint && <span class="path-hint mono">{row.hint}/</span>}
+      </th>
+      <td class="none" colSpan={columns}>
+        Scanning…
+      </td>
+    </tr>
+  );
+}
+
+export function PendingTile({ row }: { row: PendingRow }) {
+  return (
+    <article class="tile idle pending" title={row.path}>
+      <header class="tile-head">
+        <span class="monogram" aria-hidden="true">
+          {monogram(row.name)}
+        </span>
+        <div class="tile-title">
+          <h2 class="repo-name">
+            <span class="pending-name">{row.name}</span>
+            {row.hint && <span class="path-hint mono">{row.hint}/</span>}
+          </h2>
+        </div>
+      </header>
+      <p class="tile-body none">Scanning…</p>
+    </article>
+  );
+}
+
+/** In place of the tracked list while nothing is enabled; the Untracked & disabled section follows below it. */
+export function NothingTracked({ config }: { config: Config | null }) {
+  return (
+    <div class="empty inline">
+      <h2 class="nothing-tracked-title">No repositories tracked yet</h2>
+      <p>Enable one of the repositories listed below, or add a workspace root in Settings to discover more.</p>
+      <div class="row actions">
+        <a class="btn" href={hrefWithQuery("/settings", "?section=roots")} onClick={(e) => followInApp(e, "/settings", "?section=roots")}>
+          Open Settings
+        </a>
+        <NewProjectButton config={config} small={false} />
+      </div>
+    </div>
   );
 }
 
@@ -176,7 +237,7 @@ function TileCheckouts({ row }: { row: OverviewRow }) {
  * Everything a row shows, plus the room a row lacks: one chip per checkout. Every tile has the same size and places its
  * parts in the same spots; the badge and checkout areas scroll inside the tile instead of growing it.
  */
-function Tile({ row, stages, now, hue }: { row: OverviewRow; stages: string[]; now: number; hue?: number }) {
+export function Tile({ row, stages, now, hue, tracking }: { row: OverviewRow; stages: string[]; now: number; hue?: number; tracking: Tracking }) {
   const idle = row.open === 0;
   return (
     // biome-ignore lint/a11y/useKeyWithClickEvents: the click is a pointer shortcut, as on a table row; the keyboard path is the repository link inside
@@ -194,7 +255,10 @@ function Tile({ row, stages, now, hue }: { row: OverviewRow; stages: string[]; n
             updated {lastUpdated(row, now)}
           </span>
         </div>
-        {row.isGit && row.ok && <PullButton repoId={row.id} repoName={row.name} compact />}
+        <span class="tile-actions">
+          {row.isGit && row.ok && <PullButton repoId={row.id} repoName={row.name} compact />}
+          <DisableButton id={row.id} name={row.name} tracking={tracking} />
+        </span>
       </header>
       <div class="tile-badges">
         <RepoBadges row={row} />
@@ -231,7 +295,16 @@ function Tile({ row, stages, now, hue }: { row: OverviewRow; stages: string[]; n
   );
 }
 
-export function Overview({ snapshot, config }: { snapshot: Snapshot | null; config: Config | null }) {
+/** The overview's discovery runs, kept across visits: coming back shows the last result while a new run is under way. */
+const discovery = createDiscoveryStore(() => api.discover());
+
+function useDiscovery(): DiscoveryState {
+  const [state, setState] = useState(discovery.get());
+  useEffect(() => discovery.subscribe(() => setState(discovery.get())), []);
+  return state;
+}
+
+export function Overview({ snapshot, config, onConfig }: { snapshot: Snapshot | null; config: Config | null; onConfig: (config: Config) => void }) {
   const [state, setStateRaw] = useState<OverviewState>(() => parseOverviewState(currentQuery()));
   const now = Date.now();
 
@@ -241,14 +314,48 @@ export function Overview({ snapshot, config }: { snapshot: Snapshot | null; conf
   };
 
   const rows = useMemo(() => (snapshot ? overviewRows(snapshot) : []), [snapshot]);
+  const discovered = useDiscovery();
+  const ui = useSessionUi();
+  const hasRoots = (config?.scanRoots.length ?? 0) > 0;
+  const configRef = useRef(config);
+  configRef.current = config;
+  // A discovery run is also when the server notices a finished integration and tracks the repository, so the config is
+  // read again afterwards; only a real difference reaches the app shell.
+  const rediscover = () => {
+    if (!hasRoots) return discovery.clear();
+    void discovery.run().then(async () => {
+      const latest = await api.config().catch(() => undefined);
+      if (latest && JSON.stringify(latest) !== JSON.stringify(configRef.current)) onConfig(latest);
+    });
+  };
+  const tracking = useTracking({ onConfig, rediscover });
+  // Against the saved roots and ignore paths, whenever the overview opens or they change (a save in Settings).
+  const rootsKey = config ? JSON.stringify([config.scanRoots, config.ignorePaths]) : undefined;
+  useEffect(() => {
+    if (rootsKey !== undefined) rediscover();
+  }, [rootsKey]);
+  // An integration that stopped running may have left `openspec/config.yaml` behind: look again.
+  const runningIntegrations = ui.integrations.filter((s) => s.state === "running").length;
+  const wasRunning = useRef(runningIntegrations);
+  useEffect(() => {
+    if (runningIntegrations < wasRunning.current && rootsKey !== undefined) rediscover();
+    wasRunning.current = runningIntegrations;
+  }, [runningIntegrations]);
+  const pending = pendingRows(config, snapshot);
+  const untracked = untrackedEntries(config, discovered.result);
+  hintAcross(rows, pending, untracked);
   // Same stage columns, in the same order, as the combined board.
   const stages = useMemo(() => (snapshot ? boardColumns(snapshot).filter((c) => c !== "Archived") : []), [snapshot]);
-  const visible = useMemo(() => sortRows(filterRows(rows, state.q, state.wip), state.sort, state.dir), [rows, state]);
+  const visible = sortRows(filterRows(rows, state.q, state.wip), state.sort, state.dir);
   // Over every repository, as on the board, so a tile's colour matches its cards and group headers.
   const hues = useMemo(() => assignRepoHues((snapshot?.repos ?? []).map((r) => r.id)), [snapshot]);
 
-  if (snapshot && rows.length === 0) return <NoRepos config={config} />;
   const toArchive = rows.reduce((n, r) => n + r.toArchive, 0);
+  // Nothing pending or untracked has work in progress, so that filter hides both.
+  const pendingShown = state.wip ? [] : pending.filter((r) => matchesSearch(r, state.q));
+  const untrackedShown = untracked.filter((e) => matchesSearch(e, state.q));
+  const nothingTracked = snapshot !== null && rows.length === 0 && pending.length === 0;
+  const runningIntegration = (path: string) => ui.integrations.find((s) => s.folder === path && s.state === "running")?.id;
 
   const header = (key: SortKey, label: string, cls = "") => {
     const active = state.sort === key;
@@ -339,10 +446,15 @@ export function Overview({ snapshot, config }: { snapshot: Snapshot | null; conf
         </div>
       </div>
       <div class="overview">
-        {state.view === "tiles" ? (
+        {nothingTracked ? (
+          <NothingTracked config={config} />
+        ) : state.view === "tiles" ? (
           <div class="tiles">
+            {pendingShown.map((row) => (
+              <PendingTile key={row.id} row={row} />
+            ))}
             {visible.map((row) => (
-              <Tile key={row.id} row={row} stages={stages} now={now} hue={hues.get(row.id)} />
+              <Tile key={row.id} row={row} stages={stages} now={now} hue={hues.get(row.id)} tracking={tracking} />
             ))}
           </div>
         ) : (
@@ -368,13 +480,29 @@ export function Overview({ snapshot, config }: { snapshot: Snapshot | null; conf
               </tr>
             </thead>
             <tbody>
+              {pendingShown.map((row) => (
+                <PendingTableRow key={row.id} row={row} columns={stages.length + 6} />
+              ))}
               {visible.map((row) => (
-                <Row key={row.id} row={row} stages={stages} now={now} />
+                <Row key={row.id} row={row} stages={stages} now={now} tracking={tracking} />
               ))}
             </tbody>
           </table>
         )}
-        {snapshot && visible.length === 0 && <p class="hint">{state.q.trim() ? `No repository matches “${state.q}”${state.wip ? " with work in progress" : ""}.` : "No repository has uncommitted, unpushed or stale work."}</p>}
+        {snapshot && !nothingTracked && visible.length === 0 && pendingShown.length === 0 && <p class="hint">{state.q.trim() ? `No repository matches “${state.q}”${state.wip ? " with work in progress" : ""}.` : "No repository has uncommitted, unpushed or stale work."}</p>}
+        {!state.wip && config && (
+          <UntrackedSection
+            entries={untrackedShown}
+            discovery={discovered}
+            hasRoots={hasRoots}
+            query={state.q}
+            tracking={tracking}
+            integrateOff={integrateUnavailable(config, ui.agents)}
+            runningIntegration={runningIntegration}
+            showIntegration={(id) => ui.showIntegration(id)}
+            onRediscover={rediscover}
+          />
+        )}
       </div>
     </>
   );

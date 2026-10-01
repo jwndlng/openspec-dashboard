@@ -1,10 +1,11 @@
 import { ACTIVITY_KINDS, type ActivityKind } from "../shared/types.ts";
+import { availableName } from "../shared/nameHints.ts";
 import { MAX_PAGE, type ActivityLog, type PageQuery } from "./activity/log.ts";
 import type { CleanupSelection, Config, DiscoverResult, PullBlockingFile, PullResolve, RepoConfig, RepoSnapshot, ScanTriggerResult, SharedConfigApplyResult, SharedConfigAssignment, SharedConfigPreview } from "../shared/types.ts";
 import { applyCleanup, CleanupBusyError, previewCleanup } from "./cleanup.ts";
 import { changeDirFor, listArtifactFiles, readArtifactFile } from "./artifacts.ts";
 import { consoleFolderProblem } from "./sessions/consoleFolder.ts";
-import { ConfigValidationError, saveConfig, validateConfig, validateIgnorePaths, validateScanRoots } from "./config.ts";
+import { ConfigValidationError, newRepoConfig, repoId, updateConfig, validateConfig, validateIgnorePaths, validateScanRoots } from "./config.ts";
 import { createChange } from "./createChange.ts";
 import { createProject, CreateProjectError } from "./createProject.ts";
 import { dismissChange, DismissError, isDismissableName, previewDismiss } from "./dismissChange.ts";
@@ -67,8 +68,13 @@ async function putConfig(state: AppState, req: Request): Promise<Response> {
   // Checked on save only (loading must survive a folder deleted since); opening the console checks it again.
   const consoleProblem = next.agentSessions.consoleDir ? consoleFolderProblem(next.agentSessions.consoleDir, next) : undefined;
   if (consoleProblem) return json({ error: `invalid config: agentSessions.consoleDir: ${consoleProblem}`, issues: [`agentSessions.consoleDir: ${consoleProblem}`] }, 400);
-  const previous = state.config;
-  state.config = await saveConfig(next);
+  const { previous, saved } = await updateConfig(state, () => next);
+  afterConfigChange(state, previous);
+  return json(saved);
+}
+
+/** What every config write starts: a fresh `origin` lookup, and a scan when the interval or the enabled set changed. */
+function afterConfigChange(state: AppState, previous: Config): void {
   // A repository may have been added, removed or re-pointed: look its `origin` up again when it is next projected.
   state.pullRequests?.forgetOrigins();
   if (state.config.pollIntervalSeconds !== previous.pollIntervalSeconds) {
@@ -76,7 +82,91 @@ async function putConfig(state: AppState, req: Request): Promise<Response> {
   } else if (enabledIds(state.config) !== enabledIds(previous)) {
     state.scanner.trigger();
   }
-  return json(state.config);
+}
+
+/** A tracking request's `path`, absolute after `~` expansion and canonical; `undefined` when it is not one. */
+function requestedPath(body: Record<string, unknown>): string | undefined {
+  if (typeof body.path !== "string" || !body.path.trim()) return undefined;
+  try {
+    return validateIgnorePaths([body.path])[0];
+  } catch {
+    return undefined;
+  }
+}
+
+const NOT_A_CANDIDATE = "this folder is not a repository discovery offers for tracking";
+
+/**
+ * Enable on the projects overview: re-enables a configured repository, or adds one that discovery over the saved roots
+ * and ignore paths offers as a candidate — nothing the user could not have seen there. Only the dashboard's config is
+ * written.
+ */
+async function postTrackRepo(state: AppState, req: Request): Promise<Response> {
+  const path = requestedPath(await readJson(req));
+  if (!path) return json({ error: "path must be an absolute path" }, 400);
+  const id = repoId(path);
+  // Slow and read-only, so it runs before the write is queued; the write re-checks only what can change meanwhile.
+  const candidate = state.config.repos.some((r) => r.id === id)
+    ? undefined
+    : (await discoverRepos(state.config.repos, state.config.scanRoots, state.config.ignorePaths)).candidates.find((c) => c.id === id);
+  const { previous, saved } = await updateConfig(state, (current) => {
+    if (current.repos.some((r) => r.id === id)) return { ...current, repos: current.repos.map((r) => (r.id === id ? { ...r, enabled: true } : r)) };
+    if (!candidate) throw new TrackingError(404, NOT_A_CANDIDATE);
+    const repo = newRepoConfig(candidate.path, true);
+    const named = {
+      ...repo,
+      name: availableName(
+        repo,
+        current.repos.map((r) => r.name),
+      ),
+    };
+    return { ...current, repos: [...current.repos, named].sort((x, y) => x.path.localeCompare(y.path)) };
+  });
+  afterConfigChange(state, previous);
+  return json(saved);
+}
+
+/** Enable and Disable of a configured repository; its name and everything else stay. */
+async function postRepoEnabled(state: AppState, req: Request, id: string): Promise<Response> {
+  const { enabled } = await readJson(req);
+  if (typeof enabled !== "boolean") return json({ error: "enabled must be true or false" }, 400);
+  const { previous, saved } = await updateConfig(state, (current) => {
+    if (!current.repos.some((r) => r.id === id)) throw new TrackingError(404, "repository not found");
+    return { ...current, repos: current.repos.map((r) => (r.id === id ? { ...r, enabled } : r)) };
+  });
+  afterConfigChange(state, previous);
+  return json(saved);
+}
+
+/** Ignore on the projects overview: one more ignore path. Configured repositories are untouched, as ever. */
+async function postIgnorePath(state: AppState, req: Request): Promise<Response> {
+  const path = requestedPath(await readJson(req));
+  if (!path) return json({ error: "path must be an absolute path" }, 400);
+  const { previous, saved } = await updateConfig(state, (current) =>
+    current.ignorePaths.includes(path) ? undefined : { ...current, ignorePaths: [...current.ignorePaths, path] },
+  );
+  afterConfigChange(state, previous);
+  return json(saved);
+}
+
+class TrackingError extends Error {
+  constructor(
+    readonly status: number,
+    message: string,
+  ) {
+    super(message);
+  }
+}
+
+/** The refusals of the tracking routes as responses: a malformed body, an unknown repository, a path not offered. */
+async function tracking(route: () => Promise<Response>): Promise<Response> {
+  try {
+    return await route();
+  } catch (err) {
+    if (err instanceof TrackingError || err instanceof SessionError) return json({ error: err.message }, err.status);
+    if (err instanceof ConfigValidationError) return json({ error: err.message, issues: err.issues }, 400);
+    throw err;
+  }
 }
 
 /**
@@ -699,6 +789,10 @@ export function createFetchHandler({ state, indexHtml }: AppOptions): (req: Requ
       if (req.method === "GET" && pathname === "/api/config") return json(state.config);
       if (req.method === "PUT" && pathname === "/api/config") return putConfig(state, req);
       if (req.method === "POST" && pathname === "/api/discover") return postDiscover(state, req);
+      if (req.method === "POST" && pathname === "/api/repos/track") return tracking(() => postTrackRepo(state, req));
+      if (req.method === "POST" && pathname === "/api/ignore-paths") return tracking(() => postIgnorePath(state, req));
+      const enabledMatch = /^\/api\/repos\/([^/]+)\/enabled$/.exec(pathname);
+      if (req.method === "POST" && enabledMatch) return tracking(() => postRepoEnabled(state, req, decodeURIComponent(enabledMatch[1])));
       if (req.method === "GET" && pathname === "/api/shared-config") return getSharedConfig();
       if (req.method === "PUT" && pathname === "/api/shared-config") return putSharedConfig(state, req);
       if (req.method === "POST" && pathname === "/api/shared-config/preview") return postSharedConfigPreview(state, req);

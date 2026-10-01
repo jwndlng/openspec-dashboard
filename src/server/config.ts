@@ -314,6 +314,26 @@ export async function saveConfig(config: Config): Promise<Config> {
   return valid;
 }
 
+/** The tail of the queue of config writes; a failed write must not stop the ones after it. */
+let pendingWrite: Promise<unknown> = Promise.resolve();
+
+/**
+ * The one way to change the saved config while the server runs. Writes are applied one at a time, each to the config
+ * as the previous write left it, so two requests arriving together cannot undo each other. `change` returns the next
+ * config, or `undefined` when there is nothing to write; whatever it throws reaches the caller and nothing is saved.
+ */
+export function updateConfig(state: { config: Config }, change: (current: Config) => Config | undefined | Promise<Config | undefined>): Promise<{ previous: Config; saved: Config }> {
+  const run = pendingWrite.then(async () => {
+    const previous = state.config;
+    const next = await change(previous);
+    if (next === undefined) return { previous, saved: previous };
+    state.config = await saveConfig(next);
+    return { previous, saved: state.config };
+  });
+  pendingWrite = run.catch(() => undefined);
+  return run;
+}
+
 /**
  * Loads the config, creating defaults on first run. A corrupt file is moved
  * aside (`config.json.bak-<ts>`) and replaced by defaults so the dashboard
