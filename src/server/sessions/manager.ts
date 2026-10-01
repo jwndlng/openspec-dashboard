@@ -260,7 +260,6 @@ export class SessionManager {
     const agent = defaultAgentOf(config);
     if (!agent) throw new SessionError(503, "no agent is configured");
     const prompt = integratePrompt(agent);
-    if (!prompt) throw new SessionError(400, `${agent.name} has no Integrate prompt configured`);
     if (!Bun.which(agent.command[0])) throw new SessionError(503, `${agent.name} was not found (${agent.command[0]}); install it or change its command in Settings`);
     const now = new Date().toISOString();
     const session: IntegrationSession = {

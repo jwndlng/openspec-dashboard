@@ -1,5 +1,5 @@
 // Agent profiles (design.md D16): an agent is a command line plus opening prompts. Nothing here knows any vendor.
-import { DEFAULT_RESOLVE_CONFLICTS_PROMPT, DEFAULT_SHIP_PROMPT, type AgentAvailability, type AgentProfile, type Config, type PromptKey, type RepoConfig, type SessionAction } from "../../shared/types.ts";
+import { DEFAULT_INTEGRATE_PROMPT, DEFAULT_RESOLVE_CONFLICTS_PROMPT, DEFAULT_SHIP_PROMPT, type AgentAvailability, type AgentProfile, type Config, type PromptKey, type RepoConfig, type SessionAction } from "../../shared/types.ts";
 import { whichOnPath } from "../paths.ts";
 import { CHANGE_NAME } from "../source.ts";
 
@@ -41,13 +41,11 @@ export function shipPrompt(agent: AgentProfile, change: string): string {
 }
 
 /**
- * The Integrate prompt, or undefined when this agent has none (Integrate is then not offered). Nothing is substituted
- * into it: the repository folder is the agent's working directory, so no text from the browser reaches its command line.
+ * Like Ship: every agent can integrate, configured for it or not — suffix and all. Nothing is substituted into it: the
+ * repository folder is the agent's working directory, so no text from the browser reaches its command line.
  */
-export function integratePrompt(agent: AgentProfile): string | undefined {
-  const template = agent.prompts.integrate;
-  if (!template) return undefined;
-  return compose(agent, "integrate", template);
+export function integratePrompt(agent: AgentProfile): string {
+  return compose(agent, "integrate", agent.prompts.integrate ?? DEFAULT_INTEGRATE_PROMPT);
 }
 
 /** Like Ship: every agent can be asked to resolve conflicts, configured for it or not — suffix and all. */

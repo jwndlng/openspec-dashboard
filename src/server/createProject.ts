@@ -79,7 +79,7 @@ export async function createProject(state: IntegrationState, input: { root?: unk
     throw new CreateProjectError(400, "the folder name must start with a letter or digit and use only letters, digits, '.', '_' and '-' (at most 100 characters, not ending in .git)");
   }
   const unavailable = integrateUnavailable(state.config, sessions.agents());
-  if (unavailable) throw new CreateProjectError(unavailable.includes("no Integrate prompt") ? 400 : 503, unavailable);
+  if (unavailable) throw new CreateProjectError(503, unavailable);
   // The same check `openIntegration` makes, made here first so it cannot refuse after the folder exists.
   const agent = state.config.agentSessions.agents.find((a) => a.id === state.config.agentSessions.defaultAgent);
   if (agent && !Bun.which(agent.command[0])) throw new CreateProjectError(503, `${agent.name} was not found (${agent.command[0]}); install it or change its command in Settings`);

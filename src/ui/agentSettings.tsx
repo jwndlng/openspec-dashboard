@@ -3,7 +3,7 @@
 import { Fragment } from "preact";
 import { useEffect, useState } from "preact/hooks";
 import { CLAUDE_PROFILE } from "../shared/agentDefaults.ts";
-import { DEFAULT_RESOLVE_CONFLICTS_PROMPT, DEFAULT_SHIP_PROMPT, repoAgentEnabled, SESSION_ACTIONS, type AgentAvailability, type AgentProfile, type AgentSessionsConfig, type Config, type PromptKey, type RepoConfig, type Session, type SessionAction, type Shortcut } from "../shared/types.ts";
+import { DEFAULT_INTEGRATE_PROMPT, DEFAULT_RESOLVE_CONFLICTS_PROMPT, DEFAULT_SHIP_PROMPT, repoAgentEnabled, SESSION_ACTIONS, type AgentAvailability, type AgentProfile, type AgentSessionsConfig, type Config, type PromptKey, type RepoConfig, type Session, type SessionAction, type Shortcut } from "../shared/types.ts";
 import { api } from "./api.ts";
 import { addShortcut, moveShortcut, removeShortcut, restoredShortcuts } from "./quickReplies.ts";
 import { parseArgLines, slugId } from "./sessionState.ts";
@@ -130,12 +130,12 @@ export function AgentEditor({ agent, found, isDefault, canRemove, onChange, onRe
         <label class="agent-tools">
           <span class="hint">
             Integrate prompt (optional): what <strong>Integrate</strong> asks this agent in a repository that does not use OpenSpec yet. It runs in that repository's folder, so
-            it takes <strong>no placeholder at all</strong> — nothing from this page becomes part of the command line. Empty means this agent offers no Integrate action.
+            it takes <strong>no placeholder at all</strong> — nothing from this page becomes part of the command line. Empty uses the default shown.
           </span>
           <textarea
             class="input mono"
             rows={3}
-            placeholder={CLAUDE_PROFILE.prompts.integrate}
+            placeholder={DEFAULT_INTEGRATE_PROMPT}
             value={agent.prompts.integrate ?? ""}
             onInput={(e) => {
               const prompts = { ...agent.prompts };
@@ -148,7 +148,7 @@ export function AgentEditor({ agent, found, isDefault, canRemove, onChange, onRe
         </label>
         <label class="agent-tools">
           <span class="hint">
-            Additional <strong>Integrate</strong> instructions (optional): appended as one line to the Integrate prompt above, and only when it is set. Like that prompt they take{" "}
+            Additional <strong>Integrate</strong> instructions (optional): appended as one line to the Integrate prompt above — or to the default shown there. Like that prompt they take{" "}
             <strong>no placeholder at all</strong>.
           </span>
           <textarea

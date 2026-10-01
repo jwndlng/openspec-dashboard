@@ -35,7 +35,7 @@ export async function startIntegration(state: IntegrationState, input: { path?: 
   if (typeof input.path !== "string" || !input.path.trim()) throw new SessionError(404, NOT_INTEGRATABLE);
   const folder = canonicalPath(input.path);
   if (!(await integratablePaths(state)).has(folder)) throw new SessionError(404, NOT_INTEGRATABLE);
-  if (unavailable) throw new SessionError(unavailable.includes("no Integrate prompt") ? 400 : 503, unavailable);
+  if (unavailable) throw new SessionError(503, unavailable);
   return sessions.openIntegration(folder);
 }
 

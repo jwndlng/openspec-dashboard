@@ -9,7 +9,7 @@ import { worktreesDir } from "../src/server/paths.ts";
 import { Scanner } from "../src/server/scanner.ts";
 import { SessionManager } from "../src/server/sessions/manager.ts";
 import type { AgentProfile, Config, IntegrationSession, RepoConfig, Snapshot } from "../src/shared/types.ts";
-import { changeSessions } from "../src/shared/types.ts";
+import { changeSessions, DEFAULT_INTEGRATE_PROMPT } from "../src/shared/types.ts";
 import { SessionError } from "../src/server/sessions/manager.ts";
 import { tempDir, treeFingerprint, useTempHome } from "./helpers.ts";
 import { fakeProfile, git, waitFor, watch } from "./sessionHelpers.ts";
@@ -96,9 +96,6 @@ test("Integrate is refused, without starting anything, for every reason it can b
   const off = await harness({ enabled: false });
   await expect(startIntegration(off, { path: off.folder })).rejects.toMatchObject({ status: 403, message: "agent sessions are disabled" });
 
-  const noPrompt = await harness({ agent: fakeProfile() }); // the default fake profile has no Integrate prompt
-  expect(await refusal(startIntegration(noPrompt, { path: noPrompt.folder }))).toEqual({ status: 400, message: "Fake Agent has no Integrate prompt configured" });
-
   const missing = await harness({ agent: withIntegrate({ command: [join(await tempDir("osd-gone-"), "no-such-agent"), "{prompt}"] }) });
   expect(await refusal(startIntegration(missing, { path: missing.folder }))).toMatchObject({ status: 503 });
 
@@ -114,7 +111,17 @@ test("Integrate is refused, without starting anything, for every reason it can b
   const tracked = await harness({ repos: [newRepoConfig((await harness()).folder, true)] });
   await expect(startIntegration(tracked, { path: tracked.config.repos[0].path })).rejects.toMatchObject({ status: 404 });
 
-  for (const each of [off, noPrompt, missing, h, tracked]) expect(each.sessions.list()).toEqual([]);
+  for (const each of [off, missing, h, tracked]) expect(each.sessions.list()).toEqual([]);
+});
+
+test("an agent without an Integrate prompt of its own integrates with the default one", async () => {
+  const h = await harness({ agent: fakeProfile() }); // the stock fake profile carries no `integrate` prompt
+  const { session, created } = await startIntegration(h, { path: h.folder });
+  expect(created).toBe(true);
+  const view = await watch(h.sessions, session.id);
+  await waitFor(() => view.text().includes("fake-agent ready"), "agent start");
+  expect(view.text()).toContain(`args=${JSON.stringify([DEFAULT_INTEGRATE_PROMPT])}`);
+  view.detach();
 });
 
 test("Integrate's additional instructions are appended to its prompt, as one argument", async () => {
