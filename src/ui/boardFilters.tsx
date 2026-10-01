@@ -141,7 +141,7 @@ export function FilterBar({
           aria-checked={filters.hideMerged}
           disabled={filters.hideArchived}
           class={`control switch-control ${filters.hideMerged ? "on" : ""}`}
-          title={filters.hideArchived ? "The Archived column is hidden" : "Hide archived changes whose archive has reached the main checkout; keep the ones still to be pushed or merged"}
+          title={filters.hideArchived ? "The Archived column is hidden" : "Hide archived changes whose archive has reached the main checkout; keep the ones still to be pushed or merged, and those with a running agent session until it is ended"}
           onClick={() => setFilters({ hideMerged: !filters.hideMerged })}
         >
           <span class="switch" aria-hidden="true" />

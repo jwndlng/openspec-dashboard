@@ -280,6 +280,23 @@ export function archivePending(card: Pick<ChangeSnapshot, "repoId" | "name" | "c
   return card.checkout?.isMain === false && !mine.some((w) => w.work.state === "merged");
 }
 
+/**
+ * Whether an agent session of this change is still running — its own session or its archive session, which runs under
+ * the same change name. Only `running` counts: ending the session is what lets **Hide merged** hide the change again.
+ */
+export function hasRunningSession(card: Pick<ChangeSnapshot, "repoId" | "name">, sessions: readonly ChangeSession[]): boolean {
+  return sessions.some((s) => s.repoId === card.repoId && s.change === card.name && s.state === "running");
+}
+
+/**
+ * Whether an archived card stays in the `Archived` column: with **Hide merged** on, only a pending archive or one whose
+ * change still has a running session — that card is the way back to its console. A running session does not make the
+ * change pending; it only keeps it shown.
+ */
+export function archivedShown(card: Pick<ChangeSnapshot, "repoId" | "name" | "checkout">, hideMerged: boolean, worktrees: readonly SessionWorktree[], sessions: readonly ChangeSession[]): boolean {
+  return !hideMerged || archivePending(card, worktrees) || hasRunningSession(card, sessions);
+}
+
 /** One row of the Open work list: a running session, or a worktree that still holds something. */
 export interface OpenWorkItem {
   key: string;
