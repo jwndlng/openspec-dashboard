@@ -313,6 +313,8 @@ export function createDemoApi({ now = Date.now, latencyMs = 150, clock }: DemoAp
       return new Promise((resolve) => setTimeout(() => resolve(structuredClone(result)), PULL_MS));
     },
     pullRequests: () => reply(buildPullRequests(sample.snapshot, now(), pullRequestsFetchedAt)),
+    // Made up, so a board never asks for them again; Refresh and the Pull requests view still simulate a fetch.
+    syntheticPullRequests: true,
     // A refresh takes long enough for the control's running state to be visible, and answers with the same data.
     refreshPullRequests: () =>
       new Promise((resolve) =>

@@ -2,6 +2,11 @@ import { expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { createDemoApi } from "../src/ui/demo/demoApi.ts";
 import { DEMO_ROOT } from "../src/ui/demo/sampleData.ts";
+import type { ChangeSnapshot } from "../src/shared/types.ts";
+import { boardCards, ChangeCard } from "../src/ui/kanban.tsx";
+import { type DetailPr, DetailPullRequest, detailPullRequest } from "../src/ui/pullRequests.tsx";
+import { createPrRefresher } from "../src/ui/pullRequestsState.ts";
+import { textOf } from "./vnode.ts";
 
 function demo() {
   let clock = Date.parse("2026-06-01T12:00:00.000Z");
@@ -264,4 +269,50 @@ test("switching agent sessions off in the demo turns the checks it makes unneces
   expect(report.checks.find((c) => c.id === "git")?.status).toBe("ok");
   expect(report.caveat).toBeUndefined();
   expect(report.status).toBe("ok");
+});
+
+test("the demo links pull requests to changes on cards and in the header, shows the absence too, and a board fetches nothing", async () => {
+  const { api, tick } = demo();
+  const snapshot = await api.state();
+  const prs = await api.pullRequests();
+  const hues = new Map(snapshot.repos.map((r, i) => [r.id, i * 40]));
+  const cards = boardCards(snapshot.repos, hues, prs);
+  const linked = cards.filter((c) => c.pullRequest);
+  // A card link for an open, a draft and a merged pull request.
+  expect(linked.length).toBeGreaterThan(2);
+  expect(linked.some((c) => c.pullRequest?.draft)).toBe(true);
+  expect(linked.some((c) => c.pullRequest?.state === "merged" || c.pullRequest?.state === "closed")).toBe(true);
+  expect(linked.some((c) => c.pullRequest?.state === "open" && !c.pullRequest.draft)).toBe(true);
+  for (const c of linked) expect(c.pullRequest?.head).toBe(c.branchMatch);
+  const first = linked[0];
+  expect(textOf(ChangeCard({ card: first, now: Date.now(), from: "/board" }))).toContain(`PR #${first.pullRequest?.number}`);
+  // A card with a branch and no pull request.
+  expect(cards.some((c) => c.branchMatch && !c.pullRequest && !c.archived)).toBe(true);
+  // The detail header line for a linked change: number, title, state, review and checks.
+  const reviewed = linked.find((c) => c.pullRequest?.review !== "none" && c.pullRequest?.checks !== "none");
+  expect(reviewed).toBeDefined();
+  const info = detailPullRequest(reviewed as ChangeSnapshot, prs);
+  const line = textOf(DetailPullRequest({ info: info as DetailPr }));
+  expect(line).toContain(`#${reviewed?.pullRequest?.number}`);
+  expect(line).toContain(reviewed?.pullRequest?.title as string);
+
+  // Opening a board in the demo never asks for a refresh, however old the made-up lists are.
+  expect(api.syntheticPullRequests).toBe(true);
+  tick(60 * 60_000);
+  let asked = 0;
+  const refresher = createPrRefresher({
+    current: () => prs,
+    fetch: () => {
+      asked++;
+      return api.refreshPullRequests();
+    },
+    onStart: () => {},
+    onAnswer: () => {},
+    onError: () => {},
+    onSettled: () => {},
+    synthetic: api.syntheticPullRequests,
+  });
+  expect(refresher.openBoard(undefined, Date.parse("2026-06-01T14:00:00.000Z"))).toBeUndefined();
+  expect(refresher.openBoard(snapshot.repos[0].id, Date.parse("2026-06-01T14:00:00.000Z"))).toBeUndefined();
+  expect(asked).toBe(0);
 });

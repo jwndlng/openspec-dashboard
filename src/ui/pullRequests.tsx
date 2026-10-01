@@ -1,20 +1,23 @@
-// The Pull requests view, the dialog on a repository board, and the cache both read from.
+// The Pull requests view, the dialog on a repository board, the cache they and the board's cards read from, and what a
+// card and the detail header show of a change's pull request.
 //
-// GitHub is contacted only from here, and only because the user activated Refresh or opened one of these two with a
-// stale cache (openspec/specs/pull-requests). The page itself requests nothing but the dashboard's own API: the links
+// GitHub is contacted only from here, and only because the user activated Refresh or opened one of the three views that
+// show pull requests — this view, a repository's dialog, a Kanban board — with a stale cache
+// (openspec/specs/pull-requests). The page itself requests nothing but the dashboard's own API: the links
 // to github.com are ordinary links the user follows.
 import { type ComponentChildren, createContext } from "preact";
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "preact/hooks";
-import type { PullRequest, PullRequestsResponse, Snapshot } from "../shared/types.ts";
+import { linkedPullRequest } from "../shared/pullRequestLink.ts";
+import type { ChangeSnapshot, PullRequest, PullRequestsResponse, Snapshot } from "../shared/types.ts";
 import { api } from "./api.ts";
 import { Stat } from "./band.tsx";
 import { relTime } from "./format.ts";
 import { IconChevronDown, IconGitPullRequest, IconRefresh, IconRotateCcw } from "./icons.tsx";
 import { Modal } from "./modal.tsx";
 import {
+  createPrRefresher,
   DEFAULT_PR_FILTERS,
   ghSetup,
-  isStale,
   newestFetchedAt,
   openCount,
   parsePrFilters,
@@ -32,9 +35,6 @@ import { assignRepoHues } from "./repoGroups.ts";
 import { PULL_REQUESTS_PATH } from "./routes.ts";
 import { currentQuery, hrefWithQuery, navigate, replaceQuery } from "./url.ts";
 
-/** The server's own freshness window; the UI only uses it to decide whether opening a view is worth a refresh. */
-const FRESHNESS_MS = 5 * 60_000;
-
 interface PullRequestsUi {
   data?: PullRequestsResponse;
   /** The first read of the cache has not answered yet. */
@@ -46,24 +46,43 @@ interface PullRequestsUi {
   refresh(options?: { repoId?: string; force?: boolean }): Promise<void>;
   /** Refreshes only when a shown list is older than the freshness window — what opening a view does. */
   refreshIfStale(repoId?: string): void;
+  /** What a board does once, when it opens: `refreshIfStale`, unless the lists are synthetic (the demo). */
+  openBoard(repoId?: string): void;
 }
 
-const Context = createContext<PullRequestsUi>({ loading: false, running: undefined, refresh: async () => {}, refreshIfStale: () => {} });
+const Context = createContext<PullRequestsUi>({ loading: false, running: undefined, refresh: async () => {}, refreshIfStale: () => {}, openBoard: () => {} });
 
 export const usePullRequests = () => useContext(Context);
 
 /**
  * Holds the cached lists for every view. Reading them on mount contacts nothing; only `refresh` does, and only from
- * the two places the user can ask for it.
+ * a Refresh control or a view that shows pull requests opening with a stale cache — never a timer, a scan or the
+ * overview.
  */
 export function PullRequestsProvider({ children }: { children: ComponentChildren }) {
   const [data, setData] = useState<PullRequestsResponse>();
   const [loading, setLoading] = useState(true);
   const [running, setRunning] = useState<string | "all" | undefined>();
   const [error, setError] = useState<string>();
-  // The refresh in flight, so a second view opening meanwhile joins it instead of asking again.
-  const inFlight = useRef<Promise<void>>();
   const latest = useRef<PullRequestsResponse>();
+  // At most one refresh at a time: a second view opening meanwhile joins the one in flight instead of asking again.
+  const refresher = useMemo(
+    () =>
+      createPrRefresher({
+        current: () => latest.current,
+        fetch: (options) => api.refreshPullRequests(options),
+        onStart: setRunning,
+        onAnswer: (answer) => {
+          latest.current = answer;
+          setData(answer);
+          setError(undefined);
+        },
+        onError: setError,
+        onSettled: () => setRunning(undefined),
+        synthetic: api.syntheticPullRequests === true,
+      }),
+    [],
+  );
 
   useEffect(() => {
     let live = true;
@@ -81,34 +100,11 @@ export function PullRequestsProvider({ children }: { children: ComponentChildren
     };
   }, []);
 
-  const refresh = useCallback(async (options: { repoId?: string; force?: boolean } = {}) => {
-    if (inFlight.current) return inFlight.current;
-    setRunning(options.repoId ?? "all");
-    const done = api
-      .refreshPullRequests(options)
-      .then((answer) => {
-        latest.current = answer;
-        setData(answer);
-        setError(undefined);
-      })
-      .catch((err) => setError(err instanceof Error ? err.message : String(err)))
-      .finally(() => {
-        inFlight.current = undefined;
-        setRunning(undefined);
-      });
-    inFlight.current = done;
-    return done;
-  }, []);
+  const refresh = refresher.refresh;
+  const refreshIfStale = useCallback((repoId?: string) => void refresher.refreshIfStale(repoId), [refresher]);
+  const openBoard = useCallback((repoId?: string) => void refresher.openBoard(repoId), [refresher]);
 
-  const refreshIfStale = useCallback(
-    (repoId?: string) => {
-      const shown = repoId && latest.current ? { repos: latest.current.repos.filter((r) => r.repoId === repoId) } : latest.current;
-      if (isStale(shown, FRESHNESS_MS)) void refresh(repoId ? { repoId } : {});
-    },
-    [refresh],
-  );
-
-  return <Context.Provider value={{ data, loading, running, error, refresh, refreshIfStale }}>{children}</Context.Provider>;
+  return <Context.Provider value={{ data, loading, running, error, refresh, refreshIfStale, openBoard }}>{children}</Context.Provider>;
 }
 
 // ---- chips ----
@@ -133,11 +129,21 @@ const CHECKS_CHIP: Record<PullRequest["checks"], { text: string; title: string; 
   none: undefined,
 };
 
-/** Text plus a symbol plus a tooltip — never colour alone. */
-function Chip({ chip }: { chip: { text: string; title: string; tone: string } }) {
+/**
+ * Text plus a symbol plus a tooltip — never colour alone. `spoken` puts the tooltip's words in the text a screen reader
+ * reads instead of the short symbol form (`✕ Checks` is read as "At least one check failed").
+ */
+function Chip({ chip, spoken = false }: { chip: { text: string; title: string; tone: string }; spoken?: boolean }) {
   return (
     <span class={`badge pr-chip ${chip.tone}`} title={chip.title}>
-      {chip.text}
+      {spoken ? (
+        <>
+          <span aria-hidden="true">{chip.text}</span>
+          <span class="visually-hidden">{chip.title}</span>
+        </>
+      ) : (
+        chip.text
+      )}
     </span>
   );
 }
@@ -146,11 +152,86 @@ function Chip({ chip }: { chip: { text: string; title: string; tone: string } })
 
 const repoHue = (hue: number) => ({ "--repo-hue": String(hue) });
 
+/** The state chip: `Draft` for an open draft, else the state itself. */
+function stateChip(pr: PullRequest): { text: string; title: string; tone: string } {
+  return pr.draft && pr.state === "open" ? { text: "Draft", title: "A draft pull request", tone: "quiet" } : STATE_CHIP[pr.state];
+}
+
+/** The state as one word, as a card and an accessible name say it. */
+export function prStateWord(pr: PullRequest): "draft" | "open" | "merged" | "closed" {
+  return pr.draft && pr.state === "open" ? "draft" : pr.state;
+}
+
+const STATE_SYMBOL: Record<ReturnType<typeof prStateWord>, string> = { open: "○", draft: "◌", merged: "✓", closed: "✕" };
+
+/**
+ * A card's link to its change's pull request, on the footer's status line. The state is a symbol and a word, with a
+ * tooltip; a merged or closed pull request is still shown, more quietly. A link the user follows — the page itself
+ * never requests github.com.
+ */
+export function CardPullRequest({ pr, repoName }: { pr: PullRequest; repoName: string }) {
+  const word = prStateWord(pr);
+  const settled = pr.state !== "open";
+  return (
+    <a
+      class={`card-pr ${settled ? "settled" : ""} ${word}`}
+      href={pr.url}
+      target="_blank"
+      rel="noopener noreferrer"
+      title={`${pr.title} — ${stateChip(pr).title.toLowerCase()}; open on GitHub`}
+      aria-label={`Pull request #${pr.number} of ${repoName}, ${word}, opens on GitHub`}
+    >
+      PR #{pr.number}
+      <span class="card-pr-state">
+        <span aria-hidden="true">{STATE_SYMBOL[word]}</span> {word}
+      </span>
+    </a>
+  );
+}
+
+/** What the detail header knows about a change's pull request: the linked one, or why there can be none. */
+export type DetailPr = { pr: PullRequest; unavailable?: undefined } | { pr?: undefined; unavailable: string };
+
+/** The linked pull request; else, when the repository's pull requests cannot be read, the reason — said once. */
+export function detailPullRequest(change: Pick<ChangeSnapshot, "repoId" | "branchMatch">, response: PullRequestsResponse | undefined): DetailPr | undefined {
+  const pr = linkedPullRequest(change, response?.repos);
+  if (pr) return { pr };
+  const list = response?.repos.find((r) => r.repoId === change.repoId);
+  if (!response || !list || list.status !== "unavailable") return undefined;
+  return { unavailable: ghSetup(response)?.what ?? list.reason ?? "this repository's pull requests cannot be read" };
+}
+
+/** The detail header's pull-request line: number, title, state, review and checks, read-only and as the view shows them. */
+export function DetailPullRequest({ info }: { info: DetailPr }) {
+  if (info.unavailable !== undefined) {
+    return (
+      <span class="hint detail-pr-unavailable" title="Why no pull request is shown for this change">
+        pull requests unavailable: {info.unavailable}
+      </span>
+    );
+  }
+  const { pr } = info;
+  const review = REVIEW_CHIP[pr.review];
+  const checks = CHECKS_CHIP[pr.checks];
+  return (
+    <span class="detail-pr">
+      <span class="pr-number mono">
+        <span class="visually-hidden">Pull request </span>#{pr.number}
+      </span>
+      <a class="pr-title" href={pr.url} target="_blank" rel="noopener noreferrer" title={`${pr.title} — open on GitHub`}>
+        {pr.title}
+      </a>
+      <Chip chip={stateChip(pr)} spoken />
+      {review && <Chip chip={review} spoken />}
+      {checks && <Chip chip={checks} spoken />}
+    </span>
+  );
+}
+
 function Entry({ entry, hue, showRepo }: { entry: PrEntry; hue?: number; showRepo: boolean }) {
   const { pr } = entry;
   const age = prAgeAt(pr);
   const verb = pr.state === "open" ? "opened" : pr.state === "merged" ? "merged" : "closed";
-  const stateChip = pr.draft && pr.state === "open" ? { text: "Draft", title: "A draft pull request", tone: "quiet" } : STATE_CHIP[pr.state];
   const review = REVIEW_CHIP[pr.review];
   const checks = CHECKS_CHIP[pr.checks];
   return (
@@ -174,7 +255,7 @@ function Entry({ entry, hue, showRepo }: { entry: PrEntry; hue?: number; showRep
         )}
       </div>
       <div class="pr-meta">
-        <Chip chip={stateChip} />
+        <Chip chip={stateChip(pr)} />
         {review && <Chip chip={review} />}
         {checks && <Chip chip={checks} />}
         <span class="pr-branch mono truncate" title={`${pr.head} → ${pr.base}`}>

@@ -68,6 +68,8 @@ export interface Api {
    * and only ever from a Refresh control or from opening a pull-request list whose cache is stale.
    */
   refreshPullRequests(options?: { repoId?: string; force?: boolean }): Promise<PullRequestsResponse>;
+  /** The pull-request lists are made up (the demo): opening a board then never asks for a refresh. */
+  readonly syntheticPullRequests?: boolean;
   /** Read-only: the repository's worktrees, stale worktree records and branches, each removable or kept with a reason. */
   cleanupPreview(repoId: string): Promise<CleanupPreview>;
   /** Removes what the user selected and confirmed, re-checking each item; the only call that deletes a branch. */
@@ -238,6 +240,9 @@ export const api: Api = {
   resolvePull: (...args) => current.resolvePull(...args),
   pullRequests: () => current.pullRequests(),
   refreshPullRequests: (options) => current.refreshPullRequests(options),
+  get syntheticPullRequests() {
+    return current.syntheticPullRequests;
+  },
   cleanupPreview: (...args) => current.cleanupPreview(...args),
   cleanup: (...args) => current.cleanup(...args),
   dismissPreview: (...args) => current.dismissPreview(...args),

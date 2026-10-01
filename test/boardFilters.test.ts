@@ -1,5 +1,7 @@
 import { expect, test } from "bun:test";
+import type { ChangeSnapshot, PullRequest, PullRequestsResponse, RepoSnapshot } from "../src/shared/types.ts";
 import { activeTags, EMPTY_FILTERS, hasActiveFilters, parseFilters, resolveLayout, serializeFilters, staleOptions } from "../src/ui/filters.ts";
+import { boardCards, boardStats, visibleCards } from "../src/ui/kanban.tsx";
 
 test("the Stale selector offers the presets and keeps a threshold from the URL", () => {
   expect(staleOptions(0).map((o) => o.label)).toEqual(["Any activity", "Idle 7+ days", "Idle 14+ days", "Idle 30+ days", "Idle 90+ days"]);
@@ -55,4 +57,73 @@ test("the board layout follows the window unless chosen, and lives in the URL", 
   expect(serializeFilters(EMPTY_FILTERS)).toBe("");
   // A layout is not a filter: it does not light up "Clear filters".
   expect(hasActiveFilters(parseFilters("?layout=stack"))).toBe(false);
+});
+
+// ---- a card's pull-request link is display only ----
+
+const prCard = (name: string, column: string, stage: ChangeSnapshot["stage"], branchMatch?: string): ChangeSnapshot => ({
+  repoId: "a1",
+  name,
+  schema: "spec-driven",
+  artifacts: [],
+  tasks: { done: 2, total: 4 },
+  lastActivityAt: "2026-03-01T12:00:00Z",
+  branchMatch,
+  stage,
+  column,
+});
+const prRepo: RepoSnapshot = {
+  id: "a1",
+  name: "alpha-infra",
+  path: "/w/acme/alpha-infra",
+  ok: true,
+  scannedAt: "2026-03-10T12:00:00Z",
+  isGit: true,
+  worktrees: [],
+  changes: [prCard("add-sync", "Implementing", "implementing", "feat/add-sync"), prCard("ship-it", "Done", "done", "feat/ship-it"), prCard("idle-one", "Backlog", "backlog")],
+};
+const prList = (head: string, number: number, state: PullRequest["state"] = "open"): PullRequest => ({
+  number,
+  title: head,
+  url: `https://github.com/acme/alpha-infra/pull/${number}`,
+  author: "octo",
+  head,
+  base: "main",
+  draft: false,
+  state,
+  createdAt: "2026-03-09T12:00:00Z",
+  mergedAt: state === "merged" ? "2026-03-09T13:00:00Z" : undefined,
+  review: "none",
+  reviewRequestedFromViewer: false,
+  checks: "none",
+});
+const withPrs: PullRequestsResponse = {
+  repos: [{ repoId: "a1", github: "acme/alpha-infra", status: "ok", fetchedAt: "2026-03-10T12:00:00Z", pullRequests: [prList("feat/add-sync", 7), prList("feat/ship-it", 8, "merged")] }],
+};
+
+test("a pull-request link is not a filter: clearing filters shows the same cards with or without pull requests", () => {
+  const NOW_PR = Date.parse("2026-03-10T12:00:00Z");
+  const hues = new Map([["a1", 0]]);
+  const without = boardCards([prRepo], hues);
+  const linked = boardCards([prRepo], hues, withPrs);
+  expect(linked.map((c) => c.pullRequest?.number)).toEqual([7, 8, undefined]);
+  const filtered = parseFilters("?q=sync&stale=3");
+  for (const filters of [filtered, EMPTY_FILTERS]) {
+    expect(visibleCards(linked, filters, false, NOW_PR).map((c) => c.name)).toEqual(visibleCards(without, filters, false, NOW_PR).map((c) => c.name));
+  }
+  expect(visibleCards(linked, EMPTY_FILTERS, false, NOW_PR).map((c) => c.name)).toEqual(["add-sync", "ship-it", "idle-one"]);
+  // No filter knows about pull requests at all.
+  expect(Object.keys(EMPTY_FILTERS).some((k) => /pr|pull/i.test(k))).toBe(false);
+});
+
+test("a pull-request link changes no column, no column count and no to-archive count", () => {
+  const NOW_PR = Date.parse("2026-03-10T12:00:00Z");
+  const hues = new Map([["a1", 0]]);
+  const without = boardCards([prRepo], hues);
+  const linked = boardCards([prRepo], hues, withPrs);
+  expect(linked.map((c) => c.column)).toEqual(without.map((c) => c.column));
+  const perColumn = (cards: { column: string }[]) => cards.reduce<Record<string, number>>((n, c) => ({ ...n, [c.column]: (n[c.column] ?? 0) + 1 }), {});
+  expect(perColumn(linked)).toEqual(perColumn(without));
+  expect(boardStats(linked, visibleCards(linked, EMPTY_FILTERS, false, NOW_PR))).toEqual(boardStats(without, visibleCards(without, EMPTY_FILTERS, false, NOW_PR)));
+  expect(boardStats(linked, linked)).toEqual({ open: 3, toArchive: 1 });
 });
