@@ -4,8 +4,9 @@ import { boardColumns } from "../src/shared/columns.ts";
 import { summarizeWorkInProgress } from "../src/shared/workInProgress.ts";
 import { checkoutMarkers } from "../src/ui/checkoutMarkers.ts";
 import { availableActions } from "../src/shared/types.ts";
-import { buildSample, DEMO_AGENT, DEMO_ROOT } from "../src/ui/demo/sampleData.ts";
+import { buildPullRequests, buildSample, DEMO_AGENT, DEMO_ROOT } from "../src/ui/demo/sampleData.ts";
 import { meterText } from "../src/ui/kanban.tsx";
+import { pullRequestEntries } from "../src/ui/pullRequestsState.ts";
 import { startersFor } from "../src/ui/sessionState.ts";
 import { wipIndicator } from "../src/ui/overviewState.ts";
 import { looksLikeRealHome } from "./helpers.ts";
@@ -138,4 +139,31 @@ test("the demo shows a change in Done awaiting validation, with a Validate promp
   // The card's bar names the awaiting count in words, not by colour alone.
   const { done, awaiting, total } = validating[0].tasks!;
   expect(meterText(done, total, "tasks", awaiting)).toContain(`${awaiting} awaiting validation`);
+});
+
+test("the demo's pull requests show every state the view can render, under made-up acme names", () => {
+  const now = Date.parse("2026-06-01T12:00:00.000Z");
+  const answer = buildPullRequests(sample.snapshot, now, now - 2 * 60_000);
+  expect(answer.viewer).toBe("demo-user");
+  // One repository stands for "tracked, but not on GitHub"; the rest are under the invented acme organisation.
+  expect(answer.repos.filter((r) => r.status === "unavailable").map((r) => r.reason)).toEqual(["not on GitHub"]);
+  for (const repo of answer.repos) expect(repo.github === undefined || repo.github.startsWith("acme/")).toBe(true);
+
+  const prs = answer.repos.flatMap((r) => r.pullRequests);
+  expect(prs.filter((pr) => pr.draft)).not.toHaveLength(0);
+  expect(prs.filter((pr) => pr.review === "approved" && pr.checks === "passing")).not.toHaveLength(0);
+  expect(prs.filter((pr) => pr.checks === "failing")).not.toHaveLength(0);
+  expect(prs.filter((pr) => pr.reviewRequestedFromViewer)).not.toHaveLength(0);
+  expect(prs.filter((pr) => pr.state === "closed")).not.toHaveLength(0);
+  // Merged, and recently enough that the view's 7-day window keeps it.
+  const merged = prs.filter((pr) => pr.state === "merged");
+  expect(merged).not.toHaveLength(0);
+  for (const pr of merged) expect(now - Date.parse(pr.mergedAt as string)).toBeLessThan(7 * 24 * 3600_000);
+  // Every link is a github.com URL the visitor follows; the demo itself requests nothing.
+  for (const pr of prs) expect(pr.url.startsWith("https://github.com/acme/")).toBe(true);
+  // Both groups have something in them, at more than one repository.
+  const groups = pullRequestEntries(answer, sample.snapshot.repos.map((r) => ({ id: r.id, name: r.name })));
+  expect(groups.open.length).toBeGreaterThan(3);
+  expect(groups.closed.length).toBeGreaterThan(1);
+  expect(new Set(groups.open.map((e) => e.repoId)).size).toBeGreaterThan(2);
 });

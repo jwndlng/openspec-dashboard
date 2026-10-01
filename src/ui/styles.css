@@ -1158,3 +1158,49 @@ body:has(.detail-overlay) { overflow: hidden; }
   .detail { --detail-pad: 16px; }
   .detail-content { padding: 20px var(--detail-pad) 32px; }
 }
+
+/* ---- Pull requests: the view, the board's control and dialog, and the overview's count ---- */
+.pull-requests { flex: 1; min-height: 0; overflow: auto; padding: 22px var(--gap-3) var(--gap-3); display: flex; flex-direction: column; gap: var(--gap-2); align-items: flex-start; }
+.pull-requests > .notice, .pull-requests > .pr-notices { width: 100%; max-width: 980px; }
+.pr-group { width: 100%; max-width: 980px; }
+.pr-group h2 { position: sticky; top: calc(-1 * var(--gap-2)); z-index: 1; display: flex; align-items: baseline; gap: 8px; padding: 6px 0; background: var(--bg-base); }
+.pr-group h2 .count { font-size: 12px; font-weight: 400; color: var(--fg-subtle); }
+.pr-group ol { list-style: none; margin: 0; padding: 0; overflow: hidden; background: var(--bg-section); border: 1px solid var(--border-light); border-radius: var(--radius-lg); }
+.pr-entry { display: flex; flex-direction: column; gap: 4px; padding: 8px 12px; border-left: 3px solid var(--border); }
+.pr-entry.repo-tint { border-left-color: var(--repo-color); }
+.pr-entry + .pr-entry { border-top: 1px solid var(--border-light); }
+.pr-main { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; min-width: 0; }
+.pr-main .repo { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--repo-color); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pr-number { font-size: 12px; color: var(--fg-subtle); }
+.pr-title { font-size: 13px; color: var(--fg-heading); word-break: break-word; }
+.pr-title:hover, .pr-title:focus-visible { color: var(--brand-fg); }
+.pr-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; min-width: 0; font-size: 12px; color: var(--fg-subtle); }
+.pr-meta .pr-branch { max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; }
+.pr-chip { font-size: 11px; }
+.pr-chip.quiet { color: var(--fg-subtle); }
+.pr-chip.attention { color: var(--brand-fg); border-color: var(--brand-soft); background: var(--brand-softer); }
+.pr-empty { max-width: 560px; padding: var(--gap-3) 0; }
+.pr-notices { font-size: 12px; }
+.pr-notices > summary { cursor: pointer; color: var(--fg-subtle); padding: 4px 0; }
+.pr-notices ul { list-style: none; margin: 4px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.pr-notices li { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+
+/* The repository board's control, next to the branches one, and the dialog it opens. */
+.pr-button { height: 26px; padding: 0 10px; font-size: 12px; }
+.pr-button.attention .control-value { color: var(--brand-fg); background: var(--brand-softer); }
+.pr-dialog { display: flex; flex-direction: column; gap: var(--gap-2); }
+.pr-dialog-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.pr-dialog .pr-group { max-width: none; }
+.pr-dialog .pr-group h2 { position: static; background: none; }
+
+/* The overview's figure: a link into the filtered view, never a reason to contact GitHub. */
+.pr-count { display: inline-flex; align-items: baseline; gap: 4px; color: var(--fg-heading); }
+.pr-count:hover, .pr-count:focus-visible { color: var(--brand-fg); }
+.pr-count .for-you { font-size: 10px; padding: 0 4px; border-radius: var(--radius-sm); color: var(--brand-fg); background: var(--brand-softer); border: 1px solid var(--brand-soft); }
+.tile-prs { display: flex; align-items: baseline; gap: 6px; font-size: 12px; color: var(--fg-subtle); }
+.tile-prs .pr-count.compact { font-size: 13px; font-weight: 600; }
+
+@media (max-width: 720px) {
+  .pull-requests { padding: 16px var(--gap-2) var(--gap-3); }
+  .pr-meta .pr-branch { max-width: 140px; }
+}

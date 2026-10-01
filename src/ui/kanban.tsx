@@ -6,6 +6,7 @@ import { parseFilters, resolveLayout, serializeFilters, STACK_BELOW_PX, type Fil
 import { FilterBar } from "./boardFilters.tsx";
 import { Stat } from "./band.tsx";
 import { BranchBadge, CheckoutSummaryButton } from "./checkout.tsx";
+import { RepoPullRequestsButton } from "./pullRequests.tsx";
 import { hasCheckoutInfo } from "./checkoutMarkers.ts";
 import { CleanupButton } from "./cleanup.tsx";
 import { NewChangeDialog } from "./newChangeForm.tsx";
@@ -298,6 +299,8 @@ function RepoHeader({ repo, now, stats, onCreated }: { repo: RepoSnapshot; now: 
         <div class="row status">
           {/* Snapshots cached by older versions know no checkouts: fall back to the current branch. */}
           {hasCheckoutInfo(repo.worktrees) ? <CheckoutSummaryButton checkouts={repo.worktrees} repoName={repo.name} /> : repo.currentBranch && <BranchBadge branch={repo.currentBranch} hint="current branch" />}
+          {/* A repository without git has no remote and no pull requests, so it gets no control. */}
+          {repo.isGit && <RepoPullRequestsButton repoId={repo.id} repoName={repo.name} />}
           {repo.sharedConfig?.unreadable && (
             <span class="badge danger" title="openspec/config.yaml is missing, not valid YAML, or has malformed shared-config markers">
               ⚙ config unreadable

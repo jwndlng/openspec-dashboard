@@ -23,7 +23,7 @@
 
 - [x] 4.1 Add `resolveConflicts(id)` to the `Api` interface and HTTP implementation in `src/ui/api.ts`, and event wording for `session-conflicts-resolve` in `src/ui/activityState.ts`; verify with `bun run typecheck` and a case in `test/activityState.test.ts`.
 - [x] 4.2 Add a `conflictBadge` and a `resolvable` predicate to `src/ui/sessionState.ts` (design D5), naming the base, the file count and that it is as of the last fetch, and pointing at Pull; verify with cases in `test/workStatusUi.test.ts` for the wording, the truncated case, and that `merged`/`clean`/`missing`/in-place yield no badge and no control.
-- [~] 4.3 Render the badge and the `Resolve conflicts` control in `src/ui/sessionPanel.tsx` next to the work badge and Ship, showing the typed-but-not-sent message when `submitted` is false, and the badge only (no control) in `sessions.tsx`'s `WorkStatus` view used by `changeDetail.tsx`; add the warning-badge styles to `src/ui/styles.css`; verify with a vnode test and by driving a conflicting scratch worktree in `bun run dev`.
+- [x] 4.3 Render the badge and the `Resolve conflicts` control in `src/ui/sessionPanel.tsx` next to the work badge and Ship, showing the typed-but-not-sent message when `submitted` is false, and the badge only (no control) in `sessions.tsx`'s `WorkStatus` view used by `changeDetail.tsx`; add the warning-badge styles to `src/ui/styles.css`; verify with a vnode test and by driving a conflicting scratch worktree in `bun run dev`.
 
 ## 5. Demo
 
@@ -36,4 +36,4 @@
 ## 6. Docs and invariants
 
 - [x] 6.1 Update `CLAUDE.md` — invariant 1's read-only subcommand list gains `merge-tree` with the note that its objects are redirected out of the repository, and the agent-sessions section gains Resolve conflicts next to Ship as a second prompt-only action — and `README.md`'s feature list; verify by reading both against the `dashboard-api` and `agent-sessions` deltas.
-- [~] 6.2 Run `bun run check` and `bun run build`, then verify in the compiled binary `dist/openspec-dashboard` that a conflicting worktree shows the badge and the control (invariant 3: nothing here may depend on module-relative paths).
+- [x] 6.2 Run `bun run check` and `bun run build`, then verify in the compiled binary `dist/openspec-dashboard` that a conflicting worktree shows the badge and the control (invariant 3: nothing here may depend on module-relative paths).

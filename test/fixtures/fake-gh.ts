@@ -1,0 +1,89 @@
+#!/usr/bin/env bun
+// A stand-in for the GitHub CLI. Tests never run the real `gh` and never touch the network: this answers
+// `pr list` and `api user` from a JSON scenario file named by FAKE_GH_SCENARIO, and appends one JSON line per
+// invocation (argv and cwd) to FAKE_GH_LOG so a test can prove which calls ran, and from where.
+//
+// Scenario shape (every key optional):
+//   {
+//     "login": "demo-user",                       // what `api user --jq .login` prints
+//     "mode": "ok" | "not-logged-in" | "hang" | "fail",   // applies to every call
+//     "stderr": "…",                              // stderr for "fail"
+//     "exitCode": 1,
+//     "repos": { "acme/alpha-infra": { "open": [ … ], "closed": [ … ] } },
+//     "perRepo": { "acme/beta-soc": { "mode": "fail", "stderr": "…" } },
+//     "userMode": "fail"                          // only for `api user`
+//   }
+// A repository missing from `repos` answers with empty lists, which is what `gh` does for one without pull requests.
+import { appendFileSync, readFileSync } from "node:fs";
+
+interface Mode {
+  mode?: "ok" | "not-logged-in" | "hang" | "fail";
+  stderr?: string;
+  exitCode?: number;
+}
+
+interface Scenario extends Mode {
+  login?: string;
+  repos?: Record<string, { open?: unknown[]; closed?: unknown[] }>;
+  perRepo?: Record<string, Mode>;
+  userMode?: Mode["mode"];
+}
+
+const argv = process.argv.slice(2);
+const log = process.env.FAKE_GH_LOG;
+if (log) appendFileSync(log, `${JSON.stringify({ argv, cwd: process.cwd() })}\n`);
+
+let scenario: Scenario = {};
+try {
+  scenario = JSON.parse(readFileSync(process.env.FAKE_GH_SCENARIO ?? "", "utf8")) as Scenario;
+} catch {
+  // No scenario: empty lists and a default login, which is enough for the calls that only need to be counted.
+}
+
+const NOT_LOGGED_IN = "gh: To get started with GitHub CLI, please run:  gh auth login\nAlternatively, populate the GH_TOKEN environment variable with a GitHub API authentication token.";
+
+function finish(mode: Mode, body: () => string): never {
+  switch (mode.mode) {
+    case "hang":
+      // Never answers; the caller's timeout has to stop it. Keeps the process alive without burning CPU.
+      setInterval(() => {}, 1000);
+      // biome-ignore lint/suspicious/noConfusingVoidType: unreachable, but the signature promises never to return
+      return undefined as never;
+    case "not-logged-in":
+      process.stderr.write(`${NOT_LOGGED_IN}\n`);
+      process.exit(1);
+      break;
+    case "fail":
+      process.stderr.write(`${mode.stderr ?? "gh: something went wrong"}\n`);
+      process.exit(mode.exitCode ?? 1);
+      break;
+    default:
+      process.stdout.write(body());
+      process.exit(0);
+  }
+}
+
+const flag = (name: string): string | undefined => {
+  const at = argv.indexOf(`--${name}`);
+  return at >= 0 ? argv[at + 1] : undefined;
+};
+
+if (argv[0] === "api" && argv[1] === "user") {
+  finish({ ...scenario, mode: scenario.userMode ?? scenario.mode }, () => `${scenario.login ?? "demo-user"}\n`);
+} else if (argv[0] === "pr" && argv[1] === "list") {
+  const repo = flag("repo") ?? "";
+  const limit = Number(flag("limit") ?? 30);
+  const closed = argv.includes("--search");
+  const mode: Mode = { ...scenario, ...(scenario.perRepo?.[repo] ?? {}) };
+  finish(mode, () => {
+    const lists = scenario.repos?.[repo] ?? {};
+    const items = (closed ? lists.closed : lists.open) ?? [];
+    return `${JSON.stringify(items.slice(0, limit))}\n`;
+  });
+} else {
+  // Every other subcommand is a bug in the caller: the dashboard runs only these two.
+  process.stderr.write(`fake-gh: unexpected invocation ${JSON.stringify(argv)}\n`);
+  process.exit(64);
+}
+
+export {};
