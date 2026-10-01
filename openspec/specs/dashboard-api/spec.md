@@ -639,22 +639,27 @@ same-origin protection. Neither route depends on agent sessions being enabled.
 - **WHEN** a page on another origin posts to `/api/repos/<id>/cleanup`
 - **THEN** the response is `403` and nothing is removed
 
-### Requirement: Resolve-conflicts endpoint
+### Requirement: Environment endpoint
+`GET /api/environment` SHALL return the environment report as JSON: the time it was computed, the overall status and the
+checks in their stable order, each with its identifier, label, status, what was found and, when the status is not `ok`,
+its remedy. It SHALL be computed under the rules of the `environment-check` capability: no network, nothing read from or
+written to a tracked repository, no credential value in the response, and `git config --get` as the only process it
+starts, run with a working directory outside every tracked repository. The report MAY be reused for at most 10 seconds.
+The endpoint is a `GET` and therefore adds no mutating route; no other route's behaviour changes, and `GET /api/state`
+SHALL remain unchanged.
 
-`POST /api/sessions/<id>/resolve-conflicts` SHALL perform the Resolve conflicts action for that session and return the session together with whether the prompt was submitted. It MUST be refused with `403` when agent sessions are disabled, `404` for an unknown session, `400` for a session that is not a change session or runs in place, `409` when the session's worktree reports no conflict or another session for the change is running, and `503` when the agent's executable is not found. The route is a mutating request under the same-origin protection. Performing it MUST NOT run any git command that changes the repository.
+#### Scenario: Report shape
+- **WHEN** `GET /api/environment` is requested
+- **THEN** the response is JSON with the time it was computed, an overall status and one entry per check, each with an identifier, a label and a status
 
-#### Scenario: Resolving a conflicting session
-- **WHEN** `POST /api/sessions/<id>/resolve-conflicts` names a running session whose worktree conflicts with the base
-- **THEN** the response reports the session and whether the prompt was submitted, and the repository's working tree, index, refs and checked-out branch are unchanged
+#### Scenario: No credential in the response
+- **WHEN** `GH_TOKEN` is set and `GET /api/environment` is requested
+- **THEN** the response body does not contain that token's value
 
-#### Scenario: Nothing to resolve
-- **WHEN** the named session's worktree reports no conflict
-- **THEN** the response is `409` and no process is started and no prompt is sent
+#### Scenario: The request touches no repository
+- **WHEN** `GET /api/environment` is requested while repositories are tracked
+- **THEN** no file under any tracked repository, including its git config and index, is created, modified or deleted, and no network connection is opened
 
-#### Scenario: In-place session
-- **WHEN** the named session runs in a tracked folder that is not a git repository
-- **THEN** the response is `400`
-
-#### Scenario: Cross-site request
-- **WHEN** the request arrives without the dashboard's own origin
-- **THEN** it is refused by the same-origin protection and no prompt is sent
+#### Scenario: Nothing mutates
+- **WHEN** `POST /api/environment` is requested
+- **THEN** the response is the same as for any unknown route and no report is computed

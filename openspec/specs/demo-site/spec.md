@@ -271,22 +271,27 @@ dashboard. Removed items SHALL be back after a reload.
 - **WHEN** the visitor reloads the page after a cleanup
 - **THEN** the removed worktree and branch are back in the sample
 
-### Requirement: A conflicting branch is simulated in the demo
-The demo's sample SHALL contain at least one session worktree whose work status reports a conflict with its base,
-naming a small number of conflicting files, so that the conflict badge and the Resolve conflicts control are visible on
-first load without any git command, process or network request. Activating Resolve conflicts in the demo SHALL behave
-like the real action from the UI's point of view — the panel reports that the prompt was submitted and the scripted
-terminal shows it — for the current page session only, and the sample SHALL be back after a reload.
+### Requirement: The environment report is simulated in the demo
+The demo's mock API SHALL serve a fixed environment report in which every check is `ok`, or `not-needed` for a check the
+demo's configuration switches off, so that the Environment section and its navigation count can be explored while the
+hero shows no environment indicator. The demo MUST NOT start a process, look at the visitor's PATH, read any file of
+theirs or open a network connection for the report; the report SHALL be part of the synthetic sample data, with paths
+that are made up. **Re-check** SHALL return the same fixed report and SHALL behave as in the dashboard from the UI's
+point of view. When the visitor switches agent sessions off in the demo's Settings, the checks that the configuration
+makes unnecessary SHALL read as `not-needed`, as in the dashboard.
 
-#### Scenario: A conflict is visible in the demo
-- **WHEN** the visitor opens the sample repository's conflicting session
-- **THEN** the panel shows the conflict with its base and the named files, says it is as of the last fetch, and offers
-  Resolve conflicts, with no network request and no git command
+#### Scenario: The section is explorable
+- **WHEN** the visitor opens the demo's Settings and goes to the Environment section
+- **THEN** every check is listed as `ok` or `not-needed` with a made-up path, the navigation entry shows `0` without emphasis, and the hero shows no environment indicator
 
-#### Scenario: Resolving in the demo
-- **WHEN** the visitor activates Resolve conflicts in the demo
-- **THEN** the panel reports the prompt as submitted and no network request is made
+#### Scenario: Nothing is inspected
+- **WHEN** the demo serves the environment report
+- **THEN** no process is started, no file of the visitor's is read and no network connection is opened
 
-#### Scenario: Not persisted
-- **WHEN** the visitor reloads the page afterwards
-- **THEN** the sample's conflicting worktree is back as it was
+#### Scenario: Re-check in the demo
+- **WHEN** the visitor presses **Re-check**
+- **THEN** the control shows that it is working and the same report is shown again
+
+#### Scenario: Agent sessions off in the demo
+- **WHEN** the visitor switches agent sessions off in the demo's Settings and saves
+- **THEN** the agent, committer-identity and GitHub CLI checks read as not needed while agent sessions are off
