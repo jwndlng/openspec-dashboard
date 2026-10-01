@@ -75,8 +75,8 @@ None. The behaviour belongs to existing capabilities.
 - `README.md`, if it mentions renaming or per-repository agent settings in Settings.
 - Invariant 1 is untouched: the routes write only `~/.openspec-dashboard/config.json`. Invariant 2a: each route goes
   through `crossSiteRefusal`. The global sessions switch is still off by default. No new dependency and no network.
-- **Overlap**: `add-project-labels` is merged but not archived yet; its labels editor moves here, and the
-  `project-labels` delta must be archived after it (archive refuses a delta against a spec that does not exist yet). `finish-integrate` also edited
+- **Overlap**: `add-project-labels` (merged and archived) put the labels editor in Settings; it moves here, and the
+  `project-labels` delta modifies its archived spec. `finish-integrate` also edited
   `src/ui/agentSettings.tsx` (prompt fields only), but it is merged, so this change builds on its code.
   `add-validate-phase` and `do-not-open-console-on-action` touch none of these files.
 
