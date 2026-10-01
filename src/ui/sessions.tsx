@@ -6,7 +6,7 @@ import { changeSessions, isConsole, isIntegration, type AgentAvailability, type 
 import { api } from "./api.ts";
 import { cdCommand, relTime } from "./format.ts";
 import { assignRepoHues, repoTint } from "./repoGroups.ts";
-import { agentForRepo, cardSessionControls, conflictBadge, openWork, type SessionBadge, nextStepFor, sessionBadge, sessionsEnabledFor, workBadge, worktreeForChange } from "./sessionState.ts";
+import { agentForRepo, cardSessionControls, conflictBadge, openWork, type SessionBadge, nextStepFor, sessionBadge, sessionsEnabledFor, startShowsConsole, type StarterPlace, workBadge, worktreeForChange } from "./sessionState.ts";
 import { boardFrom, changePath, CONSOLE_TAB, parseDetailQuery, routeFromPath, serializeDetailQuery } from "./routes.ts";
 import { currentPath, currentQuery, navigate } from "./url.ts";
 
@@ -45,9 +45,10 @@ interface SessionUi {
   openPanel(id: string | undefined): void;
   /**
    * Starts a session, or sends the next step into the change's running one. Resolves with the reason when the request
-   * was refused and no session exists to report it — the caller shows it where the starter was activated.
+   * was refused and no session exists to report it — the caller shows it where the starter was activated. `show` says
+   * whether the session's console is shown afterwards; a card's starter leaves the user on the board.
    */
-  start(repoId: string, change: string, action: SessionAction): Promise<string | undefined>;
+  start(repoId: string, change: string, action: SessionAction, show: boolean): Promise<string | undefined>;
   refresh(): Promise<void>;
 }
 
@@ -132,7 +133,7 @@ export function SessionProvider({
   const [unsentId, reportUnsent] = useState<string>();
 
   const start = useCallback(
-    async (repoId: string, change: string, action: SessionAction) => {
+    async (repoId: string, change: string, action: SessionAction, show: boolean) => {
       try {
         const into = nextStepFor(sessions, repoId, change).promptSessionId;
         const session = into ? await api.promptSession(into, action) : await api.openSession(repoId, change, action);
@@ -141,9 +142,10 @@ export function SessionProvider({
           reportUnsent("submitted" in session && !session.submitted ? into : undefined);
           setFocusTick((t) => ({ id: into, tick: t.tick + 1 }));
         }
+        // Awaited either way: it is what puts the session's badge in place of a card's starter.
         await refresh();
         // By id and place, not through `openPanel`: a session just started is not in this closure's list yet.
-        openConsole(repoId, change, session.id);
+        if (show) openConsole(repoId, change, session.id);
         return undefined;
       } catch (err) {
         // A start that failed has no session and so no panel to report itself in: the reason goes back to the caller,
@@ -325,9 +327,9 @@ const STARTER_HINT: Record<SessionAction, string> = {
  * While any of the change's sessions runs, the badge stands in for the starters and nothing else is offered: the badge
  * opens the terminal, which is where the next step and **End session** live. A badge that is not running is the failure
  * case, so it keeps its starters — the next attempt stays one activation away. The work status is the detail view's
- * (see `WorkStatus`), never a card's.
+ * (see `WorkStatus`), never a card's. `place` decides whether a start shows the new session (`startShowsConsole`).
  */
-export function SessionControls({ card }: { card: Pick<ChangeSnapshot, "repoId" | "name" | "archived" | "artifacts" | "stage" | "subState"> }) {
+export function SessionControls({ card, place }: { card: Pick<ChangeSnapshot, "repoId" | "name" | "archived" | "artifacts" | "stage" | "subState">; place: StarterPlace }) {
   const ui = useSessionUi();
   const [starting, setStarting] = useState<SessionAction>();
   const [failure, setFailure] = useState<string>();
@@ -353,7 +355,7 @@ export function SessionControls({ card }: { card: Pick<ChangeSnapshot, "repoId" 
           onClick={async () => {
             setStarting(action);
             setFailure(undefined);
-            setFailure(await ui.start(card.repoId, card.name, action));
+            setFailure(await ui.start(card.repoId, card.name, action, startShowsConsole(place)));
             setStarting(undefined);
           }}
         >

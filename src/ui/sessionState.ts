@@ -53,6 +53,18 @@ export function cardSessionControls(
   return { shown, starters: shown.some((s) => s.state === "running") ? [] : startersFor(config, card) };
 }
 
+/** Where a starter is rendered: in a card's footer on a board, or in a change's Console tab. */
+export type StarterPlace = "card" | "console";
+
+/**
+ * Whether starting a session shows its console afterwards. A card never navigates: the user starts work and stays on
+ * the board, where the card's badge takes the starter's place and opens the console on demand. In the Console tab the
+ * user is already looking at the console, so the started session is shown there.
+ */
+export function startShowsConsole(place: StarterPlace): boolean {
+  return place === "console";
+}
+
 /**
  * Where a starter goes: into the change's running session (the prompt is typed there), or into a new session. The
  * action does not enter into it — one change has one console, and every action the stage allows is sent to it,

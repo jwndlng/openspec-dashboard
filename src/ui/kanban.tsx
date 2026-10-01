@@ -152,7 +152,7 @@ export function ChangeCard({ card, now, from }: { card: Card; now: number; from:
           </span>
         ))}
         {card.pullRequest && <CardPullRequest pr={card.pullRequest} repoName={card.repoName} />}
-        <SessionControls card={card} />
+        <SessionControls card={card} place="card" />
         <a class="show-details" href={href(link.path, undefined, link.query)} onClick={(e) => followInApp(e, link.path, link.query)} aria-label={`Show details of ${card.name}`}>
           Show details
           <IconChevronRight size={12} />
