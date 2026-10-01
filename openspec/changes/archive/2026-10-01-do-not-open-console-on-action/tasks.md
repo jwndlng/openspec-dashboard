@@ -15,7 +15,7 @@
 
 ## 2. Verify
 
-- [~] 2.1 Run `bun run dev` with agent sessions on and confirm on a board: **Draft artifacts** on a card starts the
+- [x] 2.1 Run `bun run dev` with agent sessions on and confirm on a board: **Draft artifacts** on a card starts the
   session, the board stays on screen, the card shows the `working` badge, and the badge opens the Console tab; starting
   from an untouched change's Console tab still shows the terminal in that tab; a refused start (e.g. agent not found)
   shows its reason on the card.
