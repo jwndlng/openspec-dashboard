@@ -272,11 +272,11 @@ In the tiles layout every tile SHALL have the same width and the same height, wh
 - **THEN** the tiles reflow to fewer per row, keep equal sizes, and the page does not scroll horizontally
 
 ### Requirement: The overview has a header band with its actions
-The projects overview SHALL open with a header band like the boards': the title `Projects`, the numbers of tracked repositories, open changes and changes to archive as labelled counts, and **Pull all** in the band's action area. Below it, a bar SHALL hold the repository search, the **Work in progress** toggle, the `Table`/`Tiles` layout toggle as one segmented control and, in the tiles layout, the sort. Their behaviour and URL persistence are unchanged.
+The projects overview SHALL open with a header band like the boards': the title `Projects`, the numbers of tracked repositories, open changes and changes to archive as labelled counts, and **New project** and **Pull all** in the band's action area. Below it, a bar SHALL hold the repository search, the **Work in progress** toggle, the `Table`/`Tiles` layout toggle as one segmented control and, in the tiles layout, the sort. Their behaviour and URL persistence are unchanged.
 
 #### Scenario: Overview band
 - **WHEN** six repositories are tracked with 36 open changes, 5 of them to archive
-- **THEN** the band reads `Projects` with `Tracked 6`, `Open 36` and `To archive 5`, and **Pull all** stands in its action area
+- **THEN** the band reads `Projects` with `Tracked 6`, `Open 36` and `To archive 5`, and **New project** and **Pull all** stand in its action area
 
 ### Requirement: Overview shows open pull requests per repository
 The projects overview SHALL show, for each repository, the number of open pull requests from the cached pull-request list of the `pull-requests` capability: as a column in the table layout and as a labelled figure on each tile. The figure SHALL link to `/pull-requests?repo=<id>` without opening the repository's board, and its tooltip SHALL say how many of them await review from the signed-in user and when the list was fetched. A repository whose list was never fetched, is unavailable or failed without an earlier list SHALL show a neutral placeholder whose tooltip gives the reason. The overview MUST NOT contact GitHub, neither on load nor on any interaction other than following the link.

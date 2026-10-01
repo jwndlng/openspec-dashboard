@@ -16,8 +16,8 @@
 ## 3. UI
 
 - [x] 3.1 Add `createProject(root, name)` to `src/ui/api.ts` and verify it surfaces the server's reason on refusal
-- [~] 3.2 Build `src/ui/newProject.tsx`: modal with the root select (preselected with one root), name input with live `isProjectName` validation, the resulting path, **Create**, error display; on success close and `showIntegration(session.id)`; verify manually with `bun run dev` that the integration overlay opens on the new folder
-- [~] 3.3 Add **New project** to the overview band's actions next to **Pull all** in `src/ui/overview.tsx` and to the empty state in `src/ui/empty.tsx`, disabled with `newProjectUnavailable` as tooltip and in the accessible name; verify both placements and the disabled reason with agent sessions off and with no workspace root
+- [x] 3.2 Build `src/ui/newProject.tsx`: modal with the root select (preselected with one root), name input with live `isProjectName` validation, the resulting path, **Create**, error display; on success close and `showIntegration(session.id)`; verify manually with `bun run dev` that the integration overlay opens on the new folder
+- [x] 3.3 Add **New project** to the overview band's actions next to **Pull all** in `src/ui/overview.tsx` and to the empty state in `src/ui/empty.tsx`, disabled with `newProjectUnavailable` as tooltip and in the accessible name; verify both placements and the disabled reason with agent sessions off and with no workspace root
 
 ## 4. Documentation and checks
 
