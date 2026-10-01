@@ -6,7 +6,7 @@ import type { DetectedLabel, RepoConfig } from "../shared/types.ts";
 import { IconScan, IconX } from "./icons.tsx";
 
 export function labelTitle(label: DisplayedLabel): string {
-  return label.kind === "detected" ? `Detected from ${label.marker.replaceAll("`", "")}` : "Your label (Settings → Tracked repositories)";
+  return label.kind === "detected" ? `Detected from ${label.marker.replaceAll("`", "")}` : "Your label (Labels on the project's row or tile on Projects)";
 }
 
 function ChipContent({ label }: { label: DisplayedLabel }) {
@@ -71,8 +71,8 @@ const isHidden = (repo: Pick<RepoConfig, "hiddenLabels">, label: string) => (rep
 const orAbsent = (labels: string[]) => (labels.length ? labels : undefined);
 
 /**
- * Settings' labels line for one tracked repository: its custom labels (removable), an input that refuses a label the
- * config would refuse, and the detected labels of the last scan as show/hide toggles. Every edit goes to the draft.
+ * The labels editor for one tracked repository (in its dialog on Projects): its custom labels (removable), an input that refuses a label the
+ * config would refuse, and the detected labels of the last scan as show/hide toggles. Every edit goes to `onChange`.
  */
 export function RepoLabelsEditor({
   repo,

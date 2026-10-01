@@ -3,10 +3,11 @@
 import { Fragment } from "preact";
 import { useEffect, useState } from "preact/hooks";
 import { CLAUDE_PROFILE } from "../shared/agentDefaults.ts";
-import { DEFAULT_INTEGRATE_PROMPT, DEFAULT_RESOLVE_CONFLICTS_PROMPT, DEFAULT_SHIP_PROMPT, repoAgentEnabled, SESSION_ACTIONS, type AgentAvailability, type AgentProfile, type AgentSessionsConfig, type Config, type PromptKey, type RepoConfig, type Session, type SessionAction, type Shortcut } from "../shared/types.ts";
+import { DEFAULT_INTEGRATE_PROMPT, DEFAULT_RESOLVE_CONFLICTS_PROMPT, DEFAULT_SHIP_PROMPT, SESSION_ACTIONS, type AgentAvailability, type AgentProfile, type AgentSessionsConfig, type Config, type PromptKey, type Session, type SessionAction, type Shortcut } from "../shared/types.ts";
 import { api } from "./api.ts";
 import { addShortcut, moveShortcut, removeShortcut, restoredShortcuts } from "./quickReplies.ts";
 import { parseArgLines, slugId } from "./sessionState.ts";
+import { followInApp, href } from "./url.ts";
 
 interface Props {
   draft: Config;
@@ -241,6 +242,22 @@ function ShortcutEditor({ shortcuts, onChange }: { shortcuts: Shortcut[]; onChan
   );
 }
 
+/** Where the per-project switch and agent went: each project's row or tile on Projects (agent-sessions). */
+export function PerProjectNote() {
+  return (
+    <>
+      <h2>Projects</h2>
+      <p class="hint per-project">
+        Each project has its own <strong>Agent sessions</strong> switch, Enabled unless you turn it off, and — with more than one agent here — its own agent:{" "}
+        <a href={href("/")} onClick={(e) => followInApp(e, "/")}>
+          set them on Projects
+        </a>
+        , saved at once.
+      </p>
+    </>
+  );
+}
+
 export function AgentSettings({ draft, update }: Props) {
   const [found, setFound] = useState<AgentAvailability[]>([]);
   const [sessions, setSessions] = useState<Session[]>([]);
@@ -257,19 +274,15 @@ export function AgentSettings({ draft, update }: Props) {
   const settings = draft.agentSessions;
   const set = (patch: Partial<AgentSessionsConfig>) => update({ agentSessions: { ...settings, ...patch } });
   const setAgent = (id: string, patch: Partial<AgentProfile>) => set({ agents: settings.agents.map((a) => (a.id === id ? { ...a, ...patch } : a)) });
-  const setRepo = (id: string, patch: Partial<NonNullable<RepoConfig["agent"]>>) => update({ repos: draft.repos.map((r) => (r.id === id ? { ...r, agent: { enabled: true, ...r.agent, ...patch } } : r)) });
   const addAgent = () => {
     const id = slugId("agent", settings.agents.map((a) => a.id));
     set({ agents: [...settings.agents, { id, name: "New agent", command: ["my-agent-cli", "{prompt}"], prompts: { implement: "Implement the OpenSpec change {change}: run `openspec instructions apply --change {change}` and follow it." } }] });
   };
   const removeAgent = (id: string) => {
     const agents = settings.agents.filter((a) => a.id !== id);
-    update({
-      agentSessions: { ...settings, agents, defaultAgent: settings.defaultAgent === id ? agents[0].id : settings.defaultAgent },
-      repos: draft.repos.map((r) => (r.agent?.agentId === id ? { ...r, agent: { ...r.agent, agentId: undefined } } : r)),
-    });
+    // Repositories that chose it go back to the default agent when Settings saves (`withLatestRepos`).
+    set({ agents, defaultAgent: settings.defaultAgent === id ? agents[0].id : settings.defaultAgent });
   };
-  const tracked = draft.repos.filter((r) => r.enabled);
   // The main console runs in its folder, not in a worktree.
   const worktrees = sessions.filter((s) => !s.console && s.worktreePath);
 
@@ -281,7 +294,7 @@ export function AgentSettings({ draft, update }: Props) {
         login, settings and permission prompts. <strong>Turning this on lets the dashboard start that program on this machine, and the agent can change files and run commands as
         you allow it to.</strong> Each session works in its own git worktree under <code>~/.openspec-dashboard/worktrees/</code>, never in a repository's main checkout — except an{" "}
         <strong>Integrate</strong> session, which runs in the repository folder itself to set it up for OpenSpec. It applies to <strong>every tracked repository</strong>; switch
-        individual ones off below.
+        individual ones off on Projects.
       </p>
       <div class="row">
         <label class="check">
@@ -333,33 +346,7 @@ export function AgentSettings({ draft, update }: Props) {
           />
         </label>
 
-        <h2>Repositories</h2>
-        <div class="list">
-          {tracked.map((repo) => (
-            <div class="agent-repo" key={repo.id}>
-              <label class="check">
-                <input type="checkbox" checked={repoAgentEnabled(repo)} onChange={(e) => setRepo(repo.id, { enabled: e.currentTarget.checked })} />
-                <strong>{repo.name}</strong>
-              </label>
-              <span class="row">
-                <span class="path hint" title={repo.path}>
-                  {repo.path}
-                </span>
-                {settings.agents.length > 1 && repoAgentEnabled(repo) && (
-                  <select class="input" value={repo.agent?.agentId ?? ""} onChange={(e) => setRepo(repo.id, { agentId: e.currentTarget.value || undefined })}>
-                    <option value="">default agent</option>
-                    {settings.agents.map((a) => (
-                      <option value={a.id} key={a.id}>
-                        {a.name}
-                      </option>
-                    ))}
-                  </select>
-                )}
-              </span>
-            </div>
-          ))}
-          {tracked.length === 0 && <span class="hint">No tracked repositories yet.</span>}
-        </div>
+        <PerProjectNote />
       </fieldset>
 
       {worktrees.length > 0 && (

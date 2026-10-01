@@ -48,3 +48,14 @@ test("typing stores the text under its own key; clearing a field removes it", ()
   expect(two.type(KEYS.indexOf("ship"), "")?.promptSuffixes).toEqual({ implement: "Run the linter." });
   expect(two.type(KEYS.indexOf("integrate"), "Ask me first.")?.promptSuffixes).toEqual({ implement: "Run the linter.", ship: "Add the checklist.", integrate: "Ask me first." });
 });
+
+test("Agent sessions settings point to Projects for the per-project switch and agent, and list no repository", async () => {
+  const { PerProjectNote } = await import("../src/ui/agentSettings.tsx");
+  const { byTag } = await import("./vnode.ts");
+  const note = PerProjectNote();
+  expect(textOf(note)).toContain("set them on Projects");
+  expect(byTag(note, "a")[0].props.href).toBe("/");
+  expect(byTag(note, "input")).toHaveLength(0);
+  const source = await Bun.file(new URL("../src/ui/agentSettings.tsx", import.meta.url)).text();
+  expect(source).not.toContain("draft.repos");
+});

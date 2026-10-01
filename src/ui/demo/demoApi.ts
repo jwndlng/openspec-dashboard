@@ -1,9 +1,10 @@
 // In-memory stand-in for the dashboard server. Nothing is read from or written to anywhere: a reload starts over.
 import { pageEvents, retained } from "../../shared/activity.ts";
+import { labelProblem } from "../../shared/labels.ts";
 import { availableName } from "../../shared/nameHints.ts";
 import { summarizeWorkInProgress } from "../../shared/workInProgress.ts";
-import type { ChangeSnapshot, Config, DismissFile, DismissPreview, PullBlockingFile, PullResult, RepoSharedConfig, RepoSnapshot, SharedConfigApplyResult, SharedConfigPreview, SharedProfile, Snapshot } from "../../shared/types.ts";
-import { ApiError, type Api } from "../api.ts";
+import type { ChangeSnapshot, Config, DismissFile, DismissPreview, PullBlockingFile, PullResult, RepoConfig, RepoSharedConfig, RepoSnapshot, SharedConfigApplyResult, SharedConfigPreview, SharedProfile, Snapshot } from "../../shared/types.ts";
+import { ApiError, type Api, labelLists } from "../api.ts";
 import { demoApply, demoPreview, newCleanupState, remainingWorktrees } from "./demoCleanup.ts";
 import { createDemoSessions } from "./demoSessions.ts";
 import { sampleArtifactFiles } from "./sampleArtifacts.ts";
@@ -266,6 +267,12 @@ export function createDemoApi({ now = Date.now, latencyMs = 150, clock }: DemoAp
     }
   };
   const bytes = (text: string) => new TextEncoder().encode(text).length;
+  /** One configured repository changed, as the dashboard's per-repository routes do; 404 when it is not configured. */
+  const updateRepo = (repoId: string, change: (repo: RepoConfig) => RepoConfig): Config => {
+    if (!config.repos.some((r) => r.id === repoId)) throw new ApiError(404, "repository not found");
+    config = { ...config, repos: config.repos.map((r) => (r.id === repoId ? change(r) : r)) };
+    return config;
+  };
 
   return {
     state: () => reply(snapshot()),
@@ -331,6 +338,50 @@ export function createDemoApi({ now = Date.now, latencyMs = 150, clock }: DemoAp
         return config;
       });
     },
+    renameRepo: (repoId, name) =>
+      failing(() => {
+        if (!name.trim()) throw new ApiError(400, "name must not be empty");
+        return updateRepo(repoId, (r) => ({ ...r, name: name.trim() }));
+      }),
+    setRepoAgent: (repoId, { enabled, agentId }) =>
+      failing(() => {
+        if (enabled === undefined && agentId === undefined) throw new ApiError(400, "send enabled or agentId");
+        if (typeof agentId === "string" && !config.agentSessions.agents.some((a) => a.id === agentId)) throw new ApiError(400, `unknown agent ${agentId}`);
+        return updateRepo(repoId, (r) => {
+          const agent: NonNullable<RepoConfig["agent"]> = { enabled: true, ...r.agent };
+          if (enabled !== undefined) agent.enabled = enabled;
+          if (agentId === null) delete agent.agentId;
+          else if (agentId !== undefined) agent.agentId = agentId;
+          return { ...r, agent };
+        });
+      }),
+    setRepoLabels: (repoId, patch) =>
+      failing(() => {
+        const lists = labelLists(patch);
+        if (Object.keys(lists).length === 0) throw new ApiError(400, "send labels or hiddenLabels");
+        for (const list of Object.values(lists)) {
+          list.forEach((label, i) => {
+            const problem = labelProblem(label, list.slice(0, i));
+            if (problem) throw new ApiError(400, problem);
+          });
+        }
+        return updateRepo(repoId, (r) => {
+          const next: RepoConfig = { ...r };
+          for (const [key, list] of Object.entries(lists) as ["labels" | "hiddenLabels", string[]][]) {
+            if (list.length) next[key] = list.map((l) => l.trim());
+            else delete next[key];
+          }
+          return next;
+        });
+      }),
+    forgetRepo: (repoId) =>
+      failing(() => {
+        const repo = config.repos.find((r) => r.id === repoId);
+        if (!repo) throw new ApiError(404, "repository not found");
+        if (repo.enabled) throw new ApiError(409, "disable the repository before forgetting it");
+        config = { ...config, repos: config.repos.filter((r) => r.id !== repoId) };
+        return config;
+      }),
     discover: (scanRoots, ignorePaths) => {
       const roots = scanRoots ?? config.scanRoots;
       const ignored = (path: string) => (ignorePaths ?? config.ignorePaths).some((p) => path === p || path.startsWith(`${p.replace(/\/+$/, "")}/`));

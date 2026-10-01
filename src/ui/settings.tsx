@@ -1,10 +1,8 @@
 import { useEffect, useRef, useState } from "preact/hooks";
-import { nameHints } from "../shared/nameHints.ts";
-import type { Config, DiscoveredRepo, DiscoverResult, IntegratableRepo, RepoConfig, Snapshot } from "../shared/types.ts";
+import type { Config, DiscoveredRepo, DiscoverResult, IntegratableRepo, Snapshot } from "../shared/types.ts";
 import { AgentSettings } from "./agentSettings.tsx";
 import { api, ApiError } from "./api.ts";
 import { EnvironmentPanel } from "./environment.tsx";
-import { labelSuggestions, RepoLabelsEditor } from "./labels.tsx";
 import { environmentAttention, environmentCount, type EnvironmentState } from "./environmentState.ts";
 import { SettingsNav, type SettingsSection, SettingsSections, useSectionNav } from "./settingsNav.tsx";
 import { SharedConfigPanel } from "./sharedConfig.tsx";
@@ -79,7 +77,7 @@ export function Settings({ config, snapshot, onSaved, onRescan, environment, onR
 
   // Hooks first: the ids are all the hook needs, and they are known before the draft is.
   const scroller = useRef<HTMLDivElement>(null);
-  const sectionIds = draft ? ["roots", "tracked", "scanning", "agents", ...(config ? ["shared-config"] : []), "environment"] : [];
+  const sectionIds = draft ? ["roots", "scanning", "agents", ...(config ? ["shared-config"] : []), "environment"] : [];
   const nav = useSectionNav(scroller, sectionIds);
 
   if (!draft) return <div class="settings">Loading…</div>;
@@ -89,8 +87,6 @@ export function Settings({ config, snapshot, onSaved, onRescan, environment, onR
     setDirty(true);
     setMessage(null);
   };
-  const updateRepo = (id: string, patch: Partial<RepoConfig>) =>
-    update({ repos: draft.repos.map((r) => (r.id === id ? { ...r, ...patch } : r)) });
 
   const addRoot = () => {
     const root = newRoot.trim();
@@ -121,7 +117,7 @@ export function Settings({ config, snapshot, onSaved, onRescan, environment, onR
   const save = async () => {
     setSaving(true);
     try {
-      const saved = await api.saveConfig(draft);
+      const saved = await api.saveConfig(withLatestRepos(draft, config));
       setDraft(saved);
       setDirty(false);
       setMessage({ kind: "ok", text: "Saved." });
@@ -135,16 +131,10 @@ export function Settings({ config, snapshot, onSaved, onRescan, environment, onR
   };
 
   // Discovery here only answers "what is under these roots": the repositories themselves are listed, enabled and
-  // integrated on the projects overview. Anything already in the draft is not untracked any more.
-  const draftIds = new Set(draft.repos.map((r) => r.id));
-  const untrackedCandidates = candidates.filter((c) => !draftIds.has(c.id)).length;
-  const untrackedIntegratable = integratable.filter((r) => !draftIds.has(r.id)).length;
-  const enabledCount = draft.repos.filter((r) => r.enabled).length;
-  const hints = nameHints(draft.repos);
-  const hintBadge = (id: string) => {
-    const hint = hints.get(id);
-    return hint ? <span class="badge mono" title="another tracked repository has the same name">{hint}</span> : null;
-  };
+  // integrated on the projects overview, so the config the app holds is the latest word on which are tracked.
+  const trackedIds = new Set((config ?? draft).repos.map((r) => r.id));
+  const untrackedCandidates = candidates.filter((c) => !trackedIds.has(c.id)).length;
+  const untrackedIntegratable = integratable.filter((r) => !trackedIds.has(r.id)).length;
 
   // One list drives both the navigation and the page, so a panel cannot exist without its navigation entry.
   const sections: SettingsSection[] = [
@@ -186,7 +176,7 @@ export function Settings({ config, snapshot, onSaved, onRescan, environment, onR
             </p>
           )}
           <h2>Ignored paths</h2>
-          <p class="hint">Discovery skips these directories and everything below them. Ignored paths only affect discovery: a repository that is already tracked stays tracked until you forget it.</p>
+          <p class="hint">Discovery skips these directories and everything below them. Ignored paths only affect discovery: a repository that is already tracked stays tracked until you forget it on Projects.</p>
           <div class="list">
             {draft.ignorePaths.map((path) => (
               <div class="row">
@@ -203,40 +193,6 @@ export function Settings({ config, snapshot, onSaved, onRescan, environment, onR
             <button type="button" class="btn" onClick={addIgnore} disabled={!newIgnore.trim()}>
               Ignore path
             </button>
-          </div>
-        </section>
-      ),
-    },
-    {
-      id: "tracked",
-      label: "Tracked repositories",
-      count: `${enabledCount}/${draft.repos.length}`,
-      content: (
-        <section class="panel">
-          <h2>Tracked repositories · {enabledCount} of {draft.repos.length} enabled</h2>
-          <p class="hint">Only enabled repositories are scanned and shown on the board. Names and labels are display-only; labels marked with the scan icon were detected from the repository's files and can be hidden here. Forgetting (×) a repository returns it to Unmanaged projects on Projects.</p>
-          <div class="list">
-            {draft.repos.map((repo) => (
-              <div class={`item ${repo.enabled ? "" : "off"}`} key={repo.id}>
-                <label class="check" title="track this repository">
-                  <input type="checkbox" checked={repo.enabled} onChange={(e) => updateRepo(repo.id, { enabled: e.currentTarget.checked })} />
-                </label>
-                <input class="input name" value={repo.name} onInput={(e) => updateRepo(repo.id, { name: e.currentTarget.value })} />
-                <span class="path" title={repo.path}>
-                  {hintBadge(repo.id)} {repo.path}
-                </span>
-                <button type="button" class="btn sm ghost" title="forget this repository" onClick={() => update({ repos: draft.repos.filter((r) => r.id !== repo.id) })}>
-                  ×
-                </button>
-                <RepoLabelsEditor
-                  repo={repo}
-                  detected={snapshot?.repos.find((r) => r.id === repo.id)?.detectedLabels ?? []}
-                  suggestions={labelSuggestions(draft.repos, repo.id)}
-                  onChange={(patch) => updateRepo(repo.id, patch)}
-                />
-              </div>
-            ))}
-            {draft.repos.length === 0 && <span class="hint">Nothing tracked yet — enable discovered repositories on Projects.</span>}
           </div>
         </section>
       ),
@@ -298,6 +254,21 @@ export function Settings({ config, snapshot, onSaved, onRescan, environment, onR
       </div>
     </>
   );
+}
+
+/**
+ * What Settings saves: its draft, with the repositories as the app last received them. Every repository setting is
+ * changed on the projects overview and saved at once there, so a draft seeded before such a change must not undo it.
+ * A repository whose agent profile was removed in this draft goes back to the default agent, as removing it promises.
+ */
+export function withLatestRepos(draft: Config, latest: Config | null): Config {
+  const profiles = new Set(draft.agentSessions.agents.map((a) => a.id));
+  const repos = (latest ?? draft).repos.map((repo) => {
+    if (!repo.agent?.agentId || profiles.has(repo.agent.agentId)) return repo;
+    const { agentId: _removed, ...agent } = repo.agent;
+    return { ...repo, agent };
+  });
+  return { ...draft, repos };
 }
 
 /** The Workspace roots section's answer to "what did discovery find": counts and the way to Projects, never a list. */

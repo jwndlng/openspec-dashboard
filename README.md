@@ -38,8 +38,11 @@ repositories found under it are listed below your tracked ones, and **Enable** s
   and when it was last updated, as a table or as tiles (`view=tiles`). Click a row or tile to open that repository's
   board. Below these **Managed projects**, **Unmanaged projects** lists in one list what you could bring in —
   disabled repositories, OpenSpec repositories found under your workspace roots, and git repositories without
-  OpenSpec, each labelled — with the actions that fit it (**Enable**, **Ignore**, **Integrate**), each saved at once;
-  **Disable** on a row or tile moves a repository down there.
+  OpenSpec, each labelled — with the actions that fit it (**Enable**, **Ignore**, **Integrate**, **Forget** for a
+  disabled one), each saved at once; **Disable** on a row or tile moves a repository down there. Each managed project
+  also carries its own settings on its row or tile, saved at once: **Rename** (the pencil beside its name), **Labels**,
+  and an **Agent sessions** switch — Enabled unless you turn it off — with an agent picker when you configured more
+  than one agent.
   ([project-overview](openspec/specs/project-overview/spec.md))
 - **Work in progress**: for the main checkout and every git worktree of a repository, whether it holds uncommitted
   changes or unpushed commits, or is stale, e.g. `2 worktrees · 1 uncommitted · 1 unpushed`. Sort by it or filter to
@@ -47,14 +50,14 @@ repositories found under it are listed below your tracked ones, and **Enable** s
   unpushed commits (ahead of the upstream, or never pushed), `↓N` behind, `stale`, `locked` or `?` (unknown), each with
   a tooltip. Ahead, behind and unpushed reflect your last `git fetch`: the dashboard never fetches. Only counts are
   recorded, never file names. ([change-scanner](openspec/specs/change-scanner/spec.md))
-- **Labels**: give a repository your own labels (`client`, `platform`, …) in Settings → Tracked repositories, and
+- **Labels**: give a repository your own labels (`client`, `platform`, …) with **Labels** on its row or tile, and
   the scan adds technology labels from marker files in the project folder and its immediate subfolders: `terraform`
   (`.tf` files), `go` (`go.mod`), `rust` (`Cargo.toml`), `javascript` (`package.json`), `typescript`
   (`tsconfig.json`), `python` (`pyproject.toml`, `requirements.txt`, `setup.py`, `Pipfile`), `ruby` (`Gemfile`),
   `java` (`pom.xml`, `build.gradle`, `build.gradle.kts`), `dotnet` (`.csproj`, `.sln`), `php` (`composer.json`),
   `swift` (`Package.swift`), `docker` (`Dockerfile`, `compose.yaml`, `docker-compose.yml`), `helm` (`Chart.yaml`) and
   `ansible` (`ansible.cfg`). Detection only lists file names — it opens no file and runs no git. Hide a wrong guess per
-  repository in Settings. Labels show on rows, tiles and a repository's header; activate one to filter Projects by it
+  repository in the same dialog. Labels show on rows, tiles and a repository's header; activate one to filter Projects by it
   (`?label=terraform&label=client` lists repositories carrying both). Your labels live in
   `~/.openspec-dashboard/config.json`, never in the repository. ([project-labels](openspec/specs/project-labels/spec.md))
 - **Boards**: one board per repository, plus one across all of them. Columns follow the lifecycle: Backlog → Drafts

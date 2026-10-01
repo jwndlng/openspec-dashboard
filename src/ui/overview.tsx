@@ -1,6 +1,7 @@
+import type { ComponentChildren } from "preact";
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { boardColumns } from "../shared/columns.ts";
-import { integrateUnavailable, type Config, type Snapshot, type WorkInProgress } from "../shared/types.ts";
+import { integrateUnavailable, type Config, type RepoConfig, type Snapshot, type WorkInProgress } from "../shared/types.ts";
 import { api } from "./api.ts";
 import { hasCheckoutInfo } from "./checkoutMarkers.ts";
 import { createDiscoveryStore, type DiscoveryState } from "./discoveryState.ts";
@@ -36,6 +37,7 @@ import { Stat } from "./band.tsx";
 import { IconChevronDown, IconFolderGit, IconGitBranch, IconSearch, IconX } from "./icons.tsx";
 import { LabelChips } from "./labels.tsx";
 import { assignRepoHues } from "./repoGroups.ts";
+import { AgentPicker, AgentToggle, LabelsButton, RenameButton, RenameField, RepoLabelsDialog } from "./projectSettings.tsx";
 import { PullAllButton, PullButton } from "./pull.tsx";
 import { OpenPrCount } from "./pullRequests.tsx";
 import { branchNotice } from "./pullState.ts";
@@ -128,12 +130,45 @@ function lastUpdated(row: OverviewRow, now: number): string {
   return row.lastUpdatedAt ? `${relTime(row.lastUpdatedAt, now)} ago`.replace("just now ago", "just now") : "—";
 }
 
-export function Row({ row, stages, now, tracking, labelFilter }: { row: OverviewRow; stages: string[]; now: number; tracking: Tracking; labelFilter?: LabelFilter }) {
+/**
+ * The project's name, or the field renaming it; the pencil beside it. Without a config entry (the config is still
+ * loading) only the name, as before.
+ */
+function RepoNameEdit({ row, repo, tracking }: { row: OverviewRow; repo?: RepoConfig; tracking: Tracking }) {
+  if (repo && tracking.renaming === row.id) return <RenameField id={row.id} name={repo.name} tracking={tracking} />;
+  return (
+    <>
+      <RepoLink row={row} />
+      {repo && <RenameButton id={row.id} name={repo.name} tracking={tracking} />}
+    </>
+  );
+}
+
+/** The project's agent-session switch and, when there is a choice, its agent. */
+function AgentControls({ repo, config, tracking }: { repo?: RepoConfig; config?: Config | null; tracking: Tracking }) {
+  if (!repo || !config) return null;
+  return (
+    <span class="agent-controls">
+      <AgentToggle repo={repo} config={config} tracking={tracking} />
+      <AgentPicker repo={repo} config={config} tracking={tracking} />
+    </span>
+  );
+}
+
+/** What a row or tile needs to offer the project's own settings: its entry in the saved config. */
+export interface ProjectSettingsProps {
+  config?: Config | null;
+}
+
+const repoOf = (config: Config | null | undefined, id: string) => config?.repos.find((r) => r.id === id);
+
+export function Row({ row, stages, now, tracking, labelFilter, config }: { row: OverviewRow; stages: string[]; now: number; tracking: Tracking; labelFilter?: LabelFilter } & ProjectSettingsProps) {
   const idle = row.open === 0;
+  const repo = repoOf(config, row.id);
   return (
     <tr class={idle ? "idle" : ""} title={`${row.path} · ${row.archived} archived`} onClick={openOnPlainClick(row)}>
       <th scope="row" class="repo-name">
-        <RepoLink row={row} />
+        <RepoNameEdit row={row} repo={repo} tracking={tracking} />
         {row.hint && <span class="path-hint mono">{row.hint}/</span>}
         <RepoBadges row={row} />
         <LabelChips labels={row.labels} limit={ROW_LABEL_LIMIT} isActive={labelFilter?.isActive} onToggle={labelFilter?.onToggle} />
@@ -163,8 +198,12 @@ export function Row({ row, stages, now, tracking, labelFilter }: { row: Overview
       <td class="when" title={row.lastUpdatedAt ?? "no activity date"}>
         {lastUpdated(row, now)}
       </td>
+      <td class="agent-cell">
+        <AgentControls repo={repo} config={config} tracking={tracking} />
+      </td>
       <td class="row-actions">
         {row.isGit && row.ok && <PullButton repoId={row.id} repoName={row.name} compact />}
+        {repo && <LabelsButton id={row.id} name={repo.name} tracking={tracking} />}
         <DisableButton id={row.id} name={row.name} tracking={tracking} />
       </td>
     </tr>
@@ -222,11 +261,12 @@ export function NothingTracked({ config }: { config: Config | null }) {
 }
 
 /** A tile's checkouts as two counts; the full list is in the tooltip and on the repository board. */
-function TileCheckouts({ row }: { row: OverviewRow }) {
+function TileCheckouts({ row, children }: { row: OverviewRow; children?: ComponentChildren }) {
   if (!hasCheckoutInfo(row.worktrees)) {
     return (
       <div class="checkouts">
         <span class="none">no checkout details</span>
+        {children}
       </div>
     );
   }
@@ -241,6 +281,7 @@ function TileCheckouts({ row }: { row: OverviewRow }) {
         <IconGitBranch />
         <strong>{summary.branches}</strong> {summary.branches === 1 ? "branch" : "branches"} active
       </span>
+      {children}
     </div>
   );
 }
@@ -249,8 +290,9 @@ function TileCheckouts({ row }: { row: OverviewRow }) {
  * Everything a row shows, plus the room a row lacks: one chip per checkout. Every tile has the same size and places its
  * parts in the same spots; the badge and checkout areas scroll inside the tile instead of growing it.
  */
-export function Tile({ row, stages, now, hue, tracking, labelFilter }: { row: OverviewRow; stages: string[]; now: number; hue?: number; tracking: Tracking; labelFilter?: LabelFilter }) {
+export function Tile({ row, stages, now, hue, tracking, labelFilter, config }: { row: OverviewRow; stages: string[]; now: number; hue?: number; tracking: Tracking; labelFilter?: LabelFilter } & ProjectSettingsProps) {
   const idle = row.open === 0;
+  const repo = repoOf(config, row.id);
   return (
     // biome-ignore lint/a11y/useKeyWithClickEvents: the click is a pointer shortcut, as on a table row; the keyboard path is the repository link inside
     <article class={`tile ${idle ? "idle" : ""}`} title={`${row.path} · ${row.archived} archived`} onClick={openOnPlainClick(row)}>
@@ -260,7 +302,7 @@ export function Tile({ row, stages, now, hue, tracking, labelFilter }: { row: Ov
         </span>
         <div class="tile-title">
           <h2 class="repo-name">
-            <RepoLink row={row} />
+            <RepoNameEdit row={row} repo={repo} tracking={tracking} />
             {row.hint && <span class="path-hint mono">{row.hint}/</span>}
           </h2>
           <span class="when" title={row.lastUpdatedAt ?? "no activity date"}>
@@ -269,6 +311,7 @@ export function Tile({ row, stages, now, hue, tracking, labelFilter }: { row: Ov
         </div>
         <span class="tile-actions">
           {row.isGit && row.ok && <PullButton repoId={row.id} repoName={row.name} compact />}
+          {repo && <LabelsButton id={row.id} name={repo.name} tracking={tracking} />}
           <DisableButton id={row.id} name={row.name} tracking={tracking} />
         </span>
       </header>
@@ -304,7 +347,9 @@ export function Tile({ row, stages, now, hue, tracking, labelFilter }: { row: Ov
           </ol>
         </div>
       )}
-      <TileCheckouts row={row} />
+      <TileCheckouts row={row}>
+        <AgentControls repo={repo} config={config} tracking={tracking} />
+      </TileCheckouts>
     </article>
   );
 }
@@ -386,6 +431,7 @@ export function Overview({ snapshot, config, onConfig }: { snapshot: Snapshot | 
   const pendingShown = state.wip || labelsActive ? [] : pending.filter((r) => matchesSearch(r, state.q));
   const untrackedShown = untracked.filter((e) => matchesSearch(e, state.q));
   const nothingTracked = snapshot !== null && rows.length === 0 && pending.length === 0;
+  const labelsRepo = tracking.labelsOpen ? repoOf(config, tracking.labelsOpen) : undefined;
   const runningIntegration = (path: string) => ui.integrations.find((s) => s.folder === path && s.state === "running")?.id;
 
   const header = (key: SortKey, label: string, cls = "") => {
@@ -517,7 +563,7 @@ export function Overview({ snapshot, config, onConfig }: { snapshot: Snapshot | 
               <PendingTile key={row.id} row={row} />
             ))}
             {visible.map((row) => (
-              <Tile key={row.id} row={row} stages={stages} now={now} hue={hues.get(row.id)} tracking={tracking} labelFilter={labelFilter} />
+              <Tile key={row.id} row={row} stages={stages} now={now} hue={hues.get(row.id)} tracking={tracking} labelFilter={labelFilter} config={config} />
             ))}
           </div>
         ) : (
@@ -537,6 +583,9 @@ export function Overview({ snapshot, config, onConfig }: { snapshot: Snapshot | 
                 </th>
                 {header("wip", SORT_LABEL.wip)}
                 {header("updated", SORT_LABEL.updated, "when")}
+                <th scope="col" class="agent-cell" title="Whether agent sessions can be started for the project, saved at once">
+                  Agent sessions
+                </th>
                 <th scope="col" class="row-actions">
                   <span class="visually-hidden">Actions</span>
                 </th>
@@ -544,15 +593,18 @@ export function Overview({ snapshot, config, onConfig }: { snapshot: Snapshot | 
             </thead>
             <tbody>
               {pendingShown.map((row) => (
-                <PendingTableRow key={row.id} row={row} columns={stages.length + 6} />
+                <PendingTableRow key={row.id} row={row} columns={stages.length + 7} />
               ))}
               {visible.map((row) => (
-                <Row key={row.id} row={row} stages={stages} now={now} tracking={tracking} labelFilter={labelFilter} />
+                <Row key={row.id} row={row} stages={stages} now={now} tracking={tracking} labelFilter={labelFilter} config={config} />
               ))}
             </tbody>
           </table>
         )}
         {snapshot && !nothingTracked && visible.length === 0 && pendingShown.length === 0 && <p class="hint">{noMatch(state)}</p>}
+        {labelsRepo && config && (
+          <RepoLabelsDialog repo={labelsRepo} repos={config.repos} detected={snapshot?.repos.find((r) => r.id === labelsRepo.id)?.detectedLabels ?? []} tracking={tracking} />
+        )}
         {!state.wip && !labelsActive && config && (
           <UnmanagedSection
             entries={untrackedShown}

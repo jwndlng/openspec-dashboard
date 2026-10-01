@@ -9,15 +9,25 @@ import { DisableButton, type Tracking, UnmanagedSection, type UntrackedSectionPr
 import { byComponent, byTag, textOf } from "./vnode.ts";
 
 /** Records what the view asks for instead of calling the server. */
-function tracking(state: Partial<Pick<Tracking, "busy" | "errors">> = {}) {
+function tracking(state: Partial<Pick<Tracking, "busy" | "errors" | "renaming" | "labelsOpen">> = {}) {
   const calls: string[] = [];
   const t: Tracking = {
     busy: state.busy ?? {},
     errors: state.errors ?? {},
+    renaming: state.renaming,
+    labelsOpen: state.labelsOpen,
     enable: (e) => calls.push(`enable ${e.id}`),
     disable: (id) => calls.push(`disable ${id}`),
     ignore: (e) => calls.push(`ignore ${e.id}`),
     integrate: (e) => calls.push(`integrate ${e.id}`),
+    forget: (e) => calls.push(`forget ${e.id}`),
+    startRename: (id) => calls.push(`startRename ${id}`),
+    cancelRename: () => calls.push("cancelRename"),
+    rename: (id, current, next) => calls.push(`rename ${id} ${current}->${next}`),
+    setAgent: (id, patch) => calls.push(`agent ${id} ${JSON.stringify(patch)}`),
+    setLabels: (id, patch) => calls.push(`labels ${id} ${JSON.stringify(patch)}`),
+    openLabels: (id) => calls.push(`openLabels ${id}`),
+    closeLabels: () => calls.push("closeLabels"),
   };
   return { t, calls };
 }
@@ -70,18 +80,22 @@ test("one headed list of every unmanaged project, by name, each saying what it i
   expect(text).toContain("same remote as pkg-tools");
 });
 
-test("Enable, Ignore and Integrate go to the matching entry; a disabled repository has no Ignore", () => {
+test("Enable, Ignore, Integrate and Forget go to the matching entry; only a disabled repository offers Forget, and no Ignore", () => {
   const { view, calls } = section();
   // beta-soc (OpenSpec), chat-groups (no OpenSpec), demo-agent (disabled)
-  expect(buttons(view).map(textOf)).toEqual(["Rediscover", "Enable", "Ignore", "Integrate", "Ignore", "Enable"]);
+  expect(buttons(view).map(textOf)).toEqual(["Rediscover", "Enable", "Ignore", "Integrate", "Ignore", "Enable", "Forget"]);
   click(button(view, "Enable", 0));
   click(button(view, "Ignore", 0));
   click(button(view, "Integrate"));
   click(button(view, "Ignore", 1));
   click(button(view, "Enable", 1));
+  click(button(view, "Forget"));
   click(button(view, "Rediscover"));
-  expect(calls).toEqual(["enable b", "ignore b", "integrate c", "ignore c", "enable d", "rediscover"]);
+  expect(calls).toEqual(["enable b", "ignore b", "integrate c", "ignore c", "enable d", "forget d", "rediscover"]);
   expect(String(button(view, "Ignore").props.title)).toContain("Settings");
+  const forgetTitle = String(button(view, "Forget").props.title);
+  expect(forgetTitle).toContain("labels and agent settings");
+  expect(forgetTitle).toContain("offered again as a discovered repository");
 });
 
 test("an action in progress shows it and blocks the entry; a failure is shown on that entry only", () => {
@@ -113,7 +127,7 @@ test("a running integration is offered as Setting up…, which shows its session
 
 test("no workspace root: a link to the roots settings, no Rediscover", () => {
   const { view } = section({ hasRoots: false, entries: untrackedEntries(config, undefined), discovery: { running: false } });
-  expect(buttons(view).map(textOf)).toEqual(["Enable"]);
+  expect(buttons(view).map(textOf)).toEqual(["Enable", "Forget"]);
   const link = byTag(view, "a")[0];
   expect(String(link.props.href)).toContain("section=roots");
   expect(textOf(view)).toContain("No workspace root yet");

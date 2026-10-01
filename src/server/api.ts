@@ -149,6 +149,80 @@ async function postIgnorePath(state: AppState, req: Request): Promise<Response> 
   return json(saved);
 }
 
+/**
+ * One configured repository changed by `change`, under the serialised writer. The repository is looked up in the
+ * config as the previous write left it, so a request racing a Forget gets a 404 instead of bringing the entry back.
+ */
+async function updateRepo(state: AppState, id: string, change: (repo: RepoConfig) => RepoConfig | undefined): Promise<Response> {
+  const { previous, saved } = await updateConfig(state, (current) => {
+    const repo = current.repos.find((r) => r.id === id);
+    if (!repo) throw new TrackingError(404, "repository not found");
+    const next = change(repo);
+    return next === undefined ? undefined : { ...current, repos: current.repos.map((r) => (r.id === id ? next : r)) };
+  });
+  afterConfigChange(state, previous);
+  return json(saved);
+}
+
+/** Rename on the projects overview. Display only: the id, the path and every other setting stay. */
+async function postRepoName(state: AppState, req: Request, id: string): Promise<Response> {
+  const { name } = await readJson(req);
+  if (typeof name !== "string" || !name.trim()) return json({ error: "name must not be empty" }, 400);
+  return updateRepo(state, id, (repo) => ({ ...repo, name: name.trim() }));
+}
+
+/**
+ * The project's agent-session toggle and agent picker on the overview. A repository without agent settings is included
+ * (`repoAgentEnabled`), so the first change starts from `{ enabled: true }`; `agentId: null` means the default agent.
+ */
+async function postRepoAgent(state: AppState, req: Request, id: string): Promise<Response> {
+  const body = await readJson(req);
+  const { enabled, agentId } = body;
+  if (enabled === undefined && agentId === undefined) return json({ error: "send enabled or agentId" }, 400);
+  if (enabled !== undefined && typeof enabled !== "boolean") return json({ error: "enabled must be true or false" }, 400);
+  if (agentId !== undefined && agentId !== null && typeof agentId !== "string") return json({ error: "agentId must be an agent id or null" }, 400);
+  return updateRepo(state, id, (repo) => {
+    if (typeof agentId === "string" && !state.config.agentSessions.agents.some((a) => a.id === agentId)) throw new TrackingError(400, `unknown agent ${agentId}`);
+    const agent: NonNullable<RepoConfig["agent"]> = { enabled: true, ...repo.agent };
+    if (typeof enabled === "boolean") agent.enabled = enabled;
+    if (agentId === null) delete agent.agentId;
+    else if (typeof agentId === "string") agent.agentId = agentId;
+    return { ...repo, agent };
+  });
+}
+
+/** The project's labels dialog on the overview: either list replaced, an empty one removed, validated as in a `PUT`. */
+async function postRepoLabels(state: AppState, req: Request, id: string): Promise<Response> {
+  const body = await readJson(req);
+  const lists = (["labels", "hiddenLabels"] as const).filter((key) => body[key] !== undefined);
+  if (lists.length === 0) return json({ error: "send labels or hiddenLabels" }, 400);
+  for (const key of lists) {
+    const value = body[key];
+    if (!Array.isArray(value) || value.some((l) => typeof l !== "string")) return json({ error: `${key} must be a list of labels` }, 400);
+  }
+  return updateRepo(state, id, (repo) => {
+    const next: RepoConfig = { ...repo };
+    for (const key of lists) {
+      const value = body[key] as string[];
+      if (value.length) next[key] = value;
+      else delete next[key];
+    }
+    return next;
+  });
+}
+
+/** Forget on the overview: only a repository the user disabled, so a stale tab cannot drop one still managed. */
+async function postRepoForget(state: AppState, id: string): Promise<Response> {
+  const { previous, saved } = await updateConfig(state, (current) => {
+    const repo = current.repos.find((r) => r.id === id);
+    if (!repo) throw new TrackingError(404, "repository not found");
+    if (repo.enabled) throw new TrackingError(409, "disable the repository before forgetting it");
+    return { ...current, repos: current.repos.filter((r) => r.id !== id) };
+  });
+  afterConfigChange(state, previous);
+  return json(saved);
+}
+
 class TrackingError extends Error {
   constructor(
     readonly status: number,
@@ -793,6 +867,14 @@ export function createFetchHandler({ state, indexHtml }: AppOptions): (req: Requ
       if (req.method === "POST" && pathname === "/api/ignore-paths") return tracking(() => postIgnorePath(state, req));
       const enabledMatch = /^\/api\/repos\/([^/]+)\/enabled$/.exec(pathname);
       if (req.method === "POST" && enabledMatch) return tracking(() => postRepoEnabled(state, req, decodeURIComponent(enabledMatch[1])));
+      const repoSetting = /^\/api\/repos\/([^/]+)\/(name|agent|labels|forget)$/.exec(pathname);
+      if (req.method === "POST" && repoSetting) {
+        const id = decodeURIComponent(repoSetting[1]);
+        if (repoSetting[2] === "name") return tracking(() => postRepoName(state, req, id));
+        if (repoSetting[2] === "agent") return tracking(() => postRepoAgent(state, req, id));
+        if (repoSetting[2] === "labels") return tracking(() => postRepoLabels(state, req, id));
+        return tracking(() => postRepoForget(state, id));
+      }
       if (req.method === "GET" && pathname === "/api/shared-config") return getSharedConfig();
       if (req.method === "PUT" && pathname === "/api/shared-config") return putSharedConfig(state, req);
       if (req.method === "POST" && pathname === "/api/shared-config/preview") return postSharedConfigPreview(state, req);

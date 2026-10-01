@@ -3,17 +3,21 @@
 // what it is and offered the actions that fit it (Enable, Ignore, Integrate), each saved at once. The view is hook-free
 // so tests can walk it; `useTracking` holds what changes.
 import { useState } from "preact/hooks";
-import type { Config } from "../shared/types.ts";
-import { api } from "./api.ts";
+import type { Config, RepoConfig } from "../shared/types.ts";
+import { api, type RepoAgentPatch } from "./api.ts";
 import { IconEyeOff } from "./icons.tsx";
 import type { DiscoveryState } from "./discoveryState.ts";
 import type { UntrackedEntry, UntrackedKind } from "./overviewState.ts";
 import { useSessionUi } from "./sessions.tsx";
 import { followInApp, hrefWithQuery } from "./url.ts";
 
-export type TrackingAction = "enable" | "disable" | "ignore" | "integrate";
+export type TrackingAction = "enable" | "disable" | "ignore" | "integrate" | "forget" | "rename" | "agent" | "labels";
 
-/** The overview's tracking actions and their per-repository state, keyed by repository id. */
+/**
+ * The overview's per-repository actions and their state, keyed by repository id: bringing a repository in or out
+ * (Enable, Disable, Ignore, Integrate, Forget) and a managed project's own settings (name, agent sessions, labels).
+ * Every one is saved at once.
+ */
 export interface Tracking {
   busy: Record<string, TrackingAction>;
   errors: Record<string, string>;
@@ -21,7 +25,22 @@ export interface Tracking {
   disable(id: string): void;
   ignore(entry: UntrackedEntry): void;
   integrate(entry: UntrackedEntry): void;
+  forget(entry: UntrackedEntry): void;
+  /** The project whose name is an input right now; one at a time. */
+  renaming?: string;
+  startRename(id: string): void;
+  cancelRename(): void;
+  /** Saves a trimmed, changed name; a blank one is refused in place and an unchanged one closes without a request. */
+  rename(id: string, current: string, next: string): void;
+  setAgent(id: string, patch: RepoAgentPatch): void;
+  setLabels(id: string, patch: Pick<RepoConfig, "labels" | "hiddenLabels">): void;
+  /** The project whose labels dialog is open. */
+  labelsOpen?: string;
+  openLabels(id: string): void;
+  closeLabels(): void;
 }
+
+export const NAME_REQUIRED = "A name is required.";
 
 /**
  * Runs one action per repository at a time. A saved config goes straight to the app shell, so the repository moves
@@ -32,6 +51,8 @@ export function useTracking({ onConfig, rediscover }: { onConfig: (config: Confi
   const ui = useSessionUi();
   const [busy, setBusy] = useState<Record<string, TrackingAction>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [renaming, setRenaming] = useState<string>();
+  const [labelsOpen, setLabelsOpen] = useState<string>();
   const run = async (id: string, action: TrackingAction, work: () => Promise<void>) => {
     if (busy[id]) return;
     setBusy((b) => ({ ...b, [id]: action }));
@@ -61,6 +82,30 @@ export function useTracking({ onConfig, rediscover }: { onConfig: (config: Confi
         await ui.refresh();
         ui.showIntegration(session.id);
       }),
+    forget: (entry) => void run(entry.id, "forget", () => api.forgetRepo(entry.id).then(save(rediscover))),
+    renaming,
+    startRename: (id) => {
+      setErrors(({ [id]: _old, ...rest }) => rest);
+      setRenaming(id);
+    },
+    cancelRename: () => setRenaming(undefined),
+    rename: (id, current, next) => {
+      const name = next.trim();
+      if (!name) {
+        setErrors((e) => ({ ...e, [id]: NAME_REQUIRED }));
+        return;
+      }
+      if (name === current) return setRenaming(undefined);
+      void run(id, "rename", () => api.renameRepo(id, name).then(save(() => setRenaming(undefined))));
+    },
+    setAgent: (id, patch) => void run(id, "agent", () => api.setRepoAgent(id, patch).then(save())),
+    setLabels: (id, patch) => void run(id, "labels", () => api.setRepoLabels(id, patch).then(save())),
+    labelsOpen,
+    openLabels: (id) => {
+      setErrors(({ [id]: _old, ...rest }) => rest);
+      setLabelsOpen(id);
+    },
+    closeLabels: () => setLabelsOpen(undefined),
   };
 }
 
@@ -73,6 +118,9 @@ export const KIND_LABELS: Record<UntrackedKind, { label: string; title: string }
     title: "A git repository that does not use OpenSpec yet. Integrate starts your agent in it to run openspec init — in the checkout itself, with no branch and no undo; it is managed once openspec/config.yaml exists.",
   },
 };
+
+export const FORGET_HINT =
+  "Forget: remove this repository from the dashboard, with its name, labels and agent settings, saved at once. If it is still under a workspace root, it is offered again as a discovered repository.";
 
 export const IGNORE_HINT = "Add this path to the ignored paths, saved at once — remove it under Settings › Workspace roots to undo";
 
@@ -150,7 +198,11 @@ function Entry({ entry, props }: { entry: UntrackedEntry; props: UntrackedSectio
             {busy === "enable" ? "Enabling…" : "Enable"}
           </button>
         )}
-        {entry.kind !== "disabled" && (
+        {entry.kind === "disabled" ? (
+          <button type="button" class="btn sm ghost" disabled={busy !== undefined} title={FORGET_HINT} onClick={() => tracking.forget(entry)}>
+            {busy === "forget" ? "Forgetting…" : "Forget"}
+          </button>
+        ) : (
           <button type="button" class="btn sm ghost" disabled={busy !== undefined} title={IGNORE_HINT} onClick={() => tracking.ignore(entry)}>
             {busy === "ignore" ? "Ignoring…" : "Ignore"}
           </button>
