@@ -1,6 +1,6 @@
 import type { ActivityQuery } from "../shared/activity.ts";
 import type { ActivityPage, ConsoleSession, CleanupPreview, CleanupResult, CleanupSelection, CreateChangeResponse, DismissPreview, DismissResult, EnvironmentReport, PromptResult, PullRequestsResponse, PullResolve, PullResult, ShipResult, WorkStatus } from "../shared/types.ts";
-import type { AgentAvailability, ArtifactFileContent, ChangeArtifacts, Config, DiscoverResult, IntegrationSession, ScanTriggerResult, Session, SessionAction, SessionWorktree, SharedConfig, SharedConfigApplyResult, SharedConfigAssignment, SharedConfigPreview, Snapshot } from "../shared/types.ts";
+import type { AgentAvailability, ArtifactFileContent, ChangeArtifacts, Config, CreateProjectResponse, DiscoverResult, IntegrationSession, ScanTriggerResult, Session, SessionAction, SessionWorktree, SharedConfig, SharedConfigApplyResult, SharedConfigAssignment, SharedConfigPreview, Snapshot } from "../shared/types.ts";
 import { socketOrigin } from "./url.ts";
 
 export class ApiError extends Error {
@@ -99,6 +99,11 @@ export interface Api {
    * not offered for integration, 403/400/503 when the action is unavailable.
    */
   startIntegration(path: string): Promise<IntegrationSession>;
+  /**
+   * Creates `<root>/<name>`, runs `git init` in it and starts the integration session there. `ApiError` with the
+   * server's reason when refused; a refusal created nothing.
+   */
+  createProject(root: string, name: string): Promise<CreateProjectResponse>;
   /** Continues the agent's latest conversation in the session's worktree. */
   resumeSession(id: string): Promise<Session>;
   /** Asks the session's agent to commit, push and open a pull request. */
@@ -185,6 +190,7 @@ export const httpApi: Api = {
   openSession: (repoId, change, action) => call<Session>("/api/sessions", { method: "POST", body: JSON.stringify({ repoId, change, action }) }),
   openConsole: () => call<ConsoleSession>("/api/console", { method: "POST" }),
   startIntegration: (path) => call<IntegrationSession>("/api/integrations", { method: "POST", body: JSON.stringify({ path }) }),
+  createProject: (root, name) => call<CreateProjectResponse>("/api/projects", { method: "POST", body: JSON.stringify({ root, name }) }),
   resumeSession: (id) => call<Session>(`/api/sessions/${id}/resume`, { method: "POST" }),
   shipSession: (id) => call<ShipResult>(`/api/sessions/${id}/ship`, { method: "POST" }),
   resolveConflicts: (id) => call<ShipResult>(`/api/sessions/${id}/resolve-conflicts`, { method: "POST" }),
@@ -255,6 +261,7 @@ export const api: Api = {
   openSession: (...args) => current.openSession(...args),
   openConsole: () => current.openConsole(),
   startIntegration: (path) => current.startIntegration(path),
+  createProject: (...args) => current.createProject(...args),
   resumeSession: (...args) => current.resumeSession(...args),
   shipSession: (...args) => current.shipSession(...args),
   resolveConflicts: (...args) => current.resolveConflicts(...args),

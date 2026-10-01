@@ -435,6 +435,37 @@ export function integrateUnavailable(config: Config, agents: readonly AgentAvail
   return undefined;
 }
 
+/**
+ * Why **New project** cannot be offered (project-creation spec): it needs a workspace root to create the folder in, and
+ * everything Integrate needs, because the new folder is handed to an integration session. `undefined` means available.
+ */
+export function newProjectUnavailable(config: Config, agents: readonly AgentAvailability[]): string | undefined {
+  if (config.scanRoots.length === 0) return "add a workspace root in Settings first";
+  return integrateUnavailable(config, agents);
+}
+
+/** A new project's folder name: one path segment, starting with a letter or digit, at most 100 characters. */
+const PROJECT_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/;
+
+/** Whether `name` may become a new project folder. `.git` names are refused: they read as a bare repository. */
+export function isProjectName(name: string): boolean {
+  return PROJECT_NAME.test(name) && !name.toLowerCase().endsWith(".git");
+}
+
+export interface CreateProjectRequest {
+  /** One of the configured workspace roots (scan roots). */
+  root: string;
+  /** The new folder's name, created directly inside `root`. */
+  name: string;
+}
+
+export interface CreateProjectResponse {
+  /** Canonical path of the new folder. */
+  path: string;
+  /** The integration session started in it. */
+  session: IntegrationSession;
+}
+
 /** Included unless explicitly switched off for this repository (the global switch is checked separately). */
 export function repoAgentEnabled(repo: Pick<RepoConfig, "enabled" | "agent">): boolean {
   return repo.enabled && repo.agent?.enabled !== false;
