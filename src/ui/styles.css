@@ -1224,18 +1224,20 @@ body:has(.detail-overlay) { overflow: hidden; }
 .nothing-tracked-title { margin: 0; font-size: 16px; }
 .untracked { margin-top: var(--gap-3); display: flex; flex-direction: column; gap: var(--gap-1); }
 .untracked .hint { text-align: left; padding: 0; margin: 0; font-size: 12px; }
-.untracked-head { display: flex; align-items: baseline; gap: var(--gap-1); }
-.untracked-head .spacer { flex: 1; }
-.untracked-title { margin: 0; font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--fg-heading); }
+/* The two headlines of the overview: Managed projects above the table or tiles, Unmanaged projects below. */
+.overview-section-head { display: flex; align-items: center; gap: var(--gap-1); min-height: 28px; margin-bottom: var(--gap-1); }
+.overview-section-head .spacer { flex: 1; }
+.overview-section-title { margin: 0; font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--fg-heading); }
 .untracked-count { color: var(--fg-subtle); font-weight: 400; }
-.untracked-group { display: flex; flex-direction: column; gap: 4px; margin-top: var(--gap-1); }
-.untracked-group-title { margin: 0; font-size: 12px; font-weight: 600; color: var(--fg-heading); }
-.untracked-list { list-style: none; margin: 4px 0 0; padding: 0; background: var(--bg-section); border: 1px solid var(--border-light); border-radius: var(--radius-lg); }
+.untracked-list { list-style: none; margin: 0; padding: 0; background: var(--bg-section); border: 1px solid var(--border-light); border-radius: var(--radius-lg); }
 .untracked-entry {
-  display: grid; grid-template-columns: minmax(120px, max-content) minmax(0, 1fr) auto; align-items: center; column-gap: var(--gap-1); row-gap: 4px;
+  display: grid; grid-template-columns: minmax(0, 18rem) minmax(0, 1fr) auto; align-items: center; column-gap: var(--gap-2); row-gap: 4px;
   padding: 7px 10px; border-bottom: 1px solid var(--border-light);
 }
 .untracked-entry:last-child { border-bottom: 0; }
+.untracked-label { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
+.untracked-kind { flex: none; font-size: 11px; }
+.untracked-kind.disabled { color: var(--fg-subtle); }
 .untracked-name { font-weight: 500; color: var(--fg-heading); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .untracked-entry.disabled .untracked-name { color: var(--fg-subtle); }
 /* Hint and badge sit with the path, so the three columns stay put whatever an entry carries. */

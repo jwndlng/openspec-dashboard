@@ -40,3 +40,11 @@
 
 - [x] 7.1 Update `README.md` (first run: add a root in Settings, enable repositories on Projects; integrating is done from Projects). Verify the text matches the UI.
 - [x] 7.2 Run `bun run check` and confirm it passes. Run `bun run build`, then confirm `dist/openspec-dashboard` serves the overview with the new section and that the demo build lists and enables the sample repositories.
+
+## 8. Managed and unmanaged projects (follow-up after review)
+
+- [x] 8.1 Put the headline `Managed projects · <n>` above the table, tiles or empty state, and rename the lower section to `Unmanaged projects · <n>` with Rediscover beside its headline. Verify with `untrackedUi.test.ts` (headline text and count).
+- [x] 8.2 Replace the three groups with one list ordered by name then path, each entry labelled `disabled`, `OpenSpec` or `no OpenSpec` (with a tooltip) and offered only its actions. Verify with `overview.test.ts` (ordering) and `untrackedUi.test.ts` (labels, no sub-headings, actions per entry).
+- [x] 8.3 Update the delta specs, proposal, design and README to the two sections. Verify with `openspec validate simplify-project-mgmt --strict`.
+- [~] 8.4 Visual check of both headlines and the single list in light and dark, table and tiles, and at 720px and below.
+

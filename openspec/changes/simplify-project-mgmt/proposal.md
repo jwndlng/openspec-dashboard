@@ -10,17 +10,18 @@ is real configuration: the roots, the ignore paths, names, and forgetting a repo
 
 ## What Changes
 
-- The Projects overview gets a second section, **Untracked & disabled**, below the tracked repositories. It lists
-  three groups in a fixed order:
-  - tracked repositories that are disabled, each with **Enable**;
-  - discovered OpenSpec repositories that are not tracked yet (today's "candidates"), each with **Enable** and
-    **Ignore**, plus the "same remote as" badge;
-  - git repositories without OpenSpec (today's "integratable" repositories), each with **Integrate** (or the reason
-    it is unavailable, or **Setting up…** while a session runs) and **Ignore**.
+- The Projects overview is split into two sections, each under a headline with its count: **Managed projects** (the
+  table or tiles as today) and, below it, **Unmanaged projects**. The unmanaged section is one list, by name, with no
+  sub-groups. Each entry is labelled with what it is and offered the actions that fit:
+  - `disabled` (configured, switched off): **Enable**;
+  - `OpenSpec` (discovered, not tracked yet — today's "candidates"): **Enable** and **Ignore**, plus the "same remote
+    as" badge;
+  - `no OpenSpec` (today's "integratable" repositories): **Integrate** (or the reason it is unavailable, or
+    **Setting up…** while a session runs) and **Ignore**.
   The search filter also applies to this section. It is hidden while the Work in progress filter is on, and it looks
   the same in the Table and Tiles layouts.
 - Every tracked repository on the overview, in both a row and a tile, gets a **Disable** action. Disabling moves the
-  repository down into the lower section.
+  repository down into Unmanaged projects.
 - Enable, Disable and Ignore on the overview **take effect immediately**: no draft, no Save. Each one is a narrow
   server-side update of the saved config, run one at a time with any other config write so that two quick clicks
   cannot lose each other's change. A scan is triggered when the set of enabled repositories changed. A repository that
@@ -30,7 +31,7 @@ is real configuration: the roots, the ignore paths, names, and forgetting a repo
   Ignore, and when the user presses **Rediscover** in the section. It always uses the saved roots and ignore paths.
   Per-root errors are shown in the section with a link to the Workspace roots settings. With no roots configured, the
   section says so and links there.
-- The full-page "No repositories tracked yet" empty state becomes an empty tracked section. The Untracked & disabled
+- The full-page "No repositories tracked yet" empty state becomes an empty tracked section. The Unmanaged projects
   section is still shown below it, so a first-time user can enable repositories right on the landing page.
 - **BREAKING (UI)**: Settings loses the **Discovered** and **Without OpenSpec** sections and their navigation entries.
   The Workspace roots section still runs discovery against the edited roots so that it can show per-root errors. It
@@ -51,7 +52,7 @@ None. The behaviour belongs to existing capabilities.
 
 ### Modified Capabilities
 
-- `project-overview`: the landing page and empty state now include the Untracked & disabled section. New
+- `project-overview`: the landing page is split into Managed projects and Unmanaged projects. New
   requirements cover the section itself, immediate Enable/Disable/Ignore, the pending "Scanning…" row, and discovery
   on the overview.
 - `repo-discovery`: discovery is triggered from the overview, not when Settings opens. The Settings view no longer

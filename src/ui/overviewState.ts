@@ -229,9 +229,8 @@ export function pendingRows(config: Config | null, snapshot: Snapshot | null): P
     .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }) || a.path.localeCompare(b.path));
 }
 
-/** The groups of the Untracked & disabled section, in the order they are shown. */
-export const UNTRACKED_KINDS = ["disabled", "discovered", "integratable"] as const;
-export type UntrackedKind = (typeof UNTRACKED_KINDS)[number];
+/** What an unmanaged project is, which decides the actions it is offered. */
+export type UntrackedKind = "disabled" | "discovered" | "integratable";
 
 export interface UntrackedEntry {
   kind: UntrackedKind;
@@ -244,9 +243,9 @@ export interface UntrackedEntry {
 }
 
 /**
- * Everything the overview offers to bring in: disabled repositories from the config, then the latest discovery's
- * candidates and repositories without OpenSpec — minus anything the config already holds, which covers the moment
- * between an Enable and the next discovery result. Grouped in `UNTRACKED_KINDS` order, by name, then path.
+ * The overview's unmanaged projects: disabled repositories from the config and the latest discovery's candidates and
+ * repositories without OpenSpec — minus anything the config already holds, which covers the moment between an Enable
+ * and the next discovery result. One list, by name, then path, whatever each entry is.
  */
 export function untrackedEntries(config: Config | null, discover: DiscoverResult | undefined): UntrackedEntry[] {
   const configured = new Set(config?.repos.map((r) => r.id));
@@ -259,8 +258,7 @@ export function untrackedEntries(config: Config | null, discover: DiscoverResult
       .filter((r) => !configured.has(r.id))
       .map((r): UntrackedEntry => ({ kind: "integratable", id: r.id, name: r.name, path: r.path })),
   ];
-  const rank = (e: UntrackedEntry) => UNTRACKED_KINDS.indexOf(e.kind);
-  return entries.sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name, undefined, { sensitivity: "base" }) || a.path.localeCompare(b.path));
+  return entries.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }) || a.path.localeCompare(b.path));
 }
 
 /**

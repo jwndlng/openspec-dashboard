@@ -36,9 +36,10 @@ repositories found under it are listed below your tracked ones, and **Enable** s
 
 - **Projects**: one row per repository, showing open changes per stage, changes ready to archive, work in progress
   and when it was last updated, as a table or as tiles (`view=tiles`). Click a row or tile to open that repository's
-  board. Below them, **Untracked & disabled** lists what you could bring in — disabled repositories, OpenSpec
-  repositories found under your workspace roots, and git repositories without OpenSpec — with **Enable**, **Ignore**
-  and **Integrate**, each saved at once; **Disable** on a row or tile moves a repository down there.
+  board. Below these **Managed projects**, **Unmanaged projects** lists in one list what you could bring in —
+  disabled repositories, OpenSpec repositories found under your workspace roots, and git repositories without
+  OpenSpec, each labelled — with the actions that fit it (**Enable**, **Ignore**, **Integrate**), each saved at once;
+  **Disable** on a row or tile moves a repository down there.
   ([project-overview](openspec/specs/project-overview/spec.md))
 - **Work in progress**: for the main checkout and every git worktree of a repository, whether it holds uncommitted
   changes or unpushed commits, or is stale, e.g. `2 worktrees · 1 uncommitted · 1 unpushed`. Sort by it or filter to

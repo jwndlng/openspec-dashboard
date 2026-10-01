@@ -317,7 +317,7 @@ test("a repository enabled but not in the snapshot yet is a pending row; none wh
   expect(pendingRows(null, snapshot)).toEqual([]);
 });
 
-test("untracked entries: disabled, then discovered, then without OpenSpec, each by name then path, configured ones left out", () => {
+test("unmanaged entries: one list by name then path, whatever their kind, configured ones left out", () => {
   const config = configWith([
     { id: "a", path: "/w/alpha-infra", name: "alpha-infra", enabled: true },
     { id: "m", path: "/w/mu", name: "mu", enabled: false },
@@ -338,13 +338,13 @@ test("untracked entries: disabled, then discovered, then without OpenSpec, each 
   };
   const entries = untrackedEntries(config, discover);
   expect(entries.map((e) => [e.kind, e.id])).toEqual([
-    ["disabled", "d"],
-    ["disabled", "m"],
     ["discovered", "x1"],
     ["discovered", "x2"],
     ["integratable", "c"],
+    ["disabled", "d"],
+    ["disabled", "m"],
   ]);
-  expect(entries[2].sameRemoteAs).toEqual(remote);
+  expect(entries[0].sameRemoteAs).toEqual(remote);
   // Before the first discovery result, only the disabled ones.
   expect(untrackedEntries(config, undefined).map((e) => e.id)).toEqual(["d", "m"]);
   expect(untrackedEntries(null, undefined)).toEqual([]);

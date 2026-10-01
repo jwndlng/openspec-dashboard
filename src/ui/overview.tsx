@@ -37,7 +37,7 @@ import { branchNotice } from "./pullState.ts";
 import { repoPath } from "./routes.ts";
 import { useSessionUi } from "./sessions.tsx";
 import { summarize } from "./sharedConfigState.ts";
-import { DisableButton, type Tracking, UntrackedSection, useTracking } from "./untracked.tsx";
+import { DisableButton, type Tracking, UnmanagedSection, useTracking } from "./untracked.tsx";
 import { currentQuery, followInApp, href, hrefWithQuery, navigate, replaceQuery } from "./url.ts";
 
 /** Plain left-click only, so modifier-clicks and text selection keep their browser behaviour. */
@@ -193,12 +193,12 @@ export function PendingTile({ row }: { row: PendingRow }) {
   );
 }
 
-/** In place of the tracked list while nothing is enabled; the Untracked & disabled section follows below it. */
+/** In place of the managed projects while nothing is enabled; the Unmanaged projects section follows below it. */
 export function NothingTracked({ config }: { config: Config | null }) {
   return (
     <div class="empty inline">
-      <h2 class="nothing-tracked-title">No repositories tracked yet</h2>
-      <p>Enable one of the repositories listed below, or add a workspace root in Settings to discover more.</p>
+      <h3 class="nothing-tracked-title">No repositories tracked yet</h3>
+      <p>Enable one of the unmanaged projects below, or add a workspace root in Settings to discover more.</p>
       <div class="row actions">
         <a class="btn" href={hrefWithQuery("/settings", "?section=roots")} onClick={(e) => followInApp(e, "/settings", "?section=roots")}>
           Open Settings
@@ -446,6 +446,11 @@ export function Overview({ snapshot, config, onConfig }: { snapshot: Snapshot | 
         </div>
       </div>
       <div class="overview">
+        <header class="overview-section-head">
+          <h2 class="overview-section-title">
+            Managed projects <span class="untracked-count">· {rows.length + pending.length}</span>
+          </h2>
+        </header>
         {nothingTracked ? (
           <NothingTracked config={config} />
         ) : state.view === "tiles" ? (
@@ -491,7 +496,7 @@ export function Overview({ snapshot, config, onConfig }: { snapshot: Snapshot | 
         )}
         {snapshot && !nothingTracked && visible.length === 0 && pendingShown.length === 0 && <p class="hint">{state.q.trim() ? `No repository matches “${state.q}”${state.wip ? " with work in progress" : ""}.` : "No repository has uncommitted, unpushed or stale work."}</p>}
         {!state.wip && config && (
-          <UntrackedSection
+          <UnmanagedSection
             entries={untrackedShown}
             discovery={discovered}
             hasRoots={hasRoots}
