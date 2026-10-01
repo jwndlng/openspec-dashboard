@@ -21,7 +21,7 @@ import { assignRepoHues, groupByRepo, newChangeTargets, recentArchived } from ".
 import { columnKind } from "./boardMarks.ts";
 import { IconChevronRight, IconPlus, IconTerminal } from "./icons.tsx";
 import { SessionControls, useSessionUi } from "./sessions.tsx";
-import { archivePending, consoleTabAvailable } from "./sessionState.ts";
+import { archivedShown, consoleTabAvailable } from "./sessionState.ts";
 import { boardFrom, changePath, CONSOLE_TAB, repoPath, serializeDetailQuery } from "./routes.ts";
 import { currentQuery, followInApp, href, navigate, replaceQuery } from "./url.ts";
 
@@ -423,7 +423,7 @@ export function initialFilters(query: string, repoId: string | undefined): Filte
  */
 export function Kanban({ snapshot, config, repoId, query, onReload }: { snapshot: Snapshot | null; config: Config | null; repoId?: string; query?: string; onReload?: () => void }) {
   const [filters, setFiltersState] = useState<Filters>(() => initialFilters(query ?? currentQuery(), repoId));
-  const { worktrees } = useSessionUi();
+  const { worktrees, sessions } = useSessionUi();
   const layout = resolveLayout(filters.layout, useNarrowWindow());
   const now = Date.now();
 
@@ -469,8 +469,9 @@ export function Kanban({ snapshot, config, repoId, query, onReload }: { snapshot
   const [creating, setCreating] = useState<{ preselected?: string } | null>(null);
 
   const stats = boardStats(cards, visible);
-  // The Archived column's candidates: with Hide merged on, only archives that still have to be pushed or merged.
-  const archivedCards = visible.filter((c) => c.column === "Archived" && (!filters.hideMerged || archivePending(c, worktrees)));
+  // The Archived column's candidates: with Hide merged on, only archives that still have to be pushed or merged, and
+  // those whose change still has a running session.
+  const archivedCards = visible.filter((c) => c.column === "Archived" && archivedShown(c, filters.hideMerged, worktrees, sessions));
   // What the columns on screen hold: archived cards only while their column is shown, and at most its bound.
   const archivedVisible = archivedCards.length;
   const nonArchived = visible.filter((c) => c.column !== "Archived").length;
