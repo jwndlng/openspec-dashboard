@@ -4,6 +4,7 @@ import type { Config, DiscoveredRepo, DiscoverResult, IntegratableRepo, RepoConf
 import { AgentSettings } from "./agentSettings.tsx";
 import { api, ApiError } from "./api.ts";
 import { EnvironmentPanel } from "./environment.tsx";
+import { labelSuggestions, RepoLabelsEditor } from "./labels.tsx";
 import { environmentAttention, environmentCount, type EnvironmentState } from "./environmentState.ts";
 import { SettingsNav, type SettingsSection, SettingsSections, useSectionNav } from "./settingsNav.tsx";
 import { SharedConfigPanel } from "./sharedConfig.tsx";
@@ -213,7 +214,7 @@ export function Settings({ config, snapshot, onSaved, onRescan, environment, onR
       content: (
         <section class="panel">
           <h2>Tracked repositories · {enabledCount} of {draft.repos.length} enabled</h2>
-          <p class="hint">Only enabled repositories are scanned and shown on the board. Names are display-only. Forgetting (×) a repository returns it to Unmanaged projects on Projects.</p>
+          <p class="hint">Only enabled repositories are scanned and shown on the board. Names and labels are display-only; labels marked with the scan icon were detected from the repository's files and can be hidden here. Forgetting (×) a repository returns it to Unmanaged projects on Projects.</p>
           <div class="list">
             {draft.repos.map((repo) => (
               <div class={`item ${repo.enabled ? "" : "off"}`} key={repo.id}>
@@ -227,6 +228,12 @@ export function Settings({ config, snapshot, onSaved, onRescan, environment, onR
                 <button type="button" class="btn sm ghost" title="forget this repository" onClick={() => update({ repos: draft.repos.filter((r) => r.id !== repo.id) })}>
                   ×
                 </button>
+                <RepoLabelsEditor
+                  repo={repo}
+                  detected={snapshot?.repos.find((r) => r.id === repo.id)?.detectedLabels ?? []}
+                  suggestions={labelSuggestions(draft.repos, repo.id)}
+                  onChange={(patch) => updateRepo(repo.id, patch)}
+                />
               </div>
             ))}
             {draft.repos.length === 0 && <span class="hint">Nothing tracked yet — enable discovered repositories on Projects.</span>}

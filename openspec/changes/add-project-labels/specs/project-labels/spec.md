@@ -136,8 +136,8 @@ The labels displayed for a repository SHALL be its custom labels in the order th
 detected labels that are not hidden and not equal (ignoring case) to one of its custom labels, sorted by name. They
 SHALL be shown on the repository's overview row, on its overview tile and in its repository board header. A detected
 label SHALL be distinguishable from a custom label by an icon and by a tooltip naming the marker that produced it, not
-by colour alone. When labels do not fit, the row SHALL show as many as fit and a `+<n>` indicator whose tooltip lists
-the rest; the tile and the board header SHALL wrap. A repository with no label SHALL show nothing in their place.
+by colour alone. A table row SHALL show at most three labels and, when there are more, a `+<n>` indicator whose
+tooltip lists the rest; the tile and the board header SHALL show every label, wrapping. A repository with no label SHALL show nothing in their place.
 
 #### Scenario: Custom and detected labels together
 - **WHEN** `alpha-infra` carries the custom label `client` and is detected as `terraform`
@@ -147,6 +147,10 @@ the rest; the tile and the board header SHALL wrap. A repository with no label S
 #### Scenario: Custom label shadows a detected one
 - **WHEN** `beta-soc` carries the custom label `Go` and is detected as `go`
 - **THEN** one label `Go` is shown, as a custom label
+
+#### Scenario: More labels than a row shows
+- **WHEN** a repository displays five labels
+- **THEN** its row shows the first three and `+2`, whose tooltip names the other two, and its tile shows all five
 
 #### Scenario: No labels
 - **WHEN** a repository has no custom labels and nothing is detected

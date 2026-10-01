@@ -8,7 +8,7 @@ import { buildPullRequests, buildSample, DEMO_AGENT, DEMO_ROOT } from "../src/ui
 import { meterText } from "../src/ui/kanban.tsx";
 import { pullRequestEntries } from "../src/ui/pullRequestsState.ts";
 import { startersFor } from "../src/ui/sessionState.ts";
-import { wipIndicator } from "../src/ui/overviewState.ts";
+import { filterRows, overviewRows, wipIndicator } from "../src/ui/overviewState.ts";
 import { looksLikeRealHome } from "./helpers.ts";
 
 const NOW = Date.parse("2026-06-01T12:00:00.000Z");
@@ -166,4 +166,19 @@ test("the demo's pull requests show every state the view can render, under made-
   expect(groups.open.length).toBeGreaterThan(3);
   expect(groups.closed.length).toBeGreaterThan(1);
   expect(new Set(groups.open.map((e) => e.repoId)).size).toBeGreaterThan(2);
+});
+
+test("the demo shows custom, detected and hidden labels", () => {
+  const rows = overviewRows(sample.snapshot, sample.config);
+  const all = rows.flatMap((r) => r.labels);
+  expect(all.some((l) => l.kind === "custom")).toBe(true);
+  expect(all.some((l) => l.kind === "detected")).toBe(true);
+  // A hidden detected label: detected in the snapshot, hidden in the config, not displayed.
+  const hiding = sample.config.repos.find((r) => r.hiddenLabels?.length);
+  expect(hiding).toBeDefined();
+  const hiddenRepo = sample.snapshot.repos.find((r) => r.id === hiding?.id);
+  expect(hiddenRepo?.detectedLabels?.some((d) => d.label === hiding?.hiddenLabels?.[0])).toBe(true);
+  expect(rows.find((r) => r.id === hiding?.id)?.labels.some((l) => l.label === hiding?.hiddenLabels?.[0])).toBe(false);
+  // A label shared by several repositories, so the filter has something to narrow.
+  expect(filterRows(rows, "", false, ["client"]).length).toBeGreaterThanOrEqual(2);
 });

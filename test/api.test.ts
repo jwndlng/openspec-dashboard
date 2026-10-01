@@ -1,10 +1,10 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { type AppState, createFetchHandler, crossSiteRefusal } from "../src/server/api.ts";
 import { readSnapshot } from "../src/server/cache.ts";
 import { defaultConfig, newRepoConfig } from "../src/server/config.ts";
-import { cachePath } from "../src/server/paths.ts";
+import { cachePath, configPath } from "../src/server/paths.ts";
 import { Scanner } from "../src/server/scanner.ts";
 import { overviewRows, wipIndicator } from "../src/ui/overviewState.ts";
 import { FIXTURES, useTempHome } from "./helpers.ts";
@@ -74,6 +74,23 @@ test("enabling a repo persists and triggers a scan that populates state", async 
   expect(snap.repos[0].changes.length).toBeGreaterThan(8);
   expect((await (await send("/api/scan", "POST")).json()).started).toBe(true);
   await state.scanner.trigger().done;
+});
+
+test("changing only labels saves without a scan; an invalid label is refused and changes nothing", async () => {
+  const [repo] = state.config.repos;
+  const labelled = { ...state.config, repos: [{ ...repo, labels: ["client", "infra"], hiddenLabels: ["docker"] }] };
+  const res = await send("/api/config", "PUT", JSON.stringify(labelled));
+  expect(res.status).toBe(200);
+  expect(state.scanner.scanning).toBe(false);
+  const stored = JSON.parse(await readFile(configPath(), "utf8"));
+  expect(stored.repos[0].labels).toEqual(["client", "infra"]);
+  expect(stored.repos[0].hiddenLabels).toEqual(["docker"]);
+
+  const refused = await send("/api/config", "PUT", JSON.stringify({ ...labelled, repos: [{ ...labelled.repos[0], labels: ["Infra", "infra"] }] }));
+  expect(refused.status).toBe(400);
+  expect((await refused.json()).issues.join(" ")).toContain('demo-ops: label "infra" is listed twice');
+  expect(state.config.repos[0].labels).toEqual(["client", "infra"]);
+  expect(JSON.parse(await readFile(configPath(), "utf8")).repos[0].labels).toEqual(["client", "infra"]);
 });
 
 const discover = (body?: unknown) =>

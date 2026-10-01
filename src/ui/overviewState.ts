@@ -1,5 +1,6 @@
 // Projects overview: URL state, row derivation and sorting. Pure, shared by the view and its tests.
 import { isComplete } from "../shared/columns.ts";
+import { type DisplayedLabel, displayedLabels, labelKey } from "../shared/labels.ts";
 import type { Config, DiscoveredRepo, DiscoverResult, RepoSharedConfig, RepoSnapshot, Snapshot, WorkInProgress, Worktree } from "../shared/types.ts";
 
 /**
@@ -23,6 +24,8 @@ export interface OverviewState {
   /** Only repositories with checkouts needing attention. */
   wip: boolean;
   view: OverviewLayout;
+  /** Only repositories displaying every one of these labels (ignoring case). Absent when no label is filtered. */
+  labels?: string[];
 }
 
 export const SORT_KEYS: SortKey[] = ["updated", "name", "open", "archive", "wip"];
@@ -41,7 +44,35 @@ export function parseOverviewState(search: string): OverviewState {
   const rawDir = p.get("dir");
   const dir = rawDir === "asc" || rawDir === "desc" ? rawDir : naturalDir(sort);
   // Anything but `tiles` is the table, so an unknown layout falls back to the default.
-  return { sort, dir, q: p.get("q") ?? "", wip: p.get("wip") === "1", view: p.get("view") === "tiles" ? "tiles" : "table" };
+  const state: OverviewState = { sort, dir, q: p.get("q") ?? "", wip: p.get("wip") === "1", view: p.get("view") === "tiles" ? "tiles" : "table" };
+  const labels = uniqueLabels(p.getAll("label"));
+  return labels.length ? { ...state, labels } : state;
+}
+
+/** Trimmed, non-empty, each once ignoring case; the first spelling wins. */
+function uniqueLabels(labels: string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const raw of labels) {
+    const label = raw.trim();
+    if (!label || seen.has(labelKey(label))) continue;
+    seen.add(labelKey(label));
+    out.push(label);
+  }
+  return out;
+}
+
+/** Adds a label to the filter, or removes it when it is already there (ignoring case). */
+export function toggleLabel(state: OverviewState, label: string): OverviewState {
+  const current = state.labels ?? [];
+  const active = current.some((l) => labelKey(l) === labelKey(label));
+  const labels = active ? current.filter((l) => labelKey(l) !== labelKey(label)) : [...current, label];
+  const { labels: _old, ...rest } = state;
+  return labels.length ? { ...rest, labels } : rest;
+}
+
+export function isLabelActive(state: OverviewState, label: string): boolean {
+  return (state.labels ?? []).some((l) => labelKey(l) === labelKey(label));
 }
 
 /** Defaults are omitted so a plain `/` stays a plain `/`. */
@@ -52,6 +83,7 @@ export function serializeOverviewState(s: OverviewState): string {
   if (s.q) p.set("q", s.q);
   if (s.wip) p.set("wip", "1");
   if (s.view !== "table") p.set("view", s.view);
+  for (const label of s.labels ?? []) p.append("label", label);
   const out = p.toString();
   return out ? `?${out}` : "";
 }
@@ -85,6 +117,8 @@ export interface OverviewRow {
   workInProgress?: WorkInProgress;
   /** Every checkout of the repository, the main one included. */
   worktrees: Worktree[];
+  /** Custom labels from the config, then detected ones (`displayedLabels`). */
+  labels: DisplayedLabel[];
 }
 
 /** Checkouts needing attention: uncommitted plus unpushed plus stale. 0 without a summary. */
@@ -153,7 +187,8 @@ function addHints(rows: Hinted[]): void {
   }
 }
 
-export function overviewRows(snapshot: Snapshot): OverviewRow[] {
+export function overviewRows(snapshot: Snapshot, config?: Config | null): OverviewRow[] {
+  const configured = new Map((config?.repos ?? []).map((r) => [r.id, r]));
   const rows = snapshot.repos.map((repo): OverviewRow => {
     const stageCounts: Record<string, number> = {};
     let open = 0;
@@ -187,6 +222,7 @@ export function overviewRows(snapshot: Snapshot): OverviewRow[] {
       currentBranch: repo.currentBranch,
       defaultBranch: repo.defaultBranch,
       onDefaultBranch: repo.onDefaultBranch,
+      labels: displayedLabels(configured.get(repo.id), repo.detectedLabels),
     };
   });
   addHints(rows);
@@ -277,10 +313,39 @@ export function matchesSearch(entry: Pick<Hinted, "name" | "hint">, q: string): 
   return !needle || entry.name.toLowerCase().includes(needle) || (entry.hint?.toLowerCase().includes(needle) ?? false);
 }
 
-/** Search and the work-in-progress filter combine. */
-export function filterRows(rows: OverviewRow[], q: string, wip = false): OverviewRow[] {
-  return rows.filter((r) => (!wip || attentionCount(r) > 0) && matchesSearch(r, q));
+/** Whether the row displays every one of the labels, ignoring case. */
+export function hasLabels(row: Pick<OverviewRow, "labels">, labels: string[] = []): boolean {
+  const own = new Set(row.labels.map((l) => labelKey(l.label)));
+  return labels.every((l) => own.has(labelKey(l)));
 }
+
+/** Search, the work-in-progress filter and the label filter combine. */
+export function filterRows(rows: OverviewRow[], q: string, wip = false, labels: string[] = []): OverviewRow[] {
+  return rows.filter((r) => (!wip || attentionCount(r) > 0) && hasLabels(r, labels) && matchesSearch(r, q));
+}
+
+export interface LabelOption {
+  label: string;
+  /** Repositories displaying it. 0 for an active label from the URL that no repository displays. */
+  count: number;
+}
+
+/** The label filter's choices: every label any row displays, each once ignoring case, plus active labels nothing displays. */
+export function labelOptions(rows: OverviewRow[], active: string[] = []): LabelOption[] {
+  const options = new Map<string, LabelOption>();
+  for (const row of rows) {
+    for (const key of new Set(row.labels.map((l) => labelKey(l.label)))) {
+      const label = row.labels.find((l) => labelKey(l.label) === key)?.label ?? key;
+      const seen = options.get(key);
+      options.set(key, { label: seen?.label ?? label, count: (seen?.count ?? 0) + 1 });
+    }
+  }
+  for (const label of active) if (!options.has(labelKey(label))) options.set(labelKey(label), { label, count: 0 });
+  return [...options.values()].sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: "base" }));
+}
+
+/** How many labels a table row shows before the rest moves into a `+<n>` indicator. */
+export const ROW_LABEL_LIMIT = 3;
 
 /** A tile's monogram: the initials of up to two words of the repository name (`atlas-api` → `AA`, `docs` → `D`). */
 export function monogram(name: string): string {

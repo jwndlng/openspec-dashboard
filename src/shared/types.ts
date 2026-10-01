@@ -162,6 +162,9 @@ export interface RepoSnapshot {
   lastUpdatedAt?: string;
   /** Shared profiles found in this repository's `openspec/config.yaml`. Absent until the dashboard has at least one profile. */
   sharedConfig?: RepoSharedConfig;
+  /** Technology labels derived from marker files in the project folder (`shared/labels.ts`). Absent when the scan
+   *  failed and in snapshots cached by older versions. */
+  detectedLabels?: DetectedLabel[];
   changes: ChangeSnapshot[];
 }
 
@@ -179,6 +182,16 @@ export interface RepoConfig {
   /** Per-repository agent-session settings. Absent means "included": once sessions are enabled globally they apply to
    *  every tracked repository unless it is switched off here. */
   agent?: RepoAgentConfig;
+  /** The user's own labels, in the order given. Absent when there are none. */
+  labels?: string[];
+  /** Detected labels the user hid for this repository (compared ignoring case). Absent when there are none. */
+  hiddenLabels?: string[];
+}
+
+/** A label the scan derived from the repository's files; `marker` says what produced it, e.g. "`.tf` files". */
+export interface DetectedLabel {
+  label: string;
+  marker: string;
 }
 
 export interface RepoAgentConfig {

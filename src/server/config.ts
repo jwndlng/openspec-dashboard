@@ -3,6 +3,7 @@ import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { basename, dirname, isAbsolute } from "node:path";
 import { z } from "zod";
 import { CLAUDE_PROFILE, defaultAgentSessions, FORMER_PROMPTS } from "../shared/agentDefaults.ts";
+import { MAX_LABEL_LENGTH, MAX_LABELS } from "../shared/labels.ts";
 import type { Config, PromptKey, RepoConfig } from "../shared/types.ts";
 import { canonicalPath, configPath, dashboardHome, expandPath } from "./paths.ts";
 
@@ -148,13 +149,37 @@ const agentSessionsSchema = z
     if (new Set(shortcutIds).size !== shortcutIds.length) ctx.addIssue({ code: "custom", path: ["shortcuts"], message: "shortcut ids must be unique" });
   });
 
+const labelSchema = z
+  .string()
+  .trim()
+  .min(1, { message: "a label cannot be empty" })
+  .max(MAX_LABEL_LENGTH, { message: `a label has at most ${MAX_LABEL_LENGTH} characters` })
+  .refine(isSingleLine, { message: "a label cannot contain control characters" })
+  .refine((v) => !v.includes(","), { message: "a label cannot contain a comma" });
+
+// Optional with no default: a config saved before labels existed loads, and saves, without the key.
+const labelsSchema = z.array(labelSchema).max(MAX_LABELS, { message: `at most ${MAX_LABELS} labels per repository` }).optional();
+
 const repoSchema = z.object({
   id: z.string().regex(/^[a-f0-9]{12}$/),
   path: absolutePath,
   name: z.string().trim().min(1),
   enabled: z.boolean(),
   agent: z.object({ enabled: z.boolean(), agentId: z.string().optional() }).optional(),
+  labels: labelsSchema,
+  hiddenLabels: labelsSchema,
 });
+
+/** The first label that repeats another one of the list, ignoring case. */
+function duplicateLabel(labels: string[] | undefined): string | undefined {
+  const seen = new Set<string>();
+  for (const label of labels ?? []) {
+    const key = label.toLowerCase();
+    if (seen.has(key)) return label;
+    seen.add(key);
+  }
+  return undefined;
+}
 
 export const configSchema = z
   .object({
@@ -175,6 +200,10 @@ export const configSchema = z
       ids.add(repo.id);
       if (repo.agent?.agentId && !cfg.agentSessions.agents.some((a) => a.id === repo.agent?.agentId)) {
         ctx.addIssue({ code: "custom", path: ["repos", i, "agent", "agentId"], message: "unknown agent" });
+      }
+      for (const key of ["labels", "hiddenLabels"] as const) {
+        const dup = duplicateLabel(repo[key]);
+        if (dup !== undefined) ctx.addIssue({ code: "custom", path: ["repos", i, key], message: `${repo.name}: label "${dup}" is listed twice` });
       }
       if (repo.id !== repoId(repo.path)) {
         ctx.addIssue({ code: "custom", path: ["repos", i, "id"], message: "id does not match path" });

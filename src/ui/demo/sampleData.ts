@@ -6,6 +6,7 @@
 // same rules the scanner uses, so the sample cannot disagree with the board.
 import { DEFAULT_SHORTCUTS } from "../../shared/agentDefaults.ts";
 import { deriveStage } from "../../shared/columns.ts";
+import { detectLabels } from "../../shared/labels.ts";
 import type { ActivityEvent, AgentProfile, ArtifactStatus, ChangeSnapshot, CheckoutStatus, Config, EnvironmentCheck, EnvironmentReport, IntegratableRepo, PullRequest, PullRequestsResponse, RepoConfig, RepoPullRequests, RepoSnapshot, SharedProfile, Shortcut, Snapshot, Worktree } from "../../shared/types.ts";
 import { summarizeWorkInProgress } from "../../shared/workInProgress.ts";
 
@@ -74,6 +75,12 @@ interface SampleRepo {
    * offers to set it up, and what is described here is what it looks like once that is done.
    */
   integratable?: true;
+  /** Marker files at the top of the project folder; their labels come from the real rule table. */
+  markers?: string[];
+  /** Custom labels, as typed in Settings. */
+  labels?: string[];
+  /** Detected labels the user hid. */
+  hiddenLabels?: string[];
 }
 
 const CLEAN: CheckoutStatus = { modified: 0, untracked: 0, conflicts: 0 };
@@ -169,6 +176,7 @@ const REPOS: SampleRepo[] = [
   {
     id: "a71c02e9",
     name: "atlas-api",
+    markers: ["go.mod", "Dockerfile"], labels: ["client"],
     branch: "main",
     updated: 2,
     worktrees: [
@@ -204,6 +212,7 @@ const REPOS: SampleRepo[] = [
   {
     id: "4be0d5a3",
     name: "harbor-web",
+    markers: ["package.json", "tsconfig.json", "Dockerfile"], labels: ["client", "frontend"],
     branch: "feat/redesign-settings-page",
     main: "uncommitted",
     updated: 5,
@@ -229,6 +238,7 @@ const REPOS: SampleRepo[] = [
   {
     id: "c9317f64",
     name: "lantern-infra",
+    markers: ["main.tf", "Chart.yaml", "Dockerfile"], labels: ["platform"], hiddenLabels: ["docker"],
     branch: "main",
     worktrees: [
       ["chore/upgrade-terraform", "clean"],
@@ -263,6 +273,7 @@ const REPOS: SampleRepo[] = [
   {
     id: "2f86b0cd",
     name: "quill-docs",
+    markers: ["package.json"], labels: ["docs"],
     branch: "main",
     updated: 70,
     changes: [
@@ -281,6 +292,7 @@ const REPOS: SampleRepo[] = [
   {
     id: "e05a9b17",
     name: "ember-mobile",
+    markers: ["Package.swift", "build.gradle.kts"], labels: ["client"],
     branch: "release/4.2",
     updated: 9,
     main: "behind",
@@ -307,6 +319,7 @@ const REPOS: SampleRepo[] = [
   {
     id: "6d44c1f8",
     name: "orbit-data",
+    markers: ["pyproject.toml", "Dockerfile"],
     branch: "main",
     worktrees: [["feat/backfill-events", "unknown"]],
     updated: 120,
@@ -420,6 +433,8 @@ export function buildSample(now: number): Sample {
       worktrees,
       workInProgress: summarizeWorkInProgress(worktrees),
       lastUpdatedAt: iso(r.updated * HOUR),
+      // A failed scan has no detected labels, exactly as on the server.
+      detectedLabels: r.error === undefined ? detectLabels((r.markers ?? []).map((name) => ({ name, kind: "file" }))) : undefined,
       changes: [...open, ...archived],
     } satisfies RepoSnapshot;
   });
@@ -428,7 +443,7 @@ export function buildSample(now: number): Sample {
     version: 1,
     scanRoots: [DEMO_ROOT],
     ignorePaths: [],
-    repos: REPOS.map((r) => ({ id: r.id, path: repoPath(r.name), name: r.name, enabled: true })),
+    repos: REPOS.map((r) => ({ id: r.id, path: repoPath(r.name), name: r.name, enabled: true, ...(r.labels && { labels: r.labels }), ...(r.hiddenLabels && { hiddenLabels: r.hiddenLabels }) })),
     pollIntervalSeconds: 60,
     port: 4711,
     // On by default, so the session features show without setup. The agent is fictional; nothing is ever started.

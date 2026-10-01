@@ -1,12 +1,12 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { appendFile, mkdir, realpath, rm, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { defaultConfig, newRepoConfig } from "../src/server/config.ts";
 import type { ParsedStatus } from "../src/server/git.ts";
-import { MAX_INSPECTED_WORKTREES, PROMPT_LIMIT_BYTES, Scanner, scanRepo } from "../src/server/scanner.ts";
+import { MAX_INSPECTED_WORKTREES, PROMPT_LIMIT_BYTES, Scanner, scanLabels, scanRepo } from "../src/server/scanner.ts";
 import { LocalRepoSource } from "../src/server/source.ts";
 import type { Worktree } from "../src/shared/types.ts";
-import { FIXTURES, gitIn, tempDir, useTempHome } from "./helpers.ts";
+import { FIXTURES, gitIn, tempDir, treeFingerprint, useTempHome } from "./helpers.ts";
 
 let cleanup: () => Promise<void>;
 beforeAll(async () => {
@@ -410,4 +410,59 @@ test("scanner reports prompt.md: absent, small, oversized, and does not affect a
   expect(oversized.warnings?.some((w) => w.includes("larger than"))).toBe(true);
 
   await rm(root, { recursive: true, force: true });
+});
+
+// --- Detected labels: marker files written into temporary repositories, never into the shared fixtures. ---
+
+async function labelledRepo(files: string[], git: boolean): Promise<string> {
+  const repo = join(await realpath(await tempDir("osd-labels-")), "demo-ops");
+  await mkdir(join(repo, "openspec", "changes"), { recursive: true });
+  for (const file of files) {
+    await mkdir(join(repo, file, ".."), { recursive: true });
+    await writeFile(join(repo, file), "");
+  }
+  if (git) {
+    await gitIn(repo, "init", "-q");
+    await gitIn(repo, "add", "-A");
+    await gitIn(repo, "commit", "-q", "-m", "init");
+  }
+  return repo;
+}
+
+test("labels: markers at the top and one level down are detected, deeper and skipped folders are not", async () => {
+  const repo = await labelledRepo(["main.tf", "service/go.mod", "deploy/env/prod/Cargo.toml", "node_modules/lib/Gemfile", ".github/Dockerfile", "openspec/Chart.yaml"], true);
+  const before = await treeFingerprint(repo);
+  const snap = await scanRepo(newRepoConfig(repo, true));
+  expect(snap.detectedLabels).toEqual([
+    { label: "go", marker: "`go.mod`" },
+    { label: "terraform", marker: "`.tf` files" },
+  ]);
+  expect(await treeFingerprint(repo)).toBe(before);
+});
+
+test("labels: a non-git folder is detected the same way, and a symbolic link is not followed", async () => {
+  const repo = await labelledRepo(["package.json", "tsconfig.json"], false);
+  const elsewhere = await labelledRepo(["go.mod"], false);
+  await symlink(elsewhere, join(repo, "linked"));
+  await symlink(join(elsewhere, "go.mod"), join(repo, "go.mod"));
+  const snap = await scanRepo(newRepoConfig(repo, true));
+  expect(snap.isGit).toBe(false);
+  expect(snap.detectedLabels?.map((d) => d.label)).toEqual(["javascript", "typescript"]);
+});
+
+test("labels: detection only lists directories and follows the repository", async () => {
+  const repo = await labelledRepo(["Gemfile"], false);
+  const listed: string[] = [];
+  const source = new LocalRepoSource(repo);
+  const onlyListing = { listEntries: (dir: string) => (listed.push(dir), source.listEntries(dir)) };
+  expect((await scanLabels(onlyListing, repo)).map((d) => d.label)).toEqual(["ruby"]);
+  expect(listed).toEqual([repo]); // `openspec/` is skipped
+  await writeFile(join(repo, "Dockerfile"), "");
+  expect((await scanRepo(newRepoConfig(repo, true))).detectedLabels?.map((d) => d.label)).toEqual(["docker", "ruby"]);
+});
+
+test("labels: a failed scan has none", async () => {
+  const snap = await scanRepo(newRepoConfig("/w/acme/does-not-exist", true));
+  expect(snap.ok).toBe(false);
+  expect(snap.detectedLabels).toBeUndefined();
 });

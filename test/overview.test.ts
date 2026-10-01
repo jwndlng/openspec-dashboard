@@ -4,7 +4,7 @@ import { defaultAgentSessions } from "../src/server/config.ts";
 import { checkoutMarkers, hasCheckoutInfo } from "../src/ui/checkoutMarkers.ts";
 import { cdCommand } from "../src/ui/format.ts";
 import { checkoutsNeedingAttention } from "../src/ui/checkout.tsx";
-import { attentionCount, checkoutSummary, enabledOnly, filterRows, hintAcross, matchesSearch, monogram, overviewRows, parseOverviewState, pendingRows, serializeOverviewState, sortRows, toggleSort, untrackedEntries, wipIndicator } from "../src/ui/overviewState.ts";
+import { attentionCount, checkoutSummary, enabledOnly, filterRows, hintAcross, isLabelActive, labelOptions, toggleLabel, matchesSearch, monogram, overviewRows, parseOverviewState, pendingRows, serializeOverviewState, sortRows, toggleSort, untrackedEntries, wipIndicator } from "../src/ui/overviewState.ts";
 import { repoPath, routeFromPath } from "../src/ui/routes.ts";
 import { isComplete } from "../src/shared/columns.ts";
 
@@ -370,4 +370,63 @@ test("path hints are computed across rows, pending rows and untracked entries, a
   expect(matchesSearch(untracked[0], "chat")).toBe(true);
   expect(matchesSearch(untracked[0], "acme")).toBe(false);
   expect(matchesSearch(untracked[0], "  ")).toBe(true);
+});
+
+// --- Labels: custom from the config, detected from the snapshot, AND-filtered. ---
+
+const labelled: Snapshot = {
+  generatedAt: "2026-10-01T00:00:00Z",
+  repos: [
+    repo("a", "alpha-infra", [], { detectedLabels: [{ label: "terraform", marker: "`.tf` files" }] }),
+    repo("b", "beta-soc", [], { detectedLabels: [{ label: "go", marker: "`go.mod`" }, { label: "docker", marker: "`Dockerfile`" }] }),
+    repo("c", "demo-ops", [], { detectedLabels: [{ label: "go", marker: "`go.mod`" }, { label: "terraform", marker: "`.tf` files" }] }),
+  ],
+};
+const labelConfig = {
+  repos: [
+    { id: "a", path: "/w/alpha-infra", name: "alpha-infra", enabled: true, labels: ["client"] },
+    { id: "b", path: "/w/beta-soc", name: "beta-soc", enabled: true, hiddenLabels: ["docker"] },
+    { id: "c", path: "/w/demo-ops", name: "demo-ops", enabled: true, labels: ["Go"] },
+  ],
+} as unknown as Config;
+const names = (rows: { name: string }[]) => rows.map((r) => r.name);
+
+test("labels: rows carry custom labels first, then detected ones neither hidden nor shadowed", () => {
+  const [a, b, c] = overviewRows(labelled, labelConfig);
+  expect(a.labels.map((l) => `${l.kind}:${l.label}`)).toEqual(["custom:client", "detected:terraform"]);
+  expect(b.labels.map((l) => l.label)).toEqual(["go"]);
+  expect(c.labels.map((l) => `${l.kind}:${l.label}`)).toEqual(["custom:Go", "detected:terraform"]);
+  expect(overviewRows(labelled)[0].labels.map((l) => l.label)).toEqual(["terraform"]);
+});
+
+test("labels: one label, several with AND, combined with search, and an unknown label listing nothing", () => {
+  const rows = overviewRows(labelled, labelConfig);
+  expect(names(filterRows(rows, "", false, ["terraform"]))).toEqual(["alpha-infra", "demo-ops"]);
+  expect(names(filterRows(rows, "", false, ["terraform", "CLIENT"]))).toEqual(["alpha-infra"]);
+  expect(names(filterRows(rows, "demo", false, ["go"]))).toEqual(["demo-ops"]);
+  expect(names(filterRows(rows, "", false, ["docker"]))).toEqual([]);
+  expect(filterRows(rows, "", false, ["cobol"])).toEqual([]);
+  expect(filterRows(rows, "", false, [])).toHaveLength(3);
+});
+
+test("labels: the filter offers every displayed label once, plus active labels nothing displays", () => {
+  const rows = overviewRows(labelled, labelConfig);
+  expect(labelOptions(rows, ["cobol"])).toEqual([
+    { label: "client", count: 1 },
+    { label: "cobol", count: 0 },
+    { label: "go", count: 2 },
+    { label: "terraform", count: 2 },
+  ]);
+});
+
+test("labels: URL state uses repeated label parameters and leaves label-free URLs unchanged", () => {
+  expect(parseOverviewState("?label=terraform&label=client")).toEqual({ sort: "updated", dir: "desc", q: "", wip: false, view: "table", labels: ["terraform", "client"] });
+  expect(parseOverviewState("?label=Go&label=go&label=%20")).toEqual({ sort: "updated", dir: "desc", q: "", wip: false, view: "table", labels: ["Go"] });
+  const state = parseOverviewState("?label=go&q=demo&view=tiles");
+  expect(serializeOverviewState(state)).toBe("?q=demo&view=tiles&label=go");
+  expect(serializeOverviewState(toggleLabel(state, "GO"))).toBe("?q=demo&view=tiles");
+  expect("labels" in toggleLabel(state, "go")).toBe(false);
+  const added = toggleLabel(parseOverviewState(""), "client");
+  expect(serializeOverviewState(added)).toBe("?label=client");
+  expect(isLabelActive(added, "Client")).toBe(true);
 });

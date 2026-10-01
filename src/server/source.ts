@@ -3,6 +3,7 @@
 import type { Dirent } from "node:fs";
 import { readdir, readFile, realpath, stat } from "node:fs/promises";
 import { dirname, join, relative } from "node:path";
+import type { LabelEntry } from "../shared/labels.ts";
 import { CHANGE_NAME_PATTERN, type Worktree } from "../shared/types.ts";
 import { checkoutStatus, currentBranch, defaultBranch, hasRemoteRefs, isGitRepo, lastCommitDate, localOnlyCommits, type ParsedStatus, statusPaths, subdirectory, worktrees } from "./git.ts";
 
@@ -55,6 +56,8 @@ export interface RepoSource {
   readFileInfo(absPath: string): Promise<FileInfo | undefined>;
   /** Names of the directories directly inside `absDir`; empty when it does not exist. */
   listDirs(absDir: string): Promise<string[]>;
+  /** Names and kinds of the entries directly inside `absDir`, without following symbolic links; empty on failure. */
+  listEntries(absDir: string): Promise<LabelEntry[]>;
   newestMtime(dir: string): Promise<string | undefined>;
   isGit(): Promise<boolean>;
   branch(): Promise<string | undefined>;
@@ -140,6 +143,16 @@ export class LocalRepoSource implements RepoSource {
 
   listDirs(absDir: string): Promise<string[]> {
     return listDirs(absDir);
+  }
+
+  async listEntries(absDir: string): Promise<LabelEntry[]> {
+    try {
+      const entries = await readdir(absDir, { withFileTypes: true });
+      // A Dirent describes the entry itself: a symbolic link is neither a file nor a directory here.
+      return entries.map((e) => ({ name: e.name, kind: e.isFile() ? "file" : e.isDirectory() ? "dir" : "other" }));
+    } catch {
+      return [];
+    }
   }
 
   async readText(absPath: string): Promise<string | undefined> {
