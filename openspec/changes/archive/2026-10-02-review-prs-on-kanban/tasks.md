@@ -19,4 +19,4 @@
 ## 4. Verification
 
 - [x] 4.1 Run `bun run check` (lint, typecheck, all tests) and verify it passes
-- [~] 4.2 Run `bun run dev`, open the combined board with the pull-request cache present, and verify an archived change whose `feat/<name>` or `chore/archive-<name>` PR is cached shows `PR #<n>` on its card and in its detail header, and that a change without such a PR shows nothing
+- [x] 4.2 Run `bun run dev`, open the combined board with the pull-request cache present, and verify an archived change whose `feat/<name>` or `chore/archive-<name>` PR is cached shows `PR #<n>` on its card and in its detail header, and that a change without such a PR shows nothing
