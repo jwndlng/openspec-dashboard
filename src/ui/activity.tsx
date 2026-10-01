@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "preact/hooks";
+import { RETENTION_DAYS } from "../shared/activity.ts";
 import type { ActivityEvent, Snapshot } from "../shared/types.ts";
 import { describe, EMPTY_ACTIVITY_FILTERS, GROUP_LABELS, GROUP_ORDER, groupByDay, kindsFor, parseActivityFilters, serializeActivityFilters, timeOfDay, tone, type ActivityFilters } from "./activityState.ts";
 import { api } from "./api.ts";
@@ -9,6 +10,8 @@ import { repoPath } from "./routes.ts";
 import { currentQuery, href, navigate, replaceQuery } from "./url.ts";
 
 const PAGE = 100;
+/** Older entries are not missing by accident: the log drops them (activity-log-retention). */
+const KEPT_FOR = `Activity is kept for ${RETENTION_DAYS} days.`;
 
 /** Sets --repo-hue for the `repo-tint` class. */
 const repoHue = (hue: number) => ({ "--repo-hue": String(hue) });
@@ -113,7 +116,7 @@ export function Activity({ snapshot, onSeen }: { snapshot: Snapshot | null; onSe
             <p class="hint">
               {filtered
                 ? "Try another repository or kind of event."
-                : "Activity appears here as the dashboard observes changes: a change created or moving to another column, tasks being ticked, archives, and agent sessions."}
+                : `Activity appears here as the dashboard observes changes: a change created or moving to another column, tasks being ticked, archives, and agent sessions. ${KEPT_FOR}`}
             </p>
           </div>
         )}
@@ -164,6 +167,7 @@ export function Activity({ snapshot, onSeen }: { snapshot: Snapshot | null; onSe
             {loadingOlder ? "Loading…" : "Load older"}
           </button>
         )}
+        {!nextBefore && !!events?.length && <p class="hint activity-end">{KEPT_FOR}</p>}
       </div>
     </>
   );

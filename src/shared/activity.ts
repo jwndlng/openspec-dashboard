@@ -4,6 +4,19 @@ import type { ActivityEvent, ActivityKind, ActivityPage } from "./types.ts";
 /** Task ticks of one change this close together are shown as one entry. */
 export const COLLAPSE_WINDOW_MS = 60 * 60 * 1000;
 
+/** The log keeps only events that happened within this long; older ones are not shown, counted or kept on disk. */
+export const RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
+export const RETENTION_DAYS = RETENTION_MS / (24 * 60 * 60 * 1000);
+
+/**
+ * The events still within the retention window at `nowMs`, in their order. Measured by `at` (when it happened, which
+ * is what the feed groups by); an `at` that does not parse counts as expired, one in the future is kept.
+ */
+export function retained(entries: readonly ActivityEvent[], nowMs: number): ActivityEvent[] {
+  const cutoff = nowMs - RETENTION_MS;
+  return entries.filter((e) => Date.parse(e.at) >= cutoff);
+}
+
 /** Newest first: by when it happened, then by when it was noticed. */
 export function byNewest(a: ActivityEvent, b: ActivityEvent): number {
   if (a.at !== b.at) return a.at < b.at ? 1 : -1;
