@@ -27,7 +27,7 @@ The dashboard SHALL store its configuration in `~/.openspec-dashboard/config.jso
 
 ### Requirement: Discovery finds OpenSpec-enabled repositories under configured roots
 
-The dashboard SHALL discover repositories by walking each given scan root to a bounded depth (default 4) and reporting directories that contain `openspec/config.yaml`. Scan roots MUST be canonicalised before walking so that every directory is reported at most once under its canonical path, however the roots were spelled or however they overlap. The walk MUST skip `node_modules`, `.git`, `.venv`, `target` and `dist` directories, MUST skip every directory that equals or lies below an ignore path, MUST NOT descend into a directory it reported (nested copies are not projects of their own), and MUST NOT report linked git worktrees (directories whose `.git` is a file). Discovery SHALL run whenever the user adds or removes a workspace root or an ignore path in Settings (against the edited values, without requiring a save), when Settings is opened with at least one root configured, and when the user requests it explicitly. Discovery MUST be read-only: it MUST NOT modify the persisted configuration. Alongside those repositories, the same walk SHALL report **integratable** repositories as a separate result: directories with their own `.git` directory and no `openspec/config.yaml`. The walk MUST keep descending into an integratable repository, so which OpenSpec projects it reports is exactly what it was before; an integratable repository that contains a reported OpenSpec project MUST then be dropped from that separate result.
+The dashboard SHALL discover repositories by walking each given scan root to a bounded depth (default 4) and reporting directories that contain `openspec/config.yaml`. Scan roots MUST be canonicalised before walking so that every directory is reported at most once under its canonical path, however the roots were spelled or however they overlap. The walk MUST skip `node_modules`, `.git`, `.venv`, `target` and `dist` directories, MUST skip every directory that equals or lies below an ignore path, MUST NOT descend into a directory it reported (nested copies are not projects of their own), and MUST NOT report linked git worktrees (directories whose `.git` is a file). Discovery SHALL run whenever the user adds or removes a workspace root or an ignore path in Settings (against the edited values, without requiring a save), when Settings is opened with at least one root configured, when the projects overview runs it as the `project-overview` capability specifies (against the saved values), and when the user requests it explicitly. Discovery MUST be read-only: it MUST NOT modify the persisted configuration. Alongside those repositories, the same walk SHALL report **integratable** repositories as a separate result: directories with their own `.git` directory and no `openspec/config.yaml`. The walk MUST keep descending into an integratable repository, so which OpenSpec projects it reports is exactly what it was before; an integratable repository that contains a reported OpenSpec project MUST then be dropped from that separate result.
 
 #### Scenario: Repos are found under multiple roots
 - **WHEN** scan roots are `~/Workspace/alpha` and `~/Workspace/acme` and both contain projects with `openspec/config.yaml`
@@ -63,23 +63,27 @@ The dashboard SHALL discover repositories by walking each given scan root to a b
 
 #### Scenario: Adding a root triggers discovery immediately
 - **WHEN** the user adds `~/Workspace/alpha` as a workspace root in Settings and has not saved
-- **THEN** discovery runs against the edited roots without further user action and the repositories found under `~/Workspace/alpha` are shown as candidates
+- **THEN** discovery runs against the edited roots without further user action and Settings states how many untracked repositories were found
 
 #### Scenario: Removing a root triggers discovery immediately
 - **WHEN** the user removes a workspace root in Settings
-- **THEN** discovery runs against the remaining roots and candidates that were only found under the removed root are no longer shown
+- **THEN** discovery runs against the remaining roots and repositories that were only found under the removed root are no longer counted
 
 #### Scenario: Editing ignore paths triggers discovery immediately
 - **WHEN** the user adds an ignore path in Settings and has not saved
-- **THEN** discovery runs against the edited values and candidates below that path are no longer shown
+- **THEN** discovery runs against the edited values and repositories below that path are no longer counted
 
 #### Scenario: Removing the last root clears candidates
 - **WHEN** the user removes the only workspace root
-- **THEN** no discovery request is made and the candidate list is empty
+- **THEN** no discovery request is made and Settings counts no candidates
 
 #### Scenario: Opening Settings runs discovery
 - **WHEN** the user opens Settings and the config contains at least one workspace root
-- **THEN** discovery runs and candidates are shown without clicking anything
+- **THEN** discovery runs and Settings states how many untracked repositories were found, without clicking anything
+
+#### Scenario: Opening the overview runs discovery
+- **WHEN** the user opens the projects overview and the config contains at least one workspace root
+- **THEN** discovery runs against the saved roots and ignore paths and its result is listed under the overview's Unmanaged projects
 
 #### Scenario: Discovery does not change the config
 - **WHEN** discovery finds repositories that are not in the config
@@ -87,7 +91,7 @@ The dashboard SHALL discover repositories by walking each given scan root to a b
 
 #### Scenario: Only the latest discovery result is shown
 - **WHEN** the user edits the roots twice in quick succession and the first discovery finishes after the second
-- **THEN** the candidate list reflects the second edit only
+- **THEN** the result shown reflects the second edit only
 
 #### Scenario: Integratable repositories are reported alongside candidates
 - **WHEN** a scan root holds `/w/acme/beta-soc` with `openspec/config.yaml` and `/w/acme/chat-groups`, a git repository without it
@@ -99,14 +103,14 @@ The dashboard SHALL discover repositories by walking each given scan root to a b
 
 ### Requirement: Tracking is opt-in per repository
 
-Discovered repositories that are not already in the config SHALL be offered as candidates and MUST NOT be added to the config by discovery. A repository SHALL be added to the config only when the user acts for that one repository: either by enabling that individual candidate, or by starting an integration for that individual integratable repository after which `openspec/config.yaml` appears in it. In both cases it is added with `enabled: true` and its default name. Only repositories with `enabled: true` are scanned and shown on the board. Repositories already present in the config MUST keep their `enabled` state and `name` when discovery runs again and MUST NOT be listed as candidates; this comparison MUST use canonical paths, so a repository tracked under one spelling is never offered again under another. Ignore paths affect discovery only: a repository already in the config stays configured even if it lies below an ignore path.
+Discovered repositories that are not already in the config SHALL be offered as candidates and MUST NOT be added to the config by discovery. A repository SHALL be added to the config only when the user acts for that one repository: either by enabling that individual candidate (on the projects overview, where it takes effect at once), or by starting an integration for that individual integratable repository after which `openspec/config.yaml` appears in it. In both cases it is added with `enabled: true` and its default name. Only repositories with `enabled: true` are scanned and shown on the board. Repositories already present in the config MUST keep their `enabled` state and `name` when discovery runs again and MUST NOT be listed as candidates; this comparison MUST use canonical paths, so a repository tracked under one spelling is never offered again under another. Ignore paths affect discovery only: a repository already in the config stays configured even if it lies below an ignore path.
 
 #### Scenario: Newly discovered repo is only a candidate
 - **WHEN** discovery finds a repository that is not yet in the config
 - **THEN** it is listed as a candidate, is not added to the config, and does not appear on the board
 
 #### Scenario: Enabling a single candidate
-- **WHEN** discovery lists candidates `a`, `b` and `c`, the user enables `b` and saves
+- **WHEN** discovery lists candidates `a`, `b` and `c` and the user enables `b` on the projects overview
 - **THEN** the config contains `b` with `enabled: true`, does not contain `a` or `c`, and `b` no longer appears in the candidate list
 
 #### Scenario: Re-running discovery preserves user choices
@@ -159,11 +163,11 @@ Each repository SHALL have a display `name` defaulting to its directory basename
 
 ### Requirement: Settings view exposes discovery and configuration
 
-The Settings view SHALL allow the user to add or remove scan roots, add or remove ignore paths, re-run discovery on demand, and set the poll interval. It SHALL show tracked repositories (those in the config) separately from discovered candidates: tracked repositories can be toggled, renamed and forgotten; each candidate shows its path, an individual Enable action and an Ignore action that adds the candidate's path to the ignore paths. It SHALL list integratable repositories in a third list below the candidates, under a heading that states the difference rather than implying it — candidates already use OpenSpec and are waiting to be tracked, integratable repositories do not use it yet — each showing its path, an **Integrate** action and the same Ignore action. When two or more listed repositories (tracked, candidate or integratable) share a display name, each of them SHALL show a short hint with the part of its parent path that distinguishes it. The view SHALL state that ignore paths only affect discovery. The view SHALL indicate while discovery is in progress and SHALL show per-root discovery errors. Running discovery MUST NOT save the draft configuration. Saving SHALL persist to config and trigger a scan when the set of enabled repositories changed.
+The Settings view SHALL allow the user to add or remove scan roots, add or remove ignore paths, re-run discovery on demand, and set the poll interval. It SHALL list the tracked repositories (those in the config), which can be toggled, renamed and forgotten. Next to the workspace roots it SHALL state how many untracked repositories the latest discovery run found — candidates and integratable repositories, each counted — with a link to the projects overview, where they are listed, enabled, integrated and ignored; Settings SHALL NOT list candidates or integratable repositories itself. When two or more tracked repositories share a display name, each of them SHALL show a short hint with the part of its parent path that distinguishes it. The view SHALL state that ignore paths only affect discovery. The view SHALL indicate while discovery is in progress and SHALL show per-root discovery errors. Running discovery MUST NOT save the draft configuration. Saving SHALL persist to config and trigger a scan when the set of enabled repositories changed.
 
 #### Scenario: Enabling a repo triggers a scan
-- **WHEN** the user enables a candidate and saves
-- **THEN** the config is persisted and a scan starts so the repo's changes appear on the board without a manual refresh
+- **WHEN** the user ticks a disabled tracked repository in Settings and saves
+- **THEN** the config is persisted and a scan starts so the repository's changes appear on the board without a manual refresh
 
 #### Scenario: Discovery leaves unsaved edits unsaved
 - **WHEN** the user changes the poll interval, then adds a workspace root, and discovery completes
@@ -171,31 +175,35 @@ The Settings view SHALL allow the user to add or remove scan roots, add or remov
 
 #### Scenario: Root error is shown
 - **WHEN** the user adds a workspace root that does not exist
-- **THEN** Settings shows an error for that root next to the roots list and still lists candidates from the other roots
+- **THEN** Settings shows an error for that root next to the roots list and still counts the repositories found under the other roots
+
+#### Scenario: Found repositories point to the overview
+- **WHEN** discovery finds 2 candidates and 1 integratable repository
+- **THEN** Settings states that 2 repositories using OpenSpec and 1 without it are not tracked, links to the projects overview, and lists none of them
 
 #### Scenario: Manual rediscover
-- **WHEN** the user creates a new OpenSpec project under an existing root and clicks Rediscover
-- **THEN** the new project appears as a candidate
+- **WHEN** the user creates a new OpenSpec project under an existing root and clicks Rediscover in Settings
+- **THEN** the number of untracked repositories Settings states includes the new project
 
 #### Scenario: Ignoring a candidate
-- **WHEN** the user clicks Ignore on a candidate
-- **THEN** its path is added to the draft ignore paths, discovery re-runs, the candidate disappears, and nothing is persisted until the user saves
-
-#### Scenario: Same-named repositories are distinguishable
-- **WHEN** candidates `acme/chat-groups` and `ops/repo-mirror/repos/chat-groups` are both listed
-- **THEN** one shows the hint `acme` and the other `ops/repo-mirror/repos`, and a repository with a unique name shows no hint
+- **WHEN** the user adds a candidate's path to the ignore paths in Settings
+- **THEN** the path is added to the draft ignore paths, discovery re-runs, the candidate is no longer counted, and nothing is persisted until the user saves
 
 #### Scenario: Integratable repositories are listed apart from candidates
 - **WHEN** discovery reports both candidates and integratable repositories
-- **THEN** Settings shows them in two lists, the integratable one headed so that it says these repositories do not use OpenSpec yet, each row offering **Integrate** and Ignore
+- **THEN** Settings counts the two apart and lists neither, and the projects overview lists both under Unmanaged projects, each labelled with what it is
 
 #### Scenario: Ignoring an integratable repository
-- **WHEN** the user clicks Ignore on an integratable repository
-- **THEN** its path is added to the draft ignore paths, discovery re-runs, the row disappears, and nothing is persisted until the user saves
+- **WHEN** the user adds an integratable repository's path to the ignore paths in Settings
+- **THEN** discovery re-runs, the repository is no longer counted, and nothing is persisted until the user saves
+
+#### Scenario: Same-named repositories are distinguishable
+- **WHEN** `acme/chat-groups` and `ops/repo-mirror/repos/chat-groups` are both tracked
+- **THEN** one shows the hint `acme` and the other `ops/repo-mirror/repos`, and a repository with a unique name shows no hint
 
 ### Requirement: Repositories sharing a git remote are flagged, never merged
 
-Discovery SHALL determine the `origin` remote URL of every candidate and every configured repository with a read-only git call, normalise it so that SSH and HTTPS forms of the same repository compare equal (ignoring a trailing `.git` and host letter case), and mark each candidate with the other known repositories — tracked or candidate — that share its remote. Settings SHALL show this as an informational badge naming those repositories. The dashboard MUST NOT hide, merge or disable a repository because of its remote. A repository without an `origin` remote, or one that is not a git repository, is never flagged.
+Discovery SHALL determine the `origin` remote URL of every candidate and every configured repository with a read-only git call, normalise it so that SSH and HTTPS forms of the same repository compare equal (ignoring a trailing `.git` and host letter case), and mark each candidate with the other known repositories — tracked or candidate — that share its remote. The projects overview SHALL show this on the candidate's entry as an informational badge naming those repositories. The dashboard MUST NOT hide, merge or disable a repository because of its remote. A repository without an `origin` remote, or one that is not a git repository, is never flagged.
 
 #### Scenario: Second clone of a tracked project
 - **WHEN** `acme/pkg-tools` is tracked and a candidate `ops/repo-mirror/repos/pkg-tools` has the same `origin`

@@ -28,8 +28,8 @@
 - [x] 5.2 Move Integrate from `settings.tsx` into the section: `Setting up…` while running, the unavailable reason stated once, and the start error on the entry. Verify in `untrackedUi.test.ts` with sessions on, off, and with a failed start.
 - [x] 5.3 In `overview.tsx`: render the section below the tracked list in both layouts, hide it while Work in progress is on, render `Scanning…` pending rows and tiles, and replace the full-page `NoRepos` on the overview with an in-place empty tracked state. Run discovery on open when roots exist. Verify with `overview.test.ts` and `untrackedUi.test.ts`.
 - [x] 5.4 Add **Disable** to the row actions cell and the tile header, with `stopPropagation`, a busy state and an error. Verify that a click disables without navigating and the repository moves to the Disabled group (`untrackedUi.test.ts`).
-- [~] 5.5 Pass `onConfig` from `app.tsx` to the overview so tracking actions update the shell's config at once. After Enable or Ignore, re-run discovery. Verify that the repository moves between the lists before any scan completes.
-- [~] 5.6 Style the section, groups, pending rows and Disable control in `styles.css` for light and dark themes and at 720px and below. Verify by running `bun run dev` and checking both layouts and themes.
+- [x] 5.5 Pass `onConfig` from `app.tsx` to the overview so tracking actions update the shell's config at once. After Enable or Ignore, re-run discovery. Verify that the repository moves between the lists before any scan completes.
+- [x] 5.6 Style the section, groups, pending rows and Disable control in `styles.css` for light and dark themes and at 720px and below. Verify by running `bun run dev` and checking both layouts and themes.
 
 ## 6. Settings
 
@@ -46,5 +46,5 @@
 - [x] 8.1 Put the headline `Managed projects · <n>` above the table, tiles or empty state, and rename the lower section to `Unmanaged projects · <n>` with Rediscover beside its headline. Verify with `untrackedUi.test.ts` (headline text and count).
 - [x] 8.2 Replace the three groups with one list ordered by name then path, each entry labelled `disabled`, `OpenSpec` or `no OpenSpec` (with a tooltip) and offered only its actions. Verify with `overview.test.ts` (ordering) and `untrackedUi.test.ts` (labels, no sub-headings, actions per entry).
 - [x] 8.3 Update the delta specs, proposal, design and README to the two sections. Verify with `openspec validate simplify-project-mgmt --strict`.
-- [~] 8.4 Visual check of both headlines and the single list in light and dark, table and tiles, and at 720px and below.
+- [x] 8.4 Visual check of both headlines and the single list in light and dark, table and tiles, and at 720px and below.
 
