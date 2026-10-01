@@ -197,14 +197,26 @@ test("merged and closed pull requests are still shown, more quietly", () => {
   }
 });
 
-test("no pull request, an archived change, or unavailable pull requests: no link and no error", () => {
+test("no pull request, or unavailable pull requests: no link and no error", () => {
   const prs = { repos: [list("alpha", ago(MIN), [pr({ number: 125 })])] };
-  expect(prLink(cardOf(change({ branchMatch: "feat/other" }), prs))).toBeUndefined();
-  expect(prLink(cardOf(change({ archived: "2026-03-09", column: "Archived" }), prs))).toBeUndefined();
+  expect(prLink(cardOf(change({ name: "other", branchMatch: "feat/other" }), prs))).toBeUndefined();
   const unavailable = { repos: [list("alpha", ago(MIN), [pr({ number: 125 })], { status: "unavailable", setup: "gh-missing", reason: "gh is not installed" })] };
   const card = cardOf(change(), unavailable);
   expect(prLink(card)).toBeUndefined();
   expect(textOf(render(card))).not.toMatch(/gh|unavailable|error/i);
+});
+
+test("an archived card shows its archive pull request while it awaits review, and a merged one quietly", () => {
+  const archived = change({ archived: "2026-03-09", column: "Archived", stage: "archived", branchMatch: undefined });
+  const implementation = pr({ number: 125, state: "merged", mergedAt: ago(3 * 60 * MIN) });
+  const archive = pr({ number: 131, head: "chore/archive-add-validate-phase", createdAt: ago(MIN) });
+  const open = prLink(cardOf(archived, { repos: [list("alpha", ago(MIN), [implementation, archive])] }));
+  expect(open?.props.href).toBe(archive.url);
+  expect(open?.props["aria-label"]).toContain(", open,");
+  const merged = prLink(cardOf(archived, { repos: [list("alpha", ago(MIN), [implementation])] }));
+  expect(merged?.props.href).toBe(implementation.url);
+  expect(textOf(merged)).toContain("merged");
+  expect(String(merged?.props.class)).toContain("settled");
 });
 
 test("a board with no pull requests renders exactly as without this feature", () => {

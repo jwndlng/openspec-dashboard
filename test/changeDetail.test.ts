@@ -509,6 +509,15 @@ test("header: no pull request means the branch alone, with nothing in its place"
   expect(classed(DetailHeader({ repo, change, onClose: noop }), "detail-pr")).toEqual([]);
 });
 
+test("header: an archived change shows the pull request of its archive branch", () => {
+  const archived: ChangeSnapshot = { ...change, archived: "2026-03-09", column: "Archived", stage: "archived", branchMatch: undefined };
+  const archivePr: PullRequest = { ...headerPr, number: 131, url: "https://github.com/acme/forum-admin/pull/131", head: "chore/archive-multi-tenant-sync" };
+  const header = headerWith(prResponse({}, [{ ...headerPr, state: "merged", mergedAt: "2026-03-09T10:00:00Z" }, archivePr]), archived);
+  const line = classed(header, "detail-pr")[0];
+  expect(textOf(line)).toContain("#131");
+  expect(byTag(line, "a")[0]?.props.href).toBe(archivePr.url);
+});
+
 test("header: no way to act on the pull request", () => {
   const line = classed(headerWith(prResponse({}, [{ ...headerPr, review: "review_required", checks: "pending" }])), "detail-pr")[0];
   expect(byTag(line, "button")).toEqual([]);

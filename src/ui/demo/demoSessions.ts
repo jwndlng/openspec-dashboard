@@ -4,6 +4,7 @@
 // All of it is invented, like the rest of the sample (see sampleData.ts): every repository, change, branch and path
 // comes from the sample, and terminal output comes from the hand-written transcripts.
 import { availableActions, isChangeless, isConsole, isIntegration, type ChangeSession, type Config, type ConsoleSession, type IntegrationSession, type Session, type SessionAction, type PromptResult, type SessionWorktree, type ShipResult, SHIPPABLE_WORK, type Snapshot, type WorkStatus, type Worktree } from "../../shared/types.ts";
+import { sessionBranch } from "../../shared/sessionBranch.ts";
 import { ApiError, type TerminalConnection, type TerminalHandlers } from "../api.ts";
 import { DEMO_AGENT, DEMO_ROOT } from "./sampleData.ts";
 import { type Clock, type Playback, type Position, playTranscript, positionAfter, TRANSCRIPTS, type TranscriptName, workAfter } from "./transcripts.ts";
@@ -14,7 +15,6 @@ const DAY = 24 * HOUR;
 
 /** Same names the dashboard uses for a session's worktree and branch. */
 const worktreeName = (action: SessionAction, change: string) => (action === "archive" ? `archive-${change}` : change);
-const sessionBranch = (action: SessionAction, change: string) => (action === "archive" ? `chore/archive-${change}` : `feat/${change}`);
 export const sessionWorktreePath = (repoId: string, name: string) => `${DEMO_ROOT.replace(/\/[^/]+$/, "")}/.openspec-dashboard/worktrees/${repoId}/${name}`;
 /** The main console's default folder, as the dashboard would place it under the demo's home. */
 export const DEMO_CONSOLE_DIR = `${DEMO_ROOT.replace(/\/[^/]+$/, "")}/.openspec-dashboard/console`;

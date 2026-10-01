@@ -1,7 +1,8 @@
 import { expect, test } from "bun:test";
-import type { ChangeSnapshot, PullRequest, PullRequestsResponse, RepoSnapshot } from "../src/shared/types.ts";
+import type { ChangeSnapshot, PullRequest, PullRequestsResponse, RepoSnapshot, SessionWorktree, WorkStatus } from "../src/shared/types.ts";
 import { activeTags, EMPTY_FILTERS, hasActiveFilters, parseFilters, resolveLayout, serializeFilters, staleOptions } from "../src/ui/filters.ts";
 import { boardCards, boardStats, visibleCards } from "../src/ui/kanban.tsx";
+import { archivePending } from "../src/ui/sessionState.ts";
 
 test("the Stale selector offers the presets and keeps a threshold from the URL", () => {
   expect(staleOptions(0).map((o) => o.label)).toEqual(["Any activity", "Idle 7+ days", "Idle 14+ days", "Idle 30+ days", "Idle 90+ days"]);
@@ -126,4 +127,30 @@ test("a pull-request link changes no column, no column count and no to-archive c
   expect(perColumn(linked)).toEqual(perColumn(without));
   expect(boardStats(linked, visibleCards(linked, EMPTY_FILTERS, false, NOW_PR))).toEqual(boardStats(without, visibleCards(without, EMPTY_FILTERS, false, NOW_PR)));
   expect(boardStats(linked, linked)).toEqual({ open: 3, toArchive: 1 });
+});
+
+test("Hide merged ignores the pull-request link: an archive is pending or not by its worktree alone", () => {
+  const hues = new Map([["a1", 0]]);
+  const archived = (name: string): ChangeSnapshot => ({ ...prCard(name, "Archived", "archived"), archived: "2026-03-09", checkout: { path: "/w/acme/alpha-infra", branch: "main", isMain: true } });
+  const repo: RepoSnapshot = { ...prRepo, changes: [archived("landed"), archived("waiting")] };
+  const worktree = (change: string, state: WorkStatus["state"]): SessionWorktree => ({
+    repoId: "a1",
+    name: `archive-${change}`,
+    path: `/w/home/worktrees/a1/archive-${change}`,
+    change,
+    action: "archive",
+    branch: `chore/archive-${change}`,
+    work: { state },
+  });
+  const worktrees = [worktree("landed", "merged"), worktree("waiting", "pushed")];
+  // The opposite of what each worktree says: an open pull request on the landed archive, a merged one on the waiting one.
+  const prs: PullRequestsResponse = {
+    repos: [{ repoId: "a1", github: "acme/alpha-infra", status: "ok", fetchedAt: "2026-03-10T12:00:00Z", pullRequests: [prList("chore/archive-landed", 21), prList("chore/archive-waiting", 22, "merged")] }],
+  };
+  const without = boardCards([repo], hues);
+  const linked = boardCards([repo], hues, prs);
+  expect(linked.map((c) => c.pullRequest?.number)).toEqual([21, 22]);
+  const pending = (cards: ChangeSnapshot[]) => cards.map((c) => archivePending(c, worktrees));
+  expect(pending(linked)).toEqual([false, true]);
+  expect(pending(linked)).toEqual(pending(without));
 });

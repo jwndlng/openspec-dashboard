@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { createDemoApi } from "../src/ui/demo/demoApi.ts";
 import { DEMO_ROOT } from "../src/ui/demo/sampleData.ts";
+import { candidateBranches } from "../src/shared/pullRequestLink.ts";
 import type { ChangeSnapshot } from "../src/shared/types.ts";
 import { boardCards, ChangeCard } from "../src/ui/kanban.tsx";
 import { type DetailPr, DetailPullRequest, detailPullRequest } from "../src/ui/pullRequests.tsx";
@@ -307,7 +308,7 @@ test("the demo links pull requests to changes on cards and in the header, shows 
   expect(linked.some((c) => c.pullRequest?.draft)).toBe(true);
   expect(linked.some((c) => c.pullRequest?.state === "merged" || c.pullRequest?.state === "closed")).toBe(true);
   expect(linked.some((c) => c.pullRequest?.state === "open" && !c.pullRequest.draft)).toBe(true);
-  for (const c of linked) expect(c.pullRequest?.head).toBe(c.branchMatch);
+  for (const c of linked) expect(candidateBranches(c)).toContain(c.pullRequest?.head as string);
   const first = linked[0];
   expect(textOf(ChangeCard({ card: first, now: Date.now(), from: "/board" }))).toContain(`PR #${first.pullRequest?.number}`);
   // A card with a branch and no pull request.

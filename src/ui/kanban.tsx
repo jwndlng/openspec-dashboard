@@ -30,7 +30,7 @@ export interface Card extends ChangeSnapshot {
   repoPath: string;
   /** Repository hue from assignRepoHues; the theme turns it into a colour in CSS. */
   hue: number;
-  /** The change's pull request, derived for display from the cached lists; never on an archived change. */
+  /** The change's pull request, derived for display from the cached lists; archived changes included. */
   pullRequest?: PullRequest;
 }
 
@@ -42,7 +42,7 @@ export function boardCards(repos: RepoSnapshot[], hues: Map<string, number>, pul
   return repos.flatMap((r) =>
     r.changes.map((c) => {
       const card: Card = { ...c, repoName: r.name, repoPath: r.path, hue: hues.get(r.id) ?? 0 };
-      const pr = c.archived ? undefined : linkedPullRequest(c, pullRequests?.repos);
+      const pr = linkedPullRequest(c, pullRequests?.repos);
       if (pr) card.pullRequest = pr;
       return card;
     }),
