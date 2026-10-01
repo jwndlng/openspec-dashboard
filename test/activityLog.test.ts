@@ -2,8 +2,8 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import { appendFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { newEventId } from "../src/server/activity/events.ts";
-import { ActivityLog, COMPACT_ABOVE_LINES, KEEP_ENTRIES } from "../src/server/activity/log.ts";
-import { collapseTaskProgress } from "../src/shared/activity.ts";
+import { ActivityLog, AGE_COMPACT_EVERY_MS, COMPACT_ABOVE_LINES, KEEP_ENTRIES } from "../src/server/activity/log.ts";
+import { collapseTaskProgress, RETENTION_MS, retained } from "../src/shared/activity.ts";
 import type { ActivityEvent } from "../src/shared/types.ts";
 import { tempDir } from "./helpers.ts";
 
@@ -18,6 +18,9 @@ afterAll(async () => {
 
 const T0 = Date.parse("2026-09-21T09:00:00.000Z");
 const MIN = 60_000;
+const DAY = 24 * 60 * MIN;
+/** The fixed timestamps below are only "recent" against a clock pinned next to them. */
+const clock = () => T0 + DAY;
 let tick = 0;
 const base = (atMs: number, repoId = "r1") => ({ v: 1 as const, id: newEventId(T0 + tick++), at: new Date(atMs).toISOString(), detectedAt: new Date(atMs).toISOString(), repoId, repoName: repoId === "r1" ? "demo-ops" : "beta-soc" });
 const moved = (atMs: number, change: string, from: string, to: string, repoId?: string): ActivityEvent => ({ ...base(atMs, repoId), kind: "change-moved", change, from, to });
@@ -27,11 +30,11 @@ const file = (name: string) => join(dir, name, "activity.jsonl");
 
 test("events survive a restart, newest first", async () => {
   const path = file("restart");
-  const log = new ActivityLog(path);
+  const log = new ActivityLog(path, clock);
   await log.load();
   expect(log.page()).toEqual({ events: [] });
   await log.append([moved(T0, "a", "Specs", "Ready"), moved(T0 + MIN, "b", "Ready", "Implementing")]);
-  const again = new ActivityLog(path);
+  const again = new ActivityLog(path, clock);
   await again.load();
   const page = again.page();
   expect(page.events.map((e) => "change" in e && e.change)).toEqual(["b", "a"]);
@@ -44,18 +47,18 @@ test("a torn last line, foreign lines and unknown versions are skipped; writing 
   await mkdir(join(dir, "torn"), { recursive: true });
   const good = moved(T0, "a", "Specs", "Ready");
   await writeFile(path, `${JSON.stringify(good)}\nnot json\n${JSON.stringify({ ...good, v: 2, id: "zzz" })}\n${JSON.stringify({ ...good, kind: "made-up" })}\n{"v":1,"id":"trunc`);
-  const log = new ActivityLog(path);
+  const log = new ActivityLog(path, clock);
   await log.load();
   expect(log.page().events.map((e) => e.id)).toEqual([good.id]);
   await log.append([moved(T0 + MIN, "b", "Ready", "Done")]);
-  const again = new ActivityLog(path);
+  const again = new ActivityLog(path, clock);
   await again.load();
   expect(again.page().events).toHaveLength(2);
 });
 
 test("the log is bounded: compacted to the newest entries beyond the limit, and on start", async () => {
   const path = file("bounded");
-  const log = new ActivityLog(path);
+  const log = new ActivityLog(path, clock);
   await log.load();
   const batch = (n: number, offset: number) => Array.from({ length: n }, (_, i) => moved(T0 + (offset + i) * 1000, `c${offset + i}`, "Specs", "Ready"));
   await log.append(batch(COMPACT_ABOVE_LINES, 0));
@@ -68,14 +71,14 @@ test("the log is bounded: compacted to the newest entries beyond the limit, and 
 
   // a file that outgrew the limit while another version ran is compacted when loaded
   await appendFile(path, batch(KEEP_ENTRIES, 9000).map((e) => `${JSON.stringify(e)}\n`).join(""));
-  const again = new ActivityLog(path);
+  const again = new ActivityLog(path, clock);
   await again.load();
   await again.append([]);
   expect((await readFile(path, "utf8")).trim().split("\n")).toHaveLength(KEEP_ENTRIES);
 });
 
 test("paging has no duplicates and no gaps; filters apply; newestId ignores them", async () => {
-  const log = new ActivityLog(file("paging"));
+  const log = new ActivityLog(file("paging"), clock);
   await log.load();
   const events = Array.from({ length: 250 }, (_, i) => (i % 5 === 0 ? started(T0 + i * MIN, `s${i}`) : moved(T0 + i * MIN, `c${i}`, "Specs", "Ready", i % 2 ? "r1" : "r2")));
   await log.append(events);
@@ -98,7 +101,7 @@ test("paging has no duplicates and no gaps; filters apply; newestId ignores them
 });
 
 test("events are shown by when they happened, not by when they were noticed", async () => {
-  const log = new ActivityLog(file("order"));
+  const log = new ActivityLog(file("order"), clock);
   await log.load();
   const noticedLater = { ...moved(T0 - 60 * MIN, "weekend-work", "Done", "Archived"), catchUp: true };
   await log.append([moved(T0, "today", "Specs", "Ready")]);
@@ -123,7 +126,7 @@ test("task progress collapses into runs; a move or a long gap ends a run; the lo
   expect(collapsed[3]).toMatchObject({ id: chronological[3].id, at: chronological[3].at });
   expect(newestFirst).toHaveLength(7); // input untouched
 
-  const log = new ActivityLog(file("collapse"));
+  const log = new ActivityLog(file("collapse"), clock);
   await log.load();
   await log.append(chronological);
   expect(log.page().events).toHaveLength(5);
@@ -132,8 +135,102 @@ test("task progress collapses into runs; a move or a long gap ends a run; the lo
 
 test("a log that cannot be written never throws and keeps serving from memory", async () => {
   await writeFile(join(dir, "not-a-dir"), "x");
-  const log = new ActivityLog(join(dir, "not-a-dir", "activity.jsonl"));
+  const log = new ActivityLog(join(dir, "not-a-dir", "activity.jsonl"), clock);
   await log.load();
   await log.append([moved(T0, "a", "Specs", "Ready")]);
   expect(log.page().events).toHaveLength(1);
+});
+
+const lineCount = async (path: string) => (await readFile(path, "utf8")).trim().split("\n").filter(Boolean).length;
+const changesIn = async (path: string) => (await readFile(path, "utf8")).trim().split("\n").map((l) => JSON.parse(l).change);
+
+test("retention keeps what happened within the last 7 days, in order", () => {
+  const now = T0 + 30 * DAY;
+  const edge = moved(now - RETENTION_MS, "edge", "Specs", "Ready");
+  const justOut = moved(now - RETENTION_MS - 1, "just-out", "Specs", "Ready");
+  const recent = moved(now - MIN, "recent", "Specs", "Ready");
+  const future = moved(now + DAY, "future", "Specs", "Ready"); // a skewed clock: kept rather than lost
+  const garbled = { ...moved(now, "garbled", "Specs", "Ready"), at: "not a time" };
+  const kept = retained([justOut, edge, garbled, recent, future], now);
+  expect(kept.map((e) => "change" in e && e.change)).toEqual(["edge", "recent", "future"]);
+});
+
+test("the feed only shows, points at and counts the last 7 days, and reading never writes", async () => {
+  const path = file("window");
+  let now = T0;
+  const log = new ActivityLog(path, () => now);
+  await log.load();
+  const old = [moved(T0, "o1", "Specs", "Ready"), moved(T0 + MIN, "o2", "Specs", "Ready")];
+  await log.append(old);
+  now = T0 + 2 * DAY;
+  const recent = [0, 1, 2].map((i) => moved(now - i * MIN, `r${i}`, "Ready", "Implementing"));
+  await log.append(recent);
+
+  now = T0 + 8 * DAY; // the first two are 8 days old now, without anything being recorded since
+  const page = log.page({ limit: 3, since: "" });
+  expect(page.events.map((e) => "change" in e && e.change)).toEqual(["r0", "r1", "r2"]);
+  expect(page.nextBefore).toBeUndefined();
+  expect(page.newerThanSince).toBe(3);
+  expect(page.newestId).toBe(recent[2].id);
+  expect(await lineCount(path)).toBe(5);
+
+  now = T0 + 10 * DAY;
+  expect(log.page()).toEqual({ events: [] });
+});
+
+test("on start, aged-out events are dropped and the file is rewritten without them", async () => {
+  const path = file("start");
+  await mkdir(join(dir, "start"), { recursive: true });
+  const now = T0 + 30 * DAY;
+  const lines = [moved(now - 10 * DAY, "ten", "Specs", "Ready"), moved(now - 6 * DAY, "six", "Specs", "Ready"), moved(now - 60 * MIN, "hour", "Specs", "Ready")];
+  await writeFile(path, lines.map((e) => `${JSON.stringify(e)}\n`).join(""));
+  const log = new ActivityLog(path, () => now);
+  await log.load();
+  expect(log.page().events.map((e) => "change" in e && e.change)).toEqual(["hour", "six"]);
+  expect(await changesIn(path)).toEqual(["six", "hour"]);
+});
+
+test("on start, lines it cannot read are no reason to rewrite a recent log", async () => {
+  const path = file("foreign");
+  await mkdir(join(dir, "foreign"), { recursive: true });
+  const good = moved(T0, "a", "Specs", "Ready");
+  const text = `${JSON.stringify(good)}\n${JSON.stringify({ ...good, v: 2, id: "zzz" })}\n`;
+  await writeFile(path, text);
+  const log = new ActivityLog(path, clock);
+  await log.load();
+  await log.append([]);
+  expect(await readFile(path, "utf8")).toBe(text);
+});
+
+test("an event that happened before the window is not recorded", async () => {
+  const path = file("catch-up");
+  const now = T0 + 30 * DAY;
+  const log = new ActivityLog(path, () => now);
+  await log.load();
+  const longAgo = { ...moved(now - 9 * DAY, "add-login", "Done", "Archived"), catchUp: true };
+  const lately = { ...moved(now - 2 * DAY, "cache-api-calls", "Specs", "Ready"), catchUp: true };
+  await log.append([longAgo, lately]);
+  expect(log.page().events.map((e) => "change" in e && e.change)).toEqual(["cache-api-calls"]);
+  expect(await changesIn(path)).toEqual(["cache-api-calls"]);
+});
+
+test("while running, aged-out entries leave the file at most once an hour, when events are recorded", async () => {
+  const path = file("aging");
+  await mkdir(join(dir, "aging"), { recursive: true });
+  let now = T0 + 30 * DAY;
+  // An expired line makes the start compact, so the hourly clock starts now.
+  await writeFile(path, `${JSON.stringify(moved(now - 10 * DAY, "ancient", "Specs", "Ready"))}\n`);
+  const log = new ActivityLog(path, () => now);
+  await log.load();
+  await log.append([moved(now - RETENTION_MS + 10 * MIN, "aging", "Specs", "Ready")]);
+  expect(await changesIn(path)).toEqual(["aging"]);
+
+  now += 20 * MIN; // "aging" has passed the 7-day mark
+  await log.append([moved(now, "b", "Specs", "Ready")]);
+  expect(log.page().events.map((e) => "change" in e && e.change)).toEqual(["b"]);
+  expect(await changesIn(path)).toEqual(["aging", "b"]); // not rewritten within the hour
+
+  now += AGE_COMPACT_EVERY_MS;
+  await log.append([moved(now, "c", "Specs", "Ready")]);
+  expect(await changesIn(path)).toEqual(["b", "c"]);
 });

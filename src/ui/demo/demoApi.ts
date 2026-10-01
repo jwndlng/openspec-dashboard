@@ -1,5 +1,5 @@
 // In-memory stand-in for the dashboard server. Nothing is read from or written to anywhere: a reload starts over.
-import { pageEvents } from "../../shared/activity.ts";
+import { pageEvents, retained } from "../../shared/activity.ts";
 import { summarizeWorkInProgress } from "../../shared/workInProgress.ts";
 import type { ChangeSnapshot, Config, DismissFile, DismissPreview, PullBlockingFile, PullResult, RepoSharedConfig, RepoSnapshot, SharedConfigApplyResult, SharedConfigPreview, SharedProfile, Snapshot } from "../../shared/types.ts";
 import { ApiError, type Api } from "../api.ts";
@@ -285,8 +285,9 @@ export function createDemoApi({ now = Date.now, latencyMs = 150, clock }: DemoAp
         if (text === undefined) throw new ApiError(404, "no such file in this change");
         return { path, bytes: bytes(text), text };
       }),
-    // Built once from the sample, like a log that was written while the sample came about; filtered and paged like the real one.
-    activity: (query) => reply(pageEvents(activityLog, query)),
+    // Built once from the sample, like a log that was written while the sample came about; kept for the same 7 days,
+    // filtered and paged like the real one.
+    activity: (query) => reply(pageEvents(retained(activityLog, now()), query)),
     config: () => reply(config),
     // Fixed sample data, derived from the config the visitor is looking at: no process, no PATH, no file, no connection.
     environment: () => reply(demoEnvironment(config, now())),

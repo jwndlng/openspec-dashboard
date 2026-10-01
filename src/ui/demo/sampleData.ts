@@ -493,12 +493,12 @@ export function buildActivity(snapshot: Snapshot, now: number): ActivityEvent[] 
   const drafts: Draft[] = [];
   const HOUR = DAY / 24;
   for (const repo of snapshot.repos) {
-    drafts.push({ at: now - 30 * DAY, repo, rest: { kind: "repo-tracked", openChanges: repo.changes.filter((c) => !c.archived).length } });
+    drafts.push({ at: now - 6 * DAY, repo, rest: { kind: "repo-tracked", openChanges: repo.changes.filter((c) => !c.archived).length } });
     for (const change of repo.changes) {
       const last = change.lastActivityAt ? Date.parse(change.lastActivityAt) : now - 3 * DAY;
       if (change.archived) {
         const at = Date.parse(`${change.archived}T16:30:00`);
-        if (now - at < 21 * DAY) drafts.push({ at, repo, rest: { kind: "change-archived", change: change.name, from: "Done" } });
+        if (now - at < 6 * DAY) drafts.push({ at, repo, rest: { kind: "change-archived", change: change.name, from: "Done" } });
         continue;
       }
       const step = FLOW.indexOf(change.column);
