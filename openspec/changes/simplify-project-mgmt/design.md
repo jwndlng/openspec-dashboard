@@ -61,10 +61,10 @@ collision.
   on screen while a new run starts. It is used by the overview and by Settings' roots summary. Settings calls it with
   draft roots and the overview with none, so each run uses its own inputs. Results are tagged with the inputs they
   came from, so a draft-roots result is never shown on the overview.
-- `src/ui/untracked.tsx`: the Untracked & disabled section, with its three groups, the per-entry busy and error
+- `src/ui/untracked.tsx`: the Unmanaged projects section, one list with a kind label per entry, the per-entry busy and error
   state, and Integrate. The integrate logic (`runningFor`, `startIntegration`, the per-row error) moves here from
   `settings.tsx` unchanged.
-- `overviewState.ts` gains `untrackedEntries(config, discover, q)`: grouping, ordering, search, and removing
+- `overviewState.ts` gains `untrackedEntries(config, discover, q)`: one list ordered by name then path, search, and removing
   candidates whose id is configured (to cover the gap between an Enable and the next discovery result). It also
   gains `pendingRows(config, snapshot)`, which returns enabled ids missing from the snapshot and becomes the
   `Scanning…` rows. Name hints are computed once over tracked rows, pending rows and untracked entries together,

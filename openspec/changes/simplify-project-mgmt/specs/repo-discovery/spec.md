@@ -58,7 +58,7 @@ The dashboard SHALL discover repositories by walking each given scan root to a b
 
 #### Scenario: Opening the overview runs discovery
 - **WHEN** the user opens the projects overview and the config contains at least one workspace root
-- **THEN** discovery runs against the saved roots and ignore paths and its result is listed in the overview's Untracked & disabled section
+- **THEN** discovery runs against the saved roots and ignore paths and its result is listed under the overview's Unmanaged projects
 
 #### Scenario: Discovery does not change the config
 - **WHEN** discovery finds repositories that are not in the config
@@ -146,7 +146,7 @@ The Settings view SHALL allow the user to add or remove scan roots, add or remov
 
 #### Scenario: Integratable repositories are listed apart from candidates
 - **WHEN** discovery reports both candidates and integratable repositories
-- **THEN** Settings counts the two apart and lists neither, and the projects overview lists them in two separate groups
+- **THEN** Settings counts the two apart and lists neither, and the projects overview lists both under Unmanaged projects, each labelled with what it is
 
 #### Scenario: Ignoring an integratable repository
 - **WHEN** the user adds an integratable repository's path to the ignore paths in Settings

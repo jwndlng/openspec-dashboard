@@ -213,7 +213,7 @@ export function Settings({ config, snapshot, onSaved, onRescan, environment, onR
       content: (
         <section class="panel">
           <h2>Tracked repositories · {enabledCount} of {draft.repos.length} enabled</h2>
-          <p class="hint">Only enabled repositories are scanned and shown on the board. Names are display-only. Forgetting (×) a repository returns it to the Untracked &amp; disabled list on Projects.</p>
+          <p class="hint">Only enabled repositories are scanned and shown on the board. Names are display-only. Forgetting (×) a repository returns it to Unmanaged projects on Projects.</p>
           <div class="list">
             {draft.repos.map((repo) => (
               <div class={`item ${repo.enabled ? "" : "off"}`} key={repo.id}>

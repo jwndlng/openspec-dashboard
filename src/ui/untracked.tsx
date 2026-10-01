@@ -1,6 +1,7 @@
-// The projects overview's Untracked & disabled section: everything the user can bring into the overview — disabled
-// repositories, discovered OpenSpec repositories and git repositories without OpenSpec — with Enable, Ignore and
-// Integrate, each saved at once. The view is hook-free so tests can walk it; `useTracking` holds what changes.
+// The projects overview's Unmanaged projects section: one list of everything the user can bring into the overview —
+// disabled repositories, discovered OpenSpec repositories and git repositories without OpenSpec — each labelled with
+// what it is and offered the actions that fit it (Enable, Ignore, Integrate), each saved at once. The view is hook-free
+// so tests can walk it; `useTracking` holds what changes.
 import { useState } from "preact/hooks";
 import type { Config } from "../shared/types.ts";
 import { api } from "./api.ts";
@@ -63,19 +64,20 @@ export function useTracking({ onConfig, rediscover }: { onConfig: (config: Confi
   };
 }
 
-const GROUPS: Record<UntrackedKind, { title: string; hint: string }> = {
-  disabled: { title: "Disabled", hint: "Tracked, but switched off: not scanned and not on the boards." },
-  discovered: { title: "Discovered", hint: "Use OpenSpec and wait to be tracked." },
+/** Each entry says in words what it is; the tooltip says what that means and what its actions do. */
+export const KIND_LABELS: Record<UntrackedKind, { label: string; title: string }> = {
+  disabled: { label: "disabled", title: "Managed before and switched off: not scanned and not on the boards. Enable brings it back." },
+  discovered: { label: "OpenSpec", title: "Uses OpenSpec and is not managed yet. Enable starts scanning it." },
   integratable: {
-    title: "Without OpenSpec",
-    hint: "Git repositories that do not use OpenSpec yet. Integrate starts your agent in the repository to run openspec init there — in the checkout itself, with no branch and no undo; it is tracked once openspec/config.yaml exists.",
+    label: "no OpenSpec",
+    title: "A git repository that does not use OpenSpec yet. Integrate starts your agent in it to run openspec init — in the checkout itself, with no branch and no undo; it is managed once openspec/config.yaml exists.",
   },
 };
 
 export const IGNORE_HINT = "Add this path to the ignored paths, saved at once — remove it under Settings › Workspace roots to undo";
 
 export interface UntrackedSectionProps {
-  /** After search; grouped and ordered by `untrackedEntries`. */
+  /** After search; ordered by `untrackedEntries`. */
   entries: UntrackedEntry[];
   discovery: DiscoveryState;
   hasRoots: boolean;
@@ -105,7 +107,12 @@ function Entry({ entry, props }: { entry: UntrackedEntry; props: UntrackedSectio
   const running = entry.kind === "integratable" ? props.runningIntegration(entry.path) : undefined;
   return (
     <li class={`untracked-entry ${entry.kind}`}>
-      <span class="untracked-name">{entry.name}</span>
+      <span class="untracked-label">
+        <span class="untracked-name">{entry.name}</span>
+        <span class={`badge untracked-kind ${entry.kind}`} title={KIND_LABELS[entry.kind].title}>
+          {KIND_LABELS[entry.kind].label}
+        </span>
+      </span>
       {entry.hint && <span class="untracked-meta path-hint mono">{entry.hint}/</span>}
       {entry.sameRemoteAs && (
         <span class="untracked-meta badge" title={`same origin remote as:\n${entry.sameRemoteAs.map((r) => `${r.path}${r.tracked ? " (tracked)" : ""}`).join("\n")}`}>
@@ -126,7 +133,7 @@ function Entry({ entry, props }: { entry: UntrackedEntry; props: UntrackedSectio
               type="button"
               class="btn sm"
               disabled={integrateOff !== undefined || busy !== undefined}
-              title={integrateOff ?? `Run openspec init in ${entry.path}`}
+              title={integrateOff ?? `Run openspec init in ${entry.path} — your agent works in the checkout itself, with no branch and no undo`}
               onClick={() => tracking.integrate(entry)}
             >
               {busy === "integrate" ? "Starting…" : "Integrate"}
@@ -158,19 +165,16 @@ function Entry({ entry, props }: { entry: UntrackedEntry; props: UntrackedSectio
   );
 }
 
-/** Below the tracked repositories: what can be brought in, in three headed groups, empty ones left out. */
-export function UntrackedSection(props: UntrackedSectionProps) {
+/** Below the managed projects: everything that could be brought in, in one list, each with the actions that fit it. */
+export function UnmanagedSection(props: UntrackedSectionProps) {
   const { entries, discovery, hasRoots, query } = props;
-  const groups = (["disabled", "discovered", "integratable"] as const)
-    .map((kind) => ({ kind, entries: entries.filter((e) => e.kind === kind) }))
-    .filter((g) => g.entries.length > 0);
   const rootErrors = discovery.result?.errors ?? [];
   const anyIntegratable = entries.some((e) => e.kind === "integratable");
   return (
-    <section class="untracked" aria-labelledby="untracked-title">
-      <header class="untracked-head">
-        <h2 id="untracked-title" class="untracked-title">
-          Untracked &amp; disabled <span class="untracked-count">· {entries.length}</span>
+    <section class="untracked" aria-labelledby="unmanaged-title">
+      <header class="overview-section-head">
+        <h2 id="unmanaged-title" class="overview-section-title">
+          Unmanaged projects <span class="untracked-count">· {entries.length}</span>
         </h2>
         {discovery.running && <span class="hint">discovering…</span>}
         <span class="spacer" />
@@ -192,26 +196,16 @@ export function UntrackedSection(props: UntrackedSectionProps) {
       ))}
       {discovery.error && <div class="notice danger">Discovery failed: {discovery.error}</div>}
       {anyIntegratable && props.integrateOff && <div class="notice">Integrate is unavailable: {props.integrateOff}.</div>}
-      {groups.map((group) => (
-        <div class="untracked-group" key={group.kind}>
-          <h3 class="untracked-group-title">
-            {GROUPS[group.kind].title} <span class="untracked-count">· {group.entries.length}</span>
-          </h3>
-          <p class="hint">{GROUPS[group.kind].hint}</p>
-          <ul class="untracked-list">
-            {group.entries.map((entry) => (
-              <Entry key={entry.id} entry={entry} props={props} />
-            ))}
-          </ul>
-        </div>
-      ))}
-      {groups.length === 0 && hasRoots && !discovery.running && (
+      {entries.length > 0 && (
+        <ul class="untracked-list">
+          {entries.map((entry) => (
+            <Entry key={entry.id} entry={entry} props={props} />
+          ))}
+        </ul>
+      )}
+      {entries.length === 0 && hasRoots && !discovery.running && (
         <p class="hint">
-          {query.trim()
-            ? `No untracked repository matches “${query}”.`
-            : discovery.result
-              ? "Nothing to bring in: every repository under the workspace roots is tracked."
-              : ""}
+          {query.trim() ? `No unmanaged project matches “${query}”.` : discovery.result ? "Every repository under the workspace roots is managed." : ""}
         </p>
       )}
     </section>
@@ -230,7 +224,7 @@ export function DisableButton({ id, name, tracking }: { id: string; name: string
       <button
         type="button"
         class="btn sm ghost icon-only"
-        title={`Disable: stop tracking ${name}: no more scans, off the boards. It is listed under Disabled below, where Enable brings it back.`}
+        title={`Disable: stop tracking ${name}: no more scans, off the boards. It is listed under Unmanaged projects below, where Enable brings it back.`}
         aria-label={`Disable ${name}`}
         disabled={busy !== undefined}
         onClick={(e) => {
