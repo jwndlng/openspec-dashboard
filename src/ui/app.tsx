@@ -21,8 +21,11 @@ import { environmentWarning, type EnvironmentState } from "./environmentState.ts
 import { Settings } from "./settings.tsx";
 import { currentPath, currentQuery, followInApp, href, hrefWithQuery, navigate, onRouteChange } from "./url.ts";
 import { applyTheme, loadPreference, nextPreference, resolveTheme, savePreference, type ThemePreference } from "./theme.ts";
-import { IconActivity, IconChevronDown, IconClock, IconGitPullRequest, IconKanban, IconLayoutGrid, IconMonitor, IconMoon, IconRefresh, IconSettings, IconSun } from "./icons.tsx";
+import { Help } from "./help.tsx";
+import { IconActivity, IconChevronDown, IconClock, IconGitPullRequest, IconHelp, IconKanban, IconLayoutGrid, IconMonitor, IconMoon, IconRefresh, IconSettings, IconSun } from "./icons.tsx";
 import { LogoMark } from "./logo.tsx";
+import { Tour } from "./tour.tsx";
+import { loadTourSeen, saveTourSeen, shouldAutoStart, TOUR_ANCHOR, type TourAnchor, tourAutoStarts } from "./tourState.ts";
 
 const THEME_LABEL: Record<ThemePreference, string> = { system: "System", light: "Light", dark: "Dark" };
 const THEME_ICON: Record<ThemePreference, typeof IconSun> = { system: IconMonitor, light: IconSun, dark: IconMoon };
@@ -50,6 +53,14 @@ export function App() {
   const [integrationId, showIntegration] = useState<string>();
   /** What this machine is missing. Owned here because both Settings and the hero read the same report. */
   const [environment, setEnvironment] = useState<EnvironmentState>({ loading: true });
+  /** The configuration request has answered, either way: until then the Console control may still appear. */
+  const [configSettled, setConfigSettled] = useState(false);
+  // The first-visit tour. Not in the route, like the console: it explains the page without changing it.
+  const [tourOpen, setTourOpen] = useState(false);
+  /** The tour started by itself during this page load; it does so at most once. */
+  const tourAutoStarted = useRef(false);
+  /** Where focus was when the tour opened, so it can go back there. */
+  const focusBeforeTour = useRef<Element | null>(null);
 
   useEffect(() => onRouteChange(() => setRoute(routeFromPath(currentPath()))), []);
 
@@ -104,7 +115,11 @@ export function App() {
 
   useEffect(() => {
     void loadState();
-    api.config().then(setConfig).catch(() => undefined);
+    api
+      .config()
+      .then(setConfig)
+      .catch(() => undefined)
+      .finally(() => setConfigSettled(true));
   }, [loadState]);
 
   /**
@@ -210,13 +225,43 @@ export function App() {
   // The overlay closes with the feature: nothing may be started while agent sessions are off.
   const consoleShown = consoleOpen && config?.agentSessions.enabled === true;
   const integrationShown = integrationId !== undefined && config?.agentSessions.enabled === true;
-  const overlayOpen = route.view === "change" || consoleShown || integrationShown;
+  /** An overlay other than the tour: the tour waits for it to close before starting by itself. */
+  const otherOverlayOpen = route.view === "change" || consoleShown || integrationShown;
+  const overlayOpen = otherOverlayOpen || tourOpen;
+
+  const startTour = useCallback(() => {
+    focusBeforeTour.current = document.activeElement;
+    setTourOpen(true);
+  }, []);
+  const endTour = useCallback(() => {
+    saveTourSeen();
+    setTourOpen(false);
+    const back = focusBeforeTour.current;
+    focusBeforeTour.current = null;
+    // After the page has stopped being inert, which happens with the render that closes the tour.
+    requestAnimationFrame(() => (back instanceof HTMLElement && back.isConnected ? back : document.body).focus?.());
+  }, []);
+
+  useEffect(() => {
+    if (!shouldAutoStart({ enabled: tourAutoStarts(), seen: loadTourSeen(), alreadyStarted: tourAutoStarted.current, ready: configSettled, overlayOpen: otherOverlayOpen })) return;
+    tourAutoStarted.current = true;
+    startTour();
+  }, [configSettled, otherOverlayOpen, startTour]);
+
+  // Moving to another route ends the tour as Skip does: its steps point at a page that is no longer there.
+  const routeKey = JSON.stringify(route);
+  const tourOpenRef = useRef(tourOpen);
+  tourOpenRef.current = tourOpen;
+  useEffect(() => {
+    if (tourOpenRef.current) endTour();
+  }, [routeKey, endTour]);
 
   const ThemeIcon = THEME_ICON[themePref];
-  const link = (path: string, label: ComponentChildren, active: boolean) => (
+  const link = (path: string, label: ComponentChildren, active: boolean, tour: TourAnchor) => (
     <a
       href={href(path)}
       class={active ? "active" : ""}
+      data-tour={tour}
       onClick={(e) => {
         e.preventDefault();
         navigate(path);
@@ -266,11 +311,11 @@ export function App() {
             )}
             {error && <span class="badge danger">API: {error}</span>}
             <ConsoleButton />
-            <button type="button" class="btn sm ghost" onClick={cycleTheme} title="Cycle theme: System → Light → Dark">
+            <button type="button" class="btn sm ghost" onClick={cycleTheme} title="Cycle theme: System → Light → Dark" data-tour={TOUR_ANCHOR.theme}>
               <ThemeIcon />
               Theme: {THEME_LABEL[themePref]}
             </button>
-            <span class="status">
+            <span class="status" data-tour={TOUR_ANCHOR.refresh}>
               <span>updated {snapshot ? relTime(snapshot.generatedAt) : "…"}</span>
               <button type="button" class="btn sm" onClick={() => void refresh()} disabled={refreshing}>
                 <IconRefresh size={13} />
@@ -300,6 +345,7 @@ export function App() {
               Projects
             </>,
             route.view === "overview" || boardRoute.view === "repo",
+            TOUR_ANCHOR.projects,
           )}
           {link(
             "/board",
@@ -308,6 +354,7 @@ export function App() {
               All changes
             </>,
             boardRoute.view === "board",
+            TOUR_ANCHOR.board,
           )}
           {link(
             "/activity",
@@ -321,6 +368,7 @@ export function App() {
               )}
             </>,
             route.view === "activity",
+            TOUR_ANCHOR.activity,
           )}
           {link(
             "/pull-requests",
@@ -329,6 +377,7 @@ export function App() {
               Pull requests
             </>,
             route.view === "pullRequests",
+            TOUR_ANCHOR.pullRequests,
           )}
           {link(
             "/settings",
@@ -337,6 +386,16 @@ export function App() {
               Settings
             </>,
             route.view === "settings",
+            TOUR_ANCHOR.settings,
+          )}
+          {link(
+            "/help",
+            <>
+              <IconHelp />
+              Help
+            </>,
+            route.view === "help",
+            TOUR_ANCHOR.help,
           )}
         </nav>
       </header>
@@ -363,6 +422,8 @@ export function App() {
             environment={environment}
             onRecheckEnvironment={() => void loadEnvironment(true)}
           />
+        ) : route.view === "help" ? (
+          <Help onTour={startTour} />
         ) : route.view === "activity" ? (
           <Activity snapshot={shown} onSeen={markSeen} />
         ) : route.view === "pullRequests" ? (
@@ -410,6 +471,7 @@ export function App() {
     )}
     <ConsoleOverlay />
     <IntegrationOverlay />
+    {tourOpen && <Tour onClose={endTour} />}
     </SessionProvider>
     </PullRequestsProvider>
     </PullProvider>

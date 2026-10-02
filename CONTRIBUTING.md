@@ -10,6 +10,7 @@ One change = one branch = one pull request.
 2. **Branch** — name the branch after the change: `feat/<change-name>` (or `fix/<change-name>`, `chore/<change-name>`).
    The dashboard matches branches to changes by name, so this repository shows up correctly on its own board.
 3. **Implement** — `/opsx:apply <change-name>`; tick tasks in `tasks.md` as they are done.
+   A change that alters behaviour the built-in Help describes updates `src/ui/helpContent.tsx` as well.
 4. **Check** — `bun run check` (lint, typecheck, tests) must pass before pushing. CI runs the same command, plus the
    single-binary build, on Linux and macOS.
 5. **Pull request** — the title follows [Conventional Commits](https://www.conventionalcommits.org/) and becomes the

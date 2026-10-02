@@ -43,11 +43,11 @@ documentation is the README on GitHub, which the dashboard does not link to and,
   - new `src/ui/tour.tsx` (overlay, highlight, step card), `src/ui/tourState.ts` (pure step list, filtering, storage
     helpers), `src/ui/help.tsx` and `src/ui/helpContent.tsx` (sections and text);
   - `src/ui/app.tsx` (Help tab, `/help` route, tour mount and first-visit start, `data-tour` anchors on hero controls),
-    `src/ui/routes.ts` (`help` view), `src/ui/console.tsx` / `src/ui/sessions.tsx` only for `data-tour` anchors,
+    `src/ui/routes.ts` (`help` view), `src/ui/settingsNav.tsx` (its section hook takes a page description, so Help can reuse it), `src/ui/console.tsx` only for a `data-tour` anchor,
     `src/ui/styles.css`, `src/ui/icons.tsx` (help icon);
   - `src/ui/demo/main.tsx` (demo does not auto-start the tour);
   - `README.md` (mention the Help tab and the tour) and `CONTRIBUTING.md` (one line: a change that alters documented behaviour updates the Help text).
-- Tests: `test/tourState.test.ts`, `test/helpContent.test.ts`, `test/routes` coverage for `/help`; demo bundle tests
+- Tests: `test/tourState.test.ts`, `test/helpContent.test.ts`, `/help` route coverage in the latter; demo bundle tests
   keep passing (no real paths or hosts in help text — only the project's own repository link).
 - Invariants unchanged: no network (help text is bundled; the one outward link is the project's repository, a link the
   user follows), read-only towards repositories, loopback only.

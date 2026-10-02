@@ -20,6 +20,17 @@ export interface SettingsSection {
 
 const sectionElementId = (id: string) => `settings-${id}`;
 
+/** A page with ?section= navigation: its sections' element ids are `<prefix>-<id>`, inside the `layout` element. */
+export interface SectionPage {
+  prefix: string;
+  /** Every section the page can have, also those that mount later; a deep link to any other id is dropped. */
+  known: readonly string[];
+  /** Selector of the element whose growth keeps a jumped-to section at the top. */
+  layout: string;
+}
+
+const SETTINGS_PAGE: SectionPage = { prefix: "settings", known: SECTION_IDS, layout: ".settings-layout" };
+
 /** How long a programmatic scroll may take before the view-tracking takes over again. */
 const SCROLL_SETTLE_MS = 700;
 /** How long the navigation glides to a new current section (matches the transition in styles.css). */
@@ -35,7 +46,8 @@ function prefersReducedMotion(): boolean {
  * to a neighbour when the target is too short to reach the top. Pass no ids until the sections are rendered.
  * The navigation scrolls with the content; on wide screens SettingsNav moves it along beside the current section.
  */
-export function useSectionNav(scroller: RefObject<HTMLElement>, ids: string[]) {
+export function useSectionNav(scroller: RefObject<HTMLElement>, ids: string[], page: SectionPage = SETTINGS_PAGE) {
+  const elementId = (id: string) => `${page.prefix}-${id}`;
   const [current, setCurrent] = useState<string | undefined>(ids[0]);
   const pin = useRef<{ id: string; settled: boolean; scrollTop: number } | null>(null);
   const pendingDeepLink = useRef<string | undefined>(new URLSearchParams(currentQuery()).get("section") ?? undefined);
@@ -43,14 +55,14 @@ export function useSectionNav(scroller: RefObject<HTMLElement>, ids: string[]) {
 
   // Bring a section to the top of the view (scroll-margin-top keeps it level with where the nav starts).
   const scrollToSection = (id: string, smooth: boolean) => {
-    const target = document.getElementById(sectionElementId(id));
+    const target = document.getElementById(elementId(id));
     target?.scrollIntoView({ block: "start", behavior: smooth && !prefersReducedMotion() ? "smooth" : "auto" });
   };
 
   // `byUser` is false for a deep link on load: no animation, and focus stays where the browser put it.
   const jump = (id: string, byUser: boolean) => {
     const el = scroller.current;
-    const target = document.getElementById(sectionElementId(id));
+    const target = document.getElementById(elementId(id));
     if (!el || !target) return;
     setCurrent(id);
     pin.current = { id, settled: false, scrollTop: el.scrollTop };
@@ -76,7 +88,7 @@ export function useSectionNav(scroller: RefObject<HTMLElement>, ids: string[]) {
       }
       const top = el.getBoundingClientRect().top;
       const rects = ids.flatMap((id) => {
-        const section = document.getElementById(sectionElementId(id));
+        const section = document.getElementById(elementId(id));
         return section ? [{ id, top: section.getBoundingClientRect().top - top }] : [];
       });
       const atEnd = el.scrollTop > 0 && el.scrollTop + el.clientHeight >= el.scrollHeight - 2;
@@ -87,7 +99,7 @@ export function useSectionNav(scroller: RefObject<HTMLElement>, ids: string[]) {
     };
     // Panels above the section jumped to can still grow after the jump (discovery results arrive, a repository is
     // enabled). If the user has not scrolled since, keep that section at the top.
-    const layout = el.querySelector(".settings-layout");
+    const layout = el.querySelector(page.layout);
     const relayout = new ResizeObserver(() => {
       const p = pin.current;
       if (p?.settled && Math.abs(el.scrollTop - p.scrollTop) < 2) {
@@ -113,7 +125,7 @@ export function useSectionNav(scroller: RefObject<HTMLElement>, ids: string[]) {
       jump(wanted, false);
       return;
     }
-    if (wanted && !(SECTION_IDS as readonly string[]).includes(wanted)) pendingDeepLink.current = undefined;
+    if (wanted && !page.known.includes(wanted)) pendingDeepLink.current = undefined;
     setCurrent((was) => (was && ids.includes(was) ? was : ids[0]));
   }, [key]);
 

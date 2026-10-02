@@ -61,11 +61,12 @@ mock API with hash routing (`src/ui/demo/main.tsx`). Requirements: `specs/onboar
    fails), satisfying "a column added without an explanation fails the build's checks". `renderMarkdown` is reserved
    for untrusted repository text and is not needed here.
 
-6. **Help layout reuses the section-query helpers**, not the full Settings navigation: `parseSection` /
-   `serializeSection` from `settingsSections.ts` for `?section=`, a simple table of contents at the top (links with
-   `href="?section=<id>"`), and an `IntersectionObserver`-free "current section" via the existing `currentSection()`
-   on scroll. The sticky gliding nav of Settings is specified for Settings only and is overkill for a reading page.
-   *Alternative:* generalise `SettingsNav` — rejected for now; it carries Settings-specific counts and behaviour.
+6. **Help layout reuses the Settings section hook**, not the Settings navigation: `useSectionNav` takes an optional
+   page description (element-id prefix, known ids, layout selector; Settings' values are the default), so Help gets the
+   same `?section=` deep links, `replaceState` updates and "current section" tracking for free. Help shows a simple
+   table of contents at the top (links with `href="?section=<id>"`) instead of the sticky gliding nav of Settings, which
+   is specified for Settings only and is overkill for a reading page.
+   *Alternative:* generalise `SettingsNav` too — rejected; it carries Settings-specific counts and behaviour.
 
 7. **Routes:** `routes.ts` gains `{ view: "help" }` for `/help`; the demo's hash routing needs no change because it
    reuses `routeFromPath`.
