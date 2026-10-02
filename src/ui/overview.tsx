@@ -34,9 +34,10 @@ import {
   wipIndicator,
 } from "./overviewState.ts";
 import { Stat } from "./band.tsx";
-import { IconChevronDown, IconFolderGit, IconGitBranch, IconSearch, IconX } from "./icons.tsx";
+import { IconChevronDown, IconFolderGit, IconGitBranch, IconPlus, IconSearch, IconX } from "./icons.tsx";
 import { LabelChips } from "./labels.tsx";
-import { assignRepoHues } from "./repoGroups.ts";
+import { NewChangeDialog } from "./newChangeForm.tsx";
+import { assignRepoHues, labelTargets, newChangeTargets } from "./repoGroups.ts";
 import { AgentPicker, AgentToggle, LabelsButton, RenameButton, RenameField, RepoLabelsDialog } from "./projectSettings.tsx";
 import { PullAllButton, PullButton } from "./pull.tsx";
 import { OpenPrCount } from "./pullRequests.tsx";
@@ -377,7 +378,7 @@ export function noMatch(state: OverviewState): string {
   return parts.length ? `No repository ${parts.join(" and ")}.` : "No repository to show.";
 }
 
-export function Overview({ snapshot, config, onConfig }: { snapshot: Snapshot | null; config: Config | null; onConfig: (config: Config) => void }) {
+export function Overview({ snapshot, config, onConfig, onReload }: { snapshot: Snapshot | null; config: Config | null; onConfig: (config: Config) => void; onReload?: () => void }) {
   const [state, setStateRaw] = useState<OverviewState>(() => parseOverviewState(currentQuery()));
   const now = Date.now();
 
@@ -423,6 +424,10 @@ export function Overview({ snapshot, config, onConfig }: { snapshot: Snapshot | 
   const labelFilter: LabelFilter = { isActive: (label) => isLabelActive(state, label), onToggle: (label) => setState(toggleLabel(state, label)) };
   const labelChoices = labelOptions(rows, state.labels);
   const labelsActive = (state.labels?.length ?? 0) > 0;
+  // "New change in these projects": offered while the label filter can reach at least one repository that takes a change.
+  const labelRepos = snapshot?.repos ?? [];
+  const canCreateByLabel = labelsActive && labelTargets(labelRepos, config, state.labels ?? []).some((t) => t.eligible);
+  const [creatingByLabel, setCreatingByLabel] = useState(false);
   // Over every repository, as on the board, so a tile's colour matches its cards and group headers.
   const hues = useMemo(() => assignRepoHues((snapshot?.repos ?? []).map((r) => r.id)), [snapshot]);
 
@@ -546,6 +551,12 @@ export function Overview({ snapshot, config, onConfig }: { snapshot: Snapshot | 
                 Clear labels
               </button>
             )}
+            {canCreateByLabel && (
+              <button type="button" class="btn sm" title="Create one change in every project displaying the selected labels" onClick={() => setCreatingByLabel(true)}>
+                <IconPlus size={13} />
+                New change in these projects
+              </button>
+            )}
           </div>
         )}
       </div>
@@ -602,6 +613,14 @@ export function Overview({ snapshot, config, onConfig }: { snapshot: Snapshot | 
           </table>
         )}
         {snapshot && !nothingTracked && visible.length === 0 && pendingShown.length === 0 && <p class="hint">{noMatch(state)}</p>}
+        {creatingByLabel && (
+          <NewChangeDialog
+            target={{ projects: newChangeTargets(labelRepos, []).projects, byLabel: { repos: labelRepos, config, initial: state.labels, open: true } }}
+            onClose={() => setCreatingByLabel(false)}
+            onCreated={() => setCreatingByLabel(false)}
+            onReload={onReload}
+          />
+        )}
         {labelsRepo && config && (
           <RepoLabelsDialog repo={labelsRepo} repos={config.repos} detected={snapshot?.repos.find((r) => r.id === labelsRepo.id)?.detectedLabels ?? []} tracking={tracking} />
         )}
