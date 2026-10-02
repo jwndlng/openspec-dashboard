@@ -371,6 +371,7 @@ export function App() {
           <Overview
             snapshot={shown}
             config={config}
+            onReload={reloadSoon}
             onConfig={(c) => {
               setConfig(c);
               // An enabled repository is scanned by the server; the snapshot follows as soon as the scan is done.

@@ -510,12 +510,13 @@ export function Kanban({ snapshot, config, repoId, query, onReload }: { snapshot
       <FilterBar filters={filters} setFilters={setFilters} repos={repos} hues={hues} single={single} showing={showing} layout={layout} />
       {!single && creating && (
         <NewChangeDialog
-          target={{ projects: targets.projects, preselected: creating.preselected }}
+          target={{ projects: targets.projects, preselected: creating.preselected, byLabel: { repos, config } }}
           onClose={() => setCreating(null)}
           onCreated={() => {
             setCreating(null);
             onReload?.();
           }}
+          onReload={onReload}
         />
       )}
       <div class={`board ${layout === "stack" ? "stacked" : ""}`}>
