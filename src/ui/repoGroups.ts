@@ -1,6 +1,8 @@
 // Repository grouping and colours for the board (group-changes-by-repo design D2, D5).
 // Pure helpers: a repository contributes a hue only; the theme supplies lightness and chroma in CSS.
 import { fnv1a, REPO_HUES } from "../shared/hues.ts";
+import { displayedLabels, labelKey } from "../shared/labels.ts";
+import type { DetectedLabel } from "../shared/types.ts";
 
 export { MIN_HUE_GAP, REPO_HUES } from "../shared/hues.ts";
 
@@ -79,4 +81,47 @@ export function newChangeTargets(
   if (projects.length === 1) return { projects, preselected: projects[0].id };
   const filtered = projects.filter((p) => filterRepoIds.includes(p.id));
   return filtered.length === 1 ? { projects, preselected: filtered[0].id } : { projects };
+}
+
+/** What label targeting needs of a snapshot repository. */
+export interface LabelTargetRepo {
+  id: string;
+  name: string;
+  ok: boolean;
+  detectedLabels?: DetectedLabel[];
+}
+
+/** A repository displaying every selected label, and whether the "New change" form may create into it. */
+export interface LabelTarget {
+  id: string;
+  name: string;
+  eligible: boolean;
+  /** Why it is skipped, in words; only when not eligible. */
+  reason?: string;
+}
+
+export type LabelConfig = { repos: { id: string; labels?: string[]; hiddenLabels?: string[] }[]; labelColors?: Record<string, number> } | null | undefined;
+
+const shownLabels = (repo: LabelTargetRepo, config: LabelConfig) => displayedLabels(config?.repos.find((r) => r.id === repo.id), repo.detectedLabels, config?.labelColors);
+
+/** Every label displayed on at least one repository, each once ignoring case (first spelling wins), sorted by name. */
+export function labelChoices(repos: LabelTargetRepo[], config: LabelConfig): string[] {
+  const choices = new Map<string, string>();
+  for (const repo of repos) for (const { label } of shownLabels(repo, config)) if (!choices.has(labelKey(label))) choices.set(labelKey(label), label);
+  return [...choices.values()].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
+}
+
+/**
+ * The repositories displaying all of `labels` (ignoring case), in snapshot order — the same AND as the overview's label
+ * filter. No label selects nothing. Eligibility is the one `newChangeTargets` uses; the server refuses anything else.
+ */
+export function labelTargets(repos: LabelTargetRepo[], config: LabelConfig, labels: string[]): LabelTarget[] {
+  if (labels.length === 0) return [];
+  const wanted = labels.map(labelKey);
+  return repos
+    .filter((repo) => {
+      const shown = new Set(shownLabels(repo, config).map((l) => labelKey(l.label)));
+      return wanted.every((key) => shown.has(key));
+    })
+    .map((repo) => (repo.ok ? { id: repo.id, name: repo.name, eligible: true } : { id: repo.id, name: repo.name, eligible: false, reason: "its last scan failed" }));
 }

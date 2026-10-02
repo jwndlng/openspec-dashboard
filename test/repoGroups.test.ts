@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { assignRepoHues, groupByRepo, newChangeTargets, recentArchived, REPO_HUES, repoTint } from "../src/ui/repoGroups.ts";
+import { assignRepoHues, groupByRepo, labelChoices, labelTargets, newChangeTargets, recentArchived, REPO_HUES, repoTint } from "../src/ui/repoGroups.ts";
 
 const ids = (n: number) => Array.from({ length: n }, (_, i) => `repo-${i.toString(16).padStart(4, "0")}`);
 
@@ -123,4 +123,47 @@ test("newChangeTargets pre-selects the only eligible repository", () => {
 test("newChangeTargets offers nothing when no repository is eligible", () => {
   expect(newChangeTargets([gamma], [])).toEqual({ projects: [] });
   expect(newChangeTargets([], [])).toEqual({ projects: [] });
+});
+
+const tf = { label: "terraform", marker: "a file ending in `.tf`" };
+const docker = { label: "docker", marker: "`Dockerfile`" };
+const labelRepos = [
+  { id: "a", name: "alpha-infra", ok: true, detectedLabels: [tf] },
+  { id: "b", name: "beta-soc", ok: true, detectedLabels: [docker] },
+  { id: "d", name: "demo-ops", ok: true, detectedLabels: [tf, docker] },
+  { id: "g", name: "gamma-web", ok: false, detectedLabels: [] },
+];
+const labelConfig = {
+  repos: [
+    { id: "a", labels: ["client"] },
+    { id: "d", hiddenLabels: ["docker"] },
+    { id: "g", labels: ["Terraform"] },
+  ],
+};
+
+test("labelChoices lists every displayed label once ignoring case, sorted, honouring hidden labels", () => {
+  expect(labelChoices(labelRepos, labelConfig)).toEqual(["client", "docker", "terraform"]);
+  expect(labelChoices(labelRepos, { repos: [{ id: "b", hiddenLabels: ["docker"] }, { id: "d", hiddenLabels: ["Docker"] }] })).toEqual(["terraform"]);
+});
+
+test("labelChoices keeps a custom label that shadows a detected one", () => {
+  expect(labelChoices([{ id: "a", name: "alpha-infra", ok: true, detectedLabels: [tf] }], { repos: [{ id: "a", labels: ["Terraform"] }] })).toEqual(["Terraform"]);
+});
+
+test("labelTargets lists the repositories displaying the label in snapshot order, ignoring case", () => {
+  expect(labelTargets(labelRepos, labelConfig, ["TERRAFORM"])).toEqual([
+    { id: "a", name: "alpha-infra", eligible: true },
+    { id: "d", name: "demo-ops", eligible: true },
+    { id: "g", name: "gamma-web", eligible: false, reason: "its last scan failed" },
+  ]);
+});
+
+test("labelTargets combines several labels with AND and honours hidden labels", () => {
+  expect(labelTargets(labelRepos, labelConfig, ["terraform", "client"]).map((t) => t.id)).toEqual(["a"]);
+  expect(labelTargets(labelRepos, labelConfig, ["docker"]).map((t) => t.id)).toEqual(["b"]);
+});
+
+test("labelTargets selects nothing without a label", () => {
+  expect(labelTargets(labelRepos, labelConfig, [])).toEqual([]);
+  expect(labelTargets(labelRepos, null, ["client"])).toEqual([]);
 });

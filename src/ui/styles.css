@@ -819,6 +819,21 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: 
 .new-change .row.actions .btn { padding: 8px 16px; font-size: 13px; }
 .new-change .hint { font-size: 11px; font-weight: 400; }
 .new-change .hint.danger { color: var(--danger); }
+/* By label: the mode switch, the label picker, the projects to create in and, afterwards, one result per project. */
+.new-change .new-change-mode { align-self: flex-start; }
+.new-change-labels { display: flex; flex-direction: column; gap: 8px; }
+.new-change-labels .label-chips button.label-chip:disabled { cursor: default; opacity: .6; }
+.new-change-targets, .new-change-results { display: flex; flex-direction: column; gap: 2px; margin: 0; padding: 6px 0; list-style: none; max-height: 220px; overflow-y: auto; border: 1px solid var(--border-light); border-radius: var(--radius); background: var(--bg-section); }
+.new-change-targets li { display: flex; align-items: center; gap: 8px; padding: 3px 10px; font-size: 13px; }
+.new-change .new-change-targets label { display: inline; flex: 0 1 auto; font-size: 13px; color: var(--fg-body); cursor: pointer; }
+.new-change-targets li.skipped label { color: var(--fg-subtle); cursor: default; }
+.new-change-targets .hint { margin-left: auto; color: var(--fg-subtle); }
+.new-change-summary { margin: 0; font-size: 13px; color: var(--fg-body); }
+.new-change-results li { display: flex; gap: 10px; align-items: baseline; padding: 3px 10px; font-size: 13px; }
+.new-change-results .repo { font-weight: 600; color: var(--fg-heading); min-width: 0; }
+.new-change-results .outcome { margin-left: auto; text-align: right; font-size: 12px; }
+.new-change-results li.ok .outcome { color: var(--success); }
+.new-change-results li.refused .outcome { color: var(--danger); }
 
 /* Dismissing a change: the file list and its verdicts, then Cancel and the destructive button apart. */
 .dismiss-body { display: flex; flex-direction: column; gap: 12px; padding: 20px 24px 12px; }

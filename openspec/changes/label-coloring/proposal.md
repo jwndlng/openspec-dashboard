@@ -48,6 +48,7 @@ _None._
 - `src/server/api.ts` — `POST /api/labels/color`.
 - `src/ui/labels.tsx`, `src/ui/projectSettings.tsx`, `src/ui/overview.tsx`, `src/ui/kanban.tsx`, `src/ui/styles.css` —
   coloured chips, colour picker in the labels dialog, active-chip check mark.
+- `src/ui/newChangeForm.tsx`, `src/ui/repoGroups.ts` (`LabelConfig`) — the selected-label chips of the "new change in every project with a label" dialog take the same colours.
 - `src/ui/api.ts`, `src/ui/untracked.tsx`, `src/ui/demo/demoApi.ts` — client and demo implementation of the new call.
 - Tests: `test/labels.test.ts`, `test/config.test.ts`, `test/api.test.ts`, `test/projectSettingsUi.test.ts`,
   `test/demoApi.test.ts`, `test/repoContrast.test.ts` (label colour contrast and hue berth).
