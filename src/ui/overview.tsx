@@ -34,8 +34,8 @@ import {
   wipIndicator,
 } from "./overviewState.ts";
 import { Stat } from "./band.tsx";
-import { IconChevronDown, IconFolderGit, IconGitBranch, IconSearch, IconX } from "./icons.tsx";
-import { LabelChips } from "./labels.tsx";
+import { IconCheck, IconChevronDown, IconFolderGit, IconGitBranch, IconSearch, IconX } from "./icons.tsx";
+import { LabelChips, labelHueStyle } from "./labels.tsx";
 import { assignRepoHues } from "./repoGroups.ts";
 import { AgentPicker, AgentToggle, LabelsButton, RenameButton, RenameField, RepoLabelsDialog } from "./projectSettings.tsx";
 import { PullAllButton, PullButton } from "./pull.tsx";
@@ -421,7 +421,7 @@ export function Overview({ snapshot, config, onConfig }: { snapshot: Snapshot | 
   const stages = useMemo(() => (snapshot ? boardColumns(snapshot).filter((c) => c !== "Archived") : []), [snapshot]);
   const visible = sortRows(filterRows(rows, state.q, state.wip, state.labels), state.sort, state.dir);
   const labelFilter: LabelFilter = { isActive: (label) => isLabelActive(state, label), onToggle: (label) => setState(toggleLabel(state, label)) };
-  const labelChoices = labelOptions(rows, state.labels);
+  const labelChoices = labelOptions(rows, state.labels, config?.labelColors);
   const labelsActive = (state.labels?.length ?? 0) > 0;
   // Over every repository, as on the board, so a tile's colour matches its cards and group headers.
   const hues = useMemo(() => assignRepoHues((snapshot?.repos ?? []).map((r) => r.id)), [snapshot]);
@@ -531,11 +531,13 @@ export function Overview({ snapshot, config, onConfig }: { snapshot: Snapshot | 
                 <button
                   key={option.label}
                   type="button"
-                  class={`label-chip ${active ? "on" : ""} ${option.count === 0 ? "unmatched" : ""}`}
+                  class={`label-chip label-tint ${active ? "on" : ""} ${option.count === 0 ? "unmatched" : ""}`}
+                  style={labelHueStyle(option.hue)}
                   aria-pressed={active}
                   title={option.count === 0 ? "No repository displays this label" : `${option.count} ${option.count === 1 ? "repository" : "repositories"}`}
                   onClick={() => setState(toggleLabel(state, option.label))}
                 >
+                  {active && <IconCheck size={11} />}
                   {option.label}
                   <span class="label-count">{option.count}</span>
                 </button>
@@ -603,7 +605,7 @@ export function Overview({ snapshot, config, onConfig }: { snapshot: Snapshot | 
         )}
         {snapshot && !nothingTracked && visible.length === 0 && pendingShown.length === 0 && <p class="hint">{noMatch(state)}</p>}
         {labelsRepo && config && (
-          <RepoLabelsDialog repo={labelsRepo} repos={config.repos} detected={snapshot?.repos.find((r) => r.id === labelsRepo.id)?.detectedLabels ?? []} tracking={tracking} />
+          <RepoLabelsDialog repo={labelsRepo} repos={config.repos} detected={snapshot?.repos.find((r) => r.id === labelsRepo.id)?.detectedLabels ?? []} labelColors={config.labelColors} tracking={tracking} />
         )}
         {!state.wip && !labelsActive && config && (
           <UnmanagedSection

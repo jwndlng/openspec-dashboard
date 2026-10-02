@@ -30,7 +30,7 @@
   --on-brand: #ffffff;
 
   /* Status roles: one hue per meaning. Kept clear of the brand accent and of every repository hue
-     (REPO_HUES in repoGroups.ts); test/repoContrast.test.ts proves both. Info is sky, not blue, so a running agent
+     (REPO_HUES in src/shared/hues.ts); test/repoContrast.test.ts proves both. Info is sky, not blue, so a running agent
      never reads as the indigo accent. */
   /* Each role is a filled chip: its text on its own translucent tint (--<role>-bg), edged by its border. */
   --info: #6cbcf9;
@@ -70,6 +70,12 @@
   /* Share of the repo colour mixed into the column background for a group panel and its border. */
   --repo-group-mix: 5%;
   --repo-group-border-mix: 22%;
+  /* Label colours (project-labels): the label supplies --label-hue from the repository hues; a chip is its colour as
+     text on an opaque tint of --bg-section, so its contrast is the same on every ground (test/repoContrast.test.ts). */
+  --label-l: 0.8;
+  --label-c: 0.1;
+  --label-mix: 14%;
+  --label-border-mix: 45%;
 
   /* Rounder the larger the element: controls and badges, cards and fields, columns, panels and dialogs. */
   --radius-sm: 6px;
@@ -140,6 +146,10 @@
   --repo-soft-l: 0.93;
   --repo-group-mix: 5%;
   --repo-group-border-mix: 24%;
+  --label-l: 0.47;
+  --label-c: 0.12;
+  --label-mix: 10%;
+  --label-border-mix: 40%;
 }
 
 *, *::before, *::after { box-sizing: border-box; }
@@ -1267,8 +1277,9 @@ body:has(.detail-overlay) { overflow: hidden; }
   .disable-error { max-width: 120px; }
 }
 
-/* Repository labels (project-labels). Neutral chips: a label is a grouping, not a status, so it takes no role colour.
-   Detected labels carry an icon and a dashed edge; the tooltip names the marker. */
+/* Repository labels (project-labels). A label is a grouping, not a status, so it takes no role colour: it wears its own
+   label colour, drawn from the repository hues (which keep clear of every role and the accent). Detected labels carry
+   an icon and a dashed edge; the tooltip names the marker. An active filter chip adds the brand border and a check. */
 .label-chips { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px; min-width: 0; }
 .repo-name .label-chips { margin-left: 6px; vertical-align: middle; }
 .label-chip {
@@ -1279,10 +1290,18 @@ body:has(.detail-overlay) { overflow: hidden; }
   white-space: nowrap;
 }
 .label-chip.detected { border-style: dashed; color: var(--fg-subtle); }
+.label-tint { --label-color: oklch(var(--label-l) var(--label-c) var(--label-hue, 180)); }
+.label-chip.label-tint {
+  color: var(--label-color);
+  border-color: color-mix(in oklch, var(--label-color) var(--label-border-mix), var(--bg-section));
+  background: color-mix(in oklch, var(--label-color) var(--label-mix), var(--bg-section));
+}
 button.label-chip { cursor: pointer; }
 button.label-chip:hover { border-color: var(--border-strong); color: var(--fg-heading); }
+button.label-chip.label-tint:hover { border-color: var(--label-color); color: var(--label-color); }
 button.label-chip:focus-visible { outline: 2px solid var(--brand-ring); outline-offset: 1px; }
 .label-chip.on { border-style: solid; border-color: var(--brand); color: var(--fg-heading); background: var(--brand-softer); }
+.label-chip.label-tint.on, button.label-chip.label-tint.on:hover { border-color: var(--brand); color: var(--label-color); box-shadow: inset 0 0 0 1px var(--brand); }
 .label-chip.unmatched { text-decoration: line-through; }
 .label-chip.unmatched.on { text-decoration: none; font-style: italic; }
 .label-chip .label-count { color: var(--fg-subtle); font-variant-numeric: tabular-nums; }
@@ -1295,3 +1314,16 @@ button.label-chip:focus-visible { outline: 2px solid var(--brand-ring); outline-
 .repo-labels-edit .label-chip button:hover { color: var(--fg-heading); }
 .repo-labels-edit .label-chip.hidden-label { opacity: .55; text-decoration: line-through; }
 .repo-labels-edit .label-error { font-size: 11px; color: var(--danger); }
+/* The labels dialog's colour controls: a swatch before each chip, and one picker row under the chips. */
+.label-entry { display: inline-flex; align-items: center; gap: 3px; }
+.label-swatch { display: inline-flex; align-items: center; justify-content: center; flex: none; width: 12px; height: 12px; border-radius: 50%; background: var(--label-color); color: var(--bg-section); }
+.label-swatch-button, .label-color-option {
+  display: inline-flex; align-items: center; gap: 4px; padding: 2px; border: 1px solid transparent; border-radius: 999px;
+  font: inherit; font-size: 11px; color: var(--fg-body); background: transparent; cursor: pointer;
+}
+.label-swatch-button:hover, .label-color-option:hover { border-color: var(--border-strong); }
+.label-swatch-button[aria-expanded="true"] { border-color: var(--border-strong); background: var(--bg-raised); }
+.label-swatch-button:focus-visible, .label-color-option:focus-visible { outline: 2px solid var(--brand-ring); outline-offset: 1px; }
+.label-color-picker { flex-basis: 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 4px; padding: 6px; border: 1px solid var(--border-light); border-radius: var(--radius-sm); background: var(--bg-raised); }
+.label-color-option.auto { padding-right: 8px; }
+.label-color-option.on { border-color: var(--brand); }

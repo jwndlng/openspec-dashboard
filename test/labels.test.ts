@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
-import { detectLabels, displayedLabels, LABEL_RULES, type LabelEntry } from "../src/shared/labels.ts";
+import { REPO_HUES } from "../src/shared/hues.ts";
+import { detectLabels, displayedLabels, LABEL_RULES, type LabelEntry, labelHue, nearestAssignableHue } from "../src/shared/labels.ts";
 
 const files = (...names: string[]): LabelEntry[] => names.map((name) => ({ name, kind: "file" }));
 const labelsOf = (...names: string[]) => detectLabels(files(...names)).map((d) => d.label);
@@ -51,10 +52,41 @@ test("labels are sorted and listed once, the first rule giving the marker", () =
 test("custom labels come first in the user's order, then detected ones that are neither hidden nor shadowed", () => {
   const detected = detectLabels(files("main.tf", "go.mod", "Dockerfile"));
   expect(displayedLabels({ labels: ["client", "Go"], hiddenLabels: ["DOCKER"] }, detected)).toEqual([
-    { label: "client", kind: "custom" },
-    { label: "Go", kind: "custom" },
-    { label: "terraform", kind: "detected", marker: "`.tf` files" },
+    { label: "client", kind: "custom", hue: labelHue("client", undefined) },
+    { label: "Go", kind: "custom", hue: labelHue("go", undefined) },
+    { label: "terraform", kind: "detected", marker: "`.tf` files", hue: labelHue("terraform", undefined) },
   ]);
   expect(displayedLabels(undefined, undefined)).toEqual([]);
   expect(displayedLabels({ hiddenLabels: ["cobol"] }, detected).map((d) => d.label)).toEqual(["docker", "go", "terraform"]);
+});
+
+test("a label's derived hue depends on its name alone, ignoring case, and is always an assignable hue", () => {
+  expect(labelHue("client", undefined)).toBe(labelHue("Client", undefined));
+  expect(labelHue(" client ", {})).toBe(labelHue("client", undefined));
+  // Pinned: a derived colour must not change between versions, machines or reloads.
+  expect(labelHue("client", undefined)).toBe(226);
+  for (const name of ["client", "terraform", "go", "docker", "infra", "x", "a much longer label name"]) {
+    expect(REPO_HUES).toContain(labelHue(name, undefined));
+  }
+});
+
+test("a chosen colour wins for the label's name ignoring case and is snapped to the palette", () => {
+  expect(labelHue("Client", { client: 290 })).toBe(290);
+  expect(labelHue("terraform", { client: 290 })).toBe(labelHue("terraform", undefined));
+  expect(labelHue("client", { client: 295 })).toBe(290);
+  expect(labelHue("client", { client: 0 })).toBe(350);
+  expect(labelHue("client", { client: 359 })).toBe(350);
+  expect(nearestAssignableHue(33)).toBe(27);
+  expect(nearestAssignableHue(15)).toBe(27);
+  // Inherited object keys are not choices.
+  expect(labelHue("constructor", {})).toBe(labelHue("constructor", undefined));
+  expect(REPO_HUES).toContain(labelHue("constructor", {}));
+});
+
+test("displayed labels carry their colour", () => {
+  const detected = detectLabels(files("go.mod"));
+  expect(displayedLabels({ labels: ["Client"] }, detected, { client: 190, go: 27 }).map((l) => [l.label, l.hue])).toEqual([
+    ["Client", 190],
+    ["go", 27],
+  ]);
 });

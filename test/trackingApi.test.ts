@@ -225,6 +225,42 @@ test("labels that break the rules are refused naming the label", async () => {
   expect(await saved()).toEqual(before);
 });
 
+test("a label colour is stored under the label in lower case, and Auto removes it and then the key", async () => {
+  const res = await send("/api/labels/color", { label: " Client ", hue: 290 });
+  expect(res.status).toBe(200);
+  expect((await res.json()).labelColors).toEqual({ client: 290 });
+  expect((await saved()).labelColors).toEqual({ client: 290 });
+  expect(state.config.labelColors).toEqual({ client: 290 });
+  expect((await send("/api/labels/color", { label: "go", hue: 27 })).status).toBe(200);
+  expect((await send("/api/labels/color", { label: "GO", hue: null })).status).toBe(200);
+  expect((await saved()).labelColors).toEqual({ client: 290 });
+  expect((await send("/api/labels/color", { label: "client", hue: null })).status).toBe(200);
+  expect("labelColors" in (await saved())).toBe(false);
+  // Auto for a label without a colour changes nothing and is not an error.
+  expect((await send("/api/labels/color", { label: "client", hue: null })).status).toBe(200);
+  expect(triggered).toBe(0);
+});
+
+test("an invalid hue, an invalid label or a missing field is refused and changes nothing", async () => {
+  const before = await saved();
+  const bodies = [{ label: "client", hue: 12.5 }, { label: "client", hue: 360 }, { label: "client", hue: -1 }, { label: "client", hue: "290" }, { label: "client" }, { hue: 290 }, { label: 3, hue: 290 }, { label: "  ", hue: 290 }, { label: "x".repeat(33), hue: 290 }];
+  for (const body of bodies) expect((await send("/api/labels/color", body)).status).toBe(400);
+  const comma = await send("/api/labels/color", { label: "a,b", hue: 290 });
+  expect(comma.status).toBe(400);
+  expect((await comma.json()).error).toContain("a,b");
+  expect(await saved()).toEqual(before);
+});
+
+test("more than 200 label colours are refused", async () => {
+  state.config = await saveConfig({ ...state.config, labelColors: Object.fromEntries(Array.from({ length: 200 }, (_, i) => [`l${i}`, 27])) });
+  const before = await saved();
+  expect((await send("/api/labels/color", { label: "one-too-many", hue: 27 })).status).toBe(400);
+  expect((await send("/api/labels/color", { label: "l0", hue: 39 })).status).toBe(200);
+  expect((await saved()).labelColors?.l0).toBe(39);
+  expect(Object.keys((await saved()).labelColors ?? {})).toHaveLength(Object.keys(before.labelColors ?? {}).length);
+  state.config = await saveConfig({ ...state.config, labelColors: undefined });
+});
+
 test("a disabled repository is forgotten and offered by discovery again; an enabled one is refused", async () => {
   expect((await send(`/api/repos/${alphaId()}/forget`, {})).status).toBe(200);
   expect((await saved()).repos).toEqual([]);
@@ -270,6 +306,7 @@ test("the settings routes are refused cross-site and change nothing", async () =
     [`/api/repos/${alphaId()}/agent`, { enabled: false }],
     [`/api/repos/${alphaId()}/labels`, { labels: ["x"] }],
     [`/api/repos/${alphaId()}/forget`, {}],
+    ["/api/labels/color", { label: "client", hue: 290 }],
   ];
   for (const [path, body] of routes) {
     expect((await send(path, body, { origin: "https://example.com" })).status).toBe(403);

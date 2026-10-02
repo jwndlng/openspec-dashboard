@@ -310,7 +310,7 @@ function Column({ label, cards, now, hot, showRepo, from, countLabel, groups }: 
 }
 
 function RepoHeader({ repo, config, now, stats, onCreated }: { repo: RepoSnapshot; config: Config | null; now: number; stats: { open: number; toArchive: number }; onCreated: () => void }) {
-  const labels = displayedLabels(config?.repos.find((r) => r.id === repo.id), repo.detectedLabels);
+  const labels = displayedLabels(config?.repos.find((r) => r.id === repo.id), repo.detectedLabels, config?.labelColors);
   const updated = repo.lastUpdatedAt ? relTime(repo.lastUpdatedAt, now) : undefined;
   const notice = branchNotice(repo);
   const [creating, setCreating] = useState(false);

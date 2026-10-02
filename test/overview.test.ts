@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import type { ChangeSnapshot, Config, DiscoverResult, RepoSnapshot, Snapshot, WorkInProgress } from "../src/shared/types.ts";
+import { labelHue } from "../src/shared/labels.ts";
 import { defaultAgentSessions } from "../src/server/config.ts";
 import { checkoutMarkers, hasCheckoutInfo } from "../src/ui/checkoutMarkers.ts";
 import { cdCommand } from "../src/ui/format.ts";
@@ -427,11 +428,23 @@ test("labels: one label, several with AND, combined with search, and an unknown 
 test("labels: the filter offers every displayed label once, plus active labels nothing displays", () => {
   const rows = overviewRows(labelled, labelConfig);
   expect(labelOptions(rows, ["cobol"])).toEqual([
-    { label: "client", count: 1 },
-    { label: "cobol", count: 0 },
-    { label: "go", count: 2 },
-    { label: "terraform", count: 2 },
+    { label: "client", count: 1, hue: labelHue("client", undefined) },
+    { label: "cobol", count: 0, hue: labelHue("cobol", undefined) },
+    { label: "go", count: 2, hue: labelHue("go", undefined) },
+    { label: "terraform", count: 2, hue: labelHue("terraform", undefined) },
   ]);
+});
+
+test("labels: a label has one colour on every row and in the filter, and a chosen colour applies everywhere", () => {
+  const colored = { ...labelConfig, labelColors: { go: 290 } } as Config;
+  const rows = overviewRows(labelled, colored);
+  const hueOf = (row: (typeof rows)[number], label: string) => row.labels.find((l) => l.label.toLowerCase() === label)?.hue;
+  expect(hueOf(rows[1], "go")).toBe(290);
+  expect(hueOf(rows[2], "go")).toBe(290);
+  expect(hueOf(rows[0], "terraform")).toBe(hueOf(rows[2], "terraform"));
+  const options = labelOptions(rows, ["cobol"], { cobol: 27 });
+  expect(options.find((o) => o.label === "go")?.hue).toBe(290);
+  expect(options.find((o) => o.label === "cobol")?.hue).toBe(27);
 });
 
 test("labels: URL state uses repeated label parameters and leaves label-free URLs unchanged", () => {

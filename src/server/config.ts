@@ -3,7 +3,7 @@ import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { basename, dirname, isAbsolute } from "node:path";
 import { z } from "zod";
 import { CLAUDE_PROFILE, defaultAgentSessions, FORMER_PROMPTS } from "../shared/agentDefaults.ts";
-import { MAX_LABEL_LENGTH, MAX_LABELS } from "../shared/labels.ts";
+import { MAX_LABEL_COLORS, MAX_LABEL_LENGTH, MAX_LABELS } from "../shared/labels.ts";
 import type { Config, PromptKey, RepoConfig } from "../shared/types.ts";
 import { canonicalPath, configPath, dashboardHome, expandPath } from "./paths.ts";
 
@@ -160,6 +160,21 @@ const labelSchema = z
 // Optional with no default: a config saved before labels existed loads, and saves, without the key.
 const labelsSchema = z.array(labelSchema).max(MAX_LABELS, { message: `at most ${MAX_LABELS} labels per repository` }).optional();
 
+// A chosen label colour: any whole degree, so retuning the palette never makes a saved config unreadable — the UI snaps
+// it to the nearest assignable hue. Optional with no default, like the label lists.
+const labelColorsSchema = z
+  .record(z.string(), z.number().int({ message: "a label colour is a whole number of degrees" }).min(0, { message: "a label colour is a hue from 0 to 359" }).max(359, { message: "a label colour is a hue from 0 to 359" }))
+  .optional();
+
+/** Why `key` cannot name a label colour: the label rules, stored in lower case. Undefined when it can. */
+function labelColorKeyProblem(key: string): string | undefined {
+  const parsed = labelSchema.safeParse(key);
+  if (!parsed.success) return parsed.error.issues[0]?.message;
+  if (parsed.data !== key) return "a label cannot start or end with spaces";
+  if (key !== key.toLowerCase()) return "a label colour is stored under the label in lower case";
+  return undefined;
+}
+
 const repoSchema = z.object({
   id: z.string().regex(/^[a-f0-9]{12}$/),
   path: absolutePath,
@@ -190,8 +205,15 @@ export const configSchema = z
     pollIntervalSeconds: z.number().int().min(MIN_POLL_SECONDS),
     port: z.number().int().min(1024).max(65535),
     agentSessions: agentSessionsSchema,
+    labelColors: labelColorsSchema,
   })
   .superRefine((cfg, ctx) => {
+    const colored = Object.keys(cfg.labelColors ?? {});
+    if (colored.length > MAX_LABEL_COLORS) ctx.addIssue({ code: "custom", path: ["labelColors"], message: `at most ${MAX_LABEL_COLORS} label colours` });
+    for (const key of colored) {
+      const problem = labelColorKeyProblem(key);
+      if (problem) ctx.addIssue({ code: "custom", path: ["labelColors", key], message: `label "${key}": ${problem}` });
+    }
     const ids = new Set<string>();
     for (const [i, repo] of cfg.repos.entries()) {
       if (ids.has(repo.id)) {
