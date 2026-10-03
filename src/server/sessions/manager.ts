@@ -10,7 +10,7 @@ import { isCleaningUp } from "../cleanup.ts";
 import { isDismissing } from "../dismissChange.ts";
 import { worktreesDir } from "../paths.ts";
 import { CHANGE_NAME } from "../source.ts";
-import { agentEnv, agentFor, availability, defaultAgentOf, integratePrompt, launchCommand, launchWithoutPrompt, openingPrompt, resolveConflictsPrompt, shipPrompt } from "./agents.ts";
+import { agentEnv, agentFor, availability, defaultAgentOf, presetAvailability, integratePrompt, launchCommand, launchWithoutPrompt, openingPrompt, resolveConflictsPrompt, shipPrompt } from "./agents.ts";
 import { consoleFolderProblem, prepareConsoleFolder } from "./consoleFolder.ts";
 import type { SessionActivity } from "../activity/events.ts";
 import { SessionStore } from "./store.ts";
@@ -115,6 +115,11 @@ export class SessionManager {
 
   agents(): AgentAvailability[] {
     return availability(this.deps.getConfig());
+  }
+
+  /** Presets that are not configured yet, marked with whether their executable was found (Settings). */
+  presets(): AgentAvailability[] {
+    return presetAvailability(this.deps.getConfig());
   }
 
   list(): Session[] {

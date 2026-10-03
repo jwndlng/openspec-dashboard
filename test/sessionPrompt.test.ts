@@ -1,13 +1,14 @@
 import { afterAll, afterEach, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
 import { existsSync } from "node:fs";
-import { writeFile } from "node:fs/promises";
+import { chmod, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { createFetchHandler, type AppState } from "../src/server/api.ts";
 import { worktreesDir } from "../src/server/paths.ts";
 import { Scanner } from "../src/server/scanner.ts";
-import type { ChangeSession, ChangeSnapshot, Session } from "../src/shared/types.ts";
+import { CLAUDE_PROFILE } from "../src/shared/agentDefaults.ts";
+import type { AgentAvailability, ChangeSession, ChangeSnapshot, Session } from "../src/shared/types.ts";
 import { nextStepFor, startersFor } from "../src/ui/sessionState.ts";
-import { useTempHome } from "./helpers.ts";
+import { tempDir, useTempHome } from "./helpers.ts";
 import { fakeProfile, FAKE_AGENT, harness, waitFor, watch, type Harness } from "./sessionHelpers.ts";
 
 setDefaultTimeout(30_000);
@@ -209,4 +210,33 @@ test("Validate is the next step of a validating change: typed into its running s
   await waitFor(() => seen.text().includes("you said: validate confirm-retention"), "the prompt the agent received");
   // Nothing is left to implement in `Done`, so that step is refused even into a running session.
   expect(h.manager.prompt(s.id, { action: "implement" })).rejects.toThrow(/not available/);
+});
+
+test("API: the session list marks the presets that are not configured with whether their executable was found", async () => {
+  const h = await harness();
+  managers.push(h.manager);
+  const state: AppState = { config: h.config, scanner: new Scanner(() => h.config, { persist: false }, h.snapshot), sessions: h.manager };
+  const handle = createFetchHandler({ state, indexHtml: "" });
+  const presets = async () => ((await (await handle(new Request("http://127.0.0.1:4173/api/sessions"))).json()) as { presets: AgentAvailability[] }).presets;
+
+  // A PATH holding only a fake `agy`, so what else is installed on this machine does not matter.
+  const bin = await tempDir("osd-bin-");
+  await writeFile(join(bin, "agy"), "#!/bin/sh\nexit 0\n");
+  await chmod(join(bin, "agy"), 0o755);
+  const savedPath = process.env.PATH;
+  process.env.PATH = bin;
+  try {
+    h.config.agentSessions.agents.push(structuredClone(CLAUDE_PROFILE));
+    expect(await presets()).toEqual([
+      { id: "codex", name: "Codex", available: false },
+      { id: "agy", name: "Antigravity", available: true, path: join(bin, "agy") },
+    ]);
+    // Found is only a mark: nothing was added to the configuration.
+    expect(h.config.agentSessions.agents.map((a) => a.id)).toEqual(["fake", "claude"]);
+
+    h.config.agentSessions.agents.pop();
+    expect((await presets()).map((p) => p.id)).toEqual(["claude", "codex", "agy"]);
+  } finally {
+    process.env.PATH = savedPath;
+  }
 });

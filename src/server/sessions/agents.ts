@@ -1,5 +1,6 @@
 // Agent profiles (design.md D16): an agent is a command line plus opening prompts. Nothing here knows any vendor.
 import { DEFAULT_INTEGRATE_PROMPT, DEFAULT_RESOLVE_CONFLICTS_PROMPT, DEFAULT_SHIP_PROMPT, type AgentAvailability, type AgentProfile, type Config, type PromptKey, type RepoConfig, type SessionAction } from "../../shared/types.ts";
+import { AGENT_PRESETS } from "../../shared/agentDefaults.ts";
 import { whichOnPath } from "../paths.ts";
 import { CHANGE_NAME } from "../source.ts";
 
@@ -12,6 +13,18 @@ export function availability(config: Config): AgentAvailability[] {
   return config.agentSessions.agents.map((agent) => {
     const path = whichOnPath(agent.command[0]);
     return { id: agent.id, name: agent.name, available: path !== undefined, path };
+  });
+}
+
+/**
+ * Whether the executable of each preset that is not configured yet is on this machine, so Settings can list the found
+ * ones first. A hint for the user's choice only: nothing is ever added because it was found. The presets are data.
+ */
+export function presetAvailability(config: Config): AgentAvailability[] {
+  const configured = new Set(config.agentSessions.agents.map((a) => a.id));
+  return AGENT_PRESETS.filter(({ profile }) => !configured.has(profile.id)).map(({ profile }) => {
+    const path = whichOnPath(profile.command[0]);
+    return { id: profile.id, name: profile.name, available: path !== undefined, path };
   });
 }
 
