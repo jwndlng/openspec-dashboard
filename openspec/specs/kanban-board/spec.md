@@ -198,7 +198,7 @@ An automatic refresh SHALL NOT overlap another refresh: while a refresh is in fl
 - **THEN** no repository has been fetched from or merged, because only a scan was triggered
 
 ### Requirement: Status labels use a semantic colour palette
-Every label the board paints in a colour SHALL draw that colour from a fixed set of semantic roles, and each role SHALL
+Every status label the board paints in a colour SHALL draw that colour from a fixed set of semantic roles, and each role SHALL
 mean one thing across the whole UI. The roles are `info` (blue), `branch` (orange), `success`, `warning`, `danger` and
 `neutral`. Each role SHALL be defined as theme tokens for its text, its border and a soft background in both themes: a
 label in a role SHALL be drawn on that role's soft background (a translucent tint of the role), so the role reads as a
@@ -219,6 +219,10 @@ Labels SHALL use the roles as follows:
   Stale `pushed` work stays `warning`: a pushed branch may simply be waiting for review.
 - `neutral` — labels that carry no status: the activity age, the `prompt` note, the column a change sits in, and
   markers such as which agent profile is the default.
+
+A repository's labels (project-labels) are groupings, not status labels, and take no role: wherever they are shown,
+including the repository board header, each is painted in its label colour, whose hue is drawn from the same assignable
+hues as repository colours and therefore keeps at least 12° from every role hue and from the brand accent.
 
 The brand accent SHALL NOT be the colour of any status label; it stays reserved for focus, active state, primary
 actions and progress. Colour MUST NOT be the only cue: every label SHALL keep its text, and its role MUST NOT change
@@ -248,6 +252,10 @@ both themes, and so SHALL it against the role's soft background laid over those 
 #### Scenario: A stale pushed branch is only a warning
 - **WHEN** a worktree's branch has been pushed and untouched for eight days and no session is running
 - **THEN** its badge is painted in the `warning` role, not `danger`
+
+#### Scenario: Repository labels take no role
+- **WHEN** a repository board header shows the repository's labels `client` and `terraform`
+- **THEN** neither chip is painted in a status role or the brand accent, and each keeps its label colour
 
 #### Scenario: Roles are legible in both themes
 - **WHEN** the theme is switched between dark and light

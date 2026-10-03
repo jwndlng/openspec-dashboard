@@ -27,5 +27,5 @@
 ## 6. Verification
 
 - [x] 6.1 Run `bun run check` and confirm lint, typecheck and all tests pass
-- [~] 6.2 Run `bun run dev`, open the overview in both themes, give two repositories the same label, recolour it in one dialog and confirm it changes everywhere (rows, tiles, filter, board header) without a scan, then choose **Auto** and confirm `labelColors` is gone from `~/.openspec-dashboard/config.json`
+- [x] 6.2 Run `bun run dev`, open the overview in both themes, give two repositories the same label, recolour it in one dialog and confirm it changes everywhere (rows, tiles, filter, board header) without a scan, then choose **Auto** and confirm `labelColors` is gone from `~/.openspec-dashboard/config.json`
 - [x] 6.3 Run `bun run build` and confirm `dist/openspec-dashboard` serves coloured labels and the picker
