@@ -53,6 +53,19 @@ export function cardSessionControls(
   return { shown, starters: shown.some((s) => s.state === "running") ? [] : startersFor(config, card) };
 }
 
+/**
+ * Whether a card shows an agent at work as a whole — tinted, its name swept. Derived from the very badges the card's
+ * footer draws, so the card and its `working` badge can never disagree, sessions switched off included.
+ */
+export function cardIsLive(
+  config: Config | null,
+  sessions: ChangeSession[],
+  card: Pick<ChangeSnapshot, "repoId" | "name" | "archived" | "artifacts" | "stage" | "subState">,
+  now = Date.now(),
+): boolean {
+  return cardSessionControls(config, sessions, card).shown.some((s) => sessionBadge(s, now).live === true);
+}
+
 /** Where a starter is rendered: in a card's footer on a board, or in a change's Console tab. */
 export type StarterPlace = "card" | "console";
 

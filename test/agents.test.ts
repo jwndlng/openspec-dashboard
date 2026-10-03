@@ -4,7 +4,7 @@ import { agentEnv, agentFor, integratePrompt, launchCommand, openingPrompt, reso
 import { Scrollback, sessionBranch, worktreeName } from "../src/server/sessions/manager.ts";
 import { CLAUDE_PROFILE, DEFAULT_SHORTCUTS, FORMER_PROMPTS } from "../src/shared/agentDefaults.ts";
 import { availableActions, DEFAULT_INTEGRATE_PROMPT, DEFAULT_RESOLVE_CONFLICTS_PROMPT, DEFAULT_SHIP_PROMPT, integrateUnavailable, type AgentAvailability, type ChangeSession, type Session } from "../src/shared/types.ts";
-import { agentForRepo, cardSessionControls, NEEDS_YOU_AFTER_MS, parseArgLines, sessionBadge, sessionForChange, sessionsEnabledFor, silenceDuration, slugId, startersFor } from "../src/ui/sessionState.ts";
+import { agentForRepo, cardIsLive, cardSessionControls, NEEDS_YOU_AFTER_MS, parseArgLines, sessionBadge, sessionForChange, sessionsEnabledFor, silenceDuration, slugId, startersFor } from "../src/ui/sessionState.ts";
 import { fakeProfile } from "./sessionHelpers.ts";
 
 const base = defaultConfig();
@@ -265,6 +265,29 @@ test("a card shows the running session's badge instead of a starter, and a faile
   // Feature off, or the repository switched off: no badge and no starter, as before.
   for (const off of [{ ...cfg, agentSessions: { ...cfg.agentSessions, enabled: false } }, { ...cfg, repos: [{ ...repo, agent: { enabled: false } }] }]) {
     expect(cardSessionControls(off, [mine({})], card)).toEqual({ shown: [], starters: [] });
+  }
+});
+
+test("a card is live exactly while its badge reads working", () => {
+  const now = Date.parse("2026-01-01T01:00:00Z");
+  const repo = newRepoConfig("/w/demo-ops", true);
+  const cfg = { ...base, repos: [repo], agentSessions: { ...base.agentSessions, enabled: true, agents: [fakeProfile()], defaultAgent: "fake" } };
+  const card = { repoId: repo.id, name: "c", artifacts: [{ id: "a0", status: "done" as const }], stage: "ready" as const };
+  const mine = (patch: Partial<ChangeSession>) => session({ repoId: repo.id, change: "c", ...patch });
+  const printing = new Date(now - NEEDS_YOU_AFTER_MS / 2).toISOString();
+
+  expect(cardIsLive(cfg, [mine({ lastOutputAt: printing })], card, now)).toBe(true);
+  // Silent past the limit the badge says "may need you": no motion, no tint.
+  expect(cardIsLive(cfg, [mine({ lastOutputAt: new Date(now - NEEDS_YOU_AFTER_MS - 1000).toISOString() })], card, now)).toBe(false);
+  // Ended, failed, none at all, or another change's session.
+  expect(cardIsLive(cfg, [mine({ state: "exited", exitCode: 0 })], card, now)).toBe(false);
+  expect(cardIsLive(cfg, [mine({ state: "exited", exitCode: 3 })], card, now)).toBe(false);
+  expect(cardIsLive(cfg, [mine({ state: "failed", error: "no such file" })], card, now)).toBe(false);
+  expect(cardIsLive(cfg, [], card, now)).toBe(false);
+  expect(cardIsLive(cfg, [session({ repoId: repo.id, change: "other", lastOutputAt: printing })], card, now)).toBe(false);
+  // Sessions switched off, globally or for the repository: the card stays plain like its footer.
+  for (const off of [{ ...cfg, agentSessions: { ...cfg.agentSessions, enabled: false } }, { ...cfg, repos: [{ ...repo, agent: { enabled: false } }] }]) {
+    expect(cardIsLive(off, [mine({ lastOutputAt: printing })], card, now)).toBe(false);
   }
 });
 

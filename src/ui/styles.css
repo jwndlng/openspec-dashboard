@@ -36,6 +36,8 @@
   --info: #6cbcf9;
   --info-border: #1c4f78;
   --info-bg: #6cbcf91a;
+  /* A card with an agent at work: --bg-raised's lightness at the info hue, so every role chip keeps 4.5:1 on it. */
+  --card-live-bg: #243949;
   --branch: #ff9d4d;
   --branch-border: #7a3d0e;
   --branch-bg: #ff9d4d17;
@@ -116,6 +118,7 @@
   --info: #0369a1;
   --info-border: #bae6fd;
   --info-bg: #0369a112;
+  --card-live-bg: #e5f8ff;
   --branch: #9a4b00;
   --branch-border: #f0cfa8;
   --branch-bg: #9a4b0012;
@@ -528,6 +531,10 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: 
 @media (prefers-reduced-motion: no-preference) {
   .card:hover { transform: translateY(-2px); }
 }
+/* A card whose agent is working shows it as a whole, not only in its badge: a static tint at the info hue (kept on
+   hover, which only adds the accent edge), and the name swept with the badge (see the live badge styles below). */
+.card.live { background: var(--card-live-bg); border-color: color-mix(in oklch, var(--info) 50%, var(--bg-raised)); }
+.card.live:hover { background: var(--card-live-bg); border-color: color-mix(in oklch, var(--brand) 55%, var(--bg-raised)); }
 /* The name and its age own the card's width apart from the console link's slot at the top right; `min-width: 0` on the
    title is what makes the name wrap inside what that slot leaves instead of pushing it out of the card. */
 .card-top { display: flex; align-items: flex-start; gap: 8px; min-width: 0; }
@@ -976,14 +983,23 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: 
 .open-work-what .hint { font-size: 11px; color: var(--fg-subtle); word-break: break-all; }
 .session-work { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gap-1); }
 
-/* A running agent is the one live thing on the board: its dot pulses and a lighter colour sweeps over the label.
-   Decoration only — the label still says "running" — and absent when the user prefers reduced motion. */
+/* A working agent is the one live thing on the board: its dot pulses, a lighter colour sweeps over the label, and an
+   info band sweeps over its card's name in the same rhythm (the name rests at its own colour; the band keeps 4.5:1 on
+   the tinted card). Decoration only — the label still says "working", the name still reads in full — and absent when
+   the user prefers reduced motion; the card's tint is static and stays. */
 @media (prefers-reduced-motion: no-preference) {
-  .badge.info.live { --session-pulse: 1.6s; --session-sweep: 2.4s; }
+  .badge.info.live, .card.live { --session-pulse: 1.6s; --session-sweep: 2.4s; }
   .badge.info.live .dot { animation: session-pulse var(--session-pulse) ease-in-out infinite; }
   @supports ((-webkit-background-clip: text) or (background-clip: text)) {
     .badge.info.live .text {
       background-image: linear-gradient(100deg, var(--info) 0%, var(--info) 35%, var(--fg-heading) 50%, var(--info) 65%, var(--info) 100%);
+      background-size: 250% 100%;
+      -webkit-background-clip: text; background-clip: text;
+      -webkit-text-fill-color: transparent; color: transparent;
+      animation: session-sweep var(--session-sweep) linear infinite;
+    }
+    .card.live .name {
+      background-image: linear-gradient(100deg, var(--fg-heading) 0%, var(--fg-heading) 40%, var(--info) 50%, var(--fg-heading) 60%, var(--fg-heading) 100%);
       background-size: 250% 100%;
       -webkit-background-clip: text; background-clip: text;
       -webkit-text-fill-color: transparent; color: transparent;
