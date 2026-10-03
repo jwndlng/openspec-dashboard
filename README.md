@@ -19,6 +19,7 @@ Download a binary for macOS (arm64, x64) or Linux (x64, arm64) from the
 `shasum -a 256 -c --ignore-missing SHA256SUMS` and `gh attestation verify <file> --repo jwndlng/openspec-dashboard`,
 then `chmod +x` it. The macOS binaries are not notarised: if macOS refuses to open one, run
 `xattr -d com.apple.quarantine <file>`.
+What's new in your version is in the dashboard itself: the **What's new** button in the top corner, offline.
 
 Building from source needs [Bun](https://bun.sh) ≥ 1.4. The compiled binary needs nothing else.
 

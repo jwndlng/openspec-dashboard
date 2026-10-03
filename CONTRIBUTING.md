@@ -93,6 +93,15 @@ Releases are drafted from pull request titles; publishing the draft is the only 
   nothing is attached: fix it and re-run the workflow.
 - A local `bun run build` reports `dev`; set `OPENSPEC_DASHBOARD_VERSION=v1.2.3` to build as a given version.
 
+**What's new.** The dashboard carries its own, shorter changelog for the people running it: the **What's new** dialog,
+read from `src/ui/changelog.ts` and compiled into the UI, so it needs no network. Every `feat` pull request whose change
+users can see adds one entry at the top of that list, in the same pull request; internal `feat`s, fixes and chores do
+not. An entry has an `id` of `<YYYY-MM-DD>-<kebab-case-slug>` (the merge date, never changed once released — browsers
+remember which ids they have seen), that `date`, a short `title` and a one- or two-sentence Markdown `summary` that
+says what users can now do and where to find it, in their words, not the pull request's. `test/whatsNew.test.ts` checks
+the list's shape and order. This is not the release notes: those stay generated from pull request titles and list
+every change for maintainers; the dialog links to them.
+
 ## Toolchain
 
 Bun is pinned in `.bun-version` (and `packageManager`). Upgrading Bun is a deliberate commit of its own — the compiled
