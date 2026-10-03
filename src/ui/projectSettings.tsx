@@ -159,16 +159,23 @@ export function LabelsButton({ id, name, tracking }: { id: string; name: string;
 }
 
 /** The labels editor for one project, in a dialog; every edit is saved at once. */
-export function RepoLabelsDialog({ repo, repos, detected, tracking }: { repo: RepoConfig; repos: RepoConfig[]; detected: DetectedLabel[]; tracking: Tracking }) {
+export function RepoLabelsDialog({ repo, repos, detected, labelColors, tracking }: { repo: RepoConfig; repos: RepoConfig[]; detected: DetectedLabel[]; labelColors?: Config["labelColors"]; tracking: Tracking }) {
   const busy = tracking.busy[repo.id] === "labels";
   const error = tracking.errors[repo.id];
   return (
     <Modal label={`Labels of ${repo.name}`} title="Labels" subtitle={repo.name} icon={<IconTag />} onClose={tracking.closeLabels}>
       <p class="hint">
-        Your labels group projects on the overview. Labels marked with the scan icon were detected from the repository's files; activate one to hide it for this project. Every
-        change is saved at once.
+        Your labels group projects on the overview. Labels marked with the scan icon were detected from the repository's files; activate one to hide it for this project. The
+        swatch before a label chooses its colour on every project. Every change is saved at once.
       </p>
-      <RepoLabelsEditor repo={repo} detected={detected} suggestions={labelSuggestions(repos, repo.id)} onChange={(patch) => tracking.setLabels(repo.id, patch)} />
+      <RepoLabelsEditor
+        repo={repo}
+        detected={detected}
+        suggestions={labelSuggestions(repos, repo.id)}
+        colors={labelColors}
+        onChange={(patch) => tracking.setLabels(repo.id, patch)}
+        onColor={(label, hue) => tracking.setLabelColor(repo.id, label, hue)}
+      />
       <p class="hint" aria-live="polite">
         {busy ? "Saving…" : ""}
       </p>

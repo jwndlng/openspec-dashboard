@@ -40,3 +40,12 @@ test("no Validate badge without awaiting tasks, and never on an archived change"
   // The column marker of `Done` stays `success`: the column as a whole is still the done column.
   expect(columnKind("Done")).toBe("success");
 });
+
+test("a card is marked live only when told an agent is working on it, and its name still reads in full", () => {
+  const frame = (live?: boolean) => byTag(ChangeCard({ card: card({}), now: Date.parse("2026-09-29T12:00:00Z"), from: "", live }), "article")[0];
+  expect(frame(true).props.class).toBe("card live");
+  expect(frame(false).props.class).toBe("card");
+  expect(frame().props.class).toBe("card");
+  const name = byTag(frame(true), "span").find((s) => s.props.class === "name");
+  expect(name && textOf(name)).toBe("confirm-retention");
+});

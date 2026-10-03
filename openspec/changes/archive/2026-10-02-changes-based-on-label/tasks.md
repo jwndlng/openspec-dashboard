@@ -15,7 +15,7 @@
 - [x] 3.2 Render the label picker (choices from `labelChoices`, multi-select, removable) and the repository list with checkboxes (eligible checked by default via an unchecked-id set, ineligible disabled with the reason text); verify in the running dashboard with the fixtures that selecting `terraform` lists the matching repositories
 - [x] 3.3 Gate submission (no label selected / no repository checked, each said as text) and label the submit action `Create in <n> project(s)`; keep name/prompt validation and the `focusOnce` rule (label picker first when opened with no labels, else the name field); verify by hand and with `test/focus.test.ts` still passing
 - [x] 3.4 On submit run `createInRepos`, show the repository in progress, keep the dialog uncloseable while busy, then show one result line per repository (created + staged/not staged, or refused + reason), call `onCreated` once, and turn the submit action into **Done**; verify in the running dashboard that a name already present in one repository yields one refused and one created result
-- [~] 3.5 Add styles for the mode switch, label picker, repository checklist and result list in `src/ui/styles.css`, matching the existing dialog and chip styles in light and dark themes; verify visually in both themes
+- [x] 3.5 Add styles for the mode switch, label picker, repository checklist and result list in `src/ui/styles.css`, matching the existing dialog and chip styles in light and dark themes; verify visually in both themes
 
 ## 4. Overview entry point
 

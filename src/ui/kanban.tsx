@@ -21,7 +21,7 @@ import { assignRepoHues, groupByRepo, newChangeTargets, recentArchived } from ".
 import { columnKind } from "./boardMarks.ts";
 import { IconChevronRight, IconPlus, IconTerminal } from "./icons.tsx";
 import { SessionControls, useSessionUi } from "./sessions.tsx";
-import { archivedShown, consoleTabAvailable } from "./sessionState.ts";
+import { archivedShown, cardIsLive, consoleTabAvailable } from "./sessionState.ts";
 import { boardFrom, changePath, CONSOLE_TAB, repoPath, serializeDetailQuery } from "./routes.ts";
 import { currentQuery, followInApp, href, navigate, replaceQuery } from "./url.ts";
 
@@ -118,9 +118,11 @@ export function cardLink(card: Pick<Card, "repoId" | "name">, from: string): { p
 
 /**
  * Only **Show details** navigates: the card itself and its change name are plain content, so clicking anywhere else on
- * a card does nothing. It is an anchor, so ⌘/middle-click opens the detail view in a new tab.
+ * a card does nothing. It is an anchor, so ⌘/middle-click opens the detail view in a new tab. `live` — an agent is
+ * working on the change — shows on the whole card, tinted with its name swept; the caller decides it (`cardIsLive`), so
+ * the card stays hook-free.
  */
-export function ChangeCard({ card, now, from }: { card: Card; now: number; from: string }) {
+export function ChangeCard({ card, now, from, live = false }: { card: Card; now: number; from: string; live?: boolean }) {
   const noTasks = card.warnings?.includes("tasks file has no tasks");
   // The work is finished, a person still has to confirm it — `warning`, not `success`; never on an archived change.
   const validating = !card.archived && (card.tasks?.awaiting ?? 0) > 0;
@@ -130,7 +132,7 @@ export function ChangeCard({ card, now, from }: { card: Card; now: number; from:
   // session state and the next step. The console link keeps the top right corner, the same on every card, so the way
   // into a terminal never moves. Branch, worktree, work status, prompt and completed phases are in the detail view.
   return (
-    <article class="card">
+    <article class={live ? "card live" : "card"}>
       <div class="card-top">
         <div class="card-title">
           <span class="name">{card.name}</span>
@@ -226,11 +228,13 @@ interface GroupControls {
 // board (`showRepo` false) the group header would only repeat the page header, so the cards render flat.
 function RepoGroups({ column, cards, now, showRepo, from, groups: controls }: { column: string; cards: Card[]; now: number; showRepo: boolean; from: string; groups: GroupControls }) {
   const groups = useMemo(() => groupByRepo(cards), [cards]);
+  const ui = useSessionUi();
+  const live = (c: Card) => cardIsLive(ui.config, ui.sessions, c);
   if (!showRepo) {
     return (
       <div class="cards">
         {cards.map((c) => (
-          <ChangeCard key={`${c.repoId}/${c.name}`} card={c} now={now} from={from} />
+          <ChangeCard key={`${c.repoId}/${c.name}`} card={c} now={now} from={from} live={live(c)} />
         ))}
       </div>
     );
@@ -259,7 +263,7 @@ function RepoGroups({ column, cards, now, showRepo, from, groups: controls }: { 
             {expanded && (
               <div class="repo-group-body" id={bodyId}>
                 {g.cards.map((c) => (
-                  <ChangeCard key={`${c.repoId}/${c.name}`} card={c} now={now} from={from} />
+                  <ChangeCard key={`${c.repoId}/${c.name}`} card={c} now={now} from={from} live={live(c)} />
                 ))}
               </div>
             )}
@@ -310,7 +314,7 @@ function Column({ label, cards, now, hot, showRepo, from, countLabel, groups }: 
 }
 
 function RepoHeader({ repo, config, now, stats, onCreated }: { repo: RepoSnapshot; config: Config | null; now: number; stats: { open: number; toArchive: number }; onCreated: () => void }) {
-  const labels = displayedLabels(config?.repos.find((r) => r.id === repo.id), repo.detectedLabels);
+  const labels = displayedLabels(config?.repos.find((r) => r.id === repo.id), repo.detectedLabels, config?.labelColors);
   const updated = repo.lastUpdatedAt ? relTime(repo.lastUpdatedAt, now) : undefined;
   const notice = branchNotice(repo);
   const [creating, setCreating] = useState(false);

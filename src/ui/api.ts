@@ -68,6 +68,8 @@ export interface Api {
   setRepoAgent(repoId: string, patch: RepoAgentPatch): Promise<Config>;
   /** A project's labels dialog, saved at once: either list replaced, an empty one removed. */
   setRepoLabels(repoId: string, patch: Pick<RepoConfig, "labels" | "hiddenLabels">): Promise<Config>;
+  /** A label's colour from a labels dialog, saved at once for every repository; `hue: null` is Auto. `ApiError` 400 when refused. */
+  setLabelColor(label: string, hue: number | null): Promise<Config>;
   /** Forget on a disabled entry, saved at once. `ApiError` 409 for an enabled repository. */
   forgetRepo(repoId: string): Promise<Config>;
   /** Read-only; pass the draft roots and ignore paths to discover against unsaved edits. */
@@ -206,6 +208,7 @@ export const httpApi: Api = {
   setRepoAgent: (repoId, patch) => call<Config>(`/api/repos/${encodeURIComponent(repoId)}/agent`, { method: "POST", body: JSON.stringify(patch) }),
   // An absent list is sent as an empty one: the route removes the key, which is what "no labels left" means.
   setRepoLabels: (repoId, patch) => call<Config>(`/api/repos/${encodeURIComponent(repoId)}/labels`, { method: "POST", body: JSON.stringify(labelLists(patch)) }),
+  setLabelColor: (label, hue) => call<Config>("/api/labels/color", { method: "POST", body: JSON.stringify({ label, hue }) }),
   forgetRepo: (repoId) => call<Config>(`/api/repos/${encodeURIComponent(repoId)}/forget`, { method: "POST", body: "{}" }),
   discover: (scanRoots, ignorePaths) =>
     call<DiscoverResult>("/api/discover", { method: "POST", body: scanRoots || ignorePaths ? JSON.stringify({ scanRoots, ignorePaths }) : undefined }),
@@ -284,6 +287,7 @@ export const api: Api = {
   renameRepo: (...args) => current.renameRepo(...args),
   setRepoAgent: (...args) => current.setRepoAgent(...args),
   setRepoLabels: (...args) => current.setRepoLabels(...args),
+  setLabelColor: (...args) => current.setLabelColor(...args),
   forgetRepo: (repoId) => current.forgetRepo(repoId),
   discover: (scanRoots, ignorePaths) => current.discover(scanRoots, ignorePaths),
   scan: () => current.scan(),

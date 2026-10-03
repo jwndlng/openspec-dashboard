@@ -1,6 +1,6 @@
 // In-memory stand-in for the dashboard server. Nothing is read from or written to anywhere: a reload starts over.
 import { pageEvents, retained } from "../../shared/activity.ts";
-import { labelProblem } from "../../shared/labels.ts";
+import { labelKey, labelProblem, MAX_LABEL_COLORS } from "../../shared/labels.ts";
 import { availableName } from "../../shared/nameHints.ts";
 import { summarizeWorkInProgress } from "../../shared/workInProgress.ts";
 import type { ChangeSnapshot, Config, DismissFile, DismissPreview, PullBlockingFile, PullResult, RepoConfig, RepoSharedConfig, RepoSnapshot, SharedConfigApplyResult, SharedConfigPreview, SharedProfile, Snapshot } from "../../shared/types.ts";
@@ -373,6 +373,20 @@ export function createDemoApi({ now = Date.now, latencyMs = 150, clock }: DemoAp
           }
           return next;
         });
+      }),
+    setLabelColor: (label, hue) =>
+      failing(() => {
+        const problem = labelProblem(label);
+        if (problem) throw new ApiError(400, problem);
+        if (hue !== null && !(Number.isInteger(hue) && hue >= 0 && hue <= 359)) throw new ApiError(400, "hue must be null or a whole number from 0 to 359");
+        const key = labelKey(label.trim());
+        const colors = { ...config.labelColors };
+        if (hue === null) delete colors[key];
+        else colors[key] = hue;
+        if (Object.keys(colors).length > MAX_LABEL_COLORS) throw new ApiError(400, `at most ${MAX_LABEL_COLORS} label colours`);
+        const { labelColors: _, ...rest } = config;
+        config = Object.keys(colors).length ? { ...rest, labelColors: colors } : rest;
+        return config;
       }),
     forgetRepo: (repoId) =>
       failing(() => {
