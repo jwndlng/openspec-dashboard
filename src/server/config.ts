@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { basename, dirname, isAbsolute } from "node:path";
 import { z } from "zod";
-import { CLAUDE_PROFILE, defaultAgentSessions, FORMER_PROMPTS } from "../shared/agentDefaults.ts";
+import { AGENT_PRESETS, defaultAgentSessions } from "../shared/agentDefaults.ts";
 import { MAX_LABEL_COLORS, MAX_LABEL_LENGTH, MAX_LABELS } from "../shared/labels.ts";
 import type { Config, PromptKey, RepoConfig } from "../shared/types.ts";
 import { canonicalPath, configPath, dashboardHome, expandPath } from "./paths.ts";
@@ -266,19 +266,21 @@ export function validateConfig(input: unknown): Config {
 }
 
 /**
- * Profiles are persisted from the first run on, so a reworded preconfigured prompt would never reach an existing
- * installation. Only a verbatim former default on the preconfigured profile is replaced: an edited prompt, a removed
- * one and other profiles are the user's. Nothing is written here; the value reaches the file with the next save.
+ * Profiles are persisted from the first run on, so a reworded preset prompt would never reach an existing installation.
+ * Only a verbatim former prompt of the preset with the profile's id is replaced: an edited prompt, a removed one, another
+ * preset's former prompts and profiles of no preset are the user's. Nothing is written here; the value reaches the file
+ * with the next save.
  */
 function upgradeFormerDefaults(config: Config): Config {
   const agents = config.agentSessions.agents.map((agent) => {
-    if (agent.id !== CLAUDE_PROFILE.id) return agent;
+    const preset = AGENT_PRESETS.find((p) => p.profile.id === agent.id);
+    if (!preset) return agent;
     const prompts = { ...agent.prompts };
     let upgraded = false;
-    for (const [key, former] of Object.entries(FORMER_PROMPTS) as [PromptKey, readonly string[]][]) {
+    for (const [key, former] of Object.entries(preset.formerPrompts) as [PromptKey, readonly string[]][]) {
       const saved = prompts[key];
       if (saved === undefined || !former.includes(saved)) continue; // removed or edited: the user's
-      prompts[key] = CLAUDE_PROFILE.prompts[key];
+      prompts[key] = preset.profile.prompts[key];
       upgraded = true;
     }
     return upgraded ? { ...agent, prompts } : agent;

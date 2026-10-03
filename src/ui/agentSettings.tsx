@@ -2,7 +2,7 @@
 // change, so the section says plainly what that means. An agent is just a command line and its opening prompts.
 import { Fragment } from "preact";
 import { useEffect, useState } from "preact/hooks";
-import { CLAUDE_PROFILE } from "../shared/agentDefaults.ts";
+import { AGENT_PRESETS } from "../shared/agentDefaults.ts";
 import { DEFAULT_INTEGRATE_PROMPT, DEFAULT_RESOLVE_CONFLICTS_PROMPT, DEFAULT_SHIP_PROMPT, SESSION_ACTIONS, type AgentAvailability, type AgentProfile, type AgentSessionsConfig, type Config, type PromptKey, type Session, type SessionAction, type Shortcut } from "../shared/types.ts";
 import { api } from "./api.ts";
 import { addShortcut, moveShortcut, removeShortcut, restoredShortcuts } from "./quickReplies.ts";
@@ -182,6 +182,32 @@ export function AgentEditor({ agent, found, isDefault, canRemove, onChange, onRe
 }
 
 /**
+ * Exported for the tests: one button per preset that is not configured yet, the ones whose executable was found first
+ * and otherwise in preset order. Found is a hint, never a gate: until availability has loaded, or if it failed, every
+ * preset is still offered, unmarked. Adding one appends a copy, which is from then on an ordinary profile.
+ */
+export function PresetPicker({ agents, presets, onAdd }: { agents: readonly AgentProfile[]; presets?: readonly AgentAvailability[]; onAdd: (profile: AgentProfile) => void }) {
+  const configured = new Set(agents.map((a) => a.id));
+  const found = (id: string) => presets?.find((p) => p.id === id);
+  const offered = AGENT_PRESETS.filter(({ profile }) => !configured.has(profile.id));
+  // A stable sort, so presets that are equally found keep their order.
+  const ordered = [...offered].sort((a, b) => Number(found(b.profile.id)?.available ?? false) - Number(found(a.profile.id)?.available ?? false));
+  return (
+    <>
+      {ordered.map(({ profile }) => {
+        const mark = found(profile.id);
+        return (
+          <button type="button" class="btn sm ghost" key={profile.id} onClick={() => onAdd(structuredClone(profile))}>
+            + {profile.name} preset{" "}
+            {mark && (mark.available ? <span class="badge success" title={mark.path}>✓ found</span> : <span class="badge danger">⚠ not found</span>)}
+          </button>
+        );
+      })}
+    </>
+  );
+}
+
+/**
  * The shortcuts of the agent console: what its controls read and what each one types into the running agent. The two are
  * independent, so a one-word control can carry several sentences; the prompt is sent exactly as written, which is why it
  * is one line and takes no placeholder.
@@ -260,12 +286,14 @@ export function PerProjectNote() {
 
 export function AgentSettings({ draft, update }: Props) {
   const [found, setFound] = useState<AgentAvailability[]>([]);
+  const [presets, setPresets] = useState<AgentAvailability[] | undefined>(undefined);
   const [sessions, setSessions] = useState<Session[]>([]);
   useEffect(() => {
     api
       .sessions()
       .then((r) => {
         setFound(r.agents);
+        setPresets(r.presets);
         setSessions(r.sessions);
       })
       .catch(() => undefined);
@@ -305,7 +333,11 @@ export function AgentSettings({ draft, update }: Props) {
 
       <fieldset class="agent-fields" disabled={!settings.enabled}>
         <h2>Agents</h2>
-        <p class="hint">Any CLI that runs interactively in a terminal works. Claude Code is preconfigured; add others with their own command and prompts.</p>
+        <p class="hint">
+          Any CLI that runs interactively in a terminal works. Claude Code is preconfigured; Codex and Antigravity are one click away as presets, marked with whether they were
+          found on this machine. Each preset's prompts expect the OpenSpec commands or skills that <code>{"openspec init --tools <tool>"}</code> installs for that agent. Add
+          any other agent with its own command and prompts.
+        </p>
         {settings.agents.map((agent) => (
           <AgentEditor
             key={agent.id}
@@ -322,11 +354,7 @@ export function AgentSettings({ draft, update }: Props) {
           <button type="button" class="btn sm" onClick={addAgent}>
             + Add agent
           </button>
-          {!settings.agents.some((a) => a.id === CLAUDE_PROFILE.id) && (
-            <button type="button" class="btn sm ghost" onClick={() => set({ agents: [...settings.agents, structuredClone(CLAUDE_PROFILE)] })}>
-              + Claude Code preset
-            </button>
-          )}
+          <PresetPicker agents={settings.agents} presets={presets} onAdd={(profile) => set({ agents: [...settings.agents, profile] })} />
         </div>
 
         <ShortcutEditor shortcuts={settings.shortcuts} onChange={(shortcuts) => set({ shortcuts })} />

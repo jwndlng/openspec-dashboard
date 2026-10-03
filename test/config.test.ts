@@ -4,7 +4,8 @@ import { realpathSync } from "node:fs";
 import { mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { ConfigValidationError, defaultAgentSessions, defaultConfig, loadConfig, newRepoConfig, repoId, saveConfig, updateConfig, validateConfig, validateIgnorePaths } from "../src/server/config.ts";
-import { CLAUDE_PROFILE, DEFAULT_SHORTCUTS, FORMER_PROMPTS } from "../src/shared/agentDefaults.ts";
+import { AGENT_PRESETS, ANTIGRAVITY_PROFILE, CLAUDE_PROFILE, CODEX_PROFILE, DEFAULT_SHORTCUTS, FORMER_PROMPTS } from "../src/shared/agentDefaults.ts";
+import type { PromptKey } from "../src/shared/types.ts";
 import { tempDir, useTempHome } from "./helpers.ts";
 
 let home: string;
@@ -122,6 +123,30 @@ test("former preconfigured prompts are upgraded per starter, so one never rewrit
 
   // Nothing invents a Validate prompt for a profile that has none: the new starter is simply not offered there.
   expect(promptsOf(withPrompts({ implement: FORMER_IMPLEMENT })).validate).toBeUndefined();
+});
+
+test("former prompts upgrade per preset: another preset's former prompt and an unknown id stay as saved", () => {
+  const FORMER_ARCHIVES = FORMER_PROMPTS.archive as readonly string[];
+  // `agy` is a preset, but these were only ever Claude Code's, so they are the user's on an `agy` profile.
+  const claudeFormer = { implement: "/opsx:apply {change}", archive: FORMER_ARCHIVES[0] };
+  expect(promptsOf(withPrompts(claudeFormer, ANTIGRAVITY_PROFILE.id))).toEqual(claudeFormer);
+  expect(promptsOf(withPrompts(claudeFormer, CODEX_PROFILE.id))).toEqual(claudeFormer);
+  expect(promptsOf(withPrompts(claudeFormer, "someone-else"))).toEqual(claudeFormer);
+  // Each preset's own former list is what applies to it.
+  for (const preset of AGENT_PRESETS) {
+    for (const [key, former] of Object.entries(preset.formerPrompts) as [PromptKey, readonly string[]][]) {
+      for (const text of former) expect(promptsOf(withPrompts({ [key]: text }, preset.profile.id))[key]).toBe(preset.profile.prompts[key]);
+    }
+  }
+});
+
+test("a configuration without agentSessions has Claude Code as its only agent, whatever is installed", async () => {
+  const { agentSessions: _drop, ...older } = defaultConfig();
+  await writeFile(join(home, "config.json"), JSON.stringify(older), "utf8");
+  const { config } = await loadConfig();
+  expect(config.agentSessions.agents.map((a) => a.id)).toEqual(["claude"]);
+  expect(config.agentSessions.agents[0]).toEqual(CLAUDE_PROFILE);
+  expect(config.agentSessions.defaultAgent).toBe("claude");
 });
 
 test("a config file with the former Archive prompt loads upgraded, is not rewritten by loading, and saves the new prompt", async () => {

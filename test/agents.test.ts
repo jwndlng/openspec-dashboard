@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { defaultAgentSessions, defaultConfig, newRepoConfig, validateConfig } from "../src/server/config.ts";
 import { agentEnv, agentFor, integratePrompt, launchCommand, openingPrompt, resolveConflictsPrompt, shipPrompt } from "../src/server/sessions/agents.ts";
 import { Scrollback, sessionBranch, worktreeName } from "../src/server/sessions/manager.ts";
-import { CLAUDE_PROFILE, DEFAULT_SHORTCUTS, FORMER_PROMPTS } from "../src/shared/agentDefaults.ts";
+import { AGENT_PRESETS, ANTIGRAVITY_PROFILE, CLAUDE_PROFILE, CODEX_PROFILE, DEFAULT_SHORTCUTS, FORMER_PROMPTS } from "../src/shared/agentDefaults.ts";
 import { availableActions, DEFAULT_INTEGRATE_PROMPT, DEFAULT_RESOLVE_CONFLICTS_PROMPT, DEFAULT_SHIP_PROMPT, integrateUnavailable, type AgentAvailability, type ChangeSession, type Session } from "../src/shared/types.ts";
 import { agentForRepo, cardIsLive, cardSessionControls, NEEDS_YOU_AFTER_MS, parseArgLines, sessionBadge, sessionForChange, sessionsEnabledFor, silenceDuration, slugId, startersFor } from "../src/ui/sessionState.ts";
 import { fakeProfile } from "./sessionHelpers.ts";
@@ -77,6 +77,44 @@ test("the preconfigured prompts carry what `- [~]` means, each on one line", () 
   expect(opened).toContain("cache-api-calls");
   expect(opened).not.toContain("{change}");
   expect(launchCommand(CLAUDE_PROFILE, opened)).toEqual({ argv: ["claude", opened] });
+});
+
+test("every preset is a valid one-line profile that invokes OpenSpec the way its agent installs it", () => {
+  expect(AGENT_PRESETS.map((p) => p.profile.id)).toEqual(["claude", "codex", "agy"]);
+  expect(AGENT_PRESETS[0].profile).toBe(CLAUDE_PROFILE);
+  expect(AGENT_PRESETS[0].formerPrompts).toBe(FORMER_PROMPTS);
+  // All of them at once, unchanged: the schema, the no-bypass rule and the placeholder rules accept them.
+  const agents = AGENT_PRESETS.map((p) => p.profile);
+  expect(validateConfig(withAgents(agents)).agentSessions.agents).toEqual(agents);
+  for (const { profile } of AGENT_PRESETS) {
+    expect(Object.keys(profile.prompts)).toEqual(["draft", "implement", "validate", "archive"]);
+    expect(profile.promptSuffixes).toBeUndefined();
+    for (const [key, text] of Object.entries(profile.prompts)) {
+      expect([profile.id, key, text.includes("\n"), text.includes("{change}")]).toEqual([profile.id, key, false, true]);
+    }
+    // The `- [~]` wording is shared: each preset's prompt ends with Claude Code's tail.
+    for (const key of ["implement", "validate", "archive"] as const) {
+      expect(profile.prompts[key]?.endsWith(CLAUDE_PROFILE.prompts[key]?.split(" — ").slice(1).join(" — ") ?? "?")).toBe(true);
+    }
+  }
+  for (const text of Object.values(ANTIGRAVITY_PROFILE.prompts)) expect(text.startsWith("/opsx-")).toBe(true);
+  expect(ANTIGRAVITY_PROFILE.prompts.archive?.startsWith("/opsx-archive {change} — sync")).toBe(true);
+  // Codex gets skills and no commands: no slash command anywhere, the skill named in plain language.
+  for (const text of Object.values(CODEX_PROFILE.prompts)) expect(text).not.toMatch(/(^|\s)\/\S/);
+  expect(CODEX_PROFILE.prompts.draft).toContain("openspec-ff-change");
+  expect(CODEX_PROFILE.prompts.implement).toContain("openspec-apply-change");
+  expect(CODEX_PROFILE.prompts.validate).toContain("openspec-apply-change");
+  expect(CODEX_PROFILE.prompts.archive).toContain("openspec-archive-change");
+
+  const agy = openingPrompt(ANTIGRAVITY_PROFILE, "implement", "cache-api-calls") ?? "";
+  expect(agy.startsWith("/opsx-apply cache-api-calls — ")).toBe(true);
+  expect(launchCommand(ANTIGRAVITY_PROFILE, agy)).toEqual({ argv: ["agy", "-i", agy] });
+  expect(ANTIGRAVITY_PROFILE.resumeCommand).toEqual(["agy", "--continue"]);
+  const codex = openingPrompt(CODEX_PROFILE, "implement", "cache-api-calls") ?? "";
+  expect(codex).toContain("cache-api-calls");
+  expect(codex).toMatch(/`- \[~\]` instead of `- \[x\]`/);
+  expect(launchCommand(CODEX_PROFILE, codex)).toEqual({ argv: ["codex", codex] });
+  expect(CODEX_PROFILE.resumeCommand).toEqual(["codex", "resume", "--last"]);
 });
 
 test("configs from the transcript-based version load: their keys are dropped, defaults fill in", () => {

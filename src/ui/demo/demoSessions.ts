@@ -268,6 +268,8 @@ export function createDemoSessions({ now, getConfig, getSnapshot, integratable, 
       return {
         sessions: enabled ? sessions.map(listed) : [],
         agents: [{ id: DEMO_AGENT.id, name: DEMO_AGENT.name, available: true, path: "/home/demo/bin/demo-agent" }],
+        // The demo looks at no machine, so it claims no preset as found: Settings offers them unmarked.
+        presets: [],
         worktrees: enabled ? worktrees() : [],
       };
     },

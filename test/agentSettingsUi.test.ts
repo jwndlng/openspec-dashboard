@@ -1,7 +1,8 @@
 import { expect, test } from "bun:test";
-import type { AgentProfile, PromptKey } from "../src/shared/types.ts";
-import { AgentEditor } from "../src/ui/agentSettings.tsx";
-import { elements, textOf } from "./vnode.ts";
+import { AGENT_PRESETS, ANTIGRAVITY_PROFILE, CLAUDE_PROFILE } from "../src/shared/agentDefaults.ts";
+import type { AgentAvailability, AgentProfile, PromptKey } from "../src/shared/types.ts";
+import { AgentEditor, PresetPicker } from "../src/ui/agentSettings.tsx";
+import { byTag, elements, textOf } from "./vnode.ts";
 
 const profile = (patch: Partial<AgentProfile> = {}): AgentProfile => ({ id: "fake", name: "Fake Agent", command: ["fake", "{prompt}"], prompts: { implement: "implement {change}" }, ...patch });
 
@@ -58,4 +59,57 @@ test("Agent sessions settings point to Projects for the per-project switch and a
   expect(byTag(note, "input")).toHaveLength(0);
   const source = await Bun.file(new URL("../src/ui/agentSettings.tsx", import.meta.url)).text();
   expect(source).not.toContain("draft.repos");
+});
+
+/** The preset buttons as `[label, mark]`, in the order they are shown, and a way to click one. */
+function picker(agents: AgentProfile[], presets?: AgentAvailability[]) {
+  const added: AgentProfile[] = [];
+  const buttons = byTag(PresetPicker({ agents, presets, onAdd: (p) => added.push(p) }), "button");
+  const rows = buttons.map((b) => {
+    const text = textOf(b).replace(/\s+/g, " ").trim();
+    return [text.replace(/ (✓ found|⚠ not found)$/, ""), text.match(/(✓ found|⚠ not found)$/)?.[1] ?? ""];
+  });
+  const click = (label: string) => (buttons[rows.findIndex(([l]) => l === label)].props.onClick as () => void)();
+  return { rows, click, added };
+}
+
+test("the preset picker offers the unconfigured presets, found ones first, each marked", () => {
+  const presets: AgentAvailability[] = [
+    { id: "codex", name: "Codex", available: false },
+    { id: "agy", name: "Antigravity", available: true, path: "/usr/local/bin/agy" },
+  ];
+  const { rows, click, added } = picker([structuredClone(CLAUDE_PROFILE)], presets);
+  expect(rows).toEqual([
+    ["+ Antigravity preset", "✓ found"],
+    ["+ Codex preset", "⚠ not found"],
+  ]);
+  // Adding copies the preset: equal to it, but the user's to edit without touching the preset itself.
+  click("+ Antigravity preset");
+  expect(added).toEqual([ANTIGRAVITY_PROFILE]);
+  expect(added[0]).not.toBe(ANTIGRAVITY_PROFILE);
+  added[0].prompts.implement = "edited {change}";
+  expect(ANTIGRAVITY_PROFILE.prompts.implement).not.toBe("edited {change}");
+});
+
+test("a configured preset is not offered again, edited or not; a removed one is", () => {
+  const editedAgy = { ...structuredClone(ANTIGRAVITY_PROFILE), name: "My agy", command: ["agy", "{prompt}"] };
+  expect(picker([structuredClone(CLAUDE_PROFILE), editedAgy]).rows.map(([l]) => l)).toEqual(["+ Codex preset"]);
+  // Without the Claude Code profile it is offered again, in preset order while nothing is found.
+  const none: AgentAvailability[] = [
+    { id: "claude", name: "Claude Code", available: false },
+    { id: "codex", name: "Codex", available: false },
+  ];
+  expect(picker([editedAgy], none).rows).toEqual([
+    ["+ Claude Code preset", "⚠ not found"],
+    ["+ Codex preset", "⚠ not found"],
+  ]);
+});
+
+test("before availability has loaded every preset is offered, unmarked, in preset order", () => {
+  expect(picker([{ id: "fake", name: "Fake", command: ["fake", "{prompt}"], prompts: {} }]).rows).toEqual([
+    ["+ Claude Code preset", ""],
+    ["+ Codex preset", ""],
+    ["+ Antigravity preset", ""],
+  ]);
+  expect(picker(AGENT_PRESETS.map((p) => structuredClone(p.profile))).rows).toEqual([]);
 });

@@ -115,6 +115,11 @@ dashboard; both are built in and work offline.
   and pushes nothing itself; it only asks, exactly as **Ship** does.
   A tracked folder that is not a git repository works too — there the agent runs in the folder itself, so it edits your
   files directly, with no branch and no undo, and the session says so. The same goes for an **Integrate** session.
+  Claude Code is configured by default; **Codex** and **Antigravity** are presets one click away in Settings, each
+  marked with whether its executable was found on this machine — nothing is added just because an agent is installed.
+  Each preset's prompts expect the OpenSpec commands or skills that `openspec init --tools <tool>` installs for that
+  agent (`/opsx:*` for Claude Code, `/opsx-*` for Antigravity, the `openspec-*` skills for Codex). Any other agent CLI
+  that runs in a terminal can be added with its own command line and prompts.
   ([agent-sessions](openspec/specs/agent-sessions/spec.md))
 - **Integrate a repository**: Projects lists the git repositories under your workspace roots that do not use OpenSpec
   yet, next to the discovered ones that already do. **Integrate** starts your agent in that repository to run
