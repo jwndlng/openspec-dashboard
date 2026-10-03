@@ -1,5 +1,6 @@
 import { ACTIVITY_KINDS, type ActivityKind } from "../shared/types.ts";
 import { availableName } from "../shared/nameHints.ts";
+import { labelKey } from "../shared/labels.ts";
 import { MAX_PAGE, type ActivityLog, type PageQuery } from "./activity/log.ts";
 import type { CleanupSelection, Config, DiscoverResult, PullBlockingFile, PullResolve, RepoConfig, RepoSnapshot, ScanTriggerResult, SharedConfigApplyResult, SharedConfigAssignment, SharedConfigPreview } from "../shared/types.ts";
 import { applyCleanup, CleanupBusyError, previewCleanup } from "./cleanup.ts";
@@ -209,6 +210,28 @@ async function postRepoLabels(state: AppState, req: Request, id: string): Promis
     }
     return next;
   });
+}
+
+/**
+ * A label's colour, chosen in a project's labels dialog and shared by every repository: `hue: null` is Auto and removes
+ * the entry, and the last removal drops the key, so a config never gains an empty map. The label rules are the schema's.
+ */
+async function postLabelColor(state: AppState, req: Request): Promise<Response> {
+  const { label, hue } = await readJson(req);
+  if (typeof label !== "string") return json({ error: "label must be a string" }, 400);
+  if (hue !== null && !(Number.isInteger(hue) && (hue as number) >= 0 && (hue as number) <= 359)) return json({ error: "hue must be null or a whole number from 0 to 359" }, 400);
+  const key = labelKey(label.trim());
+  const { previous, saved } = await updateConfig(state, (current) => {
+    const colors = { ...current.labelColors };
+    if (hue === null) {
+      if (!Object.hasOwn(colors, key)) return undefined;
+      delete colors[key];
+    } else colors[key] = hue as number;
+    const { labelColors: _, ...rest } = current;
+    return Object.keys(colors).length ? { ...rest, labelColors: colors } : rest;
+  });
+  afterConfigChange(state, previous);
+  return json(saved);
 }
 
 /** Forget on the overview: only a repository the user disabled, so a stale tab cannot drop one still managed. */
@@ -867,6 +890,7 @@ export function createFetchHandler({ state, indexHtml }: AppOptions): (req: Requ
       if (req.method === "POST" && pathname === "/api/ignore-paths") return tracking(() => postIgnorePath(state, req));
       const enabledMatch = /^\/api\/repos\/([^/]+)\/enabled$/.exec(pathname);
       if (req.method === "POST" && enabledMatch) return tracking(() => postRepoEnabled(state, req, decodeURIComponent(enabledMatch[1])));
+      if (req.method === "POST" && pathname === "/api/labels/color") return tracking(() => postLabelColor(state, req));
       const repoSetting = /^\/api\/repos\/([^/]+)\/(name|agent|labels|forget)$/.exec(pathname);
       if (req.method === "POST" && repoSetting) {
         const id = decodeURIComponent(repoSetting[1]);

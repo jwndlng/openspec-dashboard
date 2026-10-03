@@ -397,3 +397,28 @@ test("a config without labels gains no label keys", () => {
   expect("labels" in repo).toBe(false);
   expect("hiddenLabels" in repo).toBe(false);
 });
+
+const withColors = (labelColors: unknown) => ({ ...defaultConfig(), labelColors });
+
+test("label colours are kept by lower-case label", () => {
+  expect(validateConfig(withColors({ client: 290, "infra team": 27 })).labelColors).toEqual({ client: 290, "infra team": 27 });
+  // Any whole degree loads: the UI snaps it to the palette, so a retuned palette never makes a config unreadable.
+  expect(validateConfig(withColors({ client: 0 })).labelColors).toEqual({ client: 0 });
+});
+
+test("a config without label colours gains no labelColors key", () => {
+  expect("labelColors" in validateConfig(defaultConfig())).toBe(false);
+});
+
+test("an invalid hue, a key breaking the label rules and too many label colours are refused naming the label", () => {
+  expect(issuesOf(withColors({ client: 400 })).join(" ")).toContain("labelColors.client");
+  refuse(withColors({ client: 12.5 }));
+  refuse(withColors({ client: -1 }));
+  refuse(withColors({ client: "290" }));
+  expect(issuesOf(withColors({ Client: 290 })).join(" ")).toContain('label "Client"');
+  refuse(withColors({ "a,b": 290 }));
+  refuse(withColors({ " client": 290 }));
+  refuse(withColors({ ["x".repeat(33)]: 290 }));
+  refuse(withColors(Object.fromEntries(Array.from({ length: 201 }, (_, i) => [`l${i}`, 27]))));
+  expect(Object.keys(validateConfig(withColors(Object.fromEntries(Array.from({ length: 200 }, (_, i) => [`l${i}`, 27])))).labelColors ?? {})).toHaveLength(200);
+});

@@ -253,6 +253,8 @@ export interface Config {
   pollIntervalSeconds: number;
   port: number;
   agentSessions: AgentSessionsConfig;
+  /** The colour the user chose per label, by lower-case label name, as a hue in degrees; absent when none was chosen. */
+  labelColors?: Record<string, number>;
 }
 
 export type SessionAction = "draft" | "implement" | "validate" | "archive";

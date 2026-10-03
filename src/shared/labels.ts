@@ -1,7 +1,10 @@
+import { fnv1a, REPO_HUES } from "./hues.ts";
 import type { DetectedLabel } from "./types.ts";
 
 export const MAX_LABEL_LENGTH = 32;
 export const MAX_LABELS = 20;
+/** At most this many labels can have a colour chosen for them. */
+export const MAX_LABEL_COLORS = 200;
 
 /** One directory entry as detection sees it: a name and what it is. Symbolic links are `other` and never match. */
 export interface LabelEntry {
@@ -53,20 +56,55 @@ export function detectLabels(entries: Iterable<LabelEntry>): DetectedLabel[] {
   return [...hits.values()].sort((a, b) => a.label.localeCompare(b.label)).map(({ label, marker }) => ({ label, marker }));
 }
 
-export type DisplayedLabel = { label: string; kind: "custom" } | { label: string; kind: "detected"; marker: string };
+/** A label and where it comes from: the user's, or detected from a marker. */
+export type LabelOrigin = { label: string; kind: "custom" } | { label: string; kind: "detected"; marker: string };
+/** Every displayed label carries the hue it is painted in (`labelHue`). */
+export type DisplayedLabel = LabelOrigin & { hue: number };
 
 export const labelKey = (label: string) => label.toLowerCase();
+
+/** The colours the user chose, by lower-case label name (`Config.labelColors`). */
+export type LabelColors = Record<string, number> | undefined;
+
+const hueDistance = (a: number, b: number) => {
+  const d = Math.abs((((a - b) % 360) + 360) % 360);
+  return Math.min(d, 360 - d);
+};
+
+/** The assignable hue nearest to `hue` around the circle, ties to the lower hue: a stored value outside the palette still shows. */
+export function nearestAssignableHue(hue: number): number {
+  let best = REPO_HUES[0];
+  for (const h of REPO_HUES) {
+    const d = hueDistance(h, hue);
+    const bestD = hueDistance(best, hue);
+    if (d < bestD || (d === bestD && h < best)) best = h;
+  }
+  return best;
+}
+
+/**
+ * The hue a label is painted in (project-labels): the user's choice for its name ignoring case, snapped to the palette,
+ * else one derived from the name alone — the same on every repository, in every view and on every machine.
+ */
+export function labelHue(label: string, colors: LabelColors): number {
+  const key = labelKey(label.trim());
+  const chosen = colors && Object.hasOwn(colors, key) ? colors[key] : undefined;
+  return chosen === undefined ? REPO_HUES[fnv1a(key) % REPO_HUES.length] : nearestAssignableHue(chosen);
+}
 
 /**
  * What a repository shows and is filtered by: its custom labels in the user's order, then the detected ones that are
  * neither hidden nor equal to a custom label (ignoring case), sorted. Rows, tiles, the board header and the filter all
  * use this, so they cannot disagree.
  */
-export function displayedLabels(repo: { labels?: string[]; hiddenLabels?: string[] } | undefined, detected: DetectedLabel[] | undefined): DisplayedLabel[] {
+export function displayedLabels(repo: { labels?: string[]; hiddenLabels?: string[] } | undefined, detected: DetectedLabel[] | undefined, colors?: LabelColors): DisplayedLabel[] {
   const custom = repo?.labels ?? [];
   const taken = new Set([...custom, ...(repo?.hiddenLabels ?? [])].map(labelKey));
   const shown = (detected ?? []).filter((d) => !taken.has(labelKey(d.label))).sort((a, b) => a.label.localeCompare(b.label));
-  return [...custom.map((label) => ({ label, kind: "custom" as const })), ...shown.map((d) => ({ label: d.label, kind: "detected" as const, marker: d.marker }))];
+  return [
+    ...custom.map((label) => ({ label, kind: "custom" as const, hue: labelHue(label, colors) })),
+    ...shown.map((d) => ({ label: d.label, kind: "detected" as const, marker: d.marker, hue: labelHue(d.label, colors) })),
+  ];
 }
 
 /** Why `label` cannot be added next to `existing`, in words for the input; undefined when it can. Mirrors the config schema. */

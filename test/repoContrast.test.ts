@@ -120,6 +120,38 @@ for (const [theme, selector] of [["dark", ":root"], ["light", ':root[data-theme=
   });
 }
 
+// Repository labels (project-labels: "Labels are shown in a label colour"): label-coloured text on the chip's own opaque
+// tint of --bg-section. The chip's ground is the same wherever it sits (row, tile, board header, filter bar, dialog),
+// so that is the one pairing to prove; the label text must also hold against those grounds should a chip lose its fill.
+for (const [theme, selector] of [["dark", ":root"], ["light", ':root[data-theme="light"]']] as const) {
+  test(`a label's text keeps 4.5:1 on its chip in the ${theme} theme`, () => {
+    const block = themeBlock(selector);
+    const l = Number(token(block, "--label-l"));
+    const c = Number(token(block, "--label-c"));
+    const share = Number.parseFloat(token(block, "--label-mix")) / 100;
+    const section = linearToLch(hexToLinear(token(block, "--bg-section")));
+    expect(share).toBeGreaterThan(0);
+    for (const h of REPO_HUES) {
+      const label: Lch = { l, c, h };
+      const chip = lchToLinear(mixOklch(label, section, share));
+      const ratio = contrast(lchToLinear(label), chip);
+      if (ratio < 4.5) throw new Error(`${theme} label hue ${h} on its chip: contrast ${ratio.toFixed(2)} < 4.5`);
+      expect(contrast(chip, lchToLinear(section))).toBeGreaterThan(1.01);
+      for (const name of ["--bg-base", "--bg-section", "--bg-raised"]) {
+        const ground = contrast(lchToLinear(label), hexToLinear(token(block, name)));
+        if (ground < 4.5) throw new Error(`${theme} label hue ${h} on ${name}: contrast ${ground.toFixed(2)} < 4.5`);
+      }
+    }
+  });
+}
+
+test("label chips are painted only in the label colour, never a status role or the accent fill", () => {
+  const rules = [...css.matchAll(/^[^{}\n]*\.label-chip\.label-tint[^{]*\{([^}]*)\}/gm)].map((m) => m[1]);
+  expect(rules.length).toBeGreaterThan(0);
+  for (const rule of rules) for (const role of ROLES) expect(rule).not.toContain(`var(--${role}`);
+  expect(css).toContain("--label-color: oklch(var(--label-l) var(--label-c) var(--label-hue, 180));");
+});
+
 for (const [theme, selector] of [["dark", ":root"], ["light", ':root[data-theme="light"]']] as const) {
   test(`every status role keeps 4.5:1 on both badge grounds in the ${theme} theme`, () => {
     const block = themeBlock(selector);

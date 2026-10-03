@@ -1,6 +1,6 @@
 // Projects overview: URL state, row derivation and sorting. Pure, shared by the view and its tests.
 import { isComplete } from "../shared/columns.ts";
-import { type DisplayedLabel, displayedLabels, labelKey } from "../shared/labels.ts";
+import { type DisplayedLabel, displayedLabels, labelHue, labelKey, type LabelColors } from "../shared/labels.ts";
 import type { Config, DiscoveredRepo, DiscoverResult, RepoSharedConfig, RepoSnapshot, Snapshot, WorkInProgress, Worktree } from "../shared/types.ts";
 
 /**
@@ -228,7 +228,7 @@ export function overviewRows(snapshot: Snapshot, config?: Config | null): Overvi
       currentBranch: repo.currentBranch,
       defaultBranch: repo.defaultBranch,
       onDefaultBranch: repo.onDefaultBranch,
-      labels: displayedLabels(configured.get(repo.id), repo.detectedLabels),
+      labels: displayedLabels(configured.get(repo.id), repo.detectedLabels, config?.labelColors),
     };
   });
   addHints(rows);
@@ -334,19 +334,21 @@ export interface LabelOption {
   label: string;
   /** Repositories displaying it. 0 for an active label from the URL that no repository displays. */
   count: number;
+  /** The label's colour, the same as on every row and tile that displays it. */
+  hue: number;
 }
 
 /** The label filter's choices: every label any row displays, each once ignoring case, plus active labels nothing displays. */
-export function labelOptions(rows: OverviewRow[], active: string[] = []): LabelOption[] {
+export function labelOptions(rows: OverviewRow[], active: string[] = [], colors?: LabelColors): LabelOption[] {
   const options = new Map<string, LabelOption>();
   for (const row of rows) {
     for (const key of new Set(row.labels.map((l) => labelKey(l.label)))) {
-      const label = row.labels.find((l) => labelKey(l.label) === key)?.label ?? key;
+      const shown = row.labels.find((l) => labelKey(l.label) === key);
       const seen = options.get(key);
-      options.set(key, { label: seen?.label ?? label, count: (seen?.count ?? 0) + 1 });
+      options.set(key, { label: seen?.label ?? shown?.label ?? key, count: (seen?.count ?? 0) + 1, hue: seen?.hue ?? shown?.hue ?? labelHue(key, colors) });
     }
   }
-  for (const label of active) if (!options.has(labelKey(label))) options.set(labelKey(label), { label, count: 0 });
+  for (const label of active) if (!options.has(labelKey(label))) options.set(labelKey(label), { label, count: 0, hue: labelHue(label, colors) });
   return [...options.values()].sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: "base" }));
 }
 

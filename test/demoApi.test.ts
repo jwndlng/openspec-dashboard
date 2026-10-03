@@ -359,6 +359,14 @@ test("the overview's per-project settings change the in-memory config at once, w
   expect("labels" in (cleared.repos.find((r) => r.id === second.id) ?? {})).toBe(false);
   await expect(api.setRepoLabels(second.id, { labels: ["Infra", "infra"] })).rejects.toMatchObject({ status: 400 });
 
+  expect((await api.setLabelColor(" Client ", 290)).labelColors).toEqual({ client: 290 });
+  expect((await api.config()).labelColors).toEqual({ client: 290 });
+  expect("labelColors" in (await api.setLabelColor("client", null))).toBe(false);
+  for (const [label, hue] of [["client", 360], ["client", 12.5], ["a,b", 290], ["  ", 290]] as const) {
+    await expect(api.setLabelColor(label, hue)).rejects.toMatchObject({ status: 400 });
+  }
+  expect("labelColors" in (await api.config())).toBe(false);
+
   await expect(api.forgetRepo(first.id)).rejects.toMatchObject({ status: 409 });
   await api.setRepoEnabled(first.id, false);
   expect((await api.forgetRepo(first.id)).repos.map((r) => r.id)).not.toContain(first.id);

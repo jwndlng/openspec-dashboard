@@ -2,7 +2,8 @@
 import { expect, test } from "bun:test";
 import { defaultAgentSessions, defaultConfig } from "../src/server/config.ts";
 import type { Config, RepoSnapshot } from "../src/shared/types.ts";
-import { labelTitle, RepoLabelsEditor } from "../src/ui/labels.tsx";
+import { REPO_HUES } from "../src/shared/hues.ts";
+import { LabelColorPicker, labelTitle, RepoLabelsEditor } from "../src/ui/labels.tsx";
 import { Modal } from "../src/ui/modal.tsx";
 import { PendingTableRow, PendingTile, Row, Tile } from "../src/ui/overview.tsx";
 import { overviewRows } from "../src/ui/overviewState.ts";
@@ -27,6 +28,7 @@ function tracking(state: Partial<Pick<Tracking, "busy" | "errors" | "renaming" |
     rename: (id, current, next) => calls.push(`rename ${id} ${current}->${next}`),
     setAgent: (id, patch) => calls.push(`agent ${id} ${JSON.stringify(patch)}`),
     setLabels: (id, patch) => calls.push(`labels ${id} ${JSON.stringify(patch)}`),
+    setLabelColor: (id, label, hue) => calls.push(`labelColor ${id} ${label} ${hue}`),
     openLabels: (id) => calls.push(`openLabels ${id}`),
     closeLabels: () => calls.push("closeLabels"),
   };
@@ -158,6 +160,38 @@ test("Labels opens the project's dialog, whose edits are saved at once", () => {
   expect(textOf(modal.props.children)).toContain("Saving…");
   expect(textOf(modal.props.children)).toContain("invalid config");
   expect(labelTitle({ label: "client", kind: "custom" })).not.toContain("Settings");
+});
+
+test("the labels dialog hands the shared label colours to the editor and saves a colour choice through tracking", () => {
+  const config = configWith();
+  const open = tracking({ labelsOpen: "a", errors: { a: "hue must be null or a whole number from 0 to 359" } });
+  const dialog = RepoLabelsDialog({ repo: config.repos[0], repos: config.repos, detected: [{ label: "go", marker: "go.mod" }], labelColors: { client: 290 }, tracking: open.t });
+  const [modal] = byComponent(dialog, Modal);
+  const [editor] = byComponent(modal.props.children, RepoLabelsEditor);
+  expect(editor.props.colors).toEqual({ client: 290 });
+  const onColor = editor.props.onColor as (label: string, hue: number | null) => void;
+  onColor("client", 27);
+  onColor("go", 190);
+  onColor("client", null);
+  expect(open.calls).toEqual(["labelColor a client 27", "labelColor a go 190", "labelColor a client null"]);
+  // A failed save keeps the colour and shows the reason in the dialog.
+  expect(textOf(modal.props.children)).toContain("hue must be null");
+});
+
+test("the colour picker offers Auto and every assignable hue, marks the current choice and reports the one chosen", () => {
+  const chosen: (number | null)[] = [];
+  const picker = LabelColorPicker({ label: "Client", colors: { client: 295 }, onChoose: (hue) => chosen.push(hue) });
+  expect(picker.props["aria-label"]).toBe("Colour of Client");
+  const options = byTag(picker, "button");
+  expect(options).toHaveLength(REPO_HUES.length + 1);
+  expect(textOf(options[0])).toContain("Auto");
+  // 295 is stored, 290 is the nearest hue the palette has: that one is pressed, and nothing else.
+  expect(options.filter((o) => o.props["aria-pressed"]).map((o) => o.props["aria-label"])).toEqual([`Colour ${REPO_HUES.indexOf(290) + 1} of ${REPO_HUES.length}`]);
+  (options[0].props.onClick as () => void)();
+  (options[1].props.onClick as () => void)();
+  expect(chosen).toEqual([null, REPO_HUES[0]]);
+  const auto = LabelColorPicker({ label: "go", colors: undefined, onChoose: () => {} });
+  expect(byTag(auto, "button")[0].props["aria-pressed"]).toBe(true);
 });
 
 test("a project still being scanned offers none of its settings", () => {

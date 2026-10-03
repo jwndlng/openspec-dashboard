@@ -1,7 +1,9 @@
 import { useMemo, useRef, useState } from "preact/hooks";
 import { CHANGE_NAME_PATTERN } from "../shared/types.ts";
+import { labelHue } from "../shared/labels.ts";
 import { api, ApiError } from "./api.ts";
 import { focusOnce } from "./focus.ts";
+import { labelHueStyle } from "./labels.tsx";
 import { IconFilePlus, IconX } from "./icons.tsx";
 import { Modal } from "./modal.tsx";
 import { type LabelConfig, labelChoices, labelTargets, type LabelTargetRepo, type NewChangeProject } from "./repoGroups.ts";
@@ -211,7 +213,7 @@ export function NewChangeForm({ target, onClose, onCreated, onReload, onBusy }: 
           {labels.length > 0 && (
             <div class="label-chips">
               {labels.map((l) => (
-                <button key={l} type="button" class="label-chip on" disabled={busy} title={`Remove ${l}`} aria-label={`Remove label ${l}`} onClick={() => setLabels(labels.filter((x) => x !== l))}>
+                <button key={l} type="button" class="label-chip label-tint on" style={labelHueStyle(labelHue(l, byLabel?.config?.labelColors))} disabled={busy} title={`Remove ${l}`} aria-label={`Remove label ${l}`} onClick={() => setLabels(labels.filter((x) => x !== l))}>
                   {l}
                   <IconX size={10} />
                 </button>
