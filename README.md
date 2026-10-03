@@ -31,6 +31,8 @@ bun run dev                    # or run from source on http://127.0.0.1:4711
 
 On first run, open **Settings** and add a workspace root such as `~/Workspace`. Then go back to **Projects**: the
 repositories found under it are listed below your tracked ones, and **Enable** starts tracking one right away.
+A short tour points out the main controls on your first visit, and the **Help** tab explains each part of the
+dashboard; both are built in and work offline.
 
 ## Features
 

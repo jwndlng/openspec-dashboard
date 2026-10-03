@@ -10,6 +10,7 @@ import { IconTerminal } from "./icons.tsx";
 import { Copy, TerminalView, useTerminalGeneration } from "./sessionPanel.tsx";
 import { consoleControl, consoleToShow, sessionBadge } from "./sessionState.ts";
 import { SessionBadgeView, useSessionUi } from "./sessions.tsx";
+import { TOUR_ANCHOR } from "./tourState.ts";
 
 /** Top-bar control, beside the theme control. Shown only while agent sessions are enabled. */
 export function ConsoleButton() {
@@ -18,7 +19,7 @@ export function ConsoleButton() {
   const control = consoleControl(ui.consoles);
   const badge = control.badge;
   return (
-    <button type="button" class="btn sm ghost console-btn" aria-label={control.name} title={control.title} onClick={() => ui.showConsole(true)}>
+    <button type="button" class="btn sm ghost console-btn" aria-label={control.name} title={control.title} onClick={() => ui.showConsole(true)} data-tour={TOUR_ANCHOR.console}>
       <IconTerminal size={15} />
       {badge && <span class={`console-dot ${badge.tone}${badge.live ? " live" : ""}`} aria-hidden="true" />}
     </button>

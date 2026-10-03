@@ -171,6 +171,14 @@ export const IconSettings = ({ size }: { size?: number }) => (
   </Icon>
 );
 
+export const IconHelp = ({ size }: { size?: number }) => (
+  <Icon size={size}>
+    <circle cx="12" cy="12" r="10" />
+    <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
+    <path d="M12 17h.01" />
+  </Icon>
+);
+
 export const IconGitBranch = ({ size }: { size?: number }) => (
   <Icon size={size}>
     <path d="M15 6a9 9 0 0 0-9 9V3" />

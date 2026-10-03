@@ -6,11 +6,13 @@ export type Route =
   | { view: "pullRequests" }
   | { view: "repo"; repoId: string }
   | { view: "change"; repoId: string; changeName: string }
-  | { view: "settings" };
+  | { view: "settings" }
+  | { view: "help" };
 
 export function routeFromPath(pathname: string): Route {
   const path = pathname.replace(/\/+$/, "");
   if (path === "/settings") return { view: "settings" };
+  if (path === "/help") return { view: "help" };
   if (path === "/board") return { view: "board" };
   if (path === "/activity") return { view: "activity" };
   if (path === "/pull-requests") return { view: "pullRequests" };

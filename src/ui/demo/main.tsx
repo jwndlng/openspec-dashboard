@@ -3,12 +3,15 @@
 import { render } from "preact";
 import { setApi } from "../api.ts";
 import { App } from "../app.tsx";
+import { setTourAutoStart } from "../tourState.ts";
 import { setRoutingMode } from "../url.ts";
 import { DemoBanner } from "./banner.tsx";
 import { createDemoApi } from "./demoApi.ts";
 
 setApi(createDemoApi());
 setRoutingMode("hash");
+// The demo opens on the dashboard itself, for visitors and for the screenshots taken from it; Help still offers the tour.
+setTourAutoStart(false);
 
 const root = document.getElementById("app");
 if (!root) throw new Error("missing #app mount point");
