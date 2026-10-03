@@ -14,7 +14,7 @@
 ## 3. Tour overlay
 
 - [x] 3.1 Add `data-tour="<step-id>"` attributes (using the constants from 2.1) to the five nav tabs and Help tab in `app.tsx`, the refresh group and theme button, and the Console button in `src/ui/console.tsx`; verify each anchor is present in the rendered page with `bun run dev`
-- [~] 3.2 Create `src/ui/tour.tsx`: spotlight box and step card from theme tokens, scroll-into-view (no smooth scroll under reduced motion), re-measure on resize/scroll, `role="dialog"` named "Dashboard tour" with the step text as description, Next/Done, Back (not on step 1), Skip tour, Escape/←/→ keys, focus to Next on each step and back to the previously focused element on close; verify manually in both themes and at 400px width
+- [x] 3.2 Create `src/ui/tour.tsx`: spotlight box and step card from theme tokens, scroll-into-view (no smooth scroll under reduced motion), re-measure on resize/scroll, `role="dialog"` named "Dashboard tour" with the step text as description, Next/Done, Back (not on step 1), Skip tour, Escape/←/→ keys, focus to Next on each step and back to the previously focused element on close; verify manually in both themes and at 400px width
 - [x] 3.3 Wire the tour into `App`: `tourOpen` state included in `overlayOpen` (page inert), auto-start once per load when `tourAutoStarts()`, not seen and no overlay open (re-checked when the overlay closes), end as skip on route change, save seen on skip and finish; verify on a fresh browser profile that it starts, does not start after reload, and waits when opened on a change link
 - [x] 3.4 Call `setTourAutoStart(false)` in `src/ui/demo/main.tsx`; verify `bun run build:demo` shows no tour on first load and `bun run screenshots` images show no tour
 
@@ -27,5 +27,5 @@
 
 ## 5. Docs and checks
 
-- [~] 5.1 Add one line to `CONTRIBUTING.md` asking changes that alter documented behaviour to update `src/ui/helpContent.tsx`, and mention the Help tab and tour in `README.md`; verify the text renders on GitHub preview
-- [~] 5.2 Run `bun run check` and `bun run build`, open `dist/openspec-dashboard` on a fresh browser profile, take the tour end to end with the keyboard only, open Help offline (server stopped after load) and confirm every requirement scenario in `specs/onboarding-tour` and `specs/help-page`
+- [x] 5.1 Add one line to `CONTRIBUTING.md` asking changes that alter documented behaviour to update `src/ui/helpContent.tsx`, and mention the Help tab and tour in `README.md`; verify the text renders on GitHub preview
+- [x] 5.2 Run `bun run check` and `bun run build`, open `dist/openspec-dashboard` on a fresh browser profile, take the tour end to end with the keyboard only, open Help offline (server stopped after load) and confirm every requirement scenario in `specs/onboarding-tour` and `specs/help-page`
