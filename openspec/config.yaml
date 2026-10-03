@@ -18,3 +18,7 @@ schema: spec-driven
 #       - Always include a "Non-goals" section
 #     tasks:
 #       - Break tasks into chunks of max 2 hours
+
+rules:
+  tasks:
+    - When the change adds or changes something users can see, end with a task to add a What's new entry at the top of `src/ui/changelog.ts` (see "What's new" in CONTRIBUTING.md).

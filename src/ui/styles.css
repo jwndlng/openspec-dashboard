@@ -808,6 +808,30 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: 
 .modal-title p { margin: 2px 0 0; font-size: 12px; color: var(--fg-subtle); }
 .modal-title p .mono { font-size: 11px; }
 .modal-body { min-height: 0; overflow: auto; }
+/* What's new (whatsNew.tsx): the top-corner button with its unseen count, and the dialog's entries by month. */
+.whats-new-btn .whats-new-count {
+  padding: 0 6px; border-radius: 999px; font-family: var(--font-mono); font-size: 11px; line-height: 16px;
+  color: var(--on-brand); background: var(--brand-strong);
+}
+.whats-new { display: flex; flex-direction: column; gap: 18px; padding: 18px 24px 20px; }
+.whats-new-month h3 {
+  margin: 0 0 6px; font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--fg-subtle);
+}
+.whats-new-month ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.whats-new-month li { padding: 10px 12px; margin: 0 -12px; border-radius: var(--radius-sm); }
+.whats-new-month li + li { border-top: 1px solid var(--border-light); }
+.whats-new-month li.fresh { background: var(--brand-softer); }
+.whats-new-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; margin-bottom: 2px; }
+.whats-new-head strong { color: var(--fg-heading); font-size: 14px; }
+.whats-new-head time { margin-left: auto; font-size: 12px; color: var(--fg-subtle); white-space: nowrap; }
+.whats-new-mark { align-self: center; }
+.whats-new-month .markdown { font-size: 13px; line-height: 1.55; }
+.whats-new-month .markdown p { margin: 0; }
+.whats-new-foot { margin: 0; padding-top: 14px; border-top: 1px solid var(--border-light); font-size: 12px; color: var(--fg-subtle); }
+@media (max-width: 720px) {
+  .whats-new { padding: 14px 16px 16px; }
+  .whats-new-head time { margin-left: 0; flex-basis: 100%; }
+}
 /* The repository's checkouts, in the Branches dialog: one row each, the chip and the path. */
 .checkout-list { list-style: none; margin: 0; padding: 12px 16px 16px; display: flex; flex-direction: column; gap: 2px; }
 .checkout-list li { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; padding: 10px 8px; border-radius: var(--radius-sm); }

@@ -24,6 +24,7 @@ import { applyTheme, loadPreference, nextPreference, resolveTheme, savePreferenc
 import { Help } from "./help.tsx";
 import { IconActivity, IconChevronDown, IconClock, IconGitPullRequest, IconHelp, IconKanban, IconLayoutGrid, IconMonitor, IconMoon, IconRefresh, IconSettings, IconSun } from "./icons.tsx";
 import { LogoMark } from "./logo.tsx";
+import { WhatsNew } from "./whatsNew.tsx";
 import { Tour } from "./tour.tsx";
 import { loadTourSeen, saveTourSeen, shouldAutoStart, TOUR_ANCHOR, type TourAnchor, tourAutoStarts } from "./tourState.ts";
 
@@ -310,6 +311,7 @@ export function App() {
               </a>
             )}
             {error && <span class="badge danger">API: {error}</span>}
+            <WhatsNew />
             <ConsoleButton />
             <button type="button" class="btn sm ghost" onClick={cycleTheme} title="Cycle theme: System → Light → Dark" data-tour={TOUR_ANCHOR.theme}>
               <ThemeIcon />
