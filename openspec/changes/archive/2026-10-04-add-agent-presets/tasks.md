@@ -4,7 +4,7 @@
 
 - [x] 1.1 In `src/shared/agentDefaults.ts`, split the Implement, Validate and Archive prompts into a shared `- [~]` tail per starter plus a per-agent invocation, keeping every `CLAUDE_PROFILE` prompt byte-identical (design D2); verify the existing `test/agents.test.ts` and `test/config.test.ts` pass unchanged.
 - [x] 1.2 Add `AgentPreset`, `CODEX_PROFILE`, `ANTIGRAVITY_PROFILE` and `AGENT_PRESETS` (Claude Code, Codex, Antigravity; each with its own `formerPrompts`, Claude's being today's `FORMER_PROMPTS`, kept as an alias) with the commands and resume commands of design D3 and the prompts of D2; verify with a new `test/agents.test.ts` case that every preset passes `validateConfig` (no-bypass rule included), every prompt is one line containing `{change}`, Antigravity's start with `/opsx-`, Codex's contain no `/` command and name the `openspec-*` skill, and `launchCommand` yields `["agy", "-i", <prompt>]` and `["codex", <prompt>]`.
-- [~] 1.3 Check the Codex preset against `codex --help` (an initial prompt as a positional argument that stays interactive, and `codex resume --last`), adjusting only the preset data if it differs — leave this as `- [~]` if `codex` is not installed here, so the user can confirm it.
+- [x] 1.3 Check the Codex preset against `codex --help` (an initial prompt as a positional argument that stays interactive, and `codex resume --last`), adjusting only the preset data if it differs — leave this as `- [~]` if `codex` is not installed here, so the user can confirm it.
 - [x] 1.4 Verify `defaultAgentSessions()` still returns only the Claude Code profile: a `test/config.test.ts` case loads a configuration without `agentSessions` and asserts a single `claude` agent.
 
 ## 2. Server
@@ -20,4 +20,4 @@
 
 - [x] 4.1 Update `README.md`: the available presets (Claude Code configured by default; Codex and Antigravity one click away in Settings), that each preset's prompts assume the OpenSpec commands or skills from `openspec init --tools <tool>`, and that nothing is added because an agent is installed; verify the README section reads correctly.
 - [x] 4.2 Run `bun run check` and `openspec validate add-agent-presets --strict` and verify both pass.
-- [~] 4.3 Run `bun run build`, start `dist/openspec-dashboard`, open Settings with agent sessions enabled and confirm the Antigravity and Codex preset buttons show with the right found marks and that adding one and saving stores an editable profile — leave as `- [~]` for the user to confirm in the browser.
+- [x] 4.3 Run `bun run build`, start `dist/openspec-dashboard`, open Settings with agent sessions enabled and confirm the Antigravity and Codex preset buttons show with the right found marks and that adding one and saving stores an editable profile — leave as `- [~]` for the user to confirm in the browser.

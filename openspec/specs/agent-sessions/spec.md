@@ -25,7 +25,7 @@ Agent sessions SHALL be available only when the global `agentSessions.enabled` s
 - **THEN** it has the global switch, the agent profiles, the shortcuts and the console folder, lists no repository, and links to the projects overview for per-project settings
 
 ### Requirement: An agent is a configurable profile, not a built-in integration
-The dashboard SHALL start agents from user-configurable profiles. A profile consists of an id, a display name, a command given as an argument list, an opening prompt per session starter, optional additional instructions per prompt, an optional resume command and an optional list of environment variables to remove. The dashboard MUST NOT depend on any vendor-specific protocol or output format of an agent: any program that runs interactively in a terminal SHALL be usable. One profile is the default; a repository MAY select a different one with its agent picker on the projects overview. Removing a profile in Settings SHALL return every repository that selected it to the default agent. A profile for Claude Code SHALL be preconfigured, with no additional instructions for any of its prompts. The dashboard MUST NOT read, store, log or transmit an agent's credentials and MUST NOT offer a login flow; an agent uses its own login and its own settings.
+The dashboard SHALL start agents from user-configurable profiles. A profile consists of an id, a display name, a command given as an argument list, an opening prompt per session starter, optional additional instructions per prompt, an optional resume command and an optional list of environment variables to remove. The dashboard MUST NOT depend on any vendor-specific protocol or output format of an agent: any program that runs interactively in a terminal SHALL be usable. One profile is the default; a repository MAY select a different one with its agent picker on the projects overview. Removing a profile in Settings SHALL return every repository that selected it to the default agent. The dashboard SHALL ship **presets** — ready-made profiles — for Claude Code (`claude`), Codex (`codex`) and Antigravity (`agy`). A preset SHALL be an ordinary profile with nothing a user-written profile could not express, and once added it SHALL be edited, made the default or removed like any other profile. Only the Claude Code preset SHALL be configured by default; another preset SHALL become a profile only when the user adds it in Settings, never because its executable was found on this machine. No preset SHALL carry additional instructions for any of its prompts, and no preset's command, resume command or prompt SHALL contain a permission-bypass mode or flag. The dashboard MUST NOT read, store, log or transmit an agent's credentials and MUST NOT offer a login flow; an agent uses its own login and its own settings.
 
 #### Scenario: A second agent
 - **WHEN** the user adds a profile with command `my-agent-cli`, `{prompt}` and an Implement prompt, and selects it for repository `demo-ops` on the projects overview
@@ -43,6 +43,22 @@ The dashboard SHALL start agents from user-configurable profiles. A profile cons
 - **WHEN** the dashboard was started from a shell that exports `ANTHROPIC_API_KEY` and a Claude Code session is opened with the default profile
 - **THEN** the agent's environment does not contain `ANTHROPIC_API_KEY`, so its own login is used
 
+#### Scenario: An installed agent is not added on its own
+- **WHEN** `agy` and `codex` are found on this machine and the configuration has never listed them
+- **THEN** the loaded configuration still has the Claude Code profile as its only agent
+
+#### Scenario: Antigravity preset takes its prompt as one argument
+- **WHEN** the user has added the Antigravity preset and starts **Implement** on change `cache-api-calls` with it
+- **THEN** the agent is started with three arguments, `agy`, `-i` and one prompt that names `cache-api-calls`, and resuming that session starts `agy --continue`
+
+#### Scenario: Codex preset takes its prompt as one argument
+- **WHEN** the user has added the Codex preset and starts **Implement** on change `cache-api-calls` with it
+- **THEN** the agent is started with two arguments, `codex` and one prompt that names `cache-api-calls`
+
+#### Scenario: Every preset is a valid profile
+- **WHEN** a configuration listing every preset unchanged is validated
+- **THEN** it is accepted, including the rule against permission-bypass modes and flags
+
 #### Scenario: A saved profile from before additional instructions existed
 - **WHEN** a configuration saved without any additional instructions is loaded
 - **THEN** every prompt of every profile is composed exactly as it was, and the profile carries no additional instructions
@@ -50,9 +66,9 @@ The dashboard SHALL start agents from user-configurable profiles. A profile cons
 ### Requirement: Session starters run a fixed prompt for a validated change
 The dashboard SHALL offer the starters **Draft artifacts** (while at least one artifact of the change is not done), **Implement** (change in `Ready` or `Implementing`), **Validate** (change in `Done` with the sub-state `validate`) and **Archive** (change in `Done`, in either sub-state), each only when the repository's agent has an opening prompt configured for it, and none for archived changes. **Implement** SHALL NOT be offered for a change in `Done`: nothing is left to implement there, and offering it is what sends an agent back into finished code. A request to start a starter that is not available for the change's current stage and sub-state SHALL be refused. The opening prompt SHALL be produced from the profile's template, in which `{change}` is the only placeholder, replaced by the change name after it passed change-name validation. The agent MUST be started without a shell from an argument list; the prompt MUST reach it either as exactly one argument (where the command contains `{prompt}`) or by being submitted to its terminal after start-up under the rules for text sent on the user's behalf (where it does not). No text from the browser other than the validated change name may become part of the command line.
 
-The preconfigured profile's prompts SHALL carry the meaning of the `- [~]` task marker, which OpenSpec itself does not define: the **Implement** prompt SHALL instruct the agent to leave a task only a person can verify as `- [~]` rather than ticking it; the **Validate** prompt SHALL instruct the agent to take the change's `- [~]` tasks one at a time, say what to check, and tick off only those the user confirms, leaving the rest; and the **Archive** prompt SHALL instruct the agent to sync the change's delta specs into the main specs and then archive the change, without asking whether to sync, to archive right away when nothing is left to sync, and to tick off the tasks left for the user to validate once the user has confirmed them. Each SHALL remain an ordinary prompt template the user can edit or remove, and each SHALL be a single line, so that it can be typed into a terminal.
+Every preset's prompts SHALL carry the meaning of the `- [~]` task marker, which OpenSpec itself does not define: the **Implement** prompt SHALL instruct the agent to leave a task only a person can verify as `- [~]` rather than ticking it; the **Validate** prompt SHALL instruct the agent to take the change's `- [~]` tasks one at a time, say what to check, and tick off only those the user confirms, leaving the rest; and the **Archive** prompt SHALL instruct the agent to sync the change's delta specs into the main specs and then archive the change, without asking whether to sync, to archive right away when nothing is left to sync, and to tick off the tasks left for the user to validate once the user has confirmed them. Each preset's prompts SHALL invoke the OpenSpec workflow in the form that `openspec init --tools <tool>` installs for that agent — Claude Code's `/opsx:<workflow>` commands, Antigravity's `/opsx-<workflow>` workflows, and, for Codex, which gets skills and no commands, a plain-language instruction that names the OpenSpec skill and `{change}`. Each SHALL remain an ordinary prompt template the user can edit or remove, and each SHALL be a single line, so that it can be typed into a terminal.
 
-A saved configuration whose preconfigured profile still carries a former preconfigured prompt for a starter verbatim SHALL be read as carrying the current one for that starter; any other prompt, and a removed one, SHALL be left as saved. This SHALL apply per starter, so upgrading one prompt never rewrites another.
+A saved configuration in which a profile whose id is a preset's id still carries one of that preset's former prompts for a starter verbatim SHALL be read as carrying that preset's current prompt for that starter; any other prompt, a removed one, and every prompt of a profile whose id is no preset's SHALL be left as saved. This SHALL apply per preset and per starter, so upgrading one prompt never rewrites another and one preset's former prompts never upgrade another preset's profile.
 
 Syncing, archiving and ticking off a validated task are done by the agent in the session's working directory; the dashboard itself MUST NOT write specs, move a change or change a checkbox in `tasks.md`.
 
@@ -109,6 +125,18 @@ A starter that does not result in a session MUST NOT fail silently. When startin
 #### Scenario: Former preconfigured prompts upgrade per starter
 - **WHEN** a saved configuration's `claude` profile has a former preconfigured Archive prompt verbatim and an edited Implement prompt
 - **THEN** the loaded configuration carries the current preconfigured Archive prompt and exactly the edited Implement prompt
+
+#### Scenario: Antigravity preset uses its installed workflows
+- **WHEN** the user starts **Archive** on change `cache-api-calls` with the Antigravity preset
+- **THEN** the prompt begins with `/opsx-archive cache-api-calls`, tells the agent to sync the delta specs before archiving without asking, and tells it to tick off the tasks left for the user to validate once the user has confirmed them
+
+#### Scenario: Codex preset names the skill in plain language
+- **WHEN** the user starts **Implement** on change `cache-api-calls` with the Codex preset
+- **THEN** the prompt contains no slash command, names the OpenSpec apply skill and `cache-api-calls`, and tells the agent to leave a task only the user can verify as `- [~]` instead of ticking it
+
+#### Scenario: Former prompts do not cross presets
+- **WHEN** a saved configuration's `agy` profile carries, verbatim, a former prompt of the Claude Code preset that was never one of the Antigravity preset's
+- **THEN** the loaded configuration carries exactly that prompt for the `agy` profile
 
 #### Scenario: Agent without a prompt for a starter
 - **WHEN** a repository's agent has no Archive prompt and a change is in `Done`
