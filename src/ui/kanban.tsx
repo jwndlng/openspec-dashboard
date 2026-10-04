@@ -24,6 +24,7 @@ import { SessionControls, useSessionUi } from "./sessions.tsx";
 import { archivedShown, cardIsLive, consoleTabAvailable } from "./sessionState.ts";
 import { boardFrom, changePath, CONSOLE_TAB, repoPath, serializeDetailQuery } from "./routes.ts";
 import { currentQuery, followInApp, href, navigate, replaceQuery } from "./url.ts";
+import { ProjectConsoleButton } from "./projectConsole.tsx";
 
 const ARCHIVED_LIMIT = 25;
 
@@ -367,6 +368,7 @@ function RepoHeader({ repo, config, now, stats, onCreated }: { repo: RepoSnapsho
         <div class="row path">
           <code>{repo.path}</code>
           <CopyButton text={cdCommand(repo.path)} label="Copy cd" />
+          <ProjectConsoleButton repoId={repo.id} />
         </div>
       </div>
       {(canGit || repo.ok) && (

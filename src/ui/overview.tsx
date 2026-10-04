@@ -39,6 +39,7 @@ import { LabelChips, labelHueStyle } from "./labels.tsx";
 import { NewChangeDialog } from "./newChangeForm.tsx";
 import { assignRepoHues, labelTargets, newChangeTargets } from "./repoGroups.ts";
 import { AgentPicker, AgentToggle, LabelsButton, RenameButton, RenameField, RepoLabelsDialog } from "./projectSettings.tsx";
+import { ProjectConsoleButton } from "./projectConsole.tsx";
 import { PullAllButton, PullButton } from "./pull.tsx";
 import { OpenPrCount } from "./pullRequests.tsx";
 import { branchNotice } from "./pullState.ts";
@@ -145,13 +146,14 @@ function RepoNameEdit({ row, repo, tracking }: { row: OverviewRow; repo?: RepoCo
   );
 }
 
-/** The project's agent-session switch and, when there is a choice, its agent. */
+/** The project's agent-session switch, its agent when there is a choice, and its console. */
 function AgentControls({ repo, config, tracking }: { repo?: RepoConfig; config?: Config | null; tracking: Tracking }) {
   if (!repo || !config) return null;
   return (
     <span class="agent-controls">
       <AgentToggle repo={repo} config={config} tracking={tracking} />
       <AgentPicker repo={repo} config={config} tracking={tracking} />
+      <ProjectConsoleButton repoId={repo.id} />
     </span>
   );
 }

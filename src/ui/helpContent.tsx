@@ -140,6 +140,11 @@ export const HELP_SECTIONS: readonly HelpSection[] = [
             The <strong>Console</strong> button in the top bar opens your agent outside every change, in a console folder of its
             own.
           </li>
+          <li>
+            Each project's <strong>console</strong> button — on its overview row or tile and on its board — opens its agent
+            in the project's own folder, for anything that is not a change. It works there directly, with no branch and no
+            undo. The session that set a new project up shows here until you start a new console.
+          </li>
         </ul>
         <p>In a tracked folder that is not a git repository, the agent works in the folder itself, with no branch and no undo.</p>
       </>

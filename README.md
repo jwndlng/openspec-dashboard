@@ -115,7 +115,8 @@ dashboard; both are built in and work offline.
   is as fresh as your last fetch — and **Resolve conflicts** hands your agent the job. The dashboard merges, rebases
   and pushes nothing itself; it only asks, exactly as **Ship** does.
   A tracked folder that is not a git repository works too — there the agent runs in the folder itself, so it edits your
-  files directly, with no branch and no undo, and the session says so. The same goes for an **Integrate** session.
+  files directly, with no branch and no undo, and the session says so. The same goes for an **Integrate** session and
+  a project's console.
   Claude Code is configured by default; **Codex** and **Antigravity** are presets one click away in Settings, each
   marked with whether its executable was found on this machine — nothing is added just because an agent is installed.
   Each preset's prompts expect the OpenSpec commands or skills that `openspec init --tools <tool>` installs for that
@@ -131,11 +132,17 @@ dashboard; both are built in and work offline.
 - **New project**: from the projects overview, pick one of your workspace roots and type a folder name. The dashboard
   creates that one empty folder, runs `git init` in it — no commit, no remote — and starts your agent there exactly as
   **Integrate** does, to run `openspec init`; the project is tracked once `openspec/config.yaml` exists, and you carry
-  on in the same terminal. ([project-creation](openspec/specs/project-creation/spec.md))
+  on in the same terminal — the project's console button reopens it after you closed it.
+  ([project-creation](openspec/specs/project-creation/spec.md))
 - **Console**: the terminal button next to the theme control opens your default agent outside every change, with no
   prompt — for drafting a new change, looking across repositories or any chore. It runs in a console folder
   (`~/.openspec-dashboard/console/` unless you pick another one in Settings, never inside a tracked repository), one at
   a time, and keeps running when you close it. ([main-console](openspec/specs/main-console/spec.md))
+- **Project console**: each managed project has its own console button — on its overview row and tile and on its
+  board — that opens the project's agent with no prompt, for anything about the project that is not a change. It runs
+  in the project's own folder (the main checkout), with no branch and no undo, and the console says so; one per
+  project, kept running when you close it. The session that set a new project up is its console until you start
+  another. ([project-console](openspec/specs/project-console/spec.md))
 - Light and dark themes.
 
 ## What it touches
