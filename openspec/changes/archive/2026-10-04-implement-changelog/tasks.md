@@ -14,8 +14,8 @@
 ## 3. UI
 
 - [x] 3.1 Add one icon (gift or sparkles) to `src/ui/icons.tsx` in the existing icon style; verify it renders in the button
-- [~] 3.2 Add `src/ui/whatsNew.tsx`: a `WhatsNew` `btn sm ghost` button with the unseen count (styled like `nav-count`, hidden at 0) that opens a `Modal` listing entries grouped by month with date, title, summary rendered through `markdown.tsx`, **New** marks for the ids unseen when it opened, and a link to `https://github.com/jwndlng/openspec-dashboard/releases`; opening saves every id as seen (design D3); verify in `bun run dev` with a cleared marker edited to omit one id
-- [~] 3.3 Mount `WhatsNew` in `topbar-end` in `src/ui/app.tsx` before `ConsoleButton`, and add its styles to `src/ui/styles.css` for light and dark themes and narrow widths; verify visually in both themes in `bun run dev`
+- [x] 3.2 Add `src/ui/whatsNew.tsx`: a `WhatsNew` `btn sm ghost` button with the unseen count (styled like `nav-count`, hidden at 0) that opens a `Modal` listing entries grouped by month with date, title, summary rendered through `markdown.tsx`, **New** marks for the ids unseen when it opened, and a link to `https://github.com/jwndlng/openspec-dashboard/releases`; opening saves every id as seen (design D3); verify in `bun run dev` with a cleared marker edited to omit one id
+- [x] 3.3 Mount `WhatsNew` in `topbar-end` in `src/ui/app.tsx` before `ConsoleButton`, and add its styles to `src/ui/styles.css` for light and dark themes and narrow widths; verify visually in both themes in `bun run dev`
 - [x] 3.4 Verify the demo build (`bun run build:demo`) shows the dialog with the same entries and that `test/demoBundle.test.ts` and `test/demoSynthetic.test.ts` still pass
 
 ## 4. Keeping it current
@@ -27,4 +27,4 @@
 
 ## 5. Verification
 
-- [~] 5.1 Run `bun run check` and `bun run build`; open `dist/openspec-dashboard` with the network off and confirm the dialog lists every entry and the page made no request for it
+- [x] 5.1 Run `bun run check` and `bun run build`; open `dist/openspec-dashboard` with the network off and confirm the dialog lists every entry and the page made no request for it
