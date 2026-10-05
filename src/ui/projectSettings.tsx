@@ -58,6 +58,56 @@ export function AgentToggle({ repo, config, tracking }: { repo: RepoConfig; conf
   );
 }
 
+export const AUTO_MERGE_HINT =
+  "Auto-merge docs-only pull requests: when everything a session ships is under openspec/, Ship asks the agent to enable auto-merge on its pull request. Any other pull request is left for review. The dashboard itself merges nothing.";
+
+/**
+ * On / Off for auto-merging docs-only pull requests (auto-merge-docs). Only where Ship exists: a git project whose agent
+ * sessions are enabled. While agent sessions are off globally it shows the setting as a link to Settings, like
+ * `AgentToggle`.
+ */
+export function AutoMergeToggle({ repo, config, isGit, tracking }: { repo: RepoConfig; config: Config; isGit: boolean; tracking: Tracking }) {
+  if (!isGit || !repoAgentEnabled(repo)) return null;
+  const on = repo.agent?.autoMergeDocs === true;
+  const state = on ? "On" : "Off";
+  if (!config.agentSessions.enabled) {
+    return (
+      <a
+        class={`control switch-control agent-toggle auto-merge-toggle off-globally ${on ? "on" : ""}`}
+        href={hrefWithQuery("/settings", "?section=agents")}
+        title={SESSIONS_OFF}
+        aria-label={`Auto-merge docs-only pull requests for ${repo.name}: ${state}. ${SESSIONS_OFF}`}
+        onClick={(e) => {
+          e.stopPropagation();
+          followInApp(e, "/settings", "?section=agents");
+        }}
+      >
+        <span class="switch" aria-hidden="true" />
+        Docs auto-merge: {state}
+      </a>
+    );
+  }
+  const busy = tracking.busy[repo.id] === "agent";
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={on}
+      aria-label={`Auto-merge docs-only pull requests for ${repo.name}`}
+      class={`control switch-control agent-toggle auto-merge-toggle ${on ? "on" : ""}`}
+      title={`${AUTO_MERGE_HINT} ${on ? "Switch off" : "Switch on"}, saved at once.`}
+      disabled={tracking.busy[repo.id] !== undefined}
+      onClick={(e) => {
+        e.stopPropagation();
+        tracking.setAgent(repo.id, { autoMergeDocs: !on });
+      }}
+    >
+      <span class="switch" aria-hidden="true" />
+      {busy ? "Saving…" : `Docs auto-merge: ${state}`}
+    </button>
+  );
+}
+
 /** Which agent the project's sessions start: only offered with a choice to make and sessions on for the project. */
 export function AgentPicker({ repo, config, tracking }: { repo: RepoConfig; config: Config; tracking: Tracking }) {
   const agents = config.agentSessions.agents;

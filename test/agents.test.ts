@@ -3,7 +3,7 @@ import { defaultAgentSessions, defaultConfig, newRepoConfig, validateConfig } fr
 import { agentEnv, agentFor, integratePrompt, launchCommand, openingPrompt, resolveConflictsPrompt, shipPrompt } from "../src/server/sessions/agents.ts";
 import { Scrollback, sessionBranch, worktreeName } from "../src/server/sessions/manager.ts";
 import { AGENT_PRESETS, ANTIGRAVITY_PROFILE, CLAUDE_PROFILE, CODEX_PROFILE, DEFAULT_SHORTCUTS, FORMER_PROMPTS } from "../src/shared/agentDefaults.ts";
-import { availableActions, DEFAULT_INTEGRATE_PROMPT, DEFAULT_RESOLVE_CONFLICTS_PROMPT, DEFAULT_SHIP_PROMPT, integrateUnavailable, type AgentAvailability, type ChangeSession, type Session } from "../src/shared/types.ts";
+import { AUTO_MERGE_DOCS_INSTRUCTION, availableActions, DEFAULT_INTEGRATE_PROMPT, DEFAULT_RESOLVE_CONFLICTS_PROMPT, DEFAULT_SHIP_PROMPT, integrateUnavailable, type AgentAvailability, type ChangeSession, type Session } from "../src/shared/types.ts";
 import { agentForRepo, cardIsLive, cardSessionControls, NEEDS_YOU_AFTER_MS, parseArgLines, sessionBadge, sessionForChange, sessionsEnabledFor, silenceDuration, slugId, startersFor } from "../src/ui/sessionState.ts";
 import { fakeProfile } from "./sessionHelpers.ts";
 
@@ -188,6 +188,21 @@ test("Ship: additional instructions extend the profile's prompt, or the agent-ne
   // On top of the profile's own Ship prompt it behaves the same, `{change}` included.
   const own = fakeProfile({ prompts: { ...fakeProfile().prompts, ship: "Ship {change}." }, promptSuffixes: { ship: "Title the PR after {change}." } });
   expect(shipPrompt(own, "cache-api-calls")).toBe("Ship cache-api-calls. Title the PR after cache-api-calls.");
+});
+
+test("Ship: the auto-merge instruction comes last when asked for, and changes nothing when not", () => {
+  const extra = "Add the checklist to the pull request body.";
+  const profiles = [fakeProfile(), fakeProfile({ promptSuffixes: { ship: extra } }), fakeProfile({ prompts: { ship: "Ship {change}." }, promptSuffixes: { ship: extra } })];
+  for (const profile of profiles) {
+    const plain = shipPrompt(profile, "cache-api-calls");
+    expect(shipPrompt(profile, "cache-api-calls", { autoMerge: false })).toBe(plain);
+    expect(shipPrompt(profile, "cache-api-calls", { autoMerge: true })).toBe(`${plain} ${AUTO_MERGE_DOCS_INSTRUCTION}`);
+  }
+  // One line (it may be typed into a terminal), agent-neutral, and it overrides the default's "Do not merge it."
+  expect(AUTO_MERGE_DOCS_INSTRUCTION).not.toMatch(/[\r\n]/);
+  expect(AUTO_MERGE_DOCS_INSTRUCTION).not.toMatch(/\bgh\b|claude|codex/i);
+  expect(AUTO_MERGE_DOCS_INSTRUCTION).toContain("openspec/");
+  expect(AUTO_MERGE_DOCS_INSTRUCTION).toContain("enable auto-merge");
 });
 
 test("Integrate: prompt plus additional instructions, with nothing substituted into either", () => {

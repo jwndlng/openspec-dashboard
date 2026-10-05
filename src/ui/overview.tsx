@@ -38,7 +38,7 @@ import { IconCheck, IconChevronDown, IconFolderGit, IconGitBranch, IconPlus, Ico
 import { LabelChips, labelHueStyle } from "./labels.tsx";
 import { NewChangeDialog } from "./newChangeForm.tsx";
 import { assignRepoHues, labelTargets, newChangeTargets } from "./repoGroups.ts";
-import { AgentPicker, AgentToggle, LabelsButton, RenameButton, RenameField, RepoLabelsDialog } from "./projectSettings.tsx";
+import { AgentPicker, AgentToggle, AutoMergeToggle, LabelsButton, RenameButton, RenameField, RepoLabelsDialog } from "./projectSettings.tsx";
 import { ProjectConsoleButton } from "./projectConsole.tsx";
 import { PullAllButton, PullButton } from "./pull.tsx";
 import { OpenPrCount } from "./pullRequests.tsx";
@@ -146,13 +146,14 @@ function RepoNameEdit({ row, repo, tracking }: { row: OverviewRow; repo?: RepoCo
   );
 }
 
-/** The project's agent-session switch, its agent when there is a choice, and its console. */
-function AgentControls({ repo, config, tracking }: { repo?: RepoConfig; config?: Config | null; tracking: Tracking }) {
+/** The project's agent-session switch, its agent when there is a choice, whether docs-only pull requests auto-merge, and its console. */
+function AgentControls({ repo, config, isGit, tracking }: { repo?: RepoConfig; config?: Config | null; isGit: boolean; tracking: Tracking }) {
   if (!repo || !config) return null;
   return (
     <span class="agent-controls">
       <AgentToggle repo={repo} config={config} tracking={tracking} />
       <AgentPicker repo={repo} config={config} tracking={tracking} />
+      <AutoMergeToggle repo={repo} config={config} isGit={isGit} tracking={tracking} />
       <ProjectConsoleButton repoId={repo.id} />
     </span>
   );
@@ -202,7 +203,7 @@ export function Row({ row, stages, now, tracking, labelFilter, config }: { row: 
         {lastUpdated(row, now)}
       </td>
       <td class="agent-cell">
-        <AgentControls repo={repo} config={config} tracking={tracking} />
+        <AgentControls repo={repo} config={config} isGit={row.isGit} tracking={tracking} />
       </td>
       <td class="row-actions">
         {row.isGit && row.ok && <PullButton repoId={row.id} repoName={row.name} compact />}
@@ -351,7 +352,7 @@ export function Tile({ row, stages, now, hue, tracking, labelFilter, config }: {
         </div>
       )}
       <TileCheckouts row={row}>
-        <AgentControls repo={repo} config={config} tracking={tracking} />
+        <AgentControls repo={repo} config={config} isGit={row.isGit} tracking={tracking} />
       </TileCheckouts>
     </article>
   );

@@ -45,7 +45,7 @@ dashboard; both are built in and work offline.
   disabled one), each saved at once; **Disable** on a row or tile moves a repository down there. Each managed project
   also carries its own settings on its row or tile, saved at once: **Rename** (the pencil beside its name), **Labels**,
   and an **Agent sessions** switch — Enabled unless you turn it off — with an agent picker when you configured more
-  than one agent.
+  than one agent, and **Docs auto-merge** (see Agent sessions).
   ([project-overview](openspec/specs/project-overview/spec.md))
 - **Work in progress**: for the main checkout and every git worktree of a repository, whether it holds uncommitted
   changes or unpushed commits, or is stale, e.g. `2 worktrees · 1 uncommitted · 1 unpushed`. Sort by it or filter to
@@ -114,6 +114,10 @@ dashboard; both are built in and work offline.
   A branch that no longer merges into the default branch says so, with the files that clash — worked out locally, so it
   is as fresh as your last fetch — and **Resolve conflicts** hands your agent the job. The dashboard merges, rebases
   and pushes nothing itself; it only asks, exactly as **Ship** does.
+  **Docs auto-merge** (off by default, per project): when everything a session would ship — committed or not — lies
+  under `openspec/`, such as an archive branch or a drafted proposal, **Ship** also asks the agent to enable auto-merge
+  on the pull request, so it merges once its required checks pass. Anything else is left for review as before, and the
+  session panel says which kind of Ship was sent. The agent enables auto-merge; the dashboard itself merges nothing.
   A tracked folder that is not a git repository works too — there the agent runs in the folder itself, so it edits your
   files directly, with no branch and no undo, and the session says so. The same goes for an **Integrate** session and
   a project's console.
