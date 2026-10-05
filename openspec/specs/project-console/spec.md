@@ -59,6 +59,10 @@ it.
 - **WHEN** the project's agent executable cannot be found and the user opens its console
 - **THEN** no process is started and the overlay says that the agent was not found
 
+#### Scenario: Prompt carried by an option
+- **WHEN** `demo-ops` uses the Antigravity preset, whose command is `agy`, `--prompt-interactive={prompt}`, and the user opens `demo-ops`'s console
+- **THEN** `agy` is started alone and nothing is typed into its terminal
+
 ### Requirement: The project console runs in place in the project's folder
 A project console SHALL run **in place**. The agent's working directory SHALL be the tracked repository's folder, which
 for a git repository is its main checkout. No worktree SHALL be created, no branch made and no git command run by the

@@ -19,5 +19,5 @@
 ## 4. Wrap-up
 
 - [x] 4.1 Run `bun run check` and verify it passes
-- [~] 4.2 In the built binary (`bun run build`), with the Antigravity preset as a project's agent, open its project console and confirm `agy` starts and stays open; start a change session in a freshly created project with no commit and confirm the card shows the new reason
+- [x] 4.2 In the built binary (`bun run build`), with the Antigravity preset as a project's agent, open its project console and confirm `agy` starts and stays open; start a change session in a freshly created project with no commit and confirm the card shows the new reason
 - [x] 4.3 Add a What's new entry at the top of `src/ui/changelog.ts` saying Antigravity consoles now open and that a project without a first commit explains why a change session cannot start

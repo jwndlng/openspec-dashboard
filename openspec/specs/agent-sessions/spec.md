@@ -49,7 +49,11 @@ The dashboard SHALL start agents from user-configurable profiles. A profile cons
 
 #### Scenario: Antigravity preset takes its prompt as one argument
 - **WHEN** the user has added the Antigravity preset and starts **Implement** on change `cache-api-calls` with it
-- **THEN** the agent is started with three arguments, `agy`, `-i` and one prompt that names `cache-api-calls`, and resuming that session starts `agy --continue`
+- **THEN** the agent is started with two arguments, `agy` and one argument `--prompt-interactive=` followed by a prompt that names `cache-api-calls`, and resuming that session starts `agy --continue`
+
+#### Scenario: Antigravity preset starts without a prompt
+- **WHEN** the Antigravity preset is the agent of a main console or a project console
+- **THEN** `agy` is started alone, with no option left over that expects a value
 
 #### Scenario: Codex preset takes its prompt as one argument
 - **WHEN** the user has added the Codex preset and starts **Implement** on change `cache-api-calls` with it
@@ -276,7 +280,7 @@ Whenever the dashboard sends text to an agent's terminal on the user's behalf an
 - **THEN** the echoed text counts as shown and the line is submitted
 
 ### Requirement: Every session works in its own git worktree, created by the dashboard
-In a git repository a session MUST NOT run in the repository's main checkout. Before starting the agent, the dashboard SHALL ensure a git worktree for the session under `~/.openspec-dashboard/worktrees/<repository id>/`, outside the repository's working tree, on branch `feat/<change>` — or, for **Archive**, in a worktree and branch of its own (`archive-<change>`, `chore/archive-<change>`). An existing worktree for that name SHALL be reused; an existing branch SHALL be checked out; otherwise the branch SHALL be created from the repository's default branch as currently known locally (`origin/HEAD`, else `HEAD`). As the one exception, when a Draft or Implement session's branch `feat/<change>` is already checked out in another linked worktree of the repository, the session SHALL adopt that worktree — run the agent there instead of creating one — and SHALL record and show that the worktree was adopted. The dashboard MUST NOT contact a remote for this. If the change's directory is missing from the session's worktree, the dashboard SHALL copy it from the checkout the change's data comes from (the main checkout or a linked worktree), including when it exists there only uncommitted. The main checkout's branch, index and working tree MUST NOT be changed. The session record and panel SHALL show the worktree path and branch.
+In a git repository a session MUST NOT run in the repository's main checkout. Before starting the agent, the dashboard SHALL ensure a git worktree for the session under `~/.openspec-dashboard/worktrees/<repository id>/`, outside the repository's working tree, on branch `feat/<change>` — or, for **Archive**, in a worktree and branch of its own (`archive-<change>`, `chore/archive-<change>`). An existing worktree for that name SHALL be reused; an existing branch SHALL be checked out; otherwise the branch SHALL be created from the repository's default branch as currently known locally (`origin/HEAD`, else `HEAD`). When that branch would be created from `HEAD` and the repository has no commit yet, so that `HEAD` names no commit, starting the session SHALL be refused before any worktree or branch is created and before any agent is started, with a reason that says the repository has no commit yet and that a session needs a first commit — which the user can make, for example, in the project console, since that runs in the checkout — rather than git's own error. That check SHALL be read-only. As the one exception, when a Draft or Implement session's branch `feat/<change>` is already checked out in another linked worktree of the repository, the session SHALL adopt that worktree — run the agent there instead of creating one — and SHALL record and show that the worktree was adopted. The dashboard MUST NOT contact a remote for this. If the change's directory is missing from the session's worktree, the dashboard SHALL copy it from the checkout the change's data comes from (the main checkout or a linked worktree), including when it exists there only uncommitted. The main checkout's branch, index and working tree MUST NOT be changed. The session record and panel SHALL show the worktree path and branch.
 
 A tracked folder that holds an `openspec/` tree but is **not a git repository** is a supported repository, and its sessions SHALL run **in place**: the agent's working directory SHALL be the repository folder itself, no worktree SHALL be created, no branch SHALL be made, and no git command SHALL be run for the session. Whether a session runs in place SHALL be decided from the repository's own scan result, never by attempting a git command and reacting to its failure. An in-place session SHALL be recorded as such and MUST NOT carry a branch. The panel SHALL name the folder the agent runs in and SHALL state plainly that the agent edits the tracked folder directly, with no branch, no commit and no undo. Session starters MUST NOT be hidden or disabled because a repository is not a git repository.
 
@@ -307,6 +311,10 @@ A **project console** — the one session per tracked project for general projec
 #### Scenario: Worktree cannot be created
 - **WHEN** git refuses to create the worktree in a git repository
 - **THEN** the request fails with git's reason and no agent is started
+
+#### Scenario: Repository without a commit
+- **WHEN** the user starts **Draft artifacts** for change `first-feature` in the tracked git repository `/w/acme/fresh-app`, which was initialised but has no commit, and has no `origin/HEAD`
+- **THEN** the request is refused with a reason saying the repository has no commit yet and that a first commit is needed, the card shows that reason, no worktree, branch or file is created, and no agent is started
 
 #### Scenario: Archiving a change in a folder that is not a git repository
 - **WHEN** the user starts **Archive** for a completed change in a tracked folder that has an `openspec/` tree but no `.git`
@@ -827,3 +835,22 @@ The action SHALL NOT be offered, and a request for it SHALL be refused with the 
 #### Scenario: The user is told how fresh it is
 - **WHEN** a worktree's branch is reported as conflicting with `origin/main`
 - **THEN** the dashboard names `origin/main`, says that this is as of the user's last fetch, and points at the pull action
+
+### Requirement: A former preset command is read as the current one
+A saved profile whose id is a preset's and whose command is, argument for argument, one of that preset's former
+commands SHALL be loaded with the preset's current command. Any other command — edited, of a profile with no preset's
+id, or another preset's former command — is the user's and SHALL be loaded as saved. Loading SHALL NOT write the
+configuration file; the upgraded command reaches it with the next save. The Antigravity preset's former command is
+`agy`, `-i`, `{prompt}`.
+
+#### Scenario: The former Antigravity command is upgraded
+- **WHEN** a configuration whose `agy` profile has the command `agy`, `-i`, `{prompt}` is loaded
+- **THEN** the loaded profile's command is `agy`, `--prompt-interactive={prompt}`, its prompts and resume command are unchanged, and the file on disk is unchanged until the next save
+
+#### Scenario: An edited command is the user's
+- **WHEN** a configuration whose `agy` profile has the command `agy`, `-i`, `{prompt}`, `--model`, `fast` is loaded
+- **THEN** the loaded profile's command is exactly that
+
+#### Scenario: Another profile with the same command is the user's
+- **WHEN** a configuration has a profile with id `my-agy` and the command `agy`, `-i`, `{prompt}`
+- **THEN** the loaded profile's command is exactly that
