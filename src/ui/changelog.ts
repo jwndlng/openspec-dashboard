@@ -15,11 +15,11 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
-    id: "2026-10-05-change-dependencies",
+    id: "2026-10-05-pr-title-convention",
     date: "2026-10-05",
-    title: "Changes that wait for other changes",
+    title: "Pull request title convention per project",
     summary:
-      "Pick what a new change **Depends on** in the **New change** form, or list it in the change's `depends-on.yaml`. Until those changes are done or archived on your main checkout, the card shows `waits for …` instead of **Implement**, and the details view lists both directions.",
+      "Pick **Conventional Commits** under **PR titles** for a project on the **Projects** overview, and **Ship** asks the agent to title that project's pull requests and commits that way. Without it, Ship no longer asks for Conventional Commits and the agent follows the repository's own conventions.",
   },
   {
     id: "2026-10-05-docs-auto-merge",

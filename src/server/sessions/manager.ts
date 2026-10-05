@@ -470,7 +470,7 @@ export class SessionManager {
     if (!SHIPPABLE_WORK.includes(work.state)) throw new SessionError(409, `there is nothing to ship (${work.state})`);
     // Asked now, never taken from a status the UI holds: only an opted-in project, and only provably docs-only work.
     const autoMerge = repo.agent?.autoMergeDocs === true && (await shipsOnlyOpenSpec(session.worktreePath, await baseRef(repo.path)));
-    const prompt = shipPrompt(agent, session.change, { autoMerge });
+    const prompt = shipPrompt(agent, session.change, { autoMerge, convention: repo.prTitleConvention });
     this.forgetWorktrees();
     const proc = this.live.get(id)?.proc;
     if (session.state === "running" && proc) {

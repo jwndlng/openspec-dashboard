@@ -417,6 +417,15 @@ test("empty, over-long, comma, control-character and too many labels are refused
   expect(validateConfig(withLabels({ labels: ["x".repeat(32)] })).repos[0].labels).toEqual(["x".repeat(32)]);
 });
 
+test("a repository may require Conventional Commits pull request titles; any other value is refused", () => {
+  const withConvention = (prTitleConvention: unknown) => ({ ...defaultConfig(), repos: [{ ...newRepoConfig("/w/acme/alpha-infra", true), prTitleConvention }] });
+  expect(validateConfig(withConvention("conventional-commits")).repos[0].prTitleConvention).toBe("conventional-commits");
+  expect(issuesOf(withConvention("angular")).join(" ")).toContain("prTitleConvention");
+  refuse(withConvention(true));
+  // A config saved before the setting existed loads unchanged: no repository gains the key.
+  expect("prTitleConvention" in validateConfig(withLabels({})).repos[0]).toBe(false);
+});
+
 test("a config without labels gains no label keys", () => {
   const [repo] = validateConfig(withLabels({})).repos;
   expect("labels" in repo).toBe(false);

@@ -183,6 +183,7 @@ const repoSchema = z.object({
   agent: z.object({ enabled: z.boolean(), agentId: z.string().optional(), autoMergeDocs: z.boolean().optional() }).optional(),
   labels: labelsSchema,
   hiddenLabels: labelsSchema,
+  prTitleConvention: z.literal("conventional-commits").optional(),
 });
 
 /** The first label that repeats another one of the list, ignoring case. */

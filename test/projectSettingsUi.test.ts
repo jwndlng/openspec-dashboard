@@ -1,7 +1,7 @@
 // A managed project's own settings on the overview (project-overview: "Each managed project carries its own settings").
 import { expect, test } from "bun:test";
 import { defaultAgentSessions, defaultConfig } from "../src/server/config.ts";
-import type { Config, RepoSnapshot } from "../src/shared/types.ts";
+import { CONVENTIONAL_COMMITS_SHIP_SENTENCE, type Config, type RepoSnapshot } from "../src/shared/types.ts";
 import { REPO_HUES } from "../src/shared/hues.ts";
 import { LabelColorPicker, labelTitle, RepoLabelsEditor } from "../src/ui/labels.tsx";
 import { Modal } from "../src/ui/modal.tsx";
@@ -28,6 +28,7 @@ function tracking(state: Partial<Pick<Tracking, "busy" | "errors" | "renaming" |
     rename: (id, current, next) => calls.push(`rename ${id} ${current}->${next}`),
     setAgent: (id, patch) => calls.push(`agent ${id} ${JSON.stringify(patch)}`),
     setLabels: (id, patch) => calls.push(`labels ${id} ${JSON.stringify(patch)}`),
+    setPrTitleConvention: (id, convention) => calls.push(`prTitles ${id} ${convention}`),
     setLabelColor: (id, label, hue) => calls.push(`labelColor ${id} ${label} ${hue}`),
     openLabels: (id) => calls.push(`openLabels ${id}`),
     closeLabels: () => calls.push("closeLabels"),
@@ -87,20 +88,57 @@ test("with agent sessions off globally the switch shows the project's setting as
   expect(calls).toEqual([]);
 });
 
+const selectNamed = (prefix: string) => (node: unknown) => byTag(node as never, "select").filter((s) => String(s.props["aria-label"]).startsWith(prefix));
+const agentSelects = selectNamed("Agent for ");
+const prTitleSelects = selectNamed("PR titles for ");
+
 test("the agent picker appears only with two agents and sessions on for the project; default agent clears the choice", () => {
-  const picker = (config: Config) => byTag(Row({ row, stages: [], now: 0, tracking: tracking().t, config }), "select");
+  const picker = (config: Config) => agentSelects(Row({ row, stages: [], now: 0, tracking: tracking().t, config }));
   expect(picker(configWith())).toHaveLength(0);
   expect(picker(configWith({ agents: 2, agent: { enabled: false } }))).toHaveLength(0);
   expect(picker(configWith({ agents: 2, sessions: false }))).toHaveLength(0);
 
   const { t, calls } = tracking();
   for (const node of layouts(configWith({ agents: 2, agent: { enabled: true, agentId: "my-agent" } }), t)) {
-    const [select] = byTag(node, "select");
+    const [select] = agentSelects(node);
     expect(select.props.value).toBe("my-agent");
     expect(byTag(select, "option").map(textOf)).toEqual(["default agent", "Claude Code", "My agent"]);
     (select.props.onChange as (e: unknown) => void)({ currentTarget: { value: "" } });
   }
   expect(calls).toEqual(['agent a {"agentId":null}', 'agent a {"agentId":null}']);
+});
+
+test("every git project offers a PR titles picker in both layouts, with agent sessions off too, saved without opening the board", () => {
+  const { t, calls } = tracking();
+  for (const config of [configWith(), configWith({ sessions: false }), configWith({ agent: { enabled: false } })]) {
+    for (const node of layouts(config, t)) {
+      const [select] = prTitleSelects(node);
+      expect(select.props["aria-label"]).toBe("PR titles for alpha-infra");
+      expect(select.props.value).toBe("");
+      expect(String(select.props.title)).toContain(CONVENTIONAL_COMMITS_SHIP_SENTENCE);
+      expect(byTag(select, "option").map(textOf)).toEqual(["No convention", "Conventional Commits"]);
+      expect(click(select)).toBe(true);
+      (select.props.onChange as (e: unknown) => void)({ currentTarget: { value: "conventional-commits" } });
+    }
+  }
+  expect(calls).toEqual(Array(6).fill("prTitles a conventional-commits"));
+
+  const set = tracking();
+  const withConvention: Config = { ...configWith(), repos: [{ ...configWith().repos[0], prTitleConvention: "conventional-commits" }] };
+  for (const node of layouts(withConvention, set.t)) {
+    const [select] = prTitleSelects(node);
+    expect(select.props.value).toBe("conventional-commits");
+    (select.props.onChange as (e: unknown) => void)({ currentTarget: { value: "" } });
+  }
+  expect(set.calls).toEqual(["prTitles a null", "prTitles a null"]);
+});
+
+test("the PR titles picker is not offered for a folder without git, and is inactive while a setting saves", () => {
+  const [plain] = overviewRows({ generatedAt: "2026-10-01T00:00:00Z", repos: [{ ...snapshotRepo, isGit: false }] });
+  for (const node of [Row({ row: plain, stages: [], now: 0, tracking: tracking().t, config: configWith() }), Tile({ row: plain, stages: [], now: 0, tracking: tracking().t, config: configWith() })]) {
+    expect(prTitleSelects(node)).toHaveLength(0);
+  }
+  for (const node of layouts(configWith(), tracking({ busy: { a: "prTitles" } }).t)) expect(prTitleSelects(node)[0].props.disabled).toBe(true);
 });
 
 test("Rename turns the name into a field: Enter and blur save, Escape cancels, each once", () => {

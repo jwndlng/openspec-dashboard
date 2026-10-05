@@ -196,6 +196,13 @@ async function postRepoAgent(state: AppState, req: Request, id: string): Promise
   });
 }
 
+/** The project's PR titles picker on the overview: `conventional-commits` sets the convention, `null` removes the key. */
+async function postRepoPrTitleConvention(state: AppState, req: Request, id: string): Promise<Response> {
+  const { convention } = await readJson(req);
+  if (convention !== null && convention !== "conventional-commits") return json({ error: "convention must be conventional-commits or null" }, 400);
+  return updateRepo(state, id, ({ prTitleConvention: _old, ...repo }) => (convention ? { ...repo, prTitleConvention: convention } : repo));
+}
+
 /** The project's labels dialog on the overview: either list replaced, an empty one removed, validated as in a `PUT`. */
 async function postRepoLabels(state: AppState, req: Request, id: string): Promise<Response> {
   const body = await readJson(req);
@@ -911,12 +918,13 @@ export function createFetchHandler({ state, indexHtml }: AppOptions): (req: Requ
       const enabledMatch = /^\/api\/repos\/([^/]+)\/enabled$/.exec(pathname);
       if (req.method === "POST" && enabledMatch) return tracking(() => postRepoEnabled(state, req, decodeURIComponent(enabledMatch[1])));
       if (req.method === "POST" && pathname === "/api/labels/color") return tracking(() => postLabelColor(state, req));
-      const repoSetting = /^\/api\/repos\/([^/]+)\/(name|agent|labels|forget)$/.exec(pathname);
+      const repoSetting = /^\/api\/repos\/([^/]+)\/(name|agent|labels|pr-title-convention|forget)$/.exec(pathname);
       if (req.method === "POST" && repoSetting) {
         const id = decodeURIComponent(repoSetting[1]);
         if (repoSetting[2] === "name") return tracking(() => postRepoName(state, req, id));
         if (repoSetting[2] === "agent") return tracking(() => postRepoAgent(state, req, id));
         if (repoSetting[2] === "labels") return tracking(() => postRepoLabels(state, req, id));
+        if (repoSetting[2] === "pr-title-convention") return tracking(() => postRepoPrTitleConvention(state, req, id));
         return tracking(() => postRepoForget(state, id));
       }
       if (req.method === "GET" && pathname === "/api/shared-config") return getSharedConfig();

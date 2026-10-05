@@ -1,8 +1,9 @@
-// A managed project's own settings on the projects overview — its agent sessions, its agent, its name and its labels —
+// A managed project's own settings on the projects overview — its agent sessions, its agent, its pull request titles,
+// its name and its labels —
 // each saved at once through `Tracking` (project-overview: "Each managed project carries its own settings"). Hook-free,
 // so tests can walk them; the state lives in `useTracking`. Every control stops the click, so a row or tile that holds
 // one never opens the repository's board because of it.
-import { repoAgentEnabled, type Config, type DetectedLabel, type RepoConfig } from "../shared/types.ts";
+import { CONVENTIONAL_COMMITS_SHIP_SENTENCE, repoAgentEnabled, type Config, type DetectedLabel, type PrTitleConvention, type RepoConfig } from "../shared/types.ts";
 import { IconPencil, IconTag } from "./icons.tsx";
 import { labelSuggestions, RepoLabelsEditor } from "./labels.tsx";
 import { Modal } from "./modal.tsx";
@@ -128,6 +129,30 @@ export function AgentPicker({ repo, config, tracking }: { repo: RepoConfig; conf
           {a.name}
         </option>
       ))}
+    </select>
+  );
+}
+
+export const PR_TITLES_TITLE = `PR titles: how Ship asks the agent to title this project's pull requests, saved at once. Conventional Commits adds: "${CONVENTIONAL_COMMITS_SHIP_SENTENCE}"`;
+
+/**
+ * The project's pull request title convention, which Ship hands to the agent. Only for a git repository — a folder
+ * without git has no Ship — and shown with agent sessions off too: it describes the project, not its sessions.
+ */
+export function PrTitlesPicker({ repo, isGit, tracking }: { repo: RepoConfig; isGit: boolean; tracking: Tracking }) {
+  if (!isGit) return null;
+  return (
+    <select
+      class="input pr-titles-picker"
+      aria-label={`PR titles for ${repo.name}`}
+      title={PR_TITLES_TITLE}
+      value={repo.prTitleConvention ?? ""}
+      disabled={tracking.busy[repo.id] !== undefined}
+      onClick={stop}
+      onChange={(e) => tracking.setPrTitleConvention(repo.id, (e.currentTarget.value || null) as PrTitleConvention | null)}
+    >
+      <option value="">No convention</option>
+      <option value="conventional-commits">Conventional Commits</option>
     </select>
   );
 }

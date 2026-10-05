@@ -38,7 +38,7 @@ import { IconCheck, IconChevronDown, IconFolderGit, IconGitBranch, IconPlus, Ico
 import { LabelChips, labelHueStyle } from "./labels.tsx";
 import { NewChangeDialog } from "./newChangeForm.tsx";
 import { assignRepoHues, labelTargets, newChangeTargets } from "./repoGroups.ts";
-import { AgentPicker, AgentToggle, AutoMergeToggle, LabelsButton, RenameButton, RenameField, RepoLabelsDialog } from "./projectSettings.tsx";
+import { AgentPicker, AgentToggle, AutoMergeToggle, LabelsButton, PrTitlesPicker, RenameButton, RenameField, RepoLabelsDialog } from "./projectSettings.tsx";
 import { ProjectConsoleButton } from "./projectConsole.tsx";
 import { PullAllButton, PullButton } from "./pull.tsx";
 import { OpenPrCount } from "./pullRequests.tsx";
@@ -146,13 +146,14 @@ function RepoNameEdit({ row, repo, tracking }: { row: OverviewRow; repo?: RepoCo
   );
 }
 
-/** The project's agent-session switch, its agent when there is a choice, whether docs-only pull requests auto-merge, and its console. */
+/** The project's agent-session switch, its agent when there is a choice, its PR titles, whether docs-only pull requests auto-merge, and its console. */
 function AgentControls({ repo, config, isGit, tracking }: { repo?: RepoConfig; config?: Config | null; isGit: boolean; tracking: Tracking }) {
   if (!repo || !config) return null;
   return (
     <span class="agent-controls">
       <AgentToggle repo={repo} config={config} tracking={tracking} />
       <AgentPicker repo={repo} config={config} tracking={tracking} />
+      <PrTitlesPicker repo={repo} isGit={isGit} tracking={tracking} />
       <AutoMergeToggle repo={repo} config={config} isGit={isGit} tracking={tracking} />
       <ProjectConsoleButton repoId={repo.id} />
     </span>
