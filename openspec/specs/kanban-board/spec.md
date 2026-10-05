@@ -6,7 +6,7 @@ Defines the Kanban board UI: how changes map to columns, what cards display, fil
 ## Requirements
 
 ### Requirement: Board columns follow the lifecycle phases
-The board SHALL place each change in exactly one column, where a column names the phase of the lifecycle the change is in. Using, in order: `Archived` if the change is archived; `Done` if `tasks.total > 0` and `tasks.done == tasks.total`, whether or not the change's delta specs are already synced into the main specs; `Implementing` if `tasks.done > 0`; `Ready` if every artifact is done (ready to apply, nothing ticked yet); `Unknown` if the change's artifacts could not be read; `Backlog` if no artifact is done; otherwise `Drafts` (at least one artifact is done and at least one is not). Which artifacts are done, and in which order they were written, SHALL NOT matter beyond that: every schema's artifacts count alike.
+The board SHALL place each change in exactly one column, where a column names the phase of the lifecycle the change is in. Using, in order: `Archived` if the change is archived; `Done` if `tasks.total > 0` and `tasks.done == tasks.total`, whether or not the change's delta specs are already synced into the main specs; `Implementing` if `tasks.done > 0`; `Ready` if every **required** artifact is done (ready to apply, nothing ticked yet); `Unknown` if the change's artifacts could not be read; `Backlog` if no artifact is done; otherwise `Drafts` (at least one artifact is done and at least one required artifact is not). An artifact is required when the change's schema names it in `apply.requires` — the artifacts OpenSpec needs before implementation starts; for `spec-driven` that is `tasks` alone, so `design` (and likewise `proposal` and `specs`) never holds a change back from `Ready`. When a schema declares no `apply.requires`, every artifact of it is required. When the change's artifact statuses do not say which artifacts are required — a snapshot recorded before they did — every artifact SHALL count as required. Which artifacts are done, and in which order they were written, SHALL NOT matter beyond that, and the board SHALL NOT name any artifact itself: every schema is placed by its own `apply.requires`.
 
 The board SHALL show the columns `Backlog`, `Drafts`, `Ready`, `Implementing`, `Done`, `Archived`, in that order, on the combined board and on every repository board, whether or not a column holds a change; `Unknown` SHALL be shown between `Drafts` and `Ready` only while at least one change on that board is in it. Columns MUST NOT depend on the schemas the tracked changes use: there SHALL be no column per artifact and no `Synced` column.
 
@@ -57,6 +57,30 @@ The board SHALL show the columns `Backlog`, `Drafts`, `Ready`, `Implementing`, `
 #### Scenario: All artifacts done but tasks file empty
 - **WHEN** all artifacts are done and `tasks` is `done: 0, total: 0`
 - **THEN** it appears in `Ready` with a "no tasks" warning badge
+
+#### Scenario: Ready without a design
+- **WHEN** a `spec-driven` change has `proposal`, `specs` and `tasks` done, `design` not done, and `tasks` is `done: 0, total: 6`
+- **THEN** it appears in `Ready`, not in `Drafts`, and its card offers **Implement**
+
+#### Scenario: Tasks written, nothing else
+- **WHEN** a `spec-driven` change has only `tasks` done and `tasks` is `done: 0, total: 4`
+- **THEN** it appears in `Ready`
+
+#### Scenario: Design written, tasks missing
+- **WHEN** a `spec-driven` change has `proposal`, `specs` and `design` done and `tasks` not done
+- **THEN** it appears in `Drafts`
+
+#### Scenario: Tasks file empty, no design
+- **WHEN** a `spec-driven` change has `proposal`, `specs` and `tasks` done, `design` not done, and `tasks` is `done: 0, total: 0`
+- **THEN** it appears in `Ready` with a "no tasks" warning badge
+
+#### Scenario: A schema without apply.requires
+- **WHEN** a change uses a schema whose artifacts are `brief`, `plan`, `checklist`, which declares no `apply.requires`, and `brief` and `checklist` are done
+- **THEN** it appears in `Drafts`, because every artifact of that schema is required
+
+#### Scenario: A snapshot from before required artifacts were reported
+- **WHEN** a cached snapshot lists a `spec-driven` change with `design` not done and `tasks` done, its artifact statuses carrying no required flag
+- **THEN** the change is shown in `Drafts`, as before, until the next scan reports which artifacts are required
 
 #### Scenario: Column list for the spec-driven schema
 - **WHEN** every tracked change uses the `spec-driven` schema
