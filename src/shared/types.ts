@@ -11,6 +11,9 @@ export type Stage = "backlog" | "drafts" | "unknown" | "ready" | "implementing" 
 export interface ArtifactStatus {
   id: string;
   status: ArtifactState;
+  /** Named by the schema's `apply.requires` (every artifact when it names none): needed before implementing. Absent in
+   *  snapshots recorded before it was reported, which then count every artifact as required. */
+  required?: boolean;
 }
 
 export interface TaskProgress {

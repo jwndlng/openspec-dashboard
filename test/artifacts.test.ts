@@ -36,6 +36,42 @@ test("the adapter reports each artifact's resolved output paths", () => {
   expect(info.artifacts.map((a) => a.id)).toEqual(["proposal", "specs", "design", "tasks"]);
 });
 
+test("the adapter reports which artifacts the schema's apply.requires names", async () => {
+  // spec-driven: only `tasks` is needed before implementing; the design is optional.
+  const info = readChangeArtifacts(root, "multi-tenant-sync");
+  expect(info.artifacts.map((a) => [a.id, a.required])).toEqual([["proposal", false], ["specs", false], ["design", false], ["tasks", true]]);
+
+  // A schema that declares no `apply.requires` needs every artifact.
+  const project = await realpath(await tempDir("osd-norequires-"));
+  try {
+    await mkdir(join(project, "openspec", "schemas", "checklist-flow"), { recursive: true });
+    await writeFile(
+      join(project, "openspec", "schemas", "checklist-flow", "schema.yaml"),
+      [
+        "name: checklist-flow",
+        "version: 1",
+        "artifacts:",
+        "  - id: brief",
+        "    generates: brief.md",
+        "    description: Brief",
+        "    template: brief.md",
+        "    requires: []",
+        "  - id: checklist",
+        "    generates: checklist.md",
+        "    description: Checklist",
+        "    template: checklist.md",
+        "    requires: [brief]",
+        "",
+      ].join("\n"),
+    );
+    await mkdir(join(project, "openspec", "changes", "add-widget"), { recursive: true });
+    const custom = readChangeArtifacts(project, "add-widget", { schemaName: "checklist-flow" });
+    expect(custom.artifacts.map((a) => [a.id, a.required])).toEqual([["brief", true], ["checklist", true]]);
+  } finally {
+    await rm(project, { recursive: true, force: true });
+  }
+});
+
 test("readFileInfo: regular file, directory, missing path", async () => {
   const file = await temp.readFileInfo(join(changeDir, "proposal.md"));
   expect(file).toMatchObject({ isFile: true, size: 17 });
@@ -60,10 +96,10 @@ test("listArtifactFiles: schema order, sorted relative paths with sizes, empty f
   const listing = await listArtifactFiles(temp, "r1", found.entry);
   expect(listing.change).toEqual({ repoId: "r1", name: "multi-tenant-sync", schema: "spec-driven", dir: changeDir, archived: false });
   expect(listing.artifacts).toEqual([
-    { id: "proposal", status: "done", files: [{ path: "proposal.md", bytes: 17 }] },
-    { id: "specs", status: "done", files: [{ path: "specs/dashboard-api/spec.md", bytes: 22 }, { path: "specs/kanban-board/spec.md", bytes: 22 }] },
-    { id: "design", status: "ready", files: [] },
-    { id: "tasks", status: "blocked", files: [] },
+    { id: "proposal", status: "done", required: false, files: [{ path: "proposal.md", bytes: 17 }] },
+    { id: "specs", status: "done", required: false, files: [{ path: "specs/dashboard-api/spec.md", bytes: 22 }, { path: "specs/kanban-board/spec.md", bytes: 22 }] },
+    { id: "design", status: "ready", required: false, files: [] },
+    { id: "tasks", status: "blocked", required: true, files: [] },
   ]);
 });
 

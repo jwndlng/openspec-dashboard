@@ -15,11 +15,11 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
-    id: "2026-10-05-antigravity-console",
+    id: "2026-10-05-design-optional",
     date: "2026-10-05",
-    title: "Antigravity consoles open, and fresh projects say what they need",
+    title: "A design is optional",
     summary:
-      "With the **Antigravity** preset, the main console and a project's console now start `agy` instead of failing on a dangling `-i`; a saved preset is fixed on its own. Starting a change session in a project without a first commit now says so instead of showing git's `invalid reference: HEAD`.",
+      "A change moves to **Ready** and offers **Implement** as soon as its tasks are written, with or without a `design.md` — only the artifacts the schema needs for implementing count. **Draft artifacts** stays on the card if you still want a design.",
   },
   {
     id: "2026-10-05-archive-auto-merge-docs",

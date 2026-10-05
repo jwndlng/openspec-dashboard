@@ -140,3 +140,17 @@ test("a snapshot cached before `awaiting` existed loads as `complete`, and a sta
   const adopted = rederive(snap(T0, [repo("r1", "demo-ops", cached)])).repos[0].changes;
   expect(adopted.map((c) => [c.column, c.subState])).toEqual([["Done", "complete"], ["Implementing", undefined]]);
 });
+
+test("a cached change without a design keeps its column until rescanned, and keeps the required flag it was scanned with", () => {
+  const artifacts = (required: boolean | undefined) =>
+    ["proposal", "specs", "design", "tasks"].map((id) => ({ id, status: id === "design" ? ("ready" as const) : ("done" as const), ...(required === undefined ? {} : { required: id === "tasks" }) }));
+  const cached = [
+    // Written before artifacts said which are required: every artifact counts, so the missing design keeps it in Drafts.
+    change("trim-log-noise", "Drafts", { artifacts: artifacts(undefined), tasks: { done: 0, total: 3 } }),
+    // Scanned by this version: only `tasks` is required, so it is Ready.
+    change("drop-legacy-flags", "Ready", { stage: "ready", artifacts: artifacts(true), tasks: { done: 0, total: 3 } }),
+  ];
+  const adopted = rederive(snap(T0, [repo("r1", "demo-ops", cached)])).repos[0].changes;
+  expect(adopted.map((c) => c.column)).toEqual(["Drafts", "Ready"]);
+  expect(adopted[1].artifacts.map((a) => a.required)).toEqual([false, false, false, true]);
+});

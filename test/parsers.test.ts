@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { parseStatusV2, parseWorktrees } from "../src/server/git.ts";
 import { parseTaskProgress } from "../src/server/tasksParser.ts";
-import { boardColumns, deriveStage, isComplete } from "../src/shared/columns.ts";
+import { boardColumns, deriveStage, isComplete, isPlanned, requiredArtifacts } from "../src/shared/columns.ts";
 import type { ArtifactStatus, Snapshot, TaskProgress } from "../src/shared/types.ts";
 
 test("task progress counts mixed list markers", () => {
@@ -145,6 +145,33 @@ test("column derivation: backlog until something is written, drafts until everyt
   expect(stage([], null)).toEqual({ stage: "unknown", column: "Unknown" });
   // any schema is placed the same way
   expect(stage(A(["brief", "done"], ["plan", "ready"], ["checklist", "blocked"]), null)).toEqual({ stage: "drafts", column: "Drafts" });
+});
+
+// As the scanner reports them: `required` from the spec-driven schema's `apply.requires`, which names only `tasks`.
+const scanned = (...done: string[]) => specDriven(...done).map((a) => ({ ...a, required: a.id === "tasks" }));
+
+test("column derivation: Ready needs the artifacts apply.requires names, not a design", () => {
+  expect(stage(scanned("proposal", "specs", "tasks"), { done: 0, total: 6 })).toEqual({ stage: "ready", column: "Ready" });
+  expect(stage(scanned("tasks"), { done: 0, total: 4 })).toEqual({ stage: "ready", column: "Ready" });
+  expect(stage(scanned("proposal", "specs", "design"), null)).toEqual({ stage: "drafts", column: "Drafts" });
+  expect(stage(scanned("proposal"), null)).toEqual({ stage: "drafts", column: "Drafts" });
+  expect(stage(scanned(), null)).toEqual({ stage: "backlog", column: "Backlog" });
+  expect(stage(scanned(...ALL), { done: 0, total: 6 })).toEqual({ stage: "ready", column: "Ready" });
+  expect(stage(scanned("proposal", "specs", "tasks"), { done: 2, total: 6 })).toEqual({ stage: "implementing", column: "Implementing" });
+  // A schema without apply.requires reports every artifact as required: all of them must be written.
+  const all = A(["brief", "done"], ["plan", "ready"], ["checklist", "done"]).map((a) => ({ ...a, required: true }));
+  expect(stage(all, null)).toEqual({ stage: "drafts", column: "Drafts" });
+  // Nothing required (an apply.requires naming no artifact of the schema): every artifact is, rather than none.
+  const none = A(["brief", "done"], ["plan", "ready"]).map((a) => ({ ...a, required: false }));
+  expect(stage(none, null)).toEqual({ stage: "drafts", column: "Drafts" });
+});
+
+test("column derivation: artifacts cached without the required flag keep today's columns", () => {
+  expect(stage(specDriven("proposal", "specs", "tasks"), { done: 0, total: 6 })).toEqual({ stage: "drafts", column: "Drafts" });
+  expect(stage(specDriven("tasks"), { done: 0, total: 4 })).toEqual({ stage: "drafts", column: "Drafts" });
+  expect(requiredArtifacts(specDriven()).map((a) => a.id)).toEqual(ALL);
+  expect(requiredArtifacts(scanned()).map((a) => a.id)).toEqual(["tasks"]);
+  expect([isPlanned([]), isPlanned(scanned("tasks")), isPlanned(specDriven("tasks"))]).toEqual([false, true, false]);
 });
 
 test("column derivation: every complete change is Done until archived", () => {

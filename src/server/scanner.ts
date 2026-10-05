@@ -1,7 +1,7 @@
 import { join, sep } from "node:path";
 import { parse as parseYaml } from "yaml";
 import { resolveDependencies } from "../shared/dependencies.ts";
-import { deriveStage } from "../shared/columns.ts";
+import { deriveStage, isPlanned } from "../shared/columns.ts";
 import { detectLabels } from "../shared/labels.ts";
 import type { ChangeSnapshot, Config, DetectedLabel, RepoConfig, RepoSnapshot, SharedConfig, Snapshot, Worktree } from "../shared/types.ts";
 import { summarizeWorkInProgress } from "../shared/workInProgress.ts";
@@ -207,7 +207,7 @@ async function scanChange(ctx: RepoContext, entry: ChangeDirEntry, withGit: bool
       if (parsed.names.length) dependsOn = parsed.names.map((name) => ({ name, state: "waiting" }));
     }
   }
-  if (tasks && tasks.total === 0 && artifacts.length > 0 && artifacts.every((a) => a.status === "done")) {
+  if (tasks && tasks.total === 0 && isPlanned(artifacts)) {
     warnings.push("tasks file has no tasks");
   }
 
