@@ -140,6 +140,33 @@ test("former prompts upgrade per preset: another preset's former prompt and an u
   }
 });
 
+const FORMER_AGY_COMMAND = ["agy", "-i", "{prompt}"];
+const withAgyCommand = (command: string[], id = ANTIGRAVITY_PROFILE.id) => {
+  const agent = { ...structuredClone(ANTIGRAVITY_PROFILE), id, command };
+  return { ...defaultConfig(), agentSessions: { enabled: true, agents: [agent], defaultAgent: id } };
+};
+
+test("the former Antigravity command is read as the current one; an edited command and another profile's are the user's", () => {
+  expect(ANTIGRAVITY_PROFILE.command).not.toEqual(FORMER_AGY_COMMAND);
+  const upgraded = validateConfig(withAgyCommand(FORMER_AGY_COMMAND)).agentSessions.agents[0];
+  expect(upgraded).toEqual(ANTIGRAVITY_PROFILE); // prompts and resume command untouched
+  const edited = [...FORMER_AGY_COMMAND, "--model", "fast"];
+  expect(validateConfig(withAgyCommand(edited)).agentSessions.agents[0].command).toEqual(edited);
+  expect(validateConfig(withAgyCommand(FORMER_AGY_COMMAND, "my-agy")).agentSessions.agents[0].command).toEqual(FORMER_AGY_COMMAND);
+  // Another preset's former command is not this one's.
+  expect(validateConfig(withAgyCommand(FORMER_AGY_COMMAND, CODEX_PROFILE.id)).agentSessions.agents[0].command).toEqual(FORMER_AGY_COMMAND);
+});
+
+test("a config file with the former Antigravity command loads upgraded and is not rewritten by loading", async () => {
+  const path = join(home, "config.json");
+  const former = `${JSON.stringify(withAgyCommand(FORMER_AGY_COMMAND), null, 2)}\n`;
+  await writeFile(path, former, "utf8");
+  const { config, warning } = await loadConfig();
+  expect(warning).toBeUndefined();
+  expect(config.agentSessions.agents[0].command).toEqual(ANTIGRAVITY_PROFILE.command);
+  expect(await readFile(path, "utf8")).toBe(former);
+});
+
 test("a configuration without agentSessions has Claude Code as its only agent, whatever is installed", async () => {
   const { agentSessions: _drop, ...older } = defaultConfig();
   await writeFile(join(home, "config.json"), JSON.stringify(older), "utf8");

@@ -18,7 +18,7 @@ import { SessionStore } from "./store.ts";
 import { submitText, validSubmission, type SubmitOptions } from "./submit.ts";
 import { spawnTerminal, type TerminalProcess } from "./terminal.ts";
 import { baseRef, listWorktrees, readWorkStatus, shipsOnlyOpenSpec, WORKTREE_NAME } from "./workStatus.ts";
-import { checkWorktreeRemovable, copyChangeIfMissing, ensureWorktree, linkedWorktreeOf, removeWorktree, type Removable } from "./worktree.ts";
+import { checkWorktreeRemovable, copyChangeIfMissing, ensureWorktree, linkedWorktreeOf, NoCommitError, removeWorktree, type Removable } from "./worktree.ts";
 
 export const SCROLLBACK_BYTES = 1024 * 1024;
 const TYPE_PROMPT_DELAY_MS = 1500;
@@ -208,7 +208,7 @@ export class SessionManager {
         // The change may live only in some other worktree (on another branch), not in the main checkout.
         await copyChangeIfMissing(snapshot.checkout?.path ?? repo.path, session.worktreePath, change);
       } catch (err) {
-        throw new SessionError(500, err instanceof Error ? err.message : String(err));
+        throw new SessionError(err instanceof NoCommitError ? 409 : 500, err instanceof Error ? err.message : String(err));
       }
     }
     this.sessions.set(session.id, session);
@@ -447,7 +447,7 @@ export class SessionManager {
         if (!session.adopted) await ensureWorktree(repoPath, session.worktreePath, branch);
         else if ((await linkedWorktreeOf(repoPath, branch)) !== session.worktreePath) throw new Error(`the adopted worktree ${session.worktreePath} no longer exists`);
       } catch (err) {
-        throw new SessionError(500, err instanceof Error ? err.message : String(err));
+        throw new SessionError(err instanceof NoCommitError ? 409 : 500, err instanceof Error ? err.message : String(err));
       }
     }
     session.state = "running";

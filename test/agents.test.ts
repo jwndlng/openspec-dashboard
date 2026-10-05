@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { defaultAgentSessions, defaultConfig, newRepoConfig, validateConfig } from "../src/server/config.ts";
-import { agentEnv, agentFor, integratePrompt, launchCommand, openingPrompt, resolveConflictsPrompt, shipPrompt } from "../src/server/sessions/agents.ts";
+import { agentEnv, agentFor, integratePrompt, launchCommand, launchWithoutPrompt, openingPrompt, resolveConflictsPrompt, shipPrompt } from "../src/server/sessions/agents.ts";
 import { Scrollback, sessionBranch, worktreeName } from "../src/server/sessions/manager.ts";
 import { AGENT_PRESETS, ANTIGRAVITY_PROFILE, CLAUDE_PROFILE, CODEX_PROFILE, DEFAULT_SHORTCUTS, FORMER_PROMPTS } from "../src/shared/agentDefaults.ts";
 import { AUTO_MERGE_DOCS_INSTRUCTION, availableActions, CONVENTIONAL_COMMITS_SHIP_SENTENCE, DEFAULT_INTEGRATE_PROMPT, DEFAULT_RESOLVE_CONFLICTS_PROMPT, DEFAULT_SHIP_PROMPT, integrateUnavailable, type AgentAvailability, type ChangeSession, type Session } from "../src/shared/types.ts";
@@ -108,7 +108,9 @@ test("every preset is a valid one-line profile that invokes OpenSpec the way its
 
   const agy = openingPrompt(ANTIGRAVITY_PROFILE, "implement", "cache-api-calls") ?? "";
   expect(agy.startsWith("/opsx-apply cache-api-calls — ")).toBe(true);
-  expect(launchCommand(ANTIGRAVITY_PROFILE, agy)).toEqual({ argv: ["agy", "-i", agy] });
+  expect(launchCommand(ANTIGRAVITY_PROFILE, agy)).toEqual({ argv: ["agy", `--prompt-interactive=${agy}`] });
+  // A console leaves the flag out with its `{prompt}`: `agy -i` alone would be an option without its value.
+  expect(launchWithoutPrompt(ANTIGRAVITY_PROFILE)).toEqual(["agy"]);
   expect(ANTIGRAVITY_PROFILE.resumeCommand).toEqual(["agy", "--continue"]);
   const codex = openingPrompt(CODEX_PROFILE, "implement", "cache-api-calls") ?? "";
   expect(codex).toContain("cache-api-calls");

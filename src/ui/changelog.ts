@@ -15,6 +15,13 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    id: "2026-10-05-antigravity-console",
+    date: "2026-10-05",
+    title: "Antigravity consoles open, and fresh projects say what they need",
+    summary:
+      "With the **Antigravity** preset, the main console and a project's console now start `agy` instead of failing on a dangling `-i`; a saved preset is fixed on its own. Starting a change session in a project without a first commit now says so instead of showing git's `invalid reference: HEAD`.",
+  },
+  {
     id: "2026-10-05-pr-title-convention",
     date: "2026-10-05",
     title: "Pull request title convention per project",
