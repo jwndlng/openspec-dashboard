@@ -3,7 +3,7 @@ import { defaultAgentSessions, defaultConfig, newRepoConfig, validateConfig } fr
 import { agentEnv, agentFor, integratePrompt, launchCommand, openingPrompt, resolveConflictsPrompt, shipPrompt } from "../src/server/sessions/agents.ts";
 import { Scrollback, sessionBranch, worktreeName } from "../src/server/sessions/manager.ts";
 import { AGENT_PRESETS, ANTIGRAVITY_PROFILE, CLAUDE_PROFILE, CODEX_PROFILE, DEFAULT_SHORTCUTS, FORMER_PROMPTS } from "../src/shared/agentDefaults.ts";
-import { AUTO_MERGE_DOCS_INSTRUCTION, availableActions, CONVENTIONAL_COMMITS_SHIP_SENTENCE, DEFAULT_INTEGRATE_PROMPT, DEFAULT_RESOLVE_CONFLICTS_PROMPT, DEFAULT_SHIP_PROMPT, integrateUnavailable, type AgentAvailability, type ChangeSession, type Session } from "../src/shared/types.ts";
+import { AUTO_MERGE_DOCS_ARCHIVE_INSTRUCTION, AUTO_MERGE_DOCS_INSTRUCTION, availableActions, CONVENTIONAL_COMMITS_SHIP_SENTENCE, DEFAULT_INTEGRATE_PROMPT, DEFAULT_RESOLVE_CONFLICTS_PROMPT, DEFAULT_SHIP_PROMPT, integrateUnavailable, type AgentAvailability, type ChangeSession, type Session } from "../src/shared/types.ts";
 import { agentForRepo, cardIsLive, cardSessionControls, NEEDS_YOU_AFTER_MS, parseArgLines, sessionBadge, sessionForChange, sessionsEnabledFor, silenceDuration, slugId, startersFor } from "../src/ui/sessionState.ts";
 import { fakeProfile } from "./sessionHelpers.ts";
 
@@ -222,6 +222,24 @@ test("Ship: the auto-merge instruction comes last when asked for, and changes no
   expect(AUTO_MERGE_DOCS_INSTRUCTION).not.toMatch(/\bgh\b|claude|codex/i);
   expect(AUTO_MERGE_DOCS_INSTRUCTION).toContain("openspec/");
   expect(AUTO_MERGE_DOCS_INSTRUCTION).toContain("enable auto-merge");
+});
+
+test("Archive: the archive auto-merge instruction comes last when asked for, and no other starter ever carries it", () => {
+  const extra = "Create a PR whenever you finished the archive.";
+  const profile = fakeProfile({ promptSuffixes: { archive: extra } });
+  expect(openingPrompt(profile, "archive", "cache-api-calls", { autoMerge: false })).toBe(`archive cache-api-calls ${extra}`);
+  expect(openingPrompt(profile, "archive", "cache-api-calls", { autoMerge: true })).toBe(`archive cache-api-calls ${extra} ${AUTO_MERGE_DOCS_ARCHIVE_INSTRUCTION}`);
+  for (const action of ["draft", "implement", "validate"] as const) {
+    expect(openingPrompt(profile, action, "cache-api-calls", { autoMerge: true })).toBe(openingPrompt(profile, action, "cache-api-calls"));
+  }
+  // An agent without an Archive prompt still has no Archive starter: the instruction is never a prompt of its own.
+  expect(openingPrompt(fakeProfile({ prompts: { implement: "x {change}" } }), "archive", "c", { autoMerge: true })).toBeUndefined();
+  // One line, agent-neutral, no placeholder; conditional on a pull request, and it asks for none.
+  expect(AUTO_MERGE_DOCS_ARCHIVE_INSTRUCTION).not.toMatch(/[\r\n{}]/);
+  expect(AUTO_MERGE_DOCS_ARCHIVE_INSTRUCTION).not.toMatch(/\bgh\b|claude|codex/i);
+  expect(AUTO_MERGE_DOCS_ARCHIVE_INSTRUCTION).toContain("Do not open a pull request just because of this");
+  expect(AUTO_MERGE_DOCS_ARCHIVE_INSTRUCTION).toContain("if you open one");
+  expect(AUTO_MERGE_DOCS_ARCHIVE_INSTRUCTION).toContain("enable auto-merge");
 });
 
 test("Integrate: prompt plus additional instructions, with nothing substituted into either", () => {

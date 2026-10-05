@@ -448,11 +448,26 @@ export function projectConsoleControl(sessions: readonly ProjectConsoleLike[], p
   return { name: `${name} — ${badge.label}`, title: `${name} — ${badge.title}`, badge, disabled: false };
 }
 
-/** Said in the panel when Ship's prompt carried the auto-merge instruction (auto-merge-docs). */
-export const AUTO_MERGE_NOTICE = "Only OpenSpec documents changed, so Ship asked the agent to enable auto-merge on the pull request. The dashboard itself merges nothing.";
+/** Which session's panel says that its last prompt carried an auto-merge instruction, and which action's prompt it was. */
+export type AutoMergeReport = { id: string; action: "ship" | "archive" };
+
+/** Said in the panel when Ship's prompt (auto-merge-docs) or an Archive prompt (archive-auto-merge-docs) carried the
+ *  auto-merge instruction. Archive's is conditional, like the instruction: the Archive prompt may open no pull request. */
+export function autoMergeNotice(action: AutoMergeReport["action"]): string {
+  return action === "ship"
+    ? "Only OpenSpec documents changed, so Ship asked the agent to enable auto-merge on the pull request. The dashboard itself merges nothing."
+    : "Only OpenSpec documents are in this worktree, so Archive asked the agent to enable auto-merge if it opens a pull request. The dashboard itself merges nothing.";
+}
 
 /** What both Ship controls report afterwards: a prompt typed but not sent, and whether auto-merge was asked for. */
-export function reportShip(ui: { reportUnsent(id: string | undefined): void; reportAutoMerge(id: string | undefined): void }, sessionId: string, result: Pick<ShipResult, "submitted" | "autoMerge">): void {
+export function reportShip(ui: { reportUnsent(id: string | undefined): void; reportAutoMerge(report: AutoMergeReport | undefined): void }, sessionId: string, result: Pick<ShipResult, "submitted" | "autoMerge">): void {
   ui.reportUnsent(result.submitted ? undefined : sessionId);
-  ui.reportAutoMerge(result.autoMerge ? sessionId : undefined);
+  ui.reportAutoMerge(result.autoMerge ? { id: sessionId, action: "ship" } : undefined);
+}
+
+/** The auto-merge notice after a starter was started or sent: Archive's when its prompt carried the instruction, else
+ *  that session's notice goes and another session's stays. */
+export function afterStart(current: AutoMergeReport | undefined, sessionId: string, autoMerge: boolean): AutoMergeReport | undefined {
+  if (autoMerge) return { id: sessionId, action: "archive" };
+  return current?.id === sessionId ? undefined : current;
 }

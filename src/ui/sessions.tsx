@@ -6,7 +6,7 @@ import { changeSessions, isConsole, isIntegration, isProjectConsole, type AgentA
 import { api } from "./api.ts";
 import { cdCommand, relTime } from "./format.ts";
 import { assignRepoHues, repoTint } from "./repoGroups.ts";
-import { agentForRepo, cardSessionControls, conflictBadge, openWork, type SessionBadge, nextStepFor, sessionBadge, sessionsEnabledFor, startShowsConsole, type StarterPlace, workBadge, worktreeForChange } from "./sessionState.ts";
+import { afterStart, agentForRepo, type AutoMergeReport, cardSessionControls, conflictBadge, openWork, type SessionBadge, nextStepFor, sessionBadge, sessionsEnabledFor, startShowsConsole, type StarterPlace, workBadge, worktreeForChange } from "./sessionState.ts";
 import { boardFrom, changePath, CONSOLE_TAB, parseDetailQuery, routeFromPath, serializeDetailQuery } from "./routes.ts";
 import { currentPath, currentQuery, navigate } from "./url.ts";
 
@@ -42,9 +42,9 @@ interface SessionUi {
   /** The session whose last text sent on the user's behalf was typed but not submitted; its panel says so. */
   unsentId?: string;
   reportUnsent(id: string | undefined): void;
-  /** The session whose last Ship asked the agent to enable auto-merge; its panel says so. */
-  autoMergeId?: string;
-  reportAutoMerge(id: string | undefined): void;
+  /** The session whose last Ship or Archive prompt asked the agent to enable auto-merge; its panel says so. */
+  autoMerge?: AutoMergeReport;
+  reportAutoMerge(report: AutoMergeReport | undefined): void;
   /** Opens the end-session dialog; nothing is ended before the user confirms there. */
   requestEnd(id: string | undefined): void;
   /** The polling error, if the session list could not be read. */
@@ -145,13 +145,14 @@ export function SessionProvider({
   const [endingId, requestEnd] = useState<string>();
   const [focusTick, setFocusTick] = useState<{ id?: string; tick: number }>({ tick: 0 });
   const [unsentId, reportUnsent] = useState<string>();
-  const [autoMergeId, reportAutoMerge] = useState<string>();
+  const [autoMerge, reportAutoMerge] = useState<AutoMergeReport>();
 
   const start = useCallback(
     async (repoId: string, change: string, action: SessionAction, show: boolean) => {
       try {
         const into = nextStepFor(sessions, repoId, change).promptSessionId;
         const session = into ? await api.promptSession(into, action) : await api.openSession(repoId, change, action);
+        reportAutoMerge((current) => afterStart(current, session.id, session.autoMerge));
         if (into) {
           // Sent under the rules for text sent on the user's behalf: say so when the agent never showed it.
           reportUnsent("submitted" in session && !session.submitted ? into : undefined);
@@ -173,8 +174,8 @@ export function SessionProvider({
 
   const shown = consoleOpen && enabled;
   const value = useMemo(
-    () => ({ config, snapshot, sessions, consoles, consoleOpen: shown, showConsole, integrations, integrationId, showIntegration, projectConsoles, projectConsoleRepoId, showProjectConsole, agents, worktrees, endingId, focusTick, unsentId, reportUnsent, autoMergeId, reportAutoMerge, requestEnd, error, openPanel, start, refresh }),
-    [config, snapshot, sessions, consoles, shown, integrations, integrationId, showIntegration, projectConsoles, projectConsoleRepoId, showProjectConsole, agents, worktrees, endingId, focusTick, unsentId, autoMergeId, error, openPanel, start, refresh],
+    () => ({ config, snapshot, sessions, consoles, consoleOpen: shown, showConsole, integrations, integrationId, showIntegration, projectConsoles, projectConsoleRepoId, showProjectConsole, agents, worktrees, endingId, focusTick, unsentId, reportUnsent, autoMerge, reportAutoMerge, requestEnd, error, openPanel, start, refresh }),
+    [config, snapshot, sessions, consoles, shown, integrations, integrationId, showIntegration, projectConsoles, projectConsoleRepoId, showProjectConsole, agents, worktrees, endingId, focusTick, unsentId, autoMerge, error, openPanel, start, refresh],
   );
   return <Context.Provider value={value}>{children}</Context.Provider>;
 }
