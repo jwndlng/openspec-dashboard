@@ -6,6 +6,7 @@
 // same rules the scanner uses, so the sample cannot disagree with the board.
 import { DEFAULT_SHORTCUTS } from "../../shared/agentDefaults.ts";
 import { deriveStage } from "../../shared/columns.ts";
+import { resolveDependencies } from "../../shared/dependencies.ts";
 import { detectLabels } from "../../shared/labels.ts";
 import type { ActivityEvent, AgentProfile, ArtifactStatus, ChangeSnapshot, CheckoutStatus, Config, EnvironmentCheck, EnvironmentReport, IntegratableRepo, PullRequest, PullRequestsResponse, RepoConfig, RepoPullRequests, RepoSnapshot, SharedProfile, Shortcut, Snapshot, Worktree } from "../../shared/types.ts";
 import { summarizeWorkInProgress } from "../../shared/workInProgress.ts";
@@ -46,6 +47,8 @@ interface SampleChange {
   branch?: string;
   /** The column of the main checkout's (older) copy, for a change whose work continues in a worktree. */
   onMain?: string;
+  /** The changes of the same repository it declares in `depends-on.yaml`. */
+  dependsOn?: string[];
   warnings?: string[];
 }
 
@@ -251,7 +254,7 @@ const REPOS: SampleRepo[] = [
     changes: [
       { name: "centralize-log-shipping", tasks: [21, 38], age: 1 },
       { name: "pin-terraform-providers", tasks: [6, 7], age: 19 },
-      { name: "blue-green-deploys", tasks: [0, 26], age: 3 },
+      { name: "blue-green-deploys", tasks: [0, 26], age: 3, dependsOn: ["centralize-log-shipping"] },
       { name: "rotate-database-credentials", tasks: [0, 12], age: 24 },
       { name: "cost-allocation-tags", written: "specs", age: 8 },
       { name: "regional-failover-runbook", written: "design", age: 47 },
@@ -395,6 +398,8 @@ export function buildSample(now: number): Sample {
         ...checkouts(r, c),
         specsSynced: c.synced,
         warnings: c.warnings,
+        // Provisional, as the scanner records it; resolved against the whole repository below.
+        ...(c.dependsOn ? { dependsOn: c.dependsOn.map((name) => ({ name, state: "waiting" as const })) } : {}),
         ...deriveStage(input),
       };
     });
@@ -435,7 +440,7 @@ export function buildSample(now: number): Sample {
       lastUpdatedAt: iso(r.updated * HOUR),
       // A failed scan has no detected labels, exactly as on the server.
       detectedLabels: r.error === undefined ? detectLabels((r.markers ?? []).map((name) => ({ name, kind: "file" }))) : undefined,
-      changes: [...open, ...archived],
+      changes: resolveDependencies([...open, ...archived]),
     } satisfies RepoSnapshot;
   });
 

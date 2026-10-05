@@ -466,3 +466,99 @@ test("labels: a failed scan has none", async () => {
   expect(snap.ok).toBe(false);
   expect(snap.detectedLabels).toBeUndefined();
 });
+
+// --- Change dependencies: generated into temporary repositories, never into the shared fixtures. ---
+
+async function writeChange(changeRoot: string, dir: string, dependsOn?: string, extra: Record<string, string> = {}): Promise<void> {
+  await mkdir(join(changeRoot, dir), { recursive: true });
+  await writeFile(join(changeRoot, dir, ".openspec.yaml"), "schema: spec-driven\ncreated: 2026-09-01\n");
+  if (dependsOn !== undefined) await writeFile(join(changeRoot, dir, "depends-on.yaml"), dependsOn);
+  for (const [file, text] of Object.entries(extra)) await writeFile(join(changeRoot, dir, file), text);
+}
+
+test("dependencies: states, blocked, required-by and warnings, read without writing", async () => {
+  const root = await tempDir();
+  const changeRoot = join(root, "openspec", "changes");
+  await mkdir(join(changeRoot, "archive"), { recursive: true });
+  await writeFile(join(root, "openspec", "config.yaml"), "schema: spec-driven\n");
+  await writeChange(changeRoot, "archive/2026-09-30-add-billing-schema", "depends_on: [add-billing-api]\n");
+  await writeChange(changeRoot, "add-billing-api", "depends_on:\n  - add-billing-schema\n");
+  await writeChange(changeRoot, "add-billing-ui", "# waits for the API\ndepends_on: [add-billing-api, add-billing-scheme, add-billing-api]\n");
+  await writeChange(changeRoot, "alpha", "depends_on: [beta]\n");
+  await writeChange(changeRoot, "beta", "depends_on: [alpha]\n");
+  await writeChange(changeRoot, "malformed", "depends_on: [unclosed\n");
+  await writeChange(changeRoot, "wrong-shape", "depends_on: add-billing-api\n");
+  await writeChange(changeRoot, "odd-names", "depends_on: [add-billing-api, ../etc]\n");
+  await writeChange(changeRoot, "empty-list", "depends_on: []\n");
+  await writeChange(changeRoot, "plain");
+  const before = await treeFingerprint(root);
+
+  const snap = await scanRepo(newRepoConfig(root, true));
+  const byName = new Map(snap.changes.map((c) => [c.archived ? `archived:${c.name}` : c.name, c]));
+  const get = (name: string) => byName.get(name)!;
+
+  expect(get("add-billing-api").dependsOn).toEqual([{ name: "add-billing-schema", state: "met" }]);
+  expect(get("add-billing-api").blocked).toBeUndefined();
+  expect(get("add-billing-api").requiredBy).toEqual(["add-billing-ui", "odd-names"]);
+  expect(get("add-billing-ui").dependsOn).toEqual([
+    { name: "add-billing-api", state: "waiting" },
+    { name: "add-billing-scheme", state: "missing" },
+  ]);
+  expect(get("add-billing-ui").blocked).toBe(true);
+  expect(get("add-billing-ui").warnings).toContain('depends on "add-billing-scheme", but no change of that name exists');
+  // The file is not an artifact: the change is still in the backlog.
+  expect(get("add-billing-ui").column).toBe("Backlog");
+  expect(get("alpha").dependsOn).toEqual([{ name: "beta", state: "cycle" }]);
+  expect(get("beta").warnings).toContain("dependency cycle: beta → alpha → beta");
+  expect(get("malformed").blocked).toBe(true);
+  expect(get("malformed").dependsOn).toBeUndefined();
+  expect(get("malformed").warnings?.some((w) => w.includes("depends-on.yaml is not valid YAML"))).toBe(true);
+  expect(get("wrong-shape").blocked).toBe(true);
+  expect(get("odd-names").dependsOn).toEqual([{ name: "add-billing-api", state: "waiting" }]);
+  expect(get("odd-names").warnings).toContain('depends-on.yaml: ignored "../etc", which is not a valid change name');
+  for (const name of ["empty-list", "plain"]) {
+    expect(get(name).dependsOn).toBeUndefined();
+    expect(get(name).blocked).toBeUndefined();
+    expect(get(name).requiredBy).toBeUndefined();
+  }
+  // An archived change is never blocked, whatever its file says.
+  expect(get("archived:add-billing-schema").blocked).toBeUndefined();
+  expect(get("archived:add-billing-schema").dependsOn).toBeUndefined();
+  expect(get("archived:add-billing-schema").requiredBy).toEqual(["add-billing-api"]);
+
+  expect(await treeFingerprint(root)).toBe(before);
+  await rm(root, { recursive: true, force: true });
+});
+
+test("dependencies: the leading copy declares, and the archive reaching the main checkout unblocks", async () => {
+  const { base, repo } = await newGitRepo("osd-deps-");
+  const changeRoot = join(repo, "openspec", "changes");
+  await writeChange(changeRoot, "add-billing-schema");
+  await writeChange(changeRoot, "add-billing-ui");
+  await gitIn(repo, "add", "-A");
+  await gitIn(repo, "commit", "-q", "-m", "changes");
+
+  // The UI change progresses on a branch and declares its dependency there only.
+  const ui = join(base, "wt", "ui");
+  await gitIn(repo, "worktree", "add", "-q", ui, "-b", "feat/add-billing-ui");
+  await writeChange(join(ui, "openspec", "changes"), "add-billing-ui", "depends_on: [add-billing-schema]\n", { "proposal.md": "# Proposal\n\n## Why\n\nBecause.\n" });
+  // The schema change is archived on its own branch first.
+  const schema = join(base, "wt", "schema");
+  await gitIn(repo, "worktree", "add", "-q", schema, "-b", "chore/archive-add-billing-schema");
+  await mkdir(join(schema, "openspec", "changes", "archive"), { recursive: true });
+  await gitIn(schema, "mv", "openspec/changes/add-billing-schema", "openspec/changes/archive/2026-10-01-add-billing-schema");
+  await gitIn(schema, "commit", "-q", "-m", "archive");
+
+  let snap = await scanRepo(newRepoConfig(repo, true));
+  let uiChange = snap.changes.find((c) => c.name === "add-billing-ui")!;
+  expect(uiChange.checkout?.isMain).toBe(false);
+  expect(uiChange.dependsOn).toEqual([{ name: "add-billing-schema", state: "waiting" }]);
+  expect(uiChange.blocked).toBe(true);
+
+  // The archive is merged and pulled into the main checkout: the next scan unblocks, nothing to do for the user.
+  await gitIn(repo, "merge", "-q", "--ff-only", "chore/archive-add-billing-schema");
+  snap = await scanRepo(newRepoConfig(repo, true));
+  uiChange = snap.changes.find((c) => c.name === "add-billing-ui")!;
+  expect(uiChange.dependsOn).toEqual([{ name: "add-billing-schema", state: "met" }]);
+  expect(uiChange.blocked).toBeUndefined();
+});

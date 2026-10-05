@@ -277,3 +277,28 @@ test("403 (foreign origin) in a git repository leaves the index and tree untouch
   expect(res.status).toBe(403);
   expect(await indexAndTree(h.repoRoot)).toBe(before);
 });
+
+test("dependsOn is written as depends-on.yaml, staged, and reported by the next scan", async () => {
+  h = await harness({ git: true });
+  const res = await post(h.base, `/api/repos/${h.repoId}/changes`, { name: "add-billing-ui", dependsOn: ["add-billing-api"] });
+  expect(res.status).toBe(201);
+  expect(porcelain(h.repoRoot)).toEqual([
+    "A  openspec/changes/add-billing-ui/.openspec.yaml",
+    "A  openspec/changes/add-billing-ui/depends-on.yaml",
+  ]);
+  await h.state.scanner.trigger().done;
+  const snap = await (await fetch(`${h.base}/api/state`)).json();
+  const change = snap.repos[0].changes.find((c: { name: string }) => c.name === "add-billing-ui");
+  expect(change.dependsOn).toEqual([{ name: "add-billing-api", state: "missing" }]);
+  expect(change.blocked).toBe(true);
+});
+
+test("400 for invalid dependencies, and the repository and its index are unchanged", async () => {
+  h = await harness({ git: true });
+  const before = await indexAndTree(h.repoRoot);
+  for (const dependsOn of [["../etc"], ["a", "a"], ["add-billing-ui"], "add-billing-api", { 0: "a" }]) {
+    const res = await post(h.base, `/api/repos/${h.repoId}/changes`, { name: "add-billing-ui", dependsOn });
+    expect(res.status).toBe(400);
+  }
+  expect(await indexAndTree(h.repoRoot)).toBe(before);
+});

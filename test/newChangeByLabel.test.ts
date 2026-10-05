@@ -1,6 +1,8 @@
 import { afterEach, expect, test } from "bun:test";
 import { ApiError, type Api, httpApi, setApi } from "../src/ui/api.ts";
-import { createInRepos } from "../src/ui/newChangeForm.tsx";
+import { createInRepos, DependsOnField, toggleDependency } from "../src/ui/newChangeForm.tsx";
+import { dependencyChoices, newChangeTargets } from "../src/ui/repoGroups.ts";
+import { byTag, textOf } from "./vnode.ts";
 
 afterEach(() => setApi(httpApi));
 
@@ -72,4 +74,46 @@ test("no scan is asked for when every repository refused", async () => {
   const results = await createInRepos(repos, "bump", undefined);
   expect(results.every((r) => !r.ok)).toBe(true);
   expect(calls).not.toContain("scan");
+});
+
+test("Depends on offers the active changes by name and keeps the picking order", () => {
+  const changes = [
+    { name: "add-billing-schema", column: "Implementing" },
+    { name: "add-audit-log", column: "Archived", archived: "2026-09-01" },
+    { name: "add-billing-api", column: "Ready" },
+  ];
+  expect(dependencyChoices(changes)).toEqual([
+    { name: "add-billing-api", column: "Ready" },
+    { name: "add-billing-schema", column: "Implementing" },
+  ]);
+  expect(newChangeTargets([{ id: "a", name: "alpha-infra", ok: true, changes }], []).projects[0].changes?.map((c) => c.name)).toEqual(["add-billing-api", "add-billing-schema"]);
+
+  let picked: string[] = [];
+  picked = toggleDependency(picked, "add-billing-schema");
+  picked = toggleDependency(picked, "add-billing-api");
+  expect(picked).toEqual(["add-billing-schema", "add-billing-api"]);
+  expect(toggleDependency(picked, "add-billing-schema")).toEqual(["add-billing-api"]);
+
+  const field = (DependsOnField({ choices: dependencyChoices(changes), selected: ["add-billing-api"], disabled: false, onToggle: () => {} }));
+  const boxes = byTag(field, "input");
+  expect(boxes.map((b) => b.props.checked)).toEqual([true, false]);
+  expect(textOf(field)).toContain("Ready");
+  const empty = (DependsOnField({ choices: [], selected: [], disabled: false, onToggle: () => {} }));
+  expect(textOf(empty)).toContain("No active change in this project to depend on.");
+});
+
+test("the request carries dependsOn only when some were picked", async () => {
+  const sent: unknown[] = [];
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = (async (_url: string, init: RequestInit) => {
+    sent.push(JSON.parse(String(init.body)));
+    return new Response(JSON.stringify({ name: "x", staged: true }), { status: 201, headers: { "content-type": "application/json" } });
+  }) as typeof fetch;
+  try {
+    await httpApi.createChange("a", "add-billing-ui", undefined, ["add-billing-schema", "add-billing-api"]);
+    await httpApi.createChange("a", "add-billing-ui", "why", []);
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+  expect(sent).toEqual([{ name: "add-billing-ui", dependsOn: ["add-billing-schema", "add-billing-api"] }, { name: "add-billing-ui", prompt: "why" }]);
 });

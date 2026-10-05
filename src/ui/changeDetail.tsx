@@ -7,7 +7,7 @@ import type { ChangeArtifactEntry, ChangeArtifacts, ChangeSnapshot, DismissPrevi
 import { ApiError, api } from "./api.ts";
 import { CopyButton, Meter } from "./kanban.tsx";
 import { renderMarkdown } from "./markdown.tsx";
-import { backTarget, CONSOLE_TAB, type DetailQuery, parseDetailQuery, repoPath, serializeDetailQuery } from "./routes.ts";
+import { backTarget, CONSOLE_TAB, changePath, type DetailQuery, parseDetailQuery, repoPath, serializeDetailQuery } from "./routes.ts";
 import { ConsolePanel, ConsoleSessionList } from "./sessionPanel.tsx";
 import { consoleAvailable, consoleSession, consoleSessions, consoleTabAvailable } from "./sessionState.ts";
 import { useSessionUi, WorkStatus } from "./sessions.tsx";
@@ -214,6 +214,7 @@ export function DetailHeader({
         <CloseButton onClose={onClose} />
       </div>
       {"column" in change && <ChangeFacts change={change} pullRequest={pullRequest} />}
+      {"column" in change && <ChangeDependencies change={change} repo={repo} from={from} />}
       {change.warnings?.map((w) => (
         <div key={w} class="notice warn">
           {w}
@@ -282,6 +283,55 @@ function ChangeFacts({ change, pullRequest, now = Date.now() }: { change: Change
         </div>
       )}
     </>
+  );
+}
+
+const DEPENDENCY_STATE_TEXT = { met: "met", waiting: "waiting", missing: "missing", cycle: "cycle" } as const;
+
+/**
+ * Both directions of `depends-on.yaml`: what this change waits for, each with its state in words, and the changes that
+ * wait for it. A name the snapshot has links to that change's detail view, keeping the board it was opened from; a
+ * `missing` one is plain text. Nothing when the change has neither.
+ */
+export function ChangeDependencies({ change, repo, from }: { change: Pick<ChangeSnapshot, "dependsOn" | "requiredBy" | "blocked">; repo: RepoSnapshot; from?: string }) {
+  if (!change.dependsOn?.length && !change.requiredBy?.length && !change.blocked) return null;
+  const query = serializeDetailQuery({ raw: false, from });
+  const known = (name: string) => repo.changes.some((c) => c.name === name);
+  const nameOf = (name: string) =>
+    known(name) ? (
+      <AppLink class="mono" path={changePath(repo.id, name)} query={query}>
+        {name}
+      </AppLink>
+    ) : (
+      <span class="mono">{name}</span>
+    );
+  return (
+    <div class="detail-deps">
+      {(change.dependsOn?.length || change.blocked) && (
+        <div class="detail-deps-group">
+          <span class="detail-deps-label">
+            Depends on · <span class={change.blocked ? "warn-text" : "ok-text"}>{change.blocked ? "blocked — Implement is held back" : "all met"}</span>
+          </span>
+          <ul>
+            {(change.dependsOn ?? []).map((d) => (
+              <li key={d.name} class={`dep-${d.state}`}>
+                {nameOf(d.name)} <span class="dep-state">— {DEPENDENCY_STATE_TEXT[d.state]}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {change.requiredBy?.length ? (
+        <div class="detail-deps-group">
+          <span class="detail-deps-label">Required by</span>
+          <ul>
+            {change.requiredBy.map((name) => (
+              <li key={name}>{nameOf(name)}</li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+    </div>
   );
 }
 

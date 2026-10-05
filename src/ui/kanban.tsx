@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "preact/hooks";
 import { displayedLabels } from "../shared/labels.ts";
 import { LabelChips } from "./labels.tsx";
 import { boardColumns, isComplete } from "../shared/columns.ts";
+import { waitingNote } from "../shared/dependencies.ts";
 import { linkedPullRequest } from "../shared/pullRequestLink.ts";
 import type { ChangeSnapshot, Config, PullRequest, PullRequestsResponse, RepoSnapshot, Snapshot } from "../shared/types.ts";
 import { NoRepos } from "./empty.tsx";
@@ -17,11 +18,11 @@ import { PullButton } from "./pull.tsx";
 import { branchNotice } from "./pullState.ts";
 import { cdCommand, daysSince, relTime } from "./format.ts";
 import { isMinimized, loadGroupState, saveGroupState, toggleGroup, type GroupOverrides } from "./groupState.ts";
-import { assignRepoHues, groupByRepo, newChangeTargets, recentArchived } from "./repoGroups.ts";
+import { assignRepoHues, dependencyChoices, groupByRepo, newChangeTargets, recentArchived } from "./repoGroups.ts";
 import { columnKind } from "./boardMarks.ts";
 import { IconChevronRight, IconPlus, IconTerminal } from "./icons.tsx";
 import { SessionControls, useSessionUi } from "./sessions.tsx";
-import { archivedShown, cardIsLive, consoleTabAvailable } from "./sessionState.ts";
+import { archivedShown, cardIsLive, cardSessionControls, consoleTabAvailable } from "./sessionState.ts";
 import { boardFrom, changePath, CONSOLE_TAB, repoPath, serializeDetailQuery } from "./routes.ts";
 import { currentQuery, followInApp, href, navigate, replaceQuery } from "./url.ts";
 import { ProjectConsoleButton } from "./projectConsole.tsx";
@@ -123,12 +124,14 @@ export function cardLink(card: Pick<Card, "repoId" | "name">, from: string): { p
  * working on the change — shows on the whole card, tinted with its name swept; the caller decides it (`cardIsLive`), so
  * the card stays hook-free.
  */
-export function ChangeCard({ card, now, from, live = false }: { card: Card; now: number; from: string; live?: boolean }) {
+export function ChangeCard({ card, now, from, live = false, running = false }: { card: Card; now: number; from: string; live?: boolean; running?: boolean }) {
   const noTasks = card.warnings?.includes("tasks file has no tasks");
   // The work is finished, a person still has to confirm it — `warning`, not `success`; never on an archived change.
   const validating = !card.archived && (card.tasks?.awaiting ?? 0) > 0;
   const progress = cardProgress(card);
   const link = cardLink(card, from);
+  // In the starter's place; a running session's badge takes it instead, as it takes every starter's.
+  const waiting = running ? undefined : waitingNote(card);
   // Only what an overview needs: the name and the last update, under them the progress, then the footer with the
   // session state and the next step. The console link keeps the top right corner, the same on every card, so the way
   // into a terminal never moves. Branch, worktree, work status, prompt and completed phases are in the detail view.
@@ -158,6 +161,12 @@ export function ChangeCard({ card, now, from, live = false }: { card: Card; now:
         ))}
         {card.pullRequest && <CardPullRequest pr={card.pullRequest} repoName={card.repoName} />}
         <SessionControls card={card} place="card" />
+        {waiting && (
+          <span class="waits-for" role="note" title={waiting.title} aria-label={waiting.title}>
+            <span aria-hidden="true">⧗ </span>
+            {waiting.label}
+          </span>
+        )}
         <a class="show-details" href={href(link.path, undefined, link.query)} onClick={(e) => followInApp(e, link.path, link.query)} aria-label={`Show details of ${card.name}`}>
           Show details
           <IconChevronRight size={12} />
@@ -231,11 +240,12 @@ function RepoGroups({ column, cards, now, showRepo, from, groups: controls }: { 
   const groups = useMemo(() => groupByRepo(cards), [cards]);
   const ui = useSessionUi();
   const live = (c: Card) => cardIsLive(ui.config, ui.sessions, c);
+  const running = (c: Card) => cardSessionControls(ui.config, ui.sessions, c).shown.some((s) => s.state === "running");
   if (!showRepo) {
     return (
       <div class="cards">
         {cards.map((c) => (
-          <ChangeCard key={`${c.repoId}/${c.name}`} card={c} now={now} from={from} live={live(c)} />
+          <ChangeCard key={`${c.repoId}/${c.name}`} card={c} now={now} from={from} live={live(c)} running={running(c)} />
         ))}
       </div>
     );
@@ -264,7 +274,7 @@ function RepoGroups({ column, cards, now, showRepo, from, groups: controls }: { 
             {expanded && (
               <div class="repo-group-body" id={bodyId}>
                 {g.cards.map((c) => (
-                  <ChangeCard key={`${c.repoId}/${c.name}`} card={c} now={now} from={from} live={live(c)} />
+                  <ChangeCard key={`${c.repoId}/${c.name}`} card={c} now={now} from={from} live={live(c)} running={running(c)} />
                 ))}
               </div>
             )}
@@ -394,7 +404,7 @@ function RepoHeader({ repo, config, now, stats, onCreated }: { repo: RepoSnapsho
           {w}
         </div>
       ))}
-      {creating && <NewChangeDialog target={{ repoId: repo.id, repoName: repo.name }} onClose={() => setCreating(false)} onCreated={() => { setCreating(false); onCreated(); }} />}
+      {creating && <NewChangeDialog target={{ repoId: repo.id, repoName: repo.name, changes: dependencyChoices(repo.changes) }} onClose={() => setCreating(false)} onCreated={() => { setCreating(false); onCreated(); }} />}
     </div>
   );
 }

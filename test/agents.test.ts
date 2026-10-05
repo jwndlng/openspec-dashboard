@@ -271,6 +271,15 @@ test("agent per repository, falling back to the default", () => {
   expect(agentForRepo(cfg, repo.id)?.name).toBe("B");
 });
 
+test("starters: a blocked change is not offered Implement, everything else is unchanged", () => {
+  const a = (...s: ("done" | "ready" | "blocked")[]) => s.map((status, i) => ({ id: `a${i}`, status }));
+  expect(availableActions({ artifacts: a("done", "done"), stage: "ready", blocked: true })).toEqual([]);
+  expect(availableActions({ artifacts: a("done", "done"), stage: "implementing", blocked: true })).toEqual([]);
+  expect(availableActions({ artifacts: a("done", "ready"), stage: "drafts", blocked: true })).toEqual(["draft"]);
+  expect(availableActions({ artifacts: a("done", "done"), stage: "done", subState: "validate", blocked: true })).toEqual(["validate", "archive"]);
+  expect(availableActions({ artifacts: a("done", "done"), stage: "ready", blocked: false })).toEqual(["implement"]);
+});
+
 test("starters: stage decides, narrowed to the prompts the agent has", () => {
   const a = (...s: ("done" | "ready" | "blocked")[]) => s.map((status, i) => ({ id: `a${i}`, status }));
   expect(availableActions({ artifacts: a("done", "ready"), stage: "drafts" })).toEqual(["draft"]);

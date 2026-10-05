@@ -1,4 +1,6 @@
 import { join, sep } from "node:path";
+import { parse as parseYaml } from "yaml";
+import { resolveDependencies } from "../shared/dependencies.ts";
 import { deriveStage } from "../shared/columns.ts";
 import { detectLabels } from "../shared/labels.ts";
 import type { ChangeSnapshot, Config, DetectedLabel, RepoConfig, RepoSnapshot, SharedConfig, Snapshot, Worktree } from "../shared/types.ts";
@@ -8,7 +10,7 @@ import { type ChangeCopy, foldLeftovers, mergeChanges } from "./mergeChanges.ts"
 import { readChangeArtifacts } from "./openspecAdapter.ts";
 import { loadSharedConfig, repoSharedConfig } from "./sharedConfig.ts";
 import { changeSpecsSynced } from "./specSync.ts";
-import { LocalRepoSource, type ChangeDirEntry, type DirtyFile, type RepoSource } from "./source.ts";
+import { CHANGE_NAME, LocalRepoSource, type ChangeDirEntry, type DirtyFile, type RepoSource } from "./source.ts";
 import { parseTaskProgress } from "./tasksParser.ts";
 
 export const DEFAULT_CONCURRENCY = 4;
@@ -20,11 +22,40 @@ export const MAX_INSPECTED_WORKTREES = 12;
 const CHECKOUT_CONCURRENCY = 3;
 /** Cap the size of a change's `prompt.md` in the snapshot; a tooltip does not need more. */
 export const PROMPT_LIMIT_BYTES = 8 * 1024;
+/** A dependency list is a handful of names; anything larger is not one. */
+export const DEPENDS_ON_LIMIT_BYTES = 16 * 1024;
+export const DEPENDS_ON_FILE = "depends-on.yaml";
 
 // `.openspec.yaml` and `openspec/config.yaml` are flat enough to read without a YAML parser.
 const SCHEMA_LINE = /^schema:\s*["']?([A-Za-z0-9._-]+)/m;
 const CREATED_LINE = /^created:\s*["']?(\d{4}-\d{2}-\d{2})/m;
 const SKIP_SPECS_LINE = /^skip_specs:\s*true\b/m;
+
+/**
+ * The `depends_on` list of a change's `depends-on.yaml`: valid, de-duplicated names in file order. `unreadable` when the
+ * file is not YAML or `depends_on` is not a list of strings — the author meant the change to wait, so it is blocked.
+ */
+export function parseDependsOn(text: string): { names: string[]; unreadable: boolean; warnings: string[] } {
+  let doc: unknown;
+  try {
+    doc = parseYaml(text);
+  } catch {
+    return { names: [], unreadable: true, warnings: [`${DEPENDS_ON_FILE} is not valid YAML; Implement is held back until it is fixed`] };
+  }
+  const malformed = { names: [], unreadable: true, warnings: [`${DEPENDS_ON_FILE}: depends_on must be a list of change names; Implement is held back until it is fixed`] };
+  if (doc == null) return { names: [], unreadable: false, warnings: [] };
+  if (typeof doc !== "object" || Array.isArray(doc)) return malformed;
+  const list = (doc as Record<string, unknown>).depends_on;
+  if (list == null) return { names: [], unreadable: false, warnings: [] };
+  if (!Array.isArray(list) || !list.every((n) => typeof n === "string")) return malformed;
+  const names: string[] = [];
+  const warnings: string[] = [];
+  for (const name of list as string[]) {
+    if (!CHANGE_NAME.test(name)) warnings.push(`${DEPENDS_ON_FILE}: ignored "${name}", which is not a valid change name`);
+    else if (!names.includes(name)) names.push(name);
+  }
+  return { names, unreadable: false, warnings };
+}
 
 interface Marker {
   schema?: string;
@@ -158,6 +189,24 @@ async function scanChange(ctx: RepoContext, entry: ChangeDirEntry, withGit: bool
       prompt = text;
     }
   }
+  // `depends-on.yaml` is the dashboard's own convention, not an artifact; archived changes never wait for anything.
+  let dependsOn: ChangeSnapshot["dependsOn"];
+  let dependsOnUnreadable = false;
+  const dependsOnPath = join(entry.dir, DEPENDS_ON_FILE);
+  const dependsOnInfo = entry.archived ? undefined : await ctx.source.readFileInfo(dependsOnPath);
+  if (dependsOnInfo?.isFile) {
+    const text = await ctx.source.readText(dependsOnPath);
+    if (text === undefined || text.length > DEPENDS_ON_LIMIT_BYTES) {
+      dependsOnUnreadable = true;
+      warnings.push(`could not read ${DEPENDS_ON_FILE}; Implement is held back until it can be read`);
+    } else {
+      const parsed = parseDependsOn(text);
+      dependsOnUnreadable = parsed.unreadable;
+      warnings.push(...parsed.warnings);
+      // Provisional: the states are resolved against the whole repository once every copy is merged.
+      if (parsed.names.length) dependsOn = parsed.names.map((name) => ({ name, state: "waiting" }));
+    }
+  }
   if (tasks && tasks.total === 0 && artifacts.length > 0 && artifacts.every((a) => a.status === "done")) {
     warnings.push("tasks file has no tasks");
   }
@@ -194,6 +243,8 @@ async function scanChange(ctx: RepoContext, entry: ChangeDirEntry, withGit: bool
     column,
     subState,
     prompt,
+    ...(dependsOn ? { dependsOn } : {}),
+    ...(dependsOnUnreadable ? { blocked: true } : {}),
     warnings: warnings.length ? warnings : undefined,
   };
 }
@@ -242,7 +293,7 @@ export async function scanRepo(repo: RepoConfig, source: RepoSource = new LocalR
   warnings.push(...fromWorktrees.warnings);
 
   const active = isGit ? mergeChanges(copies, archivedOnMain, fromWorktrees.pending) : copies.map((c) => c.change);
-  const changes = [...active, ...archived];
+  const changes = resolveDependencies([...active, ...archived]);
 
   return {
     ...base,

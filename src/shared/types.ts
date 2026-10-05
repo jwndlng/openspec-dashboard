@@ -25,6 +25,18 @@ export interface TaskProgress {
 /** A change in `Done` is either awaiting a person's confirmation (`validate`) or fully verified (`complete`). */
 export type DoneSubState = "complete" | "validate";
 
+/**
+ * One dependency a change declares in its `depends-on.yaml`, resolved against the repository's other changes:
+ * `met` — the main checkout holds it archived or in `Done`; `cycle` — following unmet dependencies from it leads back;
+ * `missing` — no change of that name exists; `waiting` — it exists but is not implemented and merged yet.
+ */
+export type DependencyState = "met" | "waiting" | "missing" | "cycle";
+
+export interface ChangeDependency {
+  name: string;
+  state: DependencyState;
+}
+
 export interface ChangeSnapshot {
   repoId: string;
   name: string;
@@ -66,6 +78,18 @@ export interface ChangeSnapshot {
    * not a schema artifact and does not affect artifact status. Bounded, so pathological files do not bloat the snapshot.
    */
   prompt?: string;
+  /**
+   * The changes this one declares in `depends-on.yaml`, in file order, each with its state. Only for active changes
+   * that declare any; derived on every scan, never stored.
+   */
+  dependsOn?: ChangeDependency[];
+  /** Names of the active changes of the same repository that depend on this one, sorted. Absent when there are none. */
+  requiredBy?: string[];
+  /**
+   * `true` while a dependency is not `met` or `depends-on.yaml` could not be read: **Implement** is withheld. Absent
+   * otherwise — and in snapshots cached by older versions, which therefore read as not blocked.
+   */
+  blocked?: boolean;
   /** Non-fatal problems while reading this change. */
   warnings?: string[];
 }
@@ -555,11 +579,12 @@ export function repoAgentEnabled(repo: Pick<RepoConfig, "enabled" | "agent">): b
 }
 
 /** The session starters a change currently qualifies for (before feature/opt-in checks). */
-export function availableActions(change: Pick<ChangeSnapshot, "archived" | "artifacts" | "stage" | "subState">): SessionAction[] {
+export function availableActions(change: Pick<ChangeSnapshot, "archived" | "artifacts" | "stage" | "subState" | "blocked">): SessionAction[] {
   if (change.archived) return [];
   const actions: SessionAction[] = [];
   if (change.artifacts.length === 0 || change.artifacts.some((a) => a.status !== "done")) actions.push("draft");
-  if (change.stage === "ready" || change.stage === "implementing") actions.push("implement");
+  // A change waiting for its dependencies may still be drafted; only implementing it would break the order.
+  if ((change.stage === "ready" || change.stage === "implementing") && !change.blocked) actions.push("implement");
   // In `Done` there is nothing left to implement; offering it is what sends an agent back into finished code.
   if (change.stage === "done" && change.subState === "validate") actions.push("validate");
   if (change.stage === "done") actions.push("archive"); // every task settled, not archived yet

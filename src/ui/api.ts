@@ -85,9 +85,10 @@ export interface Api {
   environment(force?: boolean): Promise<EnvironmentReport>;
   /**
    * Creates a new change directory in the repository: `openspec/changes/<name>/` with the schema marker and, when a
-   * non-empty prompt is given, `prompt.md`. Atomic; a duplicate name is refused with `409`.
+   * non-empty prompt is given, `prompt.md`, and with dependencies `depends-on.yaml`. Atomic; a duplicate name is refused
+   * with `409`.
    */
-  createChange(repoId: string, name: string, prompt?: string): Promise<CreateChangeResponse>;
+  createChange(repoId: string, name: string, prompt?: string, dependsOn?: string[]): Promise<CreateChangeResponse>;
   /**
    * Fetches the repository's remote and fast-forwards its main checkout when that is safe. The only operation that
    * makes the dashboard contact a remote; it never runs unless the user asks.
@@ -224,8 +225,11 @@ export const httpApi: Api = {
     call<DiscoverResult>("/api/discover", { method: "POST", body: scanRoots || ignorePaths ? JSON.stringify({ scanRoots, ignorePaths }) : undefined }),
   scan: () => call<ScanTriggerResult>("/api/scan", { method: "POST" }),
   environment: (force) => call<EnvironmentReport>(`/api/environment${force ? "?force=1" : ""}`),
-  createChange: (repoId, name, prompt) =>
-    call<CreateChangeResponse>(`/api/repos/${encodeURIComponent(repoId)}/changes`, { method: "POST", body: JSON.stringify(prompt !== undefined && prompt !== "" ? { name, prompt } : { name }) }),
+  createChange: (repoId, name, prompt, dependsOn) =>
+    call<CreateChangeResponse>(`/api/repos/${encodeURIComponent(repoId)}/changes`, {
+      method: "POST",
+      body: JSON.stringify({ name, ...(prompt !== undefined && prompt !== "" ? { prompt } : {}), ...(dependsOn?.length ? { dependsOn } : {}) }),
+    }),
   pullRepo: (repoId) => call<PullResult>(`/api/repos/${encodeURIComponent(repoId)}/pull`, { method: "POST" }),
   pullAll: () => call<{ results: PullResult[] }>("/api/pull", { method: "POST" }),
   resolvePull: (repoId, resolve) => call<PullResult>(`/api/repos/${encodeURIComponent(repoId)}/pull`, { method: "POST", body: JSON.stringify({ resolve }) }),

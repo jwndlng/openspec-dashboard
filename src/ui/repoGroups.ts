@@ -66,6 +66,22 @@ export function repoTint(hues: Map<string, number>, repoId: string): { class: st
 export interface NewChangeProject {
   id: string;
   name: string;
+  /** The repository's active changes, which a new change may depend on (`depends-on.yaml`). */
+  changes?: DependencyChoice[];
+}
+
+/** An active change offered in the New change form's **Depends on** field. */
+export interface DependencyChoice {
+  name: string;
+  column: string;
+}
+
+/** The changes a new change may depend on: the repository's active ones, by name. Archived changes are already met. */
+export function dependencyChoices(changes: { name: string; column: string; archived?: string }[] = []): DependencyChoice[] {
+  return changes
+    .filter((c) => !c.archived)
+    .map(({ name, column }) => ({ name, column }))
+    .sort((a, b) => a.name.localeCompare(b.name));
 }
 
 /**
@@ -74,10 +90,10 @@ export interface NewChangeProject {
  * check as the repository header's action; the server refuses anything else, so this is a convenience, not the guard.
  */
 export function newChangeTargets(
-  repos: { id: string; name: string; ok: boolean }[],
+  repos: { id: string; name: string; ok: boolean; changes?: { name: string; column: string; archived?: string }[] }[],
   filterRepoIds: string[],
 ): { projects: NewChangeProject[]; preselected?: string } {
-  const projects = repos.filter((r) => r.ok).map((r) => ({ id: r.id, name: r.name }));
+  const projects = repos.filter((r) => r.ok).map((r) => ({ id: r.id, name: r.name, ...(r.changes ? { changes: dependencyChoices(r.changes) } : {}) }));
   if (projects.length === 1) return { projects, preselected: projects[0].id };
   const filtered = projects.filter((p) => filterRepoIds.includes(p.id));
   return filtered.length === 1 ? { projects, preselected: filtered[0].id } : { projects };
