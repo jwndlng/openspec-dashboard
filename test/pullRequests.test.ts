@@ -2,7 +2,7 @@ import { afterAll, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
 import { mkdir, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { pullRequestsCachePath } from "../src/server/paths.ts";
-import { githubRepoFromRemote, parsePullRequest, PullRequests, type RepoTarget, summarizeChecks } from "../src/server/pullRequests.ts";
+import { githubRepoFromRemote, parseMergeable, parsePullRequest, PullRequests, type RepoTarget, summarizeChecks } from "../src/server/pullRequests.ts";
 import { checkRun, ghPr, installFakeGh, statusContext, type GhHarness } from "./ghHelpers.ts";
 import { gitIn, tempDir, useTempHome } from "./helpers.ts";
 
@@ -180,12 +180,40 @@ test("a pull request is parsed from the fields gh prints", () => {
     review: "changes_requested",
     reviewRequestedFromViewer: true,
     checks: "passing",
+    mergeable: "mergeable",
   });
   // A team review request is not a request from the signed-in user, and no viewer means no marker.
   expect(parsePullRequest({ ...raw, reviewRequests: [{ name: "platform-team" }] }, "demo-user")?.reviewRequestedFromViewer).toBe(false);
   expect(parsePullRequest(raw, undefined)?.reviewRequestedFromViewer).toBe(false);
   expect(parsePullRequest({ title: "no number" })).toBeUndefined();
   expect(parsePullRequest({ number: 3 })?.review).toBe("none");
+});
+
+test("mergeability is read as GitHub reports it, and anything else is unknown", () => {
+  expect(parsePullRequest(ghPr({ number: 1, mergeable: "MERGEABLE" }))?.mergeable).toBe("mergeable");
+  expect(parsePullRequest(ghPr({ number: 2, mergeable: "CONFLICTING" }))?.mergeable).toBe("conflicting");
+  expect(parsePullRequest(ghPr({ number: 3, mergeable: "UNKNOWN" }))?.mergeable).toBe("unknown");
+  expect(parsePullRequest({ number: 4 })?.mergeable).toBe("unknown");
+  // Drift in gh's output must never look mergeable.
+  expect(parseMergeable("SOMETHING_NEW")).toBe("unknown");
+  expect(parseMergeable(true)).toBe("unknown");
+});
+
+test("mergeability comes from the same gh pr list call, and no other subcommand runs", async () => {
+  await gh.scenario({
+    login: "demo-user",
+    repos: { "acme/alpha-infra": { open: [ghPr({ number: 5, mergeable: "CONFLICTING" }), ghPr({ number: 6, mergeable: "UNKNOWN" })], closed: [] } },
+  });
+  await gh.forget();
+  const targets: RepoTarget[] = [{ id: "alpha", path: await repoAt("alpha-mergeable", ALPHA), isGit: true }];
+  const repo = (await newStore().refresh(targets, { force: true })).repos[0];
+  expect(Object.fromEntries(repo.pullRequests.map((pr) => [pr.number, pr.mergeable]))).toEqual({ 5: "conflicting", 6: "unknown" });
+
+  const calls = await gh.calls();
+  expect(calls.map((c) => c.argv.slice(0, 2).join(" ")).sort()).toEqual(["api user", "pr list", "pr list"]);
+  for (const call of calls.filter((c) => c.argv[0] === "pr")) {
+    expect(call.argv[call.argv.indexOf("--json") + 1].split(",")).toContain("mergeable");
+  }
 });
 
 // ---- querying (2.2, 2.3) ----
@@ -411,6 +439,25 @@ test("the cache survives a restart, and a deleted cache simply means never fetch
   expect(nothing.repos.map((r) => r.status)).toEqual(["never", "never", "never"]);
   expect(nothing.repos.every((r) => r.pullRequests.length === 0)).toBe(true);
   expect(await gh.calls()).toEqual([]);
+});
+
+test("a version-1 cache written before mergeability was read still loads, as unknown", async () => {
+  const targets: RepoTarget[] = [{ id: "alpha", path: await repoAt("alpha-old-cache", ALPHA), isGit: true }];
+  const old: Record<string, unknown> = { ...parsePullRequest(ghPr({ number: 8 })) };
+  delete old.mergeable;
+  await mkdir(join(pullRequestsCachePath(), ".."), { recursive: true });
+  await writeFile(
+    pullRequestsCachePath(),
+    JSON.stringify({ version: 1, viewer: "demo-user", repos: { "acme/alpha-infra": { fetchedAt: new Date().toISOString(), pullRequests: [old] } } }),
+  );
+  await gh.forget();
+  const store = newStore();
+  await store.load();
+  const repo = (await store.list(targets)).repos[0];
+  expect(repo.status).toBe("ok");
+  expect(repo.pullRequests.map((pr) => [pr.number, pr.mergeable])).toEqual([[8, "unknown"]]);
+  expect(await gh.calls()).toEqual([]);
+  await rm(pullRequestsCachePath(), { force: true });
 });
 
 test("an unreadable cache file is treated as no cache at all", async () => {

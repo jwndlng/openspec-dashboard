@@ -1,13 +1,14 @@
 // The Pull requests view, the dialog on a repository board, the cache they and the board's cards read from, and what a
 // card and the detail header show of a change's pull request.
 //
-// GitHub is contacted only from here, and only because the user activated Refresh or opened one of the three views that
-// show pull requests — this view, a repository's dialog, a Kanban board — with a stale cache
-// (openspec/specs/pull-requests). The page itself requests nothing but the dashboard's own API: the links
+// GitHub is contacted only from here, and only because the user activated Refresh, opened one of the three views that
+// show pull requests — this view, a repository's dialog, a Kanban board — with a stale cache, or an open, visible board
+// watches a pull request that is not ready yet (openspec/specs/pull-requests). The page itself requests nothing but the dashboard's own API: the links
 // to github.com are ordinary links the user follows.
 import { type ComponentChildren, createContext } from "preact";
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { linkedPullRequest } from "../shared/pullRequestLink.ts";
+import { type Readiness, pullRequestReadiness, readinessDetail, readinessRole, readinessWord } from "../shared/pullRequestReadiness.ts";
 import type { ChangeSnapshot, PullRequest, PullRequestsResponse, Snapshot } from "../shared/types.ts";
 import { api } from "./api.ts";
 import { Stat } from "./band.tsx";
@@ -48,16 +49,28 @@ interface PullRequestsUi {
   refreshIfStale(repoId?: string): void;
   /** What a board does once, when it opens: `refreshIfStale`, unless the lists are synthetic (the demo). */
   openBoard(repoId?: string): void;
+  /** The board's watch: a forced refresh of these repositories, unless a refresh runs or the lists are synthetic. */
+  watch(repoIds: string[]): void;
+  /** When the last refresh of this page settled; the watch counts from it. */
+  lastSettledAt(): number | undefined;
 }
 
-const Context = createContext<PullRequestsUi>({ loading: false, running: undefined, refresh: async () => {}, refreshIfStale: () => {}, openBoard: () => {} });
+const Context = createContext<PullRequestsUi>({
+  loading: false,
+  running: undefined,
+  refresh: async () => {},
+  refreshIfStale: () => {},
+  openBoard: () => {},
+  watch: () => {},
+  lastSettledAt: () => undefined,
+});
 
 export const usePullRequests = () => useContext(Context);
 
 /**
  * Holds the cached lists for every view. Reading them on mount contacts nothing; only `refresh` does, and only from
- * a Refresh control or a view that shows pull requests opening with a stale cache — never a timer, a scan or the
- * overview.
+ * a Refresh control, a view that shows pull requests opening with a stale cache, or an open board's watch of pull
+ * requests that are not ready — never any other timer, a scan or the overview.
  */
 export function PullRequestsProvider({ children }: { children: ComponentChildren }) {
   const [data, setData] = useState<PullRequestsResponse>();
@@ -103,8 +116,11 @@ export function PullRequestsProvider({ children }: { children: ComponentChildren
   const refresh = refresher.refresh;
   const refreshIfStale = useCallback((repoId?: string) => void refresher.refreshIfStale(repoId), [refresher]);
   const openBoard = useCallback((repoId?: string) => void refresher.openBoard(repoId), [refresher]);
+  const watch = useCallback((repoIds: string[]) => void refresher.watch(repoIds), [refresher]);
 
-  return <Context.Provider value={{ data, loading, running, error, refresh, refreshIfStale, openBoard }}>{children}</Context.Provider>;
+  return (
+    <Context.Provider value={{ data, loading, running, error, refresh, refreshIfStale, openBoard, watch, lastSettledAt: refresher.lastSettledAt }}>{children}</Context.Provider>
+  );
 }
 
 // ---- chips ----
@@ -164,44 +180,86 @@ export function prStateWord(pr: PullRequest): "draft" | "open" | "merged" | "clo
 
 const STATE_SYMBOL: Record<ReturnType<typeof prStateWord>, string> = { open: "○", draft: "◌", merged: "✓", closed: "✕" };
 
+const READINESS_SYMBOL: Record<ReturnType<typeof readinessWord>, string> = {
+  ready: "✓",
+  draft: "◌",
+  conflicts: "⚠",
+  "checks failing": "✕",
+  "checks running": "…",
+  "mergeability unknown": "?",
+};
+
+/** When the list a pull request came from was fetched, for a tooltip: readiness is only as fresh as that. */
+function fetchedText(fetchedAt: string | undefined, now?: number): string {
+  if (!fetchedAt) return "list not fetched in this session";
+  const age = relTime(fetchedAt, now);
+  return `list fetched ${age === "just now" ? age : `${age} ago`}`;
+}
+
+/** A readiness as the card and the header both show it: symbol, word, role and what it waits for. */
+function readinessChip(readiness: Readiness, fetchedAt: string | undefined, now?: number): { text: string; title: string; tone: string; word: string; symbol: string } {
+  const word = readinessWord(readiness);
+  const symbol = READINESS_SYMBOL[word];
+  return { text: `${symbol} ${word}`, title: `${readinessDetail(readiness)} (${fetchedText(fetchedAt, now)})`, tone: readinessRole(readiness), word, symbol };
+}
+
 /**
  * A card's link to its change's pull request, on the footer's status line. The state is a symbol and a word, with a
- * tooltip; a merged or closed pull request is still shown, more quietly. A link the user follows — the page itself
- * never requests github.com.
+ * tooltip; a merged or closed pull request is still shown, more quietly. An open one also says whether it is ready, or
+ * the one reason it is not, in its role's colour — a draft's state already says that. A link the user follows — the
+ * page itself never requests github.com.
  */
-export function CardPullRequest({ pr, repoName }: { pr: PullRequest; repoName: string }) {
+export function CardPullRequest({ pr, repoName, fetchedAt, now }: { pr: PullRequest; repoName: string; fetchedAt?: string; now?: number }) {
   const word = prStateWord(pr);
   const settled = pr.state !== "open";
+  const readiness = pullRequestReadiness(pr);
+  const chip = readiness && readinessChip(readiness, fetchedAt, now);
+  const waits = chip ? `; ${chip.title.charAt(0).toLowerCase()}${chip.title.slice(1)}` : "";
   return (
     <a
       class={`card-pr ${settled ? "settled" : ""} ${word}`}
       href={pr.url}
       target="_blank"
       rel="noopener noreferrer"
-      title={`${pr.title} — ${stateChip(pr).title.toLowerCase()}; open on GitHub`}
-      aria-label={`Pull request #${pr.number} of ${repoName}, ${word}, opens on GitHub`}
+      title={`${pr.title} — ${stateChip(pr).title.toLowerCase()}${waits}; open on GitHub`}
+      aria-label={`Pull request #${pr.number} of ${repoName}, ${word}${chip ? `, ${chip.word === "ready" ? "ready" : `not ready: ${chip.word}`}` : ""}, opens on GitHub`}
     >
       PR #{pr.number}
       <span class="card-pr-state">
         <span aria-hidden="true">{STATE_SYMBOL[word]}</span> {word}
       </span>
+      {chip && word !== "draft" && (
+        <span class={`card-pr-ready ${chip.tone}`}>
+          <span aria-hidden="true">· {chip.symbol}</span> {chip.word}
+        </span>
+      )}
     </a>
   );
 }
 
-/** What the detail header knows about a change's pull request: the linked one, or why there can be none. */
-export type DetailPr = { pr: PullRequest; unavailable?: undefined } | { pr?: undefined; unavailable: string };
+/** What the detail header knows about a change's pull request: the linked one (and when its list was fetched), or why there can be none. */
+export type DetailPr = { pr: PullRequest; fetchedAt?: string; unavailable?: undefined } | { pr?: undefined; unavailable: string };
+
+/** When the change's repository's list was last fetched, for saying how fresh a readiness is. */
+export function listFetchedAt(response: PullRequestsResponse | undefined, repoId: string): string | undefined {
+  return response?.repos.find((r) => r.repoId === repoId)?.fetchedAt;
+}
 
 /** The linked pull request; else, when the repository's pull requests cannot be read, the reason — said once. */
 export function detailPullRequest(change: Pick<ChangeSnapshot, "repoId" | "name" | "branchMatch" | "created">, response: PullRequestsResponse | undefined): DetailPr | undefined {
   const pr = linkedPullRequest(change, response?.repos);
-  if (pr) return { pr };
+  if (pr) return { pr, fetchedAt: listFetchedAt(response, change.repoId) };
   const list = response?.repos.find((r) => r.repoId === change.repoId);
   if (!response || !list || list.status !== "unavailable") return undefined;
   return { unavailable: ghSetup(response)?.what ?? list.reason ?? "this repository's pull requests cannot be read" };
 }
 
-/** The detail header's pull-request line: number, title, state, review and checks, read-only and as the view shows them. */
+const CONFLICTS_CHIP = { text: "⚠ Conflicts", title: "Conflicts with its base branch", tone: "warning" };
+
+/**
+ * The detail header's pull-request line: number, title, state, review, checks, conflicts and — for an open one — its
+ * readiness with the card's words, symbols and roles, read-only and as the view shows them.
+ */
 export function DetailPullRequest({ info }: { info: DetailPr }) {
   if (info.unavailable !== undefined) {
     return (
@@ -213,6 +271,10 @@ export function DetailPullRequest({ info }: { info: DetailPr }) {
   const { pr } = info;
   const review = REVIEW_CHIP[pr.review];
   const checks = CHECKS_CHIP[pr.checks];
+  const readiness = pullRequestReadiness(pr);
+  const ready = readiness && readinessChip(readiness, info.fetchedAt);
+  // The readiness already says "conflicts" when that is its reason; a draft that also conflicts says it here.
+  const conflicts = readiness && pr.mergeable === "conflicting" && ready?.word !== "conflicts";
   return (
     <span class="detail-pr">
       <span class="pr-number mono">
@@ -224,6 +286,8 @@ export function DetailPullRequest({ info }: { info: DetailPr }) {
       <Chip chip={stateChip(pr)} spoken />
       {review && <Chip chip={review} spoken />}
       {checks && <Chip chip={checks} spoken />}
+      {conflicts && <Chip chip={CONFLICTS_CHIP} spoken />}
+      {ready && <Chip chip={ready} spoken />}
     </span>
   );
 }

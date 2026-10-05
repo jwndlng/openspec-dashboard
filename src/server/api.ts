@@ -814,7 +814,7 @@ async function getPullRequests(state: AppState): Promise<Response> {
 
 /**
  * The only route besides the pull action that reaches a network, and only because the user opened or refreshed a
- * pull-request list. It runs read-only `gh` queries, writes to no repository and triggers no scan.
+ * pull-request list, or an open board watches a pull request that is not ready yet. It runs read-only `gh` queries, writes to no repository and triggers no scan.
  */
 async function postPullRequestsRefresh(state: AppState, req: Request): Promise<Response> {
   const body = await readJson(req);
@@ -824,7 +824,16 @@ async function postPullRequestsRefresh(state: AppState, req: Request): Promise<R
     if (typeof repoId !== "string") return json({ error: "repoId must be a string" }, 400);
     if (!targets.some((t) => t.id === repoId)) return json({ error: "unknown or disabled repository" }, 404);
   }
-  return json(await pullRequestStore(state).refresh(targets, { repoId: repoId as string | undefined, force: body.force === true }));
+  // The board's watch names the repositories it watches; each is checked exactly as a single `repoId` is.
+  const repoIds = body.repoIds;
+  if (repoIds !== undefined) {
+    if (repoId !== undefined) return json({ error: "give either repoId or repoIds, not both" }, 400);
+    if (!Array.isArray(repoIds) || !repoIds.every((r) => typeof r === "string")) return json({ error: "repoIds must be a list of strings" }, 400);
+    if (!repoIds.every((r) => targets.some((t) => t.id === r))) return json({ error: "unknown or disabled repository" }, 404);
+  }
+  return json(
+    await pullRequestStore(state).refresh(targets, { repoId: repoId as string | undefined, repoIds: repoIds as string[] | undefined, force: body.force === true }),
+  );
 }
 
 const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "[::1]"]);

@@ -41,12 +41,15 @@ test("no Validate badge without awaiting tasks, and never on an archived change"
   expect(columnKind("Done")).toBe("success");
 });
 
-test("a card is marked live only when told an agent is working on it, and its name still reads in full", () => {
-  const frame = (live?: boolean) => byTag(ChangeCard({ card: card({}), now: Date.parse("2026-09-29T12:00:00Z"), from: "", live }), "article")[0];
-  expect(frame(true).props.class).toBe("card live");
-  expect(frame(false).props.class).toBe("card");
+test("a card is marked live only when told it is working, and its name still reads in full", () => {
+  const frame = (working?: { tinted: boolean; sweeping: boolean }) => byTag(ChangeCard({ card: card({}), now: Date.parse("2026-09-29T12:00:00Z"), from: "", working }), "article")[0];
+  const live = { tinted: true, sweeping: true };
+  expect(frame(live).props.class).toBe("card live");
+  // Tinted without motion: a pull request that only waits.
+  expect(frame({ tinted: true, sweeping: false }).props.class).toBe("card live pr-waiting");
+  expect(frame({ tinted: false, sweeping: false }).props.class).toBe("card");
   expect(frame().props.class).toBe("card");
-  const name = byTag(frame(true), "span").find((s) => s.props.class === "name");
+  const name = byTag(frame(live), "span").find((s) => s.props.class === "name");
   expect(name && textOf(name)).toBe("confirm-retention");
 });
 

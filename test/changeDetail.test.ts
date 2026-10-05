@@ -472,6 +472,7 @@ const headerPr: PullRequest = {
   review: "approved",
   reviewRequestedFromViewer: false,
   checks: "failing",
+  mergeable: "mergeable",
 };
 const prResponse = (patch: Partial<RepoPullRequests> = {}, pullRequests: PullRequest[] = [headerPr]): PullRequestsResponse => ({
   repos: [{ repoId: "r1", github: "acme/forum-admin", status: "ok", fetchedAt: "2026-03-10T11:58:00Z", pullRequests, ...patch }],
@@ -495,9 +496,13 @@ test("header: the change's pull request beside its branch — number, title link
   expect(textOf(link)).toBe("Add the validate phase");
   // State, review decision and checks as the Pull requests view says them, with words a screen reader reads.
   const chips = classed(line, "pr-chip");
-  expect(chips.map((c) => c.props.title)).toEqual(["Open on GitHub", "Review decision: approved", "At least one check failed"]);
-  expect(chips.map((c) => textOf(classed(c, "visually-hidden")))).toEqual(["Open on GitHub", "Review decision: approved", "At least one check failed"]);
+  expect(chips.map((c) => c.props.title)).toEqual(["Open on GitHub", "Review decision: approved", "At least one check failed", expect.stringContaining("Not ready: at least one check failed")]);
+  expect(chips.map((c) => textOf(classed(c, "visually-hidden")))).toEqual(["Open on GitHub", "Review decision: approved", "At least one check failed", expect.stringContaining("Not ready")]);
   expect(text).toContain("✕ Checks");
+  // Its readiness, in the card's words and role, with when the list was fetched.
+  expect(text).toContain("✕ checks failing");
+  expect(String(chips[3].props.class)).toContain("danger");
+  expect(String(chips[3].props.title)).toContain("list fetched");
 });
 
 test("header: no pull request means the branch alone, with nothing in its place", () => {

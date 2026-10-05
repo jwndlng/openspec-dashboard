@@ -94,6 +94,13 @@ export const HELP_SECTIONS: readonly HelpSection[] = [
           The filter bar narrows the board to some projects or to a search over change and project names, and keeps your
           choice in the URL, so a filtered board can be bookmarked or shared.
         </p>
+        <p>
+          A card is tinted as <strong>working</strong> while an agent works on its change, and also while the change's pull
+          request is open but not ready yet — a draft, a conflict, failing or running checks — whether or not an agent still
+          runs. Its badge says why, for example <code>PR #125 · checks running</code>; once every check is green and the
+          branch merges cleanly it reads <code>ready</code> and the tint ends. Its name sweeps only while something is still
+          being worked out on GitHub. The tint never changes the column, the progress or what you can start.
+        </p>
       </>
     ),
   },
@@ -177,8 +184,11 @@ export const HELP_SECTIONS: readonly HelpSection[] = [
       <p>
         <AppLink path="/pull-requests">Pull requests</AppLink> lists the open pull requests of your tracked GitHub
         repositories, and those merged or closed in the last week. It reads them with your own GitHub CLI (
-        <code>gh</code>), signed in with <code>gh auth login</code>, and only when you open a view that shows them or press
-        Refresh. Nothing is ever changed on GitHub. Without <code>gh</code> the view says so and everything else works.
+        <code>gh</code>), signed in with <code>gh auth login</code>, only when you open a view that shows them or press
+        Refresh — and while an open board shows a pull request that is not ready yet: then that board asks again for those
+        projects on its own, every minute while checks run, every five minutes while it waits on a draft, a conflict or a
+        failing check, and not at all while the tab is hidden. Nothing is ever changed on GitHub. Without <code>gh</code>{" "}
+        the view says so and everything else works.
       </p>
     ),
   },

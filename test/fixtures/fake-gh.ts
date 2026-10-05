@@ -9,11 +9,13 @@
 //     "mode": "ok" | "not-logged-in" | "hang" | "fail",   // applies to every call
 //     "stderr": "…",                              // stderr for "fail"
 //     "exitCode": 1,
-//     "repos": { "acme/alpha-infra": { "open": [ … ], "closed": [ … ] } },
+//     "repos": { "acme/alpha-infra": { "open": [ … ], "closed": [ … ] } },   // entries may carry "mergeable"
 //     "perRepo": { "acme/beta-soc": { "mode": "fail", "stderr": "…" } },
 //     "userMode": "fail"                          // only for `api user`
 //   }
 // A repository missing from `repos` answers with empty lists, which is what `gh` does for one without pull requests.
+// Like the real `gh`, `pr list` answers only the fields named in `--json`, so a field the caller does not ask for —
+// `mergeable`, say — is not in the answer even when the scenario has it.
 import { appendFileSync, readFileSync } from "node:fs";
 
 interface Mode {
@@ -78,7 +80,10 @@ if (argv[0] === "api" && argv[1] === "user") {
   finish(mode, () => {
     const lists = scenario.repos?.[repo] ?? {};
     const items = (closed ? lists.closed : lists.open) ?? [];
-    return `${JSON.stringify(items.slice(0, limit))}\n`;
+    const fields = flag("json")?.split(",");
+    const project = (item: unknown) =>
+      fields && item && typeof item === "object" ? Object.fromEntries(Object.entries(item).filter(([key]) => fields.includes(key))) : item;
+    return `${JSON.stringify(items.slice(0, limit).map(project))}\n`;
   });
 } else {
   // Every other subcommand is a bug in the caller: the dashboard runs only these two.

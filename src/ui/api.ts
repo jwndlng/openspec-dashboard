@@ -106,7 +106,7 @@ export interface Api {
    * Refreshes the pull-request lists through the GitHub CLI — the only call besides a pull that reaches a network,
    * and only ever from a Refresh control or from opening a pull-request list whose cache is stale.
    */
-  refreshPullRequests(options?: { repoId?: string; force?: boolean }): Promise<PullRequestsResponse>;
+  refreshPullRequests(options?: { repoId?: string; repoIds?: string[]; force?: boolean }): Promise<PullRequestsResponse>;
   /** The pull-request lists are made up (the demo): opening a board then never asks for a refresh. */
   readonly syntheticPullRequests?: boolean;
   /** Read-only: the repository's worktrees, stale worktree records and branches, each removable or kept with a reason. */

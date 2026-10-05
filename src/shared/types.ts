@@ -1011,6 +1011,11 @@ export interface PullRequest {
   /** The signed-in user is among the requested reviewers. Team requests are not resolved and do not count. */
   reviewRequestedFromViewer: boolean;
   checks: "passing" | "failing" | "pending" | "none";
+  /**
+   * Whether it merges cleanly into its base, as GitHub reports it; `unknown` while GitHub has not computed it. Absent
+   * in caches written before it was read, which every reader treats as `unknown`.
+   */
+  mergeable?: "mergeable" | "conflicting" | "unknown";
 }
 
 /** What one tracked repository's pull-request list looks like right now. `pullRequests` is the last good list, also when `failed`. */

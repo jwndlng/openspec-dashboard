@@ -117,6 +117,30 @@ test("refreshing one repository queries only its GitHub repository", async () =>
   expect(repoOf(body, id(alpha))?.status).toBe("ok");
 });
 
+test("refreshing a set of repositories queries only their GitHub repositories", async () => {
+  await gh.forget();
+  const { status, body } = await post("/api/pull-requests/refresh", { repoIds: [id(alpha)], force: true });
+  expect(status).toBe(200);
+  const queried = (await gh.calls()).filter((c) => c.argv[0] === "pr").map((c) => c.argv[c.argv.indexOf("--repo") + 1]);
+  expect([...new Set(queried)]).toEqual(["acme/alpha-infra"]);
+  expect(repoOf(body, id(beta))?.status).toBe("ok");
+
+  await gh.forget();
+  await post("/api/pull-requests/refresh", { repoIds: [id(alpha), id(beta)], force: true });
+  const both = (await gh.calls()).filter((c) => c.argv[0] === "pr").map((c) => c.argv[c.argv.indexOf("--repo") + 1]);
+  expect([...new Set(both)].sort()).toEqual(["acme/alpha-infra", "acme/beta-soc"]);
+});
+
+test("a malformed or unknown set of repositories is refused and starts no gh", async () => {
+  await gh.forget();
+  expect((await post("/api/pull-requests/refresh", { repoIds: id(alpha) })).status).toBe(400);
+  expect((await post("/api/pull-requests/refresh", { repoIds: [id(alpha), 7] })).status).toBe(400);
+  expect((await post("/api/pull-requests/refresh", { repoId: id(alpha), repoIds: [id(beta)] })).status).toBe(400);
+  expect((await post("/api/pull-requests/refresh", { repoIds: [id(alpha), "nope"] })).status).toBe(404);
+  expect((await post("/api/pull-requests/refresh", { repoIds: [state.config.repos[4].id] })).status).toBe(404);
+  expect(await gh.calls()).toEqual([]);
+});
+
 test("an unknown or disabled repository is refused with 404 and starts no gh", async () => {
   await gh.forget();
   expect((await post("/api/pull-requests/refresh", { repoId: "nope" })).status).toBe(404);

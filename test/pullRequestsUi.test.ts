@@ -1,9 +1,9 @@
 // What the Pull requests view puts on screen for one entry. Rendered without a DOM: the list and its entries use no
 // hooks, so the vnode helpers can expand them.
 import { expect, test } from "bun:test";
-import { h } from "preact";
+import { type ComponentChildren, h } from "preact";
 import type { PullRequest } from "../src/shared/types.ts";
-import { PullRequestList } from "../src/ui/pullRequests.tsx";
+import { CardPullRequest, DetailPullRequest, PullRequestList } from "../src/ui/pullRequests.tsx";
 import type { PrEntry, PrGroups } from "../src/ui/pullRequestsState.ts";
 import { byTag, elements, textOf } from "./vnode.ts";
 
@@ -19,6 +19,7 @@ const pr = (patch: Partial<PullRequest> & { number: number }): PullRequest => ({
   review: "none",
   reviewRequestedFromViewer: false,
   checks: "none",
+  mergeable: "mergeable",
   ...patch,
 });
 
@@ -70,3 +71,67 @@ test("the two groups are headed and counted, and an empty group is left out", ()
   expect(byTag(render({ open: [entry(pr({ number: 1 }))], closed: [] }), "h2").map((el) => textOf(el.props.children))).toEqual(["Open1"]);
   expect(byTag(render({ open: [], closed: [] }), "h2")).toEqual([]);
 });
+
+// ---- readiness on the card and in the header ----
+
+const FETCHED = new Date(Date.now() - 3 * 60_000).toISOString();
+const card = (p: PullRequest) => CardPullRequest({ pr: p, repoName: "alpha-infra", fetchedAt: FETCHED });
+const readinessOf = (tree: ComponentChildren) => elements(tree).find((el) => String(el.props.class ?? "").includes("card-pr-ready"));
+
+test("every readiness reads as text in its role, never info, with what it waits for and when it was fetched", () => {
+  const cases: [Partial<PullRequest>, string, string][] = [
+    [{ checks: "passing" }, "ready", "success"],
+    [{ checks: "none" }, "ready", "success"],
+    [{ checks: "failing" }, "checks failing", "danger"],
+    [{ mergeable: "conflicting" }, "conflicts", "warning"],
+    [{ checks: "pending" }, "checks running", "branch"],
+    [{ mergeable: "unknown" }, "mergeability unknown", "branch"],
+  ];
+  for (const [patch, word, role] of cases) {
+    const tree = card(pr({ number: 125, ...patch }));
+    const ready = readinessOf(tree);
+    expect(textOf(ready)).toContain(word);
+    expect(String(ready?.props.class).split(" ")).toContain(role);
+    expect(String(ready?.props.class)).not.toContain("info");
+    const link = byTag(tree, "a")[0];
+    expect(String(link.props["aria-label"])).toContain(word === "ready" ? ", ready," : `not ready: ${word}`);
+    expect(String(link.props.title)).toContain("list fetched 3m ago");
+  }
+  // A draft's state already says it; merged and closed have no readiness.
+  expect(readinessOf(card(pr({ number: 1, draft: true })))).toBeUndefined();
+  expect(byTag(card(pr({ number: 1, draft: true })), "a")[0].props["aria-label"]).toContain("not ready: draft");
+  expect(readinessOf(card(pr({ number: 2, state: "merged", mergedAt: FETCHED })))).toBeUndefined();
+});
+
+const chipsOf = (tree: ComponentChildren) => elements(tree).filter((el) => String(el.props.class ?? "").includes("pr-chip"));
+
+test("the header shows a conflicting pull request as conflicting and not ready, with the fetch time", () => {
+  const tree = DetailPullRequest({ info: { pr: pr({ number: 125, checks: "passing", mergeable: "conflicting" }), fetchedAt: FETCHED } });
+  const chips = chipsOf(tree);
+  const last = chips[chips.length - 1];
+  expect(textOf(last)).toContain("⚠ conflicts");
+  expect(String(last.props.class)).toContain("warning");
+  expect(String(last.props.title)).toContain("Not ready: it conflicts with its base branch");
+  expect(String(last.props.title)).toContain("list fetched 3m ago");
+  // The readiness already says it: no second conflicts chip.
+  expect(chips.filter((c) => /conflict/i.test(textOf(c)))).toHaveLength(1);
+  // A draft that conflicts says both.
+  const draft = chipsOf(DetailPullRequest({ info: { pr: pr({ number: 126, draft: true, mergeable: "conflicting" }), fetchedAt: FETCHED } }));
+  expect(draft.map((c) => textOf(c))).toEqual([expect.stringContaining("Draft"), expect.stringContaining("Conflicts"), expect.stringContaining("draft")]);
+});
+
+test("the header shows a ready pull request as ready, in the card's words and role", () => {
+  const tree = DetailPullRequest({ info: { pr: pr({ number: 125, checks: "passing", review: "approved" }), fetchedAt: FETCHED } });
+  const chips = chipsOf(tree);
+  const last = chips[chips.length - 1];
+  expect(textOf(last)).toContain("✓ ready");
+  expect(String(last.props.class)).toContain("success");
+  expect(textOf(classed(last))).toContain("Ready: all checks pass");
+  // Merged: no readiness at all.
+  expect(chipsOf(DetailPullRequest({ info: { pr: pr({ number: 9, state: "merged", mergedAt: FETCHED }) } })).map((c) => c.props.title)).toEqual(["Merged"]);
+});
+
+/** The visually hidden part of a chip: what a screen reader reads. */
+function classed(tree: ComponentChildren) {
+  return elements(tree).filter((el) => String(el.props.class ?? "") === "visually-hidden");
+}

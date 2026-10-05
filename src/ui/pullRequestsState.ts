@@ -1,7 +1,9 @@
 // The Pull requests view's pure parts: filters ↔ URL, de-duplicating repositories that share a GitHub repository,
 // grouping into open and recently closed, sorting, and the counts the overview and the board header show.
 // Free of DOM access at import time, so it can be unit-tested.
-import type { PullRequest, PullRequestsResponse, RepoPullRequests } from "../shared/types.ts";
+import { linkedPullRequest } from "../shared/pullRequestLink.ts";
+import { pullRequestReadiness } from "../shared/pullRequestReadiness.ts";
+import type { ChangeSnapshot, PullRequest, PullRequestsResponse, RepoPullRequests } from "../shared/types.ts";
 
 export type PrStateFilter = "open" | "closed" | "all";
 
@@ -189,9 +191,81 @@ export function shownLists(response: PullRequestsResponse | undefined, repoId?: 
   return repoId && response ? { ...response, repos: response.repos.filter((r) => r.repoId === repoId) } : response;
 }
 
+/** How soon the board's watch asks again while a watched pull request is still being computed on GitHub. */
+export const WATCH_IN_PROGRESS_MS = 60_000;
+/** How soon it asks again while every watched pull request only waits (a draft, failing checks, a conflict). */
+export const WATCH_WAITING_MS = 5 * 60_000;
+
+export interface WatchPlan {
+  /** The repositories of the cards whose linked pull request is open and not ready, in the cards' order. */
+  repoIds: string[];
+  /** When the next watch refresh is due; may lie in the past. */
+  dueAt: number;
+}
+
+/**
+ * The board's pull-request watch (openspec/specs/pull-requests: "The board watches pull requests that are not ready"):
+ * which repositories to refresh and when, or undefined when no card on the board links an open pull request that is
+ * not ready. Pure: the board re-derives it from every answer, so "ready ends the watch" needs nothing more. A list that
+ * is unavailable links nothing, so it is never watched. The schedule counts from the last refresh that settled in this
+ * page, else from when the watched lists were last fetched, else from now.
+ */
+export function watchPlan(
+  cards: readonly Pick<ChangeSnapshot, "repoId" | "name" | "branchMatch" | "created">[],
+  lists: readonly RepoPullRequests[] | undefined,
+  now: number,
+  lastSettledAt: number | undefined,
+): WatchPlan | undefined {
+  const repoIds: string[] = [];
+  let inProgress = false;
+  for (const card of cards) {
+    const readiness = pullRequestReadiness(linkedPullRequest(card, lists));
+    if (readiness?.ready !== false) continue;
+    if (!repoIds.includes(card.repoId)) repoIds.push(card.repoId);
+    if (readiness.inProgress) inProgress = true;
+  }
+  if (repoIds.length === 0) return undefined;
+  let fetched: number | undefined;
+  for (const list of lists ?? []) {
+    if (!repoIds.includes(list.repoId) || !list.fetchedAt) continue;
+    const at = Date.parse(list.fetchedAt);
+    if (!Number.isNaN(at) && (fetched === undefined || at > fetched)) fetched = at;
+  }
+  const from = lastSettledAt ?? fetched ?? now;
+  return { repoIds, dueAt: from + (inProgress ? WATCH_IN_PROGRESS_MS : WATCH_WAITING_MS) };
+}
+
+/**
+ * Arms one timer for a watch plan and returns what disarms it. Nothing is armed without a plan or while the tab is
+ * hidden; the board calls this from an effect, so leaving the board, hiding the tab or a new answer disarms the old
+ * timer before anything else can happen. Timers are passed in so the schedule is tested without waiting.
+ */
+export function armWatch(io: {
+  plan: WatchPlan | undefined;
+  hidden: boolean;
+  now: number;
+  watch(repoIds: string[]): void;
+  setTimer(run: () => void, ms: number): unknown;
+  clearTimer(handle: unknown): void;
+}): () => void {
+  const { plan } = io;
+  if (!plan || io.hidden) return () => {};
+  const handle = io.setTimer(() => io.watch(plan.repoIds), Math.max(0, plan.dueAt - io.now));
+  return () => io.clearTimer(handle);
+}
+
+type RefreshOptions = { repoId?: string; repoIds?: string[]; force?: boolean };
+
 export interface PrRefresher {
   /** Asks the server now; joins the refresh in flight instead of starting a second one. */
   refresh(options?: { repoId?: string; force?: boolean }): Promise<void>;
+  /**
+   * The board's watch: a forced refresh of exactly these repositories. It joins nothing — while any refresh is in flight
+   * it starts nothing and returns undefined — and synthetic lists (the demo) are never watched.
+   */
+  watch(repoIds: string[]): Promise<void> | undefined;
+  /** When the last refresh of this page settled, answered or failed; undefined before the first. */
+  lastSettledAt(): number | undefined;
   /**
    * What opening a view that shows pull requests does: refresh when a shown list is older than the freshness window or
    * was never fetched, else nothing. Returns the refresh it started or joined.
@@ -211,25 +285,29 @@ export interface PrRefresher {
 export function createPrRefresher(io: {
   /** The lists the UI holds right now. */
   current(): PullRequestsResponse | undefined;
-  fetch(options: { repoId?: string; force?: boolean }): Promise<PullRequestsResponse>;
+  fetch(options: RefreshOptions): Promise<PullRequestsResponse>;
   onStart(running: string | "all"): void;
   onAnswer(answer: PullRequestsResponse): void;
   onError(message: string): void;
   onSettled(): void;
   freshnessMs?: number;
-  /** The lists are made up (the demo): a board's opening then asks for nothing. */
+  /** The lists are made up (the demo): a board's opening then asks for nothing, and a board never watches them. */
   synthetic?: boolean;
+  now?: () => number;
 }): PrRefresher {
   let inFlight: Promise<void> | undefined;
-  const refresh = (options: { repoId?: string; force?: boolean } = {}): Promise<void> => {
+  let settledAt: number | undefined;
+  const clock = io.now ?? Date.now;
+  const refresh = (options: RefreshOptions = {}): Promise<void> => {
     if (inFlight) return inFlight;
-    io.onStart(options.repoId ?? "all");
+    io.onStart(options.repoId ?? (options.repoIds?.length === 1 ? options.repoIds[0] : "all"));
     const done = io
       .fetch(options)
       .then(io.onAnswer)
       .catch((err) => io.onError(err instanceof Error ? err.message : String(err)))
       .finally(() => {
         inFlight = undefined;
+        settledAt = clock();
         io.onSettled();
       });
     inFlight = done;
@@ -244,5 +322,7 @@ export function createPrRefresher(io: {
     refresh,
     refreshIfStale,
     openBoard: (repoId, now) => (io.synthetic ? undefined : refreshIfStale(repoId, now)),
+    watch: (repoIds) => (io.synthetic || inFlight || repoIds.length === 0 ? undefined : refresh({ repoIds, force: true })),
+    lastSettledAt: () => settledAt,
   };
 }
