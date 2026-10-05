@@ -227,7 +227,7 @@ Discovery SHALL determine the `origin` remote URL of every candidate and every c
 
 ### Requirement: Agent session settings are part of the configuration
 
-The configuration SHALL contain an `agentSessions` object with `enabled` (default `false`), `agents` (at least one profile; default: the Claude Code profile and no other preset) and `defaultAgent` (the id of one of them), and each repository entry MAY carry `agent: { enabled, agentId }` (default absent, meaning included and using the default agent; `enabled: false` excludes the repository). A profile has `id`, `name`, `command` (a non-empty list of arguments whose first element is the executable and in which `{prompt}` is the only placeholder), `prompts` (optionally one template each for `draft`, `implement`, `validate`, `archive`, each containing `{change}` as its only placeholder, and optionally `integrate`, which MUST NOT contain any placeholder at all because the repository folder is the agent's working directory; a profile without `integrate` uses the agent-neutral default Integrate prompt), and optionally `resumeCommand` and `unsetEnv`. A configuration without these fields, or carrying settings of an earlier version of this feature, MUST load: missing fields take their defaults and unknown fields are dropped. Validation MUST reject duplicate agent ids, a `defaultAgent` or a repository `agentId` that names no configured agent, an empty command, unknown placeholders, a starter prompt without `{change}`, an `integrate` prompt containing any placeholder, and any command, resume command or prompt containing a permission-bypass mode or flag.
+The configuration SHALL contain an `agentSessions` object with `enabled` (default `false`), `agents` (at least one profile; default: the Claude Code profile and no other preset) and `defaultAgent` (the id of one of them), and each repository entry MAY carry `agent: { enabled, agentId, autoMergeDocs }` (default absent, meaning included, using the default agent and not auto-merging; `enabled: false` excludes the repository; `autoMergeDocs` is an optional boolean, absent meaning `false`, that lets Ship ask for auto-merge of a pull request changing only OpenSpec documents, as the `agent-sessions` capability specifies). A profile has `id`, `name`, `command` (a non-empty list of arguments whose first element is the executable and in which `{prompt}` is the only placeholder), `prompts` (optionally one template each for `draft`, `implement`, `validate`, `archive`, each containing `{change}` as its only placeholder, and optionally `integrate`, which MUST NOT contain any placeholder at all because the repository folder is the agent's working directory; a profile without `integrate` uses the agent-neutral default Integrate prompt), and optionally `resumeCommand` and `unsetEnv`. A configuration without these fields, or carrying settings of an earlier version of this feature, MUST load: missing fields take their defaults and unknown fields are dropped. Validation MUST reject duplicate agent ids, a `defaultAgent` or a repository `agentId` that names no configured agent, a repository `autoMergeDocs` that is not a boolean, an empty command, unknown placeholders, a starter prompt without `{change}`, an `integrate` prompt containing any placeholder, and any command, resume command or prompt containing a permission-bypass mode or flag.
 
 #### Scenario: Older configuration loads
 - **WHEN** the stored configuration has no `agentSessions` key, or has one written by the earlier transcript-based version
@@ -256,6 +256,14 @@ The configuration SHALL contain an `agentSessions` object with `enabled` (defaul
 #### Scenario: A saved Integrate prompt is kept
 - **WHEN** a configuration whose Claude Code profile carries an `integrate` prompt is loaded
 - **THEN** that prompt is kept as it is and used by Integrate
+
+#### Scenario: Auto-merge is off unless set
+- **WHEN** a configuration whose repositories carry `agent: { enabled: true }` or no `agent` at all is loaded
+- **THEN** it loads unchanged, no `autoMergeDocs` is added to it, and Ship asks for no auto-merge in any of those repositories
+
+#### Scenario: Auto-merge setting that is not a boolean
+- **WHEN** a configuration is saved with a repository's `agent.autoMergeDocs` set to `"yes"`
+- **THEN** it is rejected and the stored configuration is unchanged
 
 ### Requirement: Settings expose agent sessions with their risks stated
 
