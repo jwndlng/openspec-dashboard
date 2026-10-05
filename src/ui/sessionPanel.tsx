@@ -8,7 +8,7 @@ import { SHIPPABLE_WORK, type ChangeSession, type Session, type SessionAction, t
 import { api, type TerminalMessage } from "./api.ts";
 import { cdCommand } from "./format.ts";
 import { NOT_SUBMITTED_NOTICE, shortcutHint, shortcutMessage, visibleShortcuts } from "./quickReplies.ts";
-import { AUTO_MERGE_NOTICE, nextStepFor, reportShip, resolvable, sessionBadge, startersFor, workBadge, worktreeOfSession } from "./sessionState.ts";
+import { autoMergeNotice, nextStepFor, reportShip, resolvable, sessionBadge, startersFor, workBadge, worktreeOfSession } from "./sessionState.ts";
 import { ConflictBadge, SessionBadgeView, SessionControls, useSessionUi } from "./sessions.tsx";
 
 export function Copy({ text, label }: { text: string; label: string }) {
@@ -64,7 +64,7 @@ export function TerminalView({ sessionId, running, onExit }: { sessionId: string
   // it. The server answers this socket with `submitted`; until then the activated shortcut stays inert.
   const pending = useRef<string[]>([]);
   // Text went into this terminal on the user's behalf (a next step): put the keyboard back where the agent is.
-  const { config, focusTick, unsentId, reportUnsent, autoMergeId, reportAutoMerge } = useSessionUi();
+  const { config, focusTick, unsentId, reportUnsent, autoMerge, reportAutoMerge } = useSessionUi();
   // The shortcuts are the user's, the same for every session; an empty list means the row is not shown at all.
   const shortcuts = visibleShortcuts(config, running, status === "open");
   useEffect(() => {
@@ -102,10 +102,10 @@ export function TerminalView({ sessionId, running, onExit }: { sessionId: string
     return () => clearTimeout(timer);
   }, [unsentId, sessionId, reportUnsent]);
   useEffect(() => {
-    if (autoMergeId !== sessionId) return;
+    if (autoMerge?.id !== sessionId) return;
     const timer = setTimeout(() => reportAutoMerge(undefined), UNSENT_NOTICE_MS);
     return () => clearTimeout(timer);
-  }, [autoMergeId, sessionId, reportAutoMerge]);
+  }, [autoMerge, sessionId, reportAutoMerge]);
 
   useEffect(() => {
     const el = host.current;
@@ -170,9 +170,9 @@ export function TerminalView({ sessionId, running, onExit }: { sessionId: string
           </button>
         </div>
       )}
-      {autoMergeId === sessionId && (
+      {autoMerge?.id === sessionId && (
         <div class="session-unsent notice" role="status">
-          <span>{AUTO_MERGE_NOTICE}</span>
+          <span>{autoMergeNotice(autoMerge.action)}</span>
           <button type="button" class="btn sm ghost" aria-label="Dismiss" onClick={() => reportAutoMerge(undefined)}>
             ×
           </button>

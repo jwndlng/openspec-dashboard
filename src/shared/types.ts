@@ -306,8 +306,13 @@ export type PromptKey = SessionAction | "ship" | "integrate" | "resolveConflicts
  *  was submitted. `false` means the agent of a running session did not show the typed prompt (it may be showing a
  *  menu), so Enter was not pressed and nothing was confirmed. */
 export type PromptResult = Session & { submitted: boolean };
-/** What Ship answers: the same, plus whether the prompt carried `AUTO_MERGE_DOCS_INSTRUCTION`. */
-export type ShipResult = PromptResult & { autoMerge: boolean };
+/** What Ship and a starter's prompt sent into a running session answer: the same, plus whether the prompt carried an
+ *  auto-merge instruction — `AUTO_MERGE_DOCS_INSTRUCTION` for Ship, `AUTO_MERGE_DOCS_ARCHIVE_INSTRUCTION` for Archive. */
+export type AutoMergePromptResult = PromptResult & { autoMerge: boolean };
+export type ShipResult = AutoMergePromptResult;
+/** What starting a session answers: the session, and whether its opening prompt carried
+ *  `AUTO_MERGE_DOCS_ARCHIVE_INSTRUCTION`. Always `false` for a session that was already open and was returned. */
+export type StartResult = Session & { autoMerge: boolean };
 
 export const DEFAULT_SHIP_PROMPT =
   "Ship the work in this worktree: commit everything that belongs to it with a commit message that follows this repository's conventions, push the branch, and open a pull request against the default branch if there is none yet. Do not merge it. Tell me the pull request URL.";
@@ -323,6 +328,13 @@ export const CONVENTIONAL_COMMITS_SHIP_SENTENCE =
  *  it is the one instruction that loosens review. */
 export const AUTO_MERGE_DOCS_INSTRUCTION =
   "This project lets a pull request that changes only files under openspec/ merge without review. So, in place of any instruction above not to merge it: once the pull request is open, check that every file it changes is under openspec/, and if so enable auto-merge on it so that it merges when its required checks pass; if any file is outside openspec/, leave it unmerged and tell me why. Tell me whether auto-merge was enabled.";
+
+/** Appended to the Archive prompt, after the profile's additional instructions, only when the project allows docs-only
+ *  pull requests to merge and the session's worktree holds nothing outside `openspec/` (archive-auto-merge-docs design
+ *  D2). Unlike Ship's it presumes no pull request: the default Archive prompts open none, so it applies only if the
+ *  agent opens one anyway, and says not to open one for its sake. One line, agent-neutral, not editable. */
+export const AUTO_MERGE_DOCS_ARCHIVE_INSTRUCTION =
+  "This project lets a pull request that changes only files under openspec/ merge without review. Do not open a pull request just because of this. But if you open one for this work, then, in place of any instruction above not to merge it: once it is open, check that every file it changes is under openspec/, and if so enable auto-merge on it so that it merges when its required checks pass; if any file is outside openspec/, leave it unmerged and tell me why. If you opened a pull request, tell me whether auto-merge was enabled.";
 
 /** Agent-neutral like Ship's, and deliberately silent about method: rebase or merge is the repository's convention,
  *  which the agent knows and the dashboard does not. */
