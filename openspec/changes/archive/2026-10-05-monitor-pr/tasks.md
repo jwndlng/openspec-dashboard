@@ -32,4 +32,4 @@
 
 - [x] 6.1 Update `CLAUDE.md` invariants 1 and 4, `README.md`, and the Pull requests and board sections of `src/ui/helpContent.tsx` to describe readiness, the working state and the board's watch as the one timed pull-request query; verify by reading the changed paragraphs against the delta specs
 - [x] 6.2 Run `openspec validate monitor-pr --strict` and `bun run check`, and verify both pass
-- [~] 6.3 Build `dist/openspec-dashboard` with `bun run build`, open a board against a repository with an open pull request, and verify the card shows its readiness and that a hidden tab starts no `gh` process
+- [x] 6.3 Build `dist/openspec-dashboard` with `bun run build`, open a board against a repository with an open pull request, and verify the card shows its readiness and that a hidden tab starts no `gh` process
