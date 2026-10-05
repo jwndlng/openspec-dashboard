@@ -92,11 +92,14 @@ dashboard; both are built in and work offline.
   last 7 days, with state, review decision, checks and a "review requested from you" marker; filter by repository,
   state or what awaits your review. Each repository's open count also shows on Projects, and its board header opens
   that repository's list. A card whose change's branch is exactly a pull request's head branch shows `PR #<number>`
-  with its state, linking to it on GitHub, and the change's detail header shows its title, state, review decision and
-  checks; a change on an off-convention branch simply shows none. It reads them with your own
-  [GitHub CLI](https://cli.github.com) (`gh pr list`, `gh api user` — nothing else, and nothing is ever changed on
-  GitHub), and only when you open the view, a repository's dialog or a board with a list older than five minutes, or
-  activate **Refresh** — never on a timer, during a scan or from Projects. Without `gh`, without being signed in, or for a
+  with its state and, while it is open, whether it is **ready** (every check green, no merge conflict) or why not, linking
+  to it on GitHub; until it is ready the card keeps its working tint. The change's detail header shows its title,
+  state, review decision, checks, conflicts and readiness; a change on an off-convention branch simply shows none. It
+  reads them with your own [GitHub CLI](https://cli.github.com) (`gh pr list`, `gh api user` — nothing else, and nothing
+  is ever changed on GitHub), and only when you open the view, a repository's dialog or a board with a list older than
+  five minutes, or activate **Refresh** — and, as the one timed case, while an open board in a visible tab shows a pull
+  request that is not ready: then it re-reads just those repositories every minute while checks run, every five minutes
+  otherwise. Never during a scan or from Projects. Without `gh`, without being signed in, or for a
   repository that is not on `github.com`, it simply says so. ([pull-requests](openspec/specs/pull-requests/spec.md))
 - **New change**: create and stage `openspec/changes/<name>/` from a repository's board, or from the combined
   board with a project dropdown, optionally with a prompt.
@@ -164,8 +167,9 @@ dashboard; both are built in and work offline.
 - It reads repositories with read-only git commands. Scanning, polling and discovery never write anything or contact
   a remote.
 - It reaches the network in two places, both on something you do: **Pull**, using git's own credentials, and the
-  **Pull requests** query, using your `gh` sign-in — when you click Refresh, or open a view that shows pull requests
-  (including a board) with a list older than five minutes. Neither ever sees, stores or asks for a credential, and the
+  **Pull requests** query, using your `gh` sign-in — when you click Refresh, open a view that shows pull requests
+  (including a board) with a list older than five minutes, or keep a board open in a visible tab while one of its
+  cards' pull requests is not ready (at most once a minute, only for those repositories). Neither ever sees, stores or asks for a credential, and the
   pull-request query runs `gh` outside every repository, writes nothing and changes nothing on GitHub.
 - It writes to a repository only when you click something: **Pull** (using git's own credentials) and, when you confirm **Resolve and pull**, removing the change files it created here that the incoming
   commits already contain — a copy of anything that differs is kept under `~/.openspec-dashboard/` first; **New

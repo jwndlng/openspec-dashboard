@@ -28,7 +28,7 @@ const CONCURRENCY = 3;
 const CACHE_VERSION = 1;
 
 /** Only the documented `--json` fields; anything else is parsed defensively or ignored. */
-const FIELDS = "number,title,url,author,headRefName,baseRefName,isDraft,state,createdAt,mergedAt,closedAt,reviewDecision,reviewRequests,statusCheckRollup";
+const FIELDS = "number,title,url,author,headRefName,baseRefName,isDraft,state,createdAt,mergedAt,closedAt,reviewDecision,reviewRequests,statusCheckRollup,mergeable";
 
 /** A tracked repository as the store sees it: never a path from a request — ids and paths come from the config. */
 export interface RepoTarget {
@@ -148,6 +148,12 @@ const str = (value: unknown): string => (typeof value === "string" ? value : "")
 
 const REVIEW: Record<string, PullRequest["review"]> = { APPROVED: "approved", CHANGES_REQUESTED: "changes_requested", REVIEW_REQUIRED: "review_required" };
 const STATE: Record<string, PullRequest["state"]> = { OPEN: "open", MERGED: "merged", CLOSED: "closed" };
+const MERGEABLE: Record<string, NonNullable<PullRequest["mergeable"]>> = { MERGEABLE: "mergeable", CONFLICTING: "conflicting" };
+
+/** GitHub's `mergeable`; anything missing or unrecognised is `unknown`, so drift never looks mergeable. */
+export function parseMergeable(value: unknown): NonNullable<PullRequest["mergeable"]> {
+  return MERGEABLE[str(value).toUpperCase()] ?? "unknown";
+}
 const FAILING_CONCLUSIONS = new Set(["FAILURE", "ERROR", "CANCELLED", "TIMED_OUT", "ACTION_REQUIRED", "STARTUP_FAILURE"]);
 const FAILING_STATES = new Set(["FAILURE", "ERROR"]);
 const PENDING_STATES = new Set(["PENDING", "EXPECTED"]);
@@ -205,6 +211,7 @@ export function parsePullRequest(raw: unknown, viewer?: string): PullRequest | u
     review: REVIEW[str(entry.reviewDecision).toUpperCase()] ?? "none",
     reviewRequestedFromViewer: requestedFromViewer,
     checks: summarizeChecks(entry.statusCheckRollup),
+    mergeable: parseMergeable(entry.mergeable),
   };
 }
 
@@ -230,6 +237,8 @@ function newestFirst(a: PullRequest, b: PullRequest): number {
 export interface PullRequestsOptions {
   /** Only this repository (and the enabled repositories sharing its GitHub repository). */
   repoId?: string;
+  /** Only these repositories (and the enabled repositories sharing their GitHub repositories): the board's watch. */
+  repoIds?: string[];
   /** Query regardless of how fresh the cached list is. */
   force?: boolean;
 }
@@ -270,7 +279,9 @@ export class PullRequests {
       this.viewer = typeof parsed.viewer === "string" ? parsed.viewer : undefined;
       for (const [repo, entry] of Object.entries(parsed.repos)) {
         if (!Array.isArray(entry?.pullRequests)) continue;
-        this.cache.set(repo, { fetchedAt: entry.fetchedAt, pullRequests: entry.pullRequests, truncated: entry.truncated });
+        // A cache written before mergeability was read lacks it: still version 1, read as `unknown` until refreshed.
+        const pullRequests = entry.pullRequests.map((pr) => (pr && typeof pr === "object" ? { ...pr, mergeable: parseMergeable(pr.mergeable) } : pr));
+        this.cache.set(repo, { fetchedAt: entry.fetchedAt, pullRequests, truncated: entry.truncated });
       }
     } catch {
       // No cache, or one this version cannot read: nothing has been fetched as far as we are concerned.
@@ -340,6 +351,7 @@ export class PullRequests {
 
       const wanted = [...byGithub.entries()]
         .filter(([, group]) => options.repoId === undefined || group.some((t) => t.id === options.repoId))
+        .filter(([, group]) => options.repoIds === undefined || group.some((t) => options.repoIds?.includes(t.id)))
         .filter(([github]) => options.force === true || !this.isFresh(github))
         .map(([github]) => github);
 

@@ -97,8 +97,10 @@ bun test test/scanner.test.ts   # a single test file
    thing that leaves this machine, and it is not a write: it runs the GitHub CLI's read-only `gh pr list` and
    `gh api user` and no other subcommand, without a shell, with its working directory in the dashboard home and the
    repository named with `--repo owner/name`, so no `gh` process ever runs inside a tracked repository, runs no git and
-   changes nothing on GitHub. It runs only when the user opens or refreshes a view that shows pull requests — never on a timer,
-   during a scan or from the projects overview (`test/pullRequestsApi.test.ts` proves a scan, discovery and both
+   changes nothing on GitHub. It runs only when the user opens or refreshes a view that shows pull requests, or as an open
+   board's **pull-request watch** (while the board is open in a visible tab and one of its cards links an open pull
+   request that is not ready: only those repositories, at most once a minute, `src/ui/pullRequestsState.ts`
+   `watchPlan`) — never on any other timer, during a scan or from the projects overview (`test/pullRequestsApi.test.ts` proves a scan, discovery and both
    endpoints' reads start no `gh`, and that a full refresh leaves every fixture repository byte-for-byte unchanged).
    Adding a path or a subcommand means changing that spec first.
 2. **Loopback only.** The server binds `127.0.0.1`; there is no auth because nothing else can reach it.
@@ -115,7 +117,9 @@ bun test test/scanner.test.ts   # a single test file
    two places, both on the user's own action: when git does, inside the pull action of invariant 1, and when `gh` does,
    inside the pull-request query of invariant 1 (`src/server/pullRequests.ts`) — the user activated Refresh, or opened
    the Pull requests view, a repository's pull-request dialog or a Kanban board (whose cards link to their change's pull
-   request) with a list older than five minutes, at most one refresh at a time. Both use the
+   request) with a list older than five minutes, or an open, visible board watches its cards' pull requests that are not
+   ready yet (every minute while checks run or mergeability is unknown, every five minutes otherwise, only those
+   repositories, never in the demo), at most one refresh at a time. Both use the
    tool's own credentials: the dashboard never sees, stores or asks for them, never prompts, and masks credentials in
    any error text it passes on. Without `gh`, or without it being signed in, the feature reports itself unavailable and
    nothing else changes.

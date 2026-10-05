@@ -1,5 +1,6 @@
 // Pure helpers for the agent-session UI; free of DOM access at import time so they can be unit-tested.
-import { availableActions, isChangeless, OPEN_SESSION_STATES, repoAgentEnabled, SHIPPABLE_WORK, type AgentAvailability, type AgentProfile, type ProjectConsoleLike, type ChangeSnapshot, type Config, type RepoSnapshot, type ChangeSession, changeSessions, type ConsoleSession, type Session, type SessionAction, type SessionWorktree, type ShipResult, type WorkStatus } from "../shared/types.ts";
+import { pullRequestReadiness } from "../shared/pullRequestReadiness.ts";
+import { availableActions, isChangeless, OPEN_SESSION_STATES, repoAgentEnabled, SHIPPABLE_WORK, type AgentAvailability, type AgentProfile, type ProjectConsoleLike, type ChangeSnapshot, type Config, type RepoSnapshot, type ChangeSession, changeSessions, type ConsoleSession, type PullRequest, type Session, type SessionAction, type SessionWorktree, type ShipResult, type WorkStatus } from "../shared/types.ts";
 
 /** Session starters are shown when the feature is on, for every tracked repository that has not been switched off. */
 export function sessionsEnabledFor(config: Config | null, repoId: string): boolean {
@@ -64,6 +65,31 @@ export function cardIsLive(
   now = Date.now(),
 ): boolean {
   return cardSessionControls(config, sessions, card).shown.some((s) => sessionBadge(s, now).live === true);
+}
+
+/** How a card shows that its change is not finished: the working tint, and whether its name sweeps. */
+export interface CardWorkingState {
+  tinted: boolean;
+  sweeping: boolean;
+}
+
+/**
+ * A card's working state (kanban-board: "A card keeps its working state until its pull request is ready"): tinted
+ * while an agent works on the change (`cardIsLive`) or while its linked pull request is open and not ready; its name
+ * sweeps while the agent works or while that pull request is still being computed on GitHub (checks running,
+ * mergeability unknown) — a pull request that only waits keeps the tint without motion. Display only: the starters,
+ * the session badge, the column and the progress are decided elsewhere and never from this.
+ */
+export function cardWorkingState(
+  config: Config | null,
+  sessions: ChangeSession[],
+  card: Pick<ChangeSnapshot, "repoId" | "name" | "archived" | "artifacts" | "stage" | "subState"> & { pullRequest?: PullRequest },
+  now = Date.now(),
+): CardWorkingState {
+  const live = cardIsLive(config, sessions, card, now);
+  const readiness = pullRequestReadiness(card.pullRequest);
+  const waiting = readiness?.ready === false;
+  return { tinted: live || waiting, sweeping: live || (waiting && readiness.inProgress) };
 }
 
 /** Where a starter is rendered: in a card's footer on a board, or in a change's Console tab. */

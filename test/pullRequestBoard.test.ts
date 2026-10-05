@@ -4,7 +4,12 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { ChangeSnapshot, PullRequest, PullRequestsResponse, RepoPullRequests, RepoSnapshot } from "../src/shared/types.ts";
 import { boardCards, type Card, ChangeCard } from "../src/ui/kanban.tsx";
-import { createPrRefresher, FRESHNESS_MS } from "../src/ui/pullRequestsState.ts";
+import { armWatch, createPrRefresher, FRESHNESS_MS, watchPlan } from "../src/ui/pullRequestsState.ts";
+import { defaultConfig, newRepoConfig } from "../src/server/config.ts";
+import type { ChangeSession } from "../src/shared/types.ts";
+import { cardProgress } from "../src/ui/kanban.tsx";
+import { cardSessionControls, cardWorkingState, sessionBadge } from "../src/ui/sessionState.ts";
+import { fakeProfile } from "./sessionHelpers.ts";
 import { byTag, elements, textOf } from "./vnode.ts";
 
 const NOW = Date.parse("2026-03-10T12:00:00Z");
@@ -23,6 +28,7 @@ const pr = (patch: Partial<PullRequest> & { number: number }): PullRequest => ({
   review: "none",
   reviewRequestedFromViewer: false,
   checks: "none",
+  mergeable: "mergeable",
   ...patch,
 });
 
@@ -138,10 +144,19 @@ test("the board's opening is the only place that calls openBoard, once, in an ef
   expect(kanban).not.toMatch(/setInterval/);
 });
 
+test("the board arms its watch in an effect whose cleanup disarms it, and nothing else in the UI watches", () => {
+  const kanban = readFileSync(join(UI, "kanban.tsx"), "utf8");
+  // The effect returns armWatch's disarm, so leaving the board, hiding the tab or a new answer clears the timer.
+  expect(kanban).toMatch(/useEffect\(\s*\(\) => armWatch\(\{ plan: watchPlan\(cards, prs\.data\?\.repos, Date\.now\(\), lastSettledAt\(\)\), hidden,/);
+  expect(kanban).toMatch(/visibilitychange/);
+  const callers = sources().flatMap(({ file, text }) => [...text.matchAll(/\barmWatch\(|\bwatch\(\s*plan/g)].map(() => file));
+  expect(callers.filter((f) => f !== "pullRequestsState.ts")).toEqual(["kanban.tsx"]);
+});
+
 test("the projects overview and the scan path never start a pull-request refresh", () => {
-  for (const file of ["overview.tsx", "overviewState.ts", "autoRefresh.ts", "app.tsx"]) {
+  for (const file of ["overview.tsx", "overviewState.ts", "autoRefresh.ts", "app.tsx", "changeDetail.tsx"]) {
     const text = readFileSync(join(UI, file), "utf8");
-    expect({ file, refresh: /refreshIfStale|openBoard|refreshPullRequests|\.refresh\(/.test(text) }).toEqual({ file, refresh: false });
+    expect({ file, refresh: /refreshIfStale|openBoard|refreshPullRequests|\.refresh\(|armWatch|\.watch\(/.test(text) }).toEqual({ file, refresh: false });
   }
 });
 
@@ -172,8 +187,8 @@ test("a card with an open pull request links to it in a new tab, saying its numb
   expect(link?.props.href).toBe("https://github.com/acme/alpha-infra/pull/125");
   expect(link?.props.target).toBe("_blank");
   expect(link?.props.rel).toBe("noopener noreferrer");
-  expect(textOf(link).replace(/\s+/g, " ")).toBe("PR #125○ open");
-  expect(link?.props["aria-label"]).toBe("Pull request #125 of alpha-infra, open, opens on GitHub");
+  expect(textOf(link).replace(/\s+/g, " ")).toBe("PR #125○ open· ✓ ready");
+  expect(link?.props["aria-label"]).toBe("Pull request #125 of alpha-infra, open, ready, opens on GitHub");
   expect(String(link?.props.title)).toContain("open on GitHub");
   expect(String(link?.props.class)).not.toContain("settled");
   // On the footer's status line, before the session controls and Show details.
@@ -183,7 +198,7 @@ test("a card with an open pull request links to it in a new tab, saying its numb
 
 test("a draft is read as a draft, by name and number", () => {
   const link = prLink(cardOf(change(), { repos: [list("alpha", ago(MIN), [pr({ number: 126, draft: true })])] }));
-  expect(link?.props["aria-label"]).toBe("Pull request #126 of alpha-infra, draft, opens on GitHub");
+  expect(link?.props["aria-label"]).toBe("Pull request #126 of alpha-infra, draft, not ready: draft, opens on GitHub");
   expect(textOf(link)).toContain("draft");
 });
 
@@ -238,6 +253,142 @@ test("pull requests arriving later keep the cards' order and add the link in pla
   expect(after.map((c) => c.name)).toEqual(before.map((c) => c.name));
   expect(after.map((c) => c.column)).toEqual(before.map((c) => c.column));
   expect(after.map((c) => c.pullRequest?.number)).toEqual([undefined, 2, undefined]);
-  const { pullRequest: _added, ...rest } = after[1];
+  const { pullRequest: _added, pullRequestFetchedAt: _fetched, ...rest } = after[1];
   expect(rest).toEqual(before[1]);
+});
+
+// ---- the watch on a board ----
+
+/** A fake clock and tab: timers only run when the test advances time. */
+function fakeTab() {
+  let now = NOW;
+  let next = 0;
+  const timers = new Map<number, { at: number; run: () => void }>();
+  return {
+    now: () => now,
+    setTimer: (run: () => void, ms: number) => {
+      timers.set(++next, { at: now + ms, run });
+      return next;
+    },
+    clearTimer: (h: unknown) => void timers.delete(h as number),
+    armed: () => timers.size,
+    advance(ms: number) {
+      now += ms;
+      for (const [id, t] of [...timers]) {
+        if (t.at > now) continue;
+        timers.delete(id);
+        t.run();
+      }
+    },
+  };
+}
+
+const twoRepos = (): RepoSnapshot[] => [
+  repo([change()]),
+  { ...repo([change({ repoId: "beta", name: "rotate-keys", branchMatch: "feat/rotate-keys" })]), id: "beta", name: "beta-soc" },
+];
+const running = { repos: [list("alpha", ago(MIN), [pr({ number: 125, checks: "pending", mergeable: "mergeable" })]), list("beta", ago(MIN))] };
+
+test("a repository board watches only its own cards", () => {
+  const hues2 = new Map([["alpha", 120], ["beta", 200]]);
+  const all = boardCards(twoRepos(), hues2, running);
+  expect(watchPlan(all, running.repos, NOW, NOW)?.repoIds).toEqual(["alpha"]);
+  const betaBoard = boardCards(twoRepos().filter((r) => r.id === "beta"), hues2, running);
+  expect(watchPlan(betaBoard, running.repos, NOW, NOW)).toBeUndefined();
+});
+
+test("an open, visible board refreshes about a minute after the last refresh; hidden or left, it does not", () => {
+  const tab = fakeTab();
+  const watched: string[][] = [];
+  const cards = boardCards([repo([change()])], hues, running);
+  const arm = (hidden: boolean) =>
+    armWatch({ plan: watchPlan(cards, running.repos, tab.now(), NOW), hidden, now: tab.now(), watch: (ids) => watched.push(ids), setTimer: tab.setTimer, clearTimer: tab.clearTimer });
+
+  // Hidden for ten minutes: nothing is armed and nothing runs.
+  arm(true);
+  tab.advance(10 * MIN);
+  expect(watched).toEqual([]);
+  // Visible again, with the minute long past: the watch runs at once.
+  const leave = arm(false);
+  tab.advance(0);
+  expect(watched).toEqual([["alpha"]]);
+  leave();
+
+  // Left before it was due: the timer is gone and nothing runs.
+  const leaveEarly = armWatch({ plan: { repoIds: ["alpha"], dueAt: tab.now() + MIN }, hidden: false, now: tab.now(), watch: (ids) => watched.push(ids), setTimer: tab.setTimer, clearTimer: tab.clearTimer });
+  leaveEarly();
+  tab.advance(60 * MIN);
+  expect(watched).toHaveLength(1);
+  expect(tab.armed()).toBe(0);
+});
+
+test("a ready pull request ends the watch", () => {
+  const ready = { repos: [list("alpha", ago(0), [pr({ number: 125, checks: "passing", mergeable: "mergeable" })])] };
+  expect(watchPlan(boardCards([repo([change()])], hues, ready), ready.repos, NOW, NOW)).toBeUndefined();
+});
+
+// ---- the card's working state ----
+
+const sessionRepo = newRepoConfig("/w/acme/alpha-infra", true);
+const sessionsOn = (() => {
+  const base = defaultConfig();
+  return { ...base, repos: [sessionRepo], agentSessions: { ...base.agentSessions, enabled: true, agents: [fakeProfile()], defaultAgent: "fake" } };
+})();
+const workingCard = (prs?: PullRequestsResponse) =>
+  boardCards([{ ...repo([change({ repoId: sessionRepo.id })]), id: sessionRepo.id }], new Map([[sessionRepo.id, 120]]), prs && { repos: prs.repos.map((l) => ({ ...l, repoId: sessionRepo.id })) })[0];
+const ended: ChangeSession = {
+  id: "s1",
+  repoId: sessionRepo.id,
+  change: "add-validate-phase",
+  action: "implement",
+  agentId: "fake",
+  agentName: "Fake Agent",
+  state: "exited",
+  exitCode: 0,
+  worktreePath: "/w/wt",
+  branch: "feat/add-validate-phase",
+  createdAt: ago(30 * MIN),
+  updatedAt: ago(10 * MIN),
+  resumable: true,
+};
+const withPr = (patch: Partial<PullRequest>) => ({ repos: [list("alpha", ago(MIN), [pr({ number: 125, ...patch })])] });
+
+test("checks running after a ship: tinted and sweeping, starters, badge, column and progress unchanged", () => {
+  const plain = workingCard();
+  const card = workingCard(withPr({ checks: "pending" }));
+  expect(cardWorkingState(sessionsOn, [ended], card, NOW)).toEqual({ tinted: true, sweeping: true });
+  expect(cardWorkingState(sessionsOn, [ended], plain, NOW)).toEqual({ tinted: false, sweeping: false });
+  expect(cardSessionControls(sessionsOn, [ended], card)).toEqual(cardSessionControls(sessionsOn, [ended], plain));
+  expect(cardSessionControls(sessionsOn, [], card).starters.length).toBeGreaterThan(0);
+  expect(sessionBadge(ended, NOW).live).not.toBe(true);
+  expect(card.column).toBe(plain.column);
+  expect(cardProgress(card)).toEqual(cardProgress(plain));
+  const article = byTag(ChangeCard({ card, now: NOW, from: "/board", working: cardWorkingState(null, [], card, NOW) }), "article")[0];
+  expect(article.props.class).toBe("card live");
+  expect(textOf(prLink(card))).toContain("checks running");
+});
+
+test("waiting pull requests keep the tint without motion", () => {
+  for (const patch of [{ checks: "failing" as const }, { mergeable: "conflicting" as const }, { draft: true }]) {
+    const card = workingCard(withPr(patch));
+    expect(cardWorkingState(sessionsOn, [], card, NOW)).toEqual({ tinted: true, sweeping: false });
+    const article = byTag(ChangeCard({ card, now: NOW, from: "/board", working: cardWorkingState(sessionsOn, [], card, NOW) }), "article")[0];
+    expect(article.props.class).toBe("card live pr-waiting");
+  }
+});
+
+test("ready, merged or closed releases the card; a working agent keeps it tinted", () => {
+  for (const patch of [{}, { state: "merged" as const, mergedAt: ago(MIN) }, { state: "closed" as const, closedAt: ago(MIN) }]) {
+    expect(cardWorkingState(sessionsOn, [], workingCard(withPr(patch)), NOW)).toEqual({ tinted: false, sweeping: false });
+  }
+  const working = { ...ended, state: "running" as const, exitCode: undefined, lastOutputAt: ago(1000) };
+  expect(cardWorkingState(sessionsOn, [working], workingCard(withPr({})), NOW)).toEqual({ tinted: true, sweeping: true });
+});
+
+test("nothing fetched, or gh unavailable: no card is tinted by a pull request", () => {
+  for (const prs of [undefined, { repos: [] }, { repos: [list("alpha", undefined)] }]) {
+    expect(cardWorkingState(sessionsOn, [], workingCard(prs), NOW)).toEqual({ tinted: false, sweeping: false });
+  }
+  const unavailable = { repos: [list("alpha", ago(MIN), [pr({ number: 125, checks: "pending" })], { status: "unavailable", setup: "gh-signed-out" })] };
+  expect(cardWorkingState(sessionsOn, [], workingCard(unavailable), NOW)).toEqual({ tinted: false, sweeping: false });
 });

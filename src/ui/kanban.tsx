@@ -11,6 +11,7 @@ import { FilterBar } from "./boardFilters.tsx";
 import { Stat } from "./band.tsx";
 import { BranchBadge, CheckoutSummaryButton } from "./checkout.tsx";
 import { CardPullRequest, RepoPullRequestsButton, usePullRequests } from "./pullRequests.tsx";
+import { armWatch, watchPlan } from "./pullRequestsState.ts";
 import { hasCheckoutInfo } from "./checkoutMarkers.ts";
 import { CleanupButton } from "./cleanup.tsx";
 import { NewChangeDialog } from "./newChangeForm.tsx";
@@ -22,7 +23,7 @@ import { assignRepoHues, dependencyChoices, groupByRepo, newChangeTargets, recen
 import { columnKind } from "./boardMarks.ts";
 import { IconChevronRight, IconPlus, IconTerminal } from "./icons.tsx";
 import { SessionControls, useSessionUi } from "./sessions.tsx";
-import { archivedShown, cardIsLive, cardSessionControls, consoleTabAvailable } from "./sessionState.ts";
+import { archivedShown, cardSessionControls, cardWorkingState, type CardWorkingState, consoleTabAvailable } from "./sessionState.ts";
 import { boardFrom, changePath, CONSOLE_TAB, repoPath, serializeDetailQuery } from "./routes.ts";
 import { currentQuery, followInApp, href, navigate, replaceQuery } from "./url.ts";
 import { ProjectConsoleButton } from "./projectConsole.tsx";
@@ -36,6 +37,8 @@ export interface Card extends ChangeSnapshot {
   hue: number;
   /** The change's pull request, derived for display from the cached lists; archived changes included. */
   pullRequest?: PullRequest;
+  /** When the list that pull request came from was fetched, so its readiness can say how fresh it is. */
+  pullRequestFetchedAt?: string;
 }
 
 /**
@@ -47,7 +50,11 @@ export function boardCards(repos: RepoSnapshot[], hues: Map<string, number>, pul
     r.changes.map((c) => {
       const card: Card = { ...c, repoName: r.name, repoPath: r.path, hue: hues.get(r.id) ?? 0 };
       const pr = linkedPullRequest(c, pullRequests?.repos);
-      if (pr) card.pullRequest = pr;
+      if (pr) {
+        card.pullRequest = pr;
+        const fetchedAt = pullRequests?.repos.find((l) => l.repoId === c.repoId)?.fetchedAt;
+        if (fetchedAt) card.pullRequestFetchedAt = fetchedAt;
+      }
       return card;
     }),
   );
@@ -120,11 +127,11 @@ export function cardLink(card: Pick<Card, "repoId" | "name">, from: string): { p
 
 /**
  * Only **Show details** navigates: the card itself and its change name are plain content, so clicking anywhere else on
- * a card does nothing. It is an anchor, so ⌘/middle-click opens the detail view in a new tab. `live` — an agent is
- * working on the change — shows on the whole card, tinted with its name swept; the caller decides it (`cardIsLive`), so
- * the card stays hook-free.
+ * a card does nothing. It is an anchor, so ⌘/middle-click opens the detail view in a new tab. `working` — an agent is
+ * working on the change, or its pull request is not ready yet — shows on the whole card, tinted and, while something is
+ * still in progress, with its name swept; the caller decides it (`cardWorkingState`), so the card stays hook-free.
  */
-export function ChangeCard({ card, now, from, live = false, running = false }: { card: Card; now: number; from: string; live?: boolean; running?: boolean }) {
+export function ChangeCard({ card, now, from, working, running = false }: { card: Card; now: number; from: string; working?: CardWorkingState; running?: boolean }) {
   const noTasks = card.warnings?.includes("tasks file has no tasks");
   // The work is finished, a person still has to confirm it — `warning`, not `success`; never on an archived change.
   const validating = !card.archived && (card.tasks?.awaiting ?? 0) > 0;
@@ -136,7 +143,7 @@ export function ChangeCard({ card, now, from, live = false, running = false }: {
   // session state and the next step. The console link keeps the top right corner, the same on every card, so the way
   // into a terminal never moves. Branch, worktree, work status, prompt and completed phases are in the detail view.
   return (
-    <article class={live ? "card live" : "card"}>
+    <article class={working?.tinted ? (working.sweeping ? "card live" : "card live pr-waiting") : "card"}>
       <div class="card-top">
         <div class="card-title">
           <span class="name">{card.name}</span>
@@ -159,7 +166,7 @@ export function ChangeCard({ card, now, from, live = false, running = false }: {
             ⚠ error
           </span>
         ))}
-        {card.pullRequest && <CardPullRequest pr={card.pullRequest} repoName={card.repoName} />}
+        {card.pullRequest && <CardPullRequest pr={card.pullRequest} repoName={card.repoName} fetchedAt={card.pullRequestFetchedAt} now={now} />}
         <SessionControls card={card} place="card" />
         {waiting && (
           <span class="waits-for" role="note" title={waiting.title} aria-label={waiting.title}>
@@ -239,13 +246,13 @@ interface GroupControls {
 function RepoGroups({ column, cards, now, showRepo, from, groups: controls }: { column: string; cards: Card[]; now: number; showRepo: boolean; from: string; groups: GroupControls }) {
   const groups = useMemo(() => groupByRepo(cards), [cards]);
   const ui = useSessionUi();
-  const live = (c: Card) => cardIsLive(ui.config, ui.sessions, c);
+  const working = (c: Card) => cardWorkingState(ui.config, ui.sessions, c);
   const running = (c: Card) => cardSessionControls(ui.config, ui.sessions, c).shown.some((s) => s.state === "running");
   if (!showRepo) {
     return (
       <div class="cards">
         {cards.map((c) => (
-          <ChangeCard key={`${c.repoId}/${c.name}`} card={c} now={now} from={from} live={live(c)} running={running(c)} />
+          <ChangeCard key={`${c.repoId}/${c.name}`} card={c} now={now} from={from} working={working(c)} running={running(c)} />
         ))}
       </div>
     );
@@ -274,7 +281,7 @@ function RepoGroups({ column, cards, now, showRepo, from, groups: controls }: { 
             {expanded && (
               <div class="repo-group-body" id={bodyId}>
                 {g.cards.map((c) => (
-                  <ChangeCard key={`${c.repoId}/${c.name}`} card={c} now={now} from={from} live={live(c)} running={running(c)} />
+                  <ChangeCard key={`${c.repoId}/${c.name}`} card={c} now={now} from={from} working={working(c)} running={running(c)} />
                 ))}
               </div>
             )}
@@ -428,6 +435,19 @@ function RepoNotFound() {
   );
 }
 
+/** Whether the page's tab is hidden; follows `visibilitychange`. Never hidden where there is no document. */
+function useTabHidden(): boolean {
+  const read = () => typeof document !== "undefined" && document.visibilityState === "hidden";
+  const [hidden, setHidden] = useState(read);
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    const update = () => setHidden(read());
+    document.addEventListener("visibilitychange", update);
+    return () => document.removeEventListener("visibilitychange", update);
+  }, []);
+  return hidden;
+}
+
 /** Initial filters of a board: from `query`, read once at mount. A repository board has no repo filter, so a stray `repos` key is dropped. */
 export function initialFilters(query: string, repoId: string | undefined): Filters {
   return { ...parseFilters(query), ...(repoId === undefined ? {} : { repos: [] }) };
@@ -474,6 +494,15 @@ export function Kanban({ snapshot, config, repoId, query, onReload }: { snapshot
   useEffect(() => {
     if (!prsLoading) openBoard(repoId);
   }, [prsLoading, openBoard, repoId]);
+  // The one timed exception: while this board is open and its tab visible, the repositories of its cards whose pull
+  // request is open and not ready are refreshed on their own — re-planned from every answer, so a ready pull request
+  // ends it, and disarmed when the board is left or the tab hidden (openspec/specs/pull-requests).
+  const hidden = useTabHidden();
+  const { watch, lastSettledAt, running: prsRunning } = prs;
+  useEffect(
+    () => armWatch({ plan: watchPlan(cards, prs.data?.repos, Date.now(), lastSettledAt()), hidden, now: Date.now(), watch, setTimer: setTimeout, clearTimer: (h) => clearTimeout(h as number) }),
+    [cards, prs.data, prsRunning, hidden, watch, lastSettledAt],
+  );
 
   const visible = useMemo(() => visibleCards(cards, filters, single, now), [cards, filters, single, now]);
 

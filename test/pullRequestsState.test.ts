@@ -1,6 +1,8 @@
 import { expect, test } from "bun:test";
 import type { PullRequest, PullRequestsResponse } from "../src/shared/types.ts";
 import {
+  armWatch,
+  createPrRefresher,
   DEFAULT_PR_FILTERS,
   ghSetup,
   isStale,
@@ -11,6 +13,9 @@ import {
   pullRequestNotices,
   pullRequestsQuery,
   serializePrFilters,
+  WATCH_IN_PROGRESS_MS,
+  WATCH_WAITING_MS,
+  watchPlan,
 } from "../src/ui/pullRequestsState.ts";
 
 const DAY = 24 * 3600_000;
@@ -131,9 +136,11 @@ test("a machine-wide gh problem is explained once, and lists no repository as fa
 });
 
 test("the fetch age is the newest of the shown lists, and staleness ignores repositories that cannot be queried", () => {
-  expect(newestFetchedAt(response())).toBe(response().repos[2].fetchedAt);
-  expect(isStale(response(), 5 * 60_000)).toBe(false);
-  expect(isStale(response(), 60_000)).toBe(true);
+  // One response: each call stamps its ages from the clock, so two calls can differ by a millisecond.
+  const answer = response();
+  expect(newestFetchedAt(answer)).toBe(answer.repos[2].fetchedAt);
+  expect(isStale(answer, 5 * 60_000)).toBe(false);
+  expect(isStale(answer, 60_000)).toBe(true);
   expect(isStale(undefined, 5 * 60_000)).toBe(true);
   // Only repositories that are not on GitHub: nothing could be fetched, so nothing is stale.
   expect(isStale({ repos: [{ repoId: "notes", status: "unavailable", pullRequests: [] }] }, 5 * 60_000)).toBe(false);
@@ -150,4 +157,172 @@ test("the overview's count is the open pull requests, with those awaiting the us
   // A failed repository with an earlier list still shows that list's count.
   answer.repos[0] = { ...answer.repos[0], status: "failed", reason: "gh timed out" };
   expect(openCount(answer, "alpha")).toMatchObject({ open: 2, reason: "gh timed out" });
+});
+
+// ---- the board's watch ----
+
+const T = Date.parse("2026-10-05T12:00:00Z");
+const MIN = 60_000;
+const at = (ms: number) => new Date(T - ms).toISOString();
+
+const card = (repoId: string, name: string) => ({ repoId, name, branchMatch: `feat/${name}` });
+const watched = (repoId: string, prs: PullRequest[], patch: Partial<PullRequestsResponse["repos"][number]> = {}) => ({
+  repoId,
+  github: `acme/${repoId}`,
+  status: "ok" as const,
+  fetchedAt: at(2 * MIN),
+  pullRequests: prs,
+  ...patch,
+});
+const open = (head: string, patch: Partial<PullRequest> = {}) => pr({ number: head.length, head, checks: "passing", mergeable: "mergeable", ...patch });
+
+test("nothing to watch: no card links an open pull request that is not ready", () => {
+  const cards = [card("alpha", "a"), card("beta", "b")];
+  expect(watchPlan(cards, undefined, T, undefined)).toBeUndefined();
+  expect(watchPlan(cards, [watched("alpha", [open("feat/a")])], T, undefined)).toBeUndefined();
+  expect(watchPlan(cards, [watched("alpha", [open("feat/a", { state: "merged", mergedAt: at(MIN) })])], T, undefined)).toBeUndefined();
+  // A pull request no card links is not the board's business.
+  expect(watchPlan(cards, [watched("alpha", [open("feat/other", { checks: "pending" })])], T, undefined)).toBeUndefined();
+});
+
+test("a pull request in progress is watched a minute after the last settled refresh, and only its repository", () => {
+  const cards = [card("alpha", "a"), card("beta", "b")];
+  const lists = [watched("alpha", [open("feat/a", { checks: "pending" })]), watched("beta", [open("feat/b")])];
+  expect(watchPlan(cards, lists, T, T - 10_000)).toEqual({ repoIds: ["alpha"], dueAt: T - 10_000 + WATCH_IN_PROGRESS_MS });
+  expect(WATCH_IN_PROGRESS_MS).toBe(MIN);
+  // Unknown mergeability is in progress too.
+  expect(watchPlan(cards, [watched("alpha", [open("feat/a", { mergeable: "unknown" })])], T, T)?.dueAt).toBe(T + MIN);
+});
+
+test("only waiting pull requests are watched every five minutes", () => {
+  const cards = [card("alpha", "a"), card("beta", "b")];
+  const lists = [watched("alpha", [open("feat/a", { mergeable: "conflicting" })]), watched("beta", [open("feat/b", { draft: true })])];
+  expect(watchPlan(cards, lists, T, T)).toEqual({ repoIds: ["alpha", "beta"], dueAt: T + WATCH_WAITING_MS });
+  expect(WATCH_WAITING_MS).toBe(5 * MIN);
+  // One in progress among them makes it every minute again.
+  lists.push(watched("gamma", [open("feat/c", { checks: "pending" })]));
+  expect(watchPlan([...cards, card("gamma", "c")], lists, T, T)?.dueAt).toBe(T + MIN);
+});
+
+test("without a refresh in this page the schedule counts from the watched lists' fetch, else from now", () => {
+  const cards = [card("alpha", "a")];
+  expect(watchPlan(cards, [watched("alpha", [open("feat/a", { checks: "pending" })], { fetchedAt: at(30 * MIN) })], T, undefined)?.dueAt).toBe(T - 29 * MIN);
+  expect(watchPlan(cards, [watched("alpha", [open("feat/a", { checks: "pending" })], { fetchedAt: undefined })], T, undefined)?.dueAt).toBe(T + MIN);
+});
+
+test("an unavailable repository is never watched", () => {
+  const lists = [watched("alpha", [open("feat/a", { checks: "pending" })], { status: "unavailable", setup: "gh-signed-out" })];
+  expect(watchPlan([card("alpha", "a")], lists, T, T)).toBeUndefined();
+});
+
+test("a repository board watches only its own cards", () => {
+  const lists = [watched("alpha", [open("feat/a", { checks: "pending" })]), watched("beta", [])];
+  expect(watchPlan([card("beta", "b")], lists, T, T)).toBeUndefined();
+});
+
+/** A fake clock: timers run only when the test advances it. */
+function fakeTimers() {
+  let now = T;
+  let next = 0;
+  const timers = new Map<number, { at: number; run: () => void }>();
+  return {
+    now: () => now,
+    setTimer: (run: () => void, ms: number) => {
+      timers.set(++next, { at: now + ms, run });
+      return next;
+    },
+    clearTimer: (handle: unknown) => void timers.delete(handle as number),
+    pending: () => timers.size,
+    advance(ms: number) {
+      now += ms;
+      for (const [id, t] of [...timers]) {
+        if (t.at <= now) {
+          timers.delete(id);
+          t.run();
+        }
+      }
+    },
+  };
+}
+
+test("an armed watch fires once when due, and disarming it — leaving the board, hiding the tab — stops it", () => {
+  const clock = fakeTimers();
+  const fired: string[][] = [];
+  const plan = { repoIds: ["alpha"], dueAt: T + MIN };
+  const disarm = armWatch({ plan, hidden: false, now: clock.now(), watch: (ids) => fired.push(ids), setTimer: clock.setTimer, clearTimer: clock.clearTimer });
+  clock.advance(59_000);
+  expect(fired).toEqual([]);
+  clock.advance(1_000);
+  expect(fired).toEqual([["alpha"]]);
+
+  const again = armWatch({ plan: { ...plan, dueAt: clock.now() + MIN }, hidden: false, now: clock.now(), watch: (ids) => fired.push(ids), setTimer: clock.setTimer, clearTimer: clock.clearTimer });
+  again();
+  clock.advance(10 * MIN);
+  expect(fired).toHaveLength(1);
+  expect(clock.pending()).toBe(0);
+  disarm();
+
+  // A hidden tab arms nothing; once visible, an overdue plan fires at once.
+  armWatch({ plan, hidden: true, now: clock.now(), watch: (ids) => fired.push(ids), setTimer: clock.setTimer, clearTimer: clock.clearTimer });
+  expect(clock.pending()).toBe(0);
+  armWatch({ plan, hidden: false, now: clock.now(), watch: (ids) => fired.push(ids), setTimer: clock.setTimer, clearTimer: clock.clearTimer });
+  clock.advance(0);
+  expect(fired).toHaveLength(2);
+  // No plan, nothing armed.
+  armWatch({ plan: undefined, hidden: false, now: clock.now(), watch: (ids) => fired.push(ids), setTimer: clock.setTimer, clearTimer: clock.clearTimer });
+  expect(clock.pending()).toBe(0);
+});
+
+function refresherHarness(synthetic = false) {
+  let clock = T;
+  const asked: unknown[] = [];
+  const pending: (() => void)[] = [];
+  const refresher = createPrRefresher({
+    current: () => undefined,
+    fetch: (options) => {
+      asked.push(options);
+      return new Promise((resolve) => pending.push(() => resolve({ repos: [] })));
+    },
+    onStart: () => {},
+    onAnswer: () => {},
+    onError: () => {},
+    onSettled: () => {},
+    synthetic,
+    now: () => clock,
+  });
+  const answer = async (atTime: number) => {
+    clock = atTime;
+    for (const done of pending.splice(0)) done();
+    await new Promise((r) => setTimeout(r, 0));
+  };
+  return { refresher, asked, answer };
+}
+
+test("watch forces a refresh of exactly the watched repositories and records when it settled", async () => {
+  const { refresher, asked, answer } = refresherHarness();
+  expect(refresher.lastSettledAt()).toBeUndefined();
+  expect(refresher.watch(["alpha", "gamma"])).toBeDefined();
+  expect(asked).toEqual([{ repoIds: ["alpha", "gamma"], force: true }]);
+  await answer(T + 5_000);
+  expect(refresher.lastSettledAt()).toBe(T + 5_000);
+  expect(refresher.watch([])).toBeUndefined();
+  expect(asked).toHaveLength(1);
+});
+
+test("one refresh at a time: a due watch neither joins nor starts a refresh while one runs", async () => {
+  const { refresher, asked, answer } = refresherHarness();
+  const users = refresher.refresh({ force: true });
+  expect(refresher.watch(["alpha"])).toBeUndefined();
+  expect(asked).toEqual([{ force: true }]);
+  await answer(T);
+  await users;
+  expect(refresher.watch(["alpha"])).toBeDefined();
+  expect(asked).toHaveLength(2);
+  await answer(T);
+});
+
+test("demo: synthetic lists are never watched", () => {
+  const { refresher, asked } = refresherHarness(true);
+  expect(refresher.watch(["alpha"])).toBeUndefined();
+  expect(asked).toEqual([]);
 });

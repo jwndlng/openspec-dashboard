@@ -556,6 +556,8 @@ interface SamplePr {
   state?: PullRequest["state"];
   review?: PullRequest["review"];
   checks?: PullRequest["checks"];
+  /** Defaults to `mergeable`, so most open ones read as ready once their checks are green. */
+  mergeable?: PullRequest["mergeable"];
   /** Review is requested from the demo's simulated viewer. */
   mine?: boolean;
 }
@@ -566,7 +568,8 @@ export const DEMO_VIEWER = "demo-user";
 /**
  * Made-up pull requests per sample repository, under an invented `acme` organisation. `quill-docs` has no entry: it
  * stands for a tracked repository whose `origin` is not on GitHub. Some head branches are sample changes' branches, so
- * those cards link to their pull request (open, draft and merged); `push-token-refresh` has a branch and none.
+ * those cards link to their pull request (open, draft and merged); `push-token-refresh` has a branch and none. Their
+ * readiness (ready, checks running or failing, a conflict, a draft) shows on the cards, which the demo never watches.
  */
 const SAMPLE_PRS: Record<string, SamplePr[]> = {
   "atlas-api": [
@@ -577,7 +580,7 @@ const SAMPLE_PRS: Record<string, SamplePr[]> = {
   ],
   "harbor-web": [
     { number: 311, title: "Redesign the settings page", author: "demo-nils", head: "feat/redesign-settings-page", age: 5, review: "review_required", checks: "failing", mine: true },
-    { number: 305, title: "Dark mode tokens", author: "demo-user", head: "feat/dark-mode-tokens", age: 70, review: "approved", checks: "passing" },
+    { number: 305, title: "Dark mode tokens", author: "demo-user", head: "feat/dark-mode-tokens", age: 70, review: "approved", checks: "passing", mergeable: "conflicting" },
   ],
   "lantern-infra": [
     { number: 128, title: "Centralize log shipping", author: "demo-rae", head: "feat/centralize-log-shipping", age: 22, review: "changes_requested", checks: "passing" },
@@ -617,6 +620,7 @@ export function buildPullRequests(snapshot: Snapshot, now: number, fetchedAt: nu
         review: pr.review ?? "none",
         reviewRequestedFromViewer: pr.mine === true,
         checks: pr.checks ?? "none",
+        mergeable: pr.mergeable ?? "mergeable",
       };
     });
     return { repoId: repo.id, github: `acme/${repo.name}`, status: "ok", fetchedAt: new Date(fetchedAt).toISOString(), truncated: { open: false, closed: false }, pullRequests };

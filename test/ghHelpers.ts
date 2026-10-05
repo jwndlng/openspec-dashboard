@@ -84,6 +84,7 @@ export function ghPr(patch: Record<string, unknown> & { number: number }): Recor
     reviewDecision: "",
     reviewRequests: [],
     statusCheckRollup: [],
+    mergeable: "MERGEABLE",
     ...patch,
   };
 }
