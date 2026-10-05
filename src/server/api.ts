@@ -178,16 +178,20 @@ async function postRepoName(state: AppState, req: Request, id: string): Promise<
  */
 async function postRepoAgent(state: AppState, req: Request, id: string): Promise<Response> {
   const body = await readJson(req);
-  const { enabled, agentId } = body;
-  if (enabled === undefined && agentId === undefined) return json({ error: "send enabled or agentId" }, 400);
+  const { enabled, agentId, autoMergeDocs } = body;
+  if (enabled === undefined && agentId === undefined && autoMergeDocs === undefined) return json({ error: "send enabled, agentId or autoMergeDocs" }, 400);
   if (enabled !== undefined && typeof enabled !== "boolean") return json({ error: "enabled must be true or false" }, 400);
   if (agentId !== undefined && agentId !== null && typeof agentId !== "string") return json({ error: "agentId must be an agent id or null" }, 400);
+  if (autoMergeDocs !== undefined && typeof autoMergeDocs !== "boolean") return json({ error: "autoMergeDocs must be true or false" }, 400);
   return updateRepo(state, id, (repo) => {
     if (typeof agentId === "string" && !state.config.agentSessions.agents.some((a) => a.id === agentId)) throw new TrackingError(400, `unknown agent ${agentId}`);
     const agent: NonNullable<RepoConfig["agent"]> = { enabled: true, ...repo.agent };
     if (typeof enabled === "boolean") agent.enabled = enabled;
     if (agentId === null) delete agent.agentId;
     else if (typeof agentId === "string") agent.agentId = agentId;
+    // Off is the absence of the key, so a configuration never carries `autoMergeDocs: false`.
+    if (autoMergeDocs === true) agent.autoMergeDocs = true;
+    else if (autoMergeDocs === false) delete agent.autoMergeDocs;
     return { ...repo, agent };
   });
 }

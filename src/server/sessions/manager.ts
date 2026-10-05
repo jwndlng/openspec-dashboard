@@ -16,7 +16,7 @@ import type { SessionActivity } from "../activity/events.ts";
 import { SessionStore } from "./store.ts";
 import { submitText, validSubmission, type SubmitOptions } from "./submit.ts";
 import { spawnTerminal, type TerminalProcess } from "./terminal.ts";
-import { listWorktrees, readWorkStatus, WORKTREE_NAME } from "./workStatus.ts";
+import { baseRef, listWorktrees, readWorkStatus, shipsOnlyOpenSpec, WORKTREE_NAME } from "./workStatus.ts";
 import { checkWorktreeRemovable, copyChangeIfMissing, ensureWorktree, linkedWorktreeOf, removeWorktree, type Removable } from "./worktree.ts";
 
 export const SCROLLBACK_BYTES = 1024 * 1024;
@@ -465,20 +465,22 @@ export class SessionManager {
     const { agent, repo } = await this.prepareRestart(session);
     const { work } = await readWorkStatus(repo.path, session.worktreePath);
     if (!SHIPPABLE_WORK.includes(work.state)) throw new SessionError(409, `there is nothing to ship (${work.state})`);
-    const prompt = shipPrompt(agent, session.change, repo.prTitleConvention);
+    // Asked now, never taken from a status the UI holds: only an opted-in project, and only provably docs-only work.
+    const autoMerge = repo.agent?.autoMergeDocs === true && (await shipsOnlyOpenSpec(session.worktreePath, await baseRef(repo.path)));
+    const prompt = shipPrompt(agent, session.change, { autoMerge, convention: repo.prTitleConvention });
     this.forgetWorktrees();
     const proc = this.live.get(id)?.proc;
     if (session.state === "running" && proc) {
       const { submitted } = await this.submit(id, prompt);
       this.report(session, { kind: "session-shipped", submitted });
-      return { ...session, submitted };
+      return { ...session, submitted, autoMerge };
     }
     const launch = agent.resumeCommand ? { argv: [...agent.resumeCommand], typed: prompt } : launchCommand(agent, prompt);
     if (!Bun.which(launch.argv[0])) throw new SessionError(503, `${agent.name} was not found (${launch.argv[0]})`);
     await this.restart(session, repo.path, launch.argv, agentEnv(agent, process.env), launch.typed);
     this.report(session, { kind: "session-shipped", submitted: true });
     // Handed to a starting agent (as its argument, or submitted once it has started); the terminal shows how that went.
-    return { ...session, submitted: true };
+    return { ...session, submitted: true, autoMerge };
   }
 
   /**
@@ -489,7 +491,7 @@ export class SessionManager {
    * The dashboard resolves nothing itself — it merges, rebases, checks out, commits and pushes nothing. It hands over
    * a prompt; the agent works under its own permission prompts.
    */
-  async resolveConflicts(id: string): Promise<ShipResult> {
+  async resolveConflicts(id: string): Promise<PromptResult> {
     const session = this.get(id);
     if (isChangeless(session)) throw new SessionError(409, notAChange(session));
     if (session.inPlace) throw new SessionError(400, "this session runs in a folder that is not a git repository — there is no branch to merge");

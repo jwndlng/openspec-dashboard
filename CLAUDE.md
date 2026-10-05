@@ -167,7 +167,9 @@ bun test test/scanner.test.ts   # a single test file
   read-only git and no network, so `merged` means "as of the user's last fetch"; squash merges are recognised by
   comparing the content of the files the branch touched. The dashboard never commits or pushes, and the only `gh` it ever
   runs is the read-only pull-request query of invariant 1, which is not part of a session: **Ship** only
-  hands the agent a prompt (`prompts.ship`, else `DEFAULT_SHIP_PROMPT`). A status that holds work the base lacks also
+  hands the agent a prompt (`prompts.ship`, else `DEFAULT_SHIP_PROMPT`), plus `AUTO_MERGE_DOCS_INSTRUCTION` when the
+  project opted in (`agent.autoMergeDocs`) and `shipsOnlyOpenSpec` proved, at that moment, that everything it ships is
+  under `openspec/` — the agent enables auto-merge, never the dashboard. A status that holds work the base lacks also
   carries a **conflict signal** — whether the branch still merges into that base, and which files clash — computed with
   `merge-tree` as invariant 1 describes, and as stale as the last fetch, which the UI says. **Resolve conflicts** is the
   second prompt-only action, shaped exactly like Ship (`prompts.resolveConflicts`, else

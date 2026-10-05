@@ -31,6 +31,7 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
 export interface RepoAgentPatch {
   enabled?: boolean;
   agentId?: string | null;
+  autoMergeDocs?: boolean;
 }
 
 /**
@@ -150,7 +151,7 @@ export interface Api {
   resumeSession(id: string): Promise<Session>;
   /** Asks the session's agent to commit, push and open a pull request. */
   shipSession(id: string): Promise<ShipResult>;
-  resolveConflicts(id: string): Promise<ShipResult>;
+  resolveConflicts(id: string): Promise<PromptResult>;
   /** For a worktree whose session record is gone; refused unless that is safe. */
   removeWorktree(repoId: string, name: string): Promise<{ removable: boolean; reason?: string }>;
   /** Ends the agent if it is running; removes the worktree only when asked and safe. */
@@ -247,7 +248,7 @@ export const httpApi: Api = {
   createProject: (root, name) => call<CreateProjectResponse>("/api/projects", { method: "POST", body: JSON.stringify({ root, name }) }),
   resumeSession: (id) => call<Session>(`/api/sessions/${id}/resume`, { method: "POST" }),
   shipSession: (id) => call<ShipResult>(`/api/sessions/${id}/ship`, { method: "POST" }),
-  resolveConflicts: (id) => call<ShipResult>(`/api/sessions/${id}/resolve-conflicts`, { method: "POST" }),
+  resolveConflicts: (id) => call<PromptResult>(`/api/sessions/${id}/resolve-conflicts`, { method: "POST" }),
   removeWorktree: (repoId, name) => call("/api/worktrees/remove", { method: "POST", body: JSON.stringify({ repoId, name }) }),
   closeSession: (id, removeWorktree) => call(`/api/sessions/${id}/close`, { method: "POST", body: JSON.stringify({ removeWorktree }) }),
   deleteSession: (id) => call<{ deleted: boolean }>(`/api/sessions/${id}`, { method: "DELETE" }),

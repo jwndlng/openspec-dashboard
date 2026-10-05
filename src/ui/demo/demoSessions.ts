@@ -429,10 +429,11 @@ export function createDemoSessions({ now, getConfig, getSnapshot, integratable, 
       const work = workOf(s);
       if (!SHIPPABLE_WORK.includes(work.state)) throw new ApiError(409, `there is nothing to ship (${work.state})`);
       run(s, "ship");
-      return { ...s.session, submitted: true };
+      // The recording's agent ships nothing real, so it is never asked to enable auto-merge.
+      return { ...s.session, submitted: true, autoMerge: false };
     },
 
-    resolveConflicts(id: string): ShipResult {
+    resolveConflicts(id: string): PromptResult {
       const s = find(id);
       if (isChangeless(s.session)) throw new ApiError(409, notAChange(s.session));
       const work = workOf(s);

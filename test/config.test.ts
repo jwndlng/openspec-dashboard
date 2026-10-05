@@ -456,3 +456,12 @@ test("an invalid hue, a key breaking the label rules and too many label colours 
   refuse(withColors(Object.fromEntries(Array.from({ length: 201 }, (_, i) => [`l${i}`, 27]))));
   expect(Object.keys(validateConfig(withColors(Object.fromEntries(Array.from({ length: 200 }, (_, i) => [`l${i}`, 27])))).labelColors ?? {})).toHaveLength(200);
 });
+
+test("a repository's auto-merge setting is optional, kept when set and refused when not a boolean", () => {
+  const repo = { ...newRepoConfig("/w/acme/demo-ops", true), agent: { enabled: true } };
+  const loaded = validateConfig({ ...defaultConfig(), repos: [repo] });
+  expect(loaded.repos[0].agent).toEqual({ enabled: true });
+  const on = validateConfig({ ...defaultConfig(), repos: [{ ...repo, agent: { enabled: true, autoMergeDocs: true } }] });
+  expect(on.repos[0].agent?.autoMergeDocs).toBe(true);
+  expect(() => validateConfig({ ...defaultConfig(), repos: [{ ...repo, agent: { enabled: true, autoMergeDocs: "yes" } }] })).toThrow();
+});

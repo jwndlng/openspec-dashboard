@@ -22,6 +22,13 @@ export const CHANGELOG: readonly ChangelogEntry[] = [
       "Pick **Conventional Commits** under **PR titles** for a project on the **Projects** overview, and **Ship** asks the agent to title that project's pull requests and commits that way. Without it, Ship no longer asks for Conventional Commits and the agent follows the repository's own conventions.",
   },
   {
+    id: "2026-10-05-docs-auto-merge",
+    date: "2026-10-05",
+    title: "Auto-merge docs-only pull requests",
+    summary:
+      "Switch on **Docs auto-merge** for a project on the **Projects** overview, and **Ship** asks your agent to enable auto-merge on a pull request that only changes files under `openspec/`, such as an archive. Every other pull request still waits for review.",
+  },
+  {
     id: "2026-10-03-whats-new",
     date: "2026-10-03",
     title: "What's new",

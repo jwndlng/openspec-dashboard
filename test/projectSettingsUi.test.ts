@@ -7,7 +7,7 @@ import { LabelColorPicker, labelTitle, RepoLabelsEditor } from "../src/ui/labels
 import { Modal } from "../src/ui/modal.tsx";
 import { PendingTableRow, PendingTile, Row, Tile } from "../src/ui/overview.tsx";
 import { overviewRows } from "../src/ui/overviewState.ts";
-import { RenameField, RepoLabelsDialog, SESSIONS_OFF } from "../src/ui/projectSettings.tsx";
+import { AUTO_MERGE_HINT, RenameField, RepoLabelsDialog, SESSIONS_OFF } from "../src/ui/projectSettings.tsx";
 import type { Tracking } from "../src/ui/untracked.tsx";
 import { byComponent, byTag, textOf } from "./vnode.ts";
 
@@ -230,6 +230,51 @@ test("the colour picker offers Auto and every assignable hue, marks the current 
   expect(chosen).toEqual([null, REPO_HUES[0]]);
   const auto = LabelColorPicker({ label: "go", colors: undefined, onChoose: () => {} });
   expect(byTag(auto, "button")[0].props["aria-pressed"]).toBe(true);
+});
+
+const autoMergeOf = (node: unknown) => byTag(node as never, "button").find((b) => String(b.props["aria-label"]).startsWith("Auto-merge docs-only"));
+
+test("a git project with agent sessions offers auto-merge of docs-only pull requests, Off by default, saved at once", () => {
+  const { t, calls } = tracking();
+  for (const node of layouts(configWith(), t)) {
+    const toggle = autoMergeOf(node);
+    expect(toggle?.props.role).toBe("switch");
+    expect(toggle?.props["aria-checked"]).toBe(false);
+    expect(toggle?.props["aria-label"]).toBe("Auto-merge docs-only pull requests for alpha-infra");
+    expect(String(toggle?.props.title)).toContain(AUTO_MERGE_HINT);
+    expect(textOf(toggle)).toBe("Docs auto-merge: Off");
+    expect(click(toggle!)).toBe(true);
+  }
+  expect(calls).toEqual(['agent a {"autoMergeDocs":true}', 'agent a {"autoMergeDocs":true}']);
+
+  const on = tracking();
+  for (const node of layouts(configWith({ agent: { enabled: true, autoMergeDocs: true } }), on.t)) {
+    expect(textOf(autoMergeOf(node))).toBe("Docs auto-merge: On");
+    click(autoMergeOf(node)!);
+  }
+  expect(on.calls).toEqual(['agent a {"autoMergeDocs":false}', 'agent a {"autoMergeDocs":false}']);
+
+  const saving = tracking({ busy: { a: "agent" } });
+  const [busyNode] = layouts(configWith(), saving.t);
+  expect(autoMergeOf(busyNode)?.props.disabled).toBe(true);
+});
+
+test("no auto-merge toggle for a project without git or with its agent sessions disabled; inactive while sessions are off", () => {
+  const [plainRow] = overviewRows({ generatedAt: "2026-10-01T00:00:00Z", repos: [{ ...snapshotRepo, isGit: false }] });
+  const t = tracking().t;
+  for (const node of [Row({ row: plainRow, stages: [], now: 0, tracking: t, config: configWith() }), Tile({ row: plainRow, stages: [], now: 0, tracking: t, config: configWith() })]) {
+    expect(autoMergeOf(node)).toBeUndefined();
+  }
+  for (const node of layouts(configWith({ agent: { enabled: false, autoMergeDocs: true } }), t)) expect(autoMergeOf(node)).toBeUndefined();
+
+  const off = tracking();
+  for (const node of layouts(configWith({ sessions: false, agent: { enabled: true, autoMergeDocs: true } }), off.t)) {
+    expect(autoMergeOf(node)).toBeUndefined();
+    const link = byTag(node, "a").find((a) => String(a.props.class).includes("auto-merge-toggle"));
+    expect(String(link?.props.href)).toBe("/settings?section=agents");
+    expect(textOf(link)).toBe("Docs auto-merge: On");
+  }
+  expect(off.calls).toEqual([]);
 });
 
 test("a project still being scanned offers none of its settings", () => {

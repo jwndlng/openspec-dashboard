@@ -180,7 +180,7 @@ const repoSchema = z.object({
   path: absolutePath,
   name: z.string().trim().min(1),
   enabled: z.boolean(),
-  agent: z.object({ enabled: z.boolean(), agentId: z.string().optional() }).optional(),
+  agent: z.object({ enabled: z.boolean(), agentId: z.string().optional(), autoMergeDocs: z.boolean().optional() }).optional(),
   labels: labelsSchema,
   hiddenLabels: labelsSchema,
   prTitleConvention: z.literal("conventional-commits").optional(),

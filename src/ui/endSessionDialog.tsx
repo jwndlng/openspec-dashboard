@@ -6,7 +6,7 @@ import type { PullResult, WorkStatus } from "../shared/types.ts";
 import { api } from "./api.ts";
 import { PullBlockedList, usePull } from "./pull.tsx";
 import { pullNeedsReport, pullOutcome } from "./pullState.ts";
-import { endSeverity, endWarning, pullOffer, worktreeRemovalPossible } from "./sessionState.ts";
+import { endSeverity, endWarning, pullOffer, reportShip, worktreeRemovalPossible } from "./sessionState.ts";
 import { useSessionUi } from "./sessions.tsx";
 
 interface Status {
@@ -225,7 +225,7 @@ export function EndSessionDialog() {
                 run(async () => {
                   const result = await api.shipSession(session.id);
                   ui.openPanel(session.id);
-                  ui.reportUnsent(result.submitted ? undefined : session.id);
+                  reportShip(ui, session.id, result);
                 })
               }
             >

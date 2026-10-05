@@ -51,6 +51,9 @@ _None._
 - `src/ui/changelog.ts` — a What's new entry.
 - `test/` — `agents.test.ts`, `config.test.ts`, `api.test.ts` (or `trackingApi.test.ts`), `projectSettingsUi.test.ts`,
   `demoApi.test.ts`, and the Ship tests that assert on the default prompt.
+- Baselines: the three requirements modified here start from the deltas of `auto-merge-docs` (merged, not archived),
+  which modifies the same three; archive that change first. Ship composes both: the convention sentence before the
+  profile's additional instructions, the auto-merge instruction after them.
 - No new dependency, no network, no change to invariant 1: the setting lives in `~/.openspec-dashboard/`, and the
   dashboard still commits, pushes and titles nothing itself.
 
