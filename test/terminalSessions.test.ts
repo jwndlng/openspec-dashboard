@@ -189,6 +189,29 @@ test("a change awaiting validation starts a Validate session and refuses Impleme
   expect(existsSync(join(worktreesDir(), h.repoId, "archive-confirm-retention"))).toBe(false);
 });
 
+test("a blocked change is refused Implement, naming what it waits for, and may still be drafted", async () => {
+  const h = track(await harness({ agent: { prompts: { draft: "draft {change}", implement: "implement {change}" } } }));
+  const changes = h.snapshot.repos[0].changes;
+  const block = (name: string) => Object.assign(changes.find((c) => c.name === name && !c.archived)!, {
+    blocked: true,
+    dependsOn: [
+      { name: "add-billing-api", state: "waiting" },
+      { name: "add-billing-schema", state: "met" },
+      { name: "add-billing-scheme", state: "missing" },
+    ],
+  });
+  block("upgrade-runtime");
+  block("add-health-endpoint");
+  await expect(h.manager.open({ repoId: h.repoId, change: "upgrade-runtime", action: "implement" })).rejects.toMatchObject({
+    status: 400,
+    message: "Implement is held back: waits for add-billing-api (waiting), add-billing-scheme (missing)",
+  });
+  expect(h.manager.list()).toEqual([]);
+  expect(existsSync(join(worktreesDir(), h.repoId))).toBe(false); // a refused request creates no worktree
+  const draft = await h.manager.open({ repoId: h.repoId, change: "add-health-endpoint", action: "draft" });
+  expect(draft).toMatchObject({ state: "running", action: "draft", change: "add-health-endpoint" });
+});
+
 test("a crash is recorded; shutdown ends agents; a restarted dashboard knows nothing is running", async () => {
   const h = track(await harness());
   const s = await h.manager.open({ repoId: h.repoId, change: "upgrade-runtime", action: "implement" });

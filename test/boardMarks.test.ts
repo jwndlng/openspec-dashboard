@@ -49,3 +49,31 @@ test("a card is marked live only when told an agent is working on it, and its na
   const name = byTag(frame(true), "span").find((s) => s.props.class === "name");
   expect(name && textOf(name)).toBe("confirm-retention");
 });
+
+const notes = (node: Card, running = false) =>
+  byTag(ChangeCard({ card: node, now: Date.parse("2026-09-29T12:00:00Z"), from: "", running }), "span").filter((s) => s.props.class === "waits-for");
+const blockedReady = card({
+  stage: "ready", column: "Ready", subState: undefined, tasks: { done: 0, total: 12 }, blocked: true,
+  dependsOn: [
+    { name: "add-billing-schema", state: "met" },
+    { name: "add-billing-api", state: "waiting" },
+    { name: "add-billing-scheme", state: "missing" },
+  ],
+});
+
+test("a blocked card in Ready waits instead of offering Implement, naming what it waits for", () => {
+  const [note] = notes(blockedReady);
+  expect(textOf(note)).toBe("⧗ waits for add-billing-api +1");
+  expect(note.props.title).toBe("Implement is held back until these are done or archived in the main checkout: add-billing-api — waiting, add-billing-scheme — missing");
+  expect(note.props["aria-label"]).toBe(note.props.title);
+  // A note, not a control.
+  expect(byTag(ChangeCard({ card: blockedReady, now: 0, from: "" }), "button")).toEqual([]);
+  expect(notes({ ...blockedReady, stage: "implementing", column: "Implementing" })).toHaveLength(1);
+  expect(textOf(notes({ ...blockedReady, dependsOn: undefined })[0])).toContain("depends-on.yaml unreadable");
+});
+
+test("no note while drafting, once unblocked, or while a session runs", () => {
+  expect(notes({ ...blockedReady, stage: "drafts", column: "Drafts" })).toEqual([]);
+  expect(notes({ ...blockedReady, blocked: undefined })).toEqual([]);
+  expect(notes(blockedReady, true)).toEqual([]);
+});

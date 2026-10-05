@@ -6,7 +6,7 @@ import { focusOnce } from "./focus.ts";
 import { labelHueStyle } from "./labels.tsx";
 import { IconFilePlus, IconX } from "./icons.tsx";
 import { Modal } from "./modal.tsx";
-import { type LabelConfig, labelChoices, labelTargets, type LabelTargetRepo, type NewChangeProject } from "./repoGroups.ts";
+import { type DependencyChoice, type LabelConfig, labelChoices, labelTargets, type LabelTargetRepo, type NewChangeProject } from "./repoGroups.ts";
 
 /** What the combined board and the overview hand the form so it can target repositories by label. */
 export interface ByLabel {
@@ -22,7 +22,7 @@ export interface ByLabel {
  * and the overview) — one of them, or with `byLabel` every eligible repository displaying a set of labels.
  */
 export type NewChangeTarget =
-  | { repoId: string; repoName: string }
+  | { repoId: string; repoName: string; /** The repository's active changes, for **Depends on**. */ changes?: DependencyChoice[] }
   | { projects: NewChangeProject[]; /** The project chosen when the form opens, if the choice is unambiguous. */ preselected?: string; byLabel?: ByLabel };
 
 type Mode = "project" | "label";
@@ -67,6 +67,38 @@ export async function createInRepos(
   return results;
 }
 
+/** Checks or unchecks a dependency, keeping the order the user picked them in — the order `depends-on.yaml` lists. */
+export function toggleDependency(selected: string[], name: string): string[] {
+  return selected.includes(name) ? selected.filter((n) => n !== name) : [...selected, name];
+}
+
+/**
+ * The **Depends on** field: the target repository's active changes as checkboxes, each with its column. Picking one
+ * writes nothing; the new change only declares, on create, that it waits for them. Hook-free, so it can be inspected.
+ */
+export function DependsOnField({ choices, selected, disabled, onToggle }: { choices: DependencyChoice[]; selected: string[]; disabled: boolean; onToggle: (name: string) => void }) {
+  return (
+    <fieldset class="new-change-depends">
+      <legend>Depends on (optional)</legend>
+      {choices.length === 0 ? (
+        <p class="hint">No active change in this project to depend on.</p>
+      ) : (
+        <ul aria-label="Changes this one waits for">
+          {choices.map((c) => (
+            <li key={c.name}>
+              <input type="checkbox" id={`new-change-dep-${c.name}`} checked={selected.includes(c.name)} disabled={disabled} onChange={() => onToggle(c.name)} />
+              <label for={`new-change-dep-${c.name}`}>
+                <span class="mono">{c.name}</span> <span class="hint">{c.column}</span>
+              </label>
+            </li>
+          ))}
+        </ul>
+      )}
+      {selected.length > 0 && <p class="hint">Implement is held back until {selected.length === 1 ? "it is" : "they are"} done or archived in the main checkout.</p>}
+    </fieldset>
+  );
+}
+
 const plural = (n: number) => `${n} ${n === 1 ? "project" : "projects"}`;
 
 /**
@@ -86,6 +118,8 @@ export function NewChangeForm({ target, onClose, onCreated, onReload, onBusy }: 
   const [unchecked, setUnchecked] = useState<ReadonlySet<string>>(new Set());
   const [name, setName] = useState("");
   const [prompt, setPrompt] = useState("");
+  // Remembered with the repository they were picked in: choosing another project clears them without an effect.
+  const [picked, setPicked] = useState<{ repoId: string; names: string[] }>({ repoId: "", names: [] });
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusyState] = useState(false);
   const [working, setWorking] = useState<string | null>(null);
@@ -102,6 +136,9 @@ export function NewChangeForm({ target, onClose, onCreated, onReload, onBusy }: 
   // A project that stopped being eligible while the form is open counts as no choice: derived, so focus is untouched.
   const repoId = "repoId" in target ? target.repoId : projects?.some((p) => p.id === chosen) ? chosen : "";
   const repoName = "repoName" in target ? target.repoName : projects?.find((p) => p.id === repoId)?.name;
+  const dependencyChoices = "repoId" in target ? target.changes : projects?.find((p) => p.id === repoId)?.changes;
+  // Only names still offered are sent: a change dismissed or archived while the form is open drops out.
+  const dependsOn = picked.repoId === repoId ? picked.names.filter((n) => dependencyChoices?.some((c) => c.name === n)) : [];
 
   // Derived on every render, so a repository whose scan fails while the form is open is skipped, never sent.
   const choices = byLabel ? labelChoices(byLabel.repos, byLabel.config) : [];
@@ -128,7 +165,7 @@ export function NewChangeForm({ target, onClose, onCreated, onReload, onBusy }: 
       return;
     }
     try {
-      await api.createChange(repoId, trimmed, prompt.trim() || undefined);
+      await api.createChange(repoId, trimmed, prompt.trim() || undefined, dependsOn.length ? dependsOn : undefined);
       onCreated();
     } catch (err) {
       setError(errorText(err));
@@ -273,6 +310,11 @@ export function NewChangeForm({ target, onClose, onCreated, onReload, onBusy }: 
           />
         </label>
       </div>
+      {mode === "project" && repoId !== "" && dependencyChoices && (
+        <div class="row">
+          <DependsOnField choices={dependencyChoices} selected={dependsOn} disabled={busy} onToggle={(dep) => setPicked({ repoId, names: toggleDependency(dependsOn, dep) })} />
+        </div>
+      )}
       {error && <div class="notice danger">{error}</div>}
       <div class="row actions">
         <button type="submit" class="btn primary" disabled={!canSubmit}>

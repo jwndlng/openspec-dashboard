@@ -4,6 +4,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { mkdir, writeFile } from "node:fs/promises";
 import { createChange, stageChangeDir } from "../src/server/createChange.ts";
+import { parseDependsOn } from "../src/server/scanner.ts";
 import { tempDir } from "./helpers.ts";
 import { git, tempGitRepo } from "./sessionHelpers.ts";
 
@@ -250,4 +251,40 @@ test("a refused create runs no git: the index is byte-for-byte unchanged", async
   }
   expect(readFileSync(join(repo, ".git", "index")).equals(indexBefore)).toBe(true);
   expect(porcelain(repo)).toEqual([]);
+});
+
+test("writes depends-on.yaml with the dependencies in order, which the scanner reads back", async () => {
+  const root = await repoWithOpenspec();
+  const result = await createChange(root, "add-billing-ui", undefined, ["add-billing-schema", "add-billing-api"]);
+  expect(result.ok).toBe(true);
+  const text = await readFile(join(root, "openspec", "changes", "add-billing-ui", "depends-on.yaml"), "utf8");
+  expect(text.startsWith("# ")).toBe(true);
+  expect(parseDependsOn(text)).toEqual({ names: ["add-billing-schema", "add-billing-api"], unreadable: false, warnings: [] });
+});
+
+test("no dependencies, no depends-on.yaml", async () => {
+  const root = await repoWithOpenspec();
+  for (const [name, deps] of [["a", undefined], ["b", null], ["c", []]] as const) {
+    expect((await createChange(root, name, undefined, deps)).ok).toBe(true);
+    expect(readdirSync(join(root, "openspec", "changes", name))).toEqual([".openspec.yaml"]);
+  }
+});
+
+test("invalid dependencies are refused before anything is created", async () => {
+  const root = await repoWithOpenspec();
+  for (const deps of [["../etc"], ["a", "a"], ["add-billing-ui"], "add-billing-api", [1], Array.from({ length: 33 }, (_, i) => `c${i}`)]) {
+    const result = await createChange(root, "add-billing-ui", undefined, deps);
+    expect(result).toMatchObject({ ok: false, reason: "invalid-dependencies" });
+  }
+  expect(readdirSync(join(root, "openspec", "changes"))).toEqual([]);
+});
+
+test("dependencies are staged with the change by the single git add", async () => {
+  const repo = await tempGitRepo();
+  const result = await createChange(repo, "add-billing-ui", undefined, ["add-billing-api"]);
+  expect(result).toMatchObject({ ok: true, staged: true });
+  expect(porcelain(repo)).toEqual([
+    "A  openspec/changes/add-billing-ui/.openspec.yaml",
+    "A  openspec/changes/add-billing-ui/depends-on.yaml",
+  ]);
 });

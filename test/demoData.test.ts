@@ -141,6 +141,14 @@ test("the demo shows a change in Done awaiting validation, with a Validate promp
   expect(meterText(done, total, "tasks", awaiting)).toContain(`${awaiting} awaiting validation`);
 });
 
+test("the demo shows a change in Ready waiting for one in Implementing, and that one lists it as required by", () => {
+  const blocked = changes.filter((c) => c.blocked);
+  expect(blocked.map((c) => [c.name, c.column, c.dependsOn])).toEqual([["blue-green-deploys", "Ready", [{ name: "centralize-log-shipping", state: "waiting" }]]]);
+  expect(availableActions(blocked[0])).not.toContain("implement");
+  const dependency = changes.find((c) => c.name === "centralize-log-shipping");
+  expect([dependency?.column, dependency?.requiredBy]).toEqual(["Implementing", ["blue-green-deploys"]]);
+});
+
 test("the demo's pull requests show every state the view can render, under made-up acme names", () => {
   const now = Date.parse("2026-06-01T12:00:00.000Z");
   const answer = buildPullRequests(sample.snapshot, now, now - 2 * 60_000);

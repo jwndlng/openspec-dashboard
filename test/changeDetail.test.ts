@@ -540,3 +540,39 @@ test("header: unavailable pull requests are explained once, with the capability'
   expect(classed(headerWith(prResponse({ status: "never", fetchedAt: undefined }, [])), "detail-pr-unavailable")).toEqual([]);
   expect(classed(headerWith(prResponse({ status: "failed", reason: "timed out" })), "detail-pr")).toHaveLength(1);
 });
+
+test("the header lists what the change depends on, with states in words, and what depends on it", () => {
+  const changes: ChangeSnapshot[] = [
+    { ...change, name: "add-billing-schema", stage: "done", column: "Done", warnings: undefined },
+    { ...change, name: "add-billing-api", stage: "implementing", column: "Implementing", warnings: undefined, requiredBy: ["add-billing-docs", "add-billing-ui"] },
+    {
+      ...change, name: "add-billing-ui", stage: "ready", column: "Ready", blocked: true,
+      warnings: ['depends on "add-billing-scheme", but no change of that name exists'],
+      dependsOn: [
+        { name: "add-billing-schema", state: "met" },
+        { name: "add-billing-api", state: "waiting" },
+        { name: "add-billing-scheme", state: "missing" },
+      ],
+    },
+  ];
+  const billing: RepoSnapshot = { ...repo, changes };
+  const ui = DetailHeader({ repo: billing, change: changes[2], from: "/board?q=billing", onClose: noop });
+  const deps = classed(ui, "detail-deps")[0];
+  expect(textOf(deps)).toContain("blocked — Implement is held back");
+  expect(classed(deps, "dep-met").map(textOf)).toEqual(["add-billing-schema — met"]);
+  expect(classed(deps, "dep-waiting").map(textOf)).toEqual(["add-billing-api — waiting"]);
+  // Known names link to their detail view, keeping the board; a missing one is text.
+  expect(byTag(deps, "a").map((a) => [textOf(a), a.props.href])).toEqual([
+    ["add-billing-schema", "/repo/r1/change/add-billing-schema?from=%2Fboard%3Fq%3Dbilling"],
+    ["add-billing-api", "/repo/r1/change/add-billing-api?from=%2Fboard%3Fq%3Dbilling"],
+  ]);
+  expect(textOf(classed(deps, "dep-missing")[0])).toBe("add-billing-scheme — missing");
+  expect(textOf(ui)).toContain('depends on "add-billing-scheme", but no change of that name exists');
+
+  const api = classed(DetailHeader({ repo: billing, change: changes[1], onClose: noop }), "detail-deps")[0];
+  expect(textOf(api)).toContain("Required by");
+  expect(byTag(api, "li").map(textOf)).toEqual(["add-billing-docs", "add-billing-ui"]);
+  expect(byTag(api, "a").map(textOf)).toEqual(["add-billing-ui"]); // add-billing-docs is not in this snapshot
+
+  expect(classed(DetailHeader({ repo: billing, change: changes[0], onClose: noop }), "detail-deps")).toEqual([]);
+});

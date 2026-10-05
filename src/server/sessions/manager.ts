@@ -4,6 +4,7 @@
 import { randomUUID } from "node:crypto";
 import { realpath, stat } from "node:fs/promises";
 import { join } from "node:path";
+import { blockedReason } from "../../shared/dependencies.ts";
 import { availableActions, changeSessions, isChangeless, isConsole, isIntegration, isProjectConsole, OPEN_SESSION_STATES, projectConsoleSessions, repoAgentEnabled, SESSION_ACTIONS, SHIPPABLE_WORK, type AgentAvailability, type ChangeSession, type Config, type ConsoleSession, type IntegrationSession, type ProjectConsoleLike, type ProjectConsoleSession, type Session, type SessionAction, type SessionWorktree, type Snapshot, type WorkStatus, type PromptResult, type ShipResult } from "../../shared/types.ts";
 import { sessionBranch } from "../../shared/sessionBranch.ts";
 import { isCleaningUp } from "../cleanup.ts";
@@ -151,6 +152,8 @@ export class SessionManager {
     if (isDismissing(repo.id, change)) throw new SessionError(409, "this change is being dismissed");
     const snapshot = scanned.changes.find((c) => c.name === change && !c.archived);
     if (!snapshot) throw new SessionError(404, "unknown change");
+    const heldBack = action === "implement" ? blockedReason(snapshot) : undefined;
+    if (heldBack) throw new SessionError(400, heldBack);
     if (!availableActions(snapshot).includes(action)) throw new SessionError(400, `"${action}" is not available for this change in its current stage`);
 
     // One open session per change, whatever the action: a change never has two consoles, and Archive is no exception.
@@ -538,6 +541,8 @@ export class SessionManager {
       .repos.find((r) => r.id === session.repoId)
       ?.changes.find((c) => c.name === session.change && !c.archived);
     if (!change) throw new SessionError(404, "unknown change");
+    const heldBack = action === "implement" ? blockedReason(change) : undefined;
+    if (heldBack) throw new SessionError(400, heldBack);
     if (!availableActions(change).includes(action)) throw new SessionError(400, `"${action}" is not available for this change in its current stage`);
     const agent = config.agentSessions.agents.find((a) => a.id === session.agentId);
     const text = agent && openingPrompt(agent, action, session.change);

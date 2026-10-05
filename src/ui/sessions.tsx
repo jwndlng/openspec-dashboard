@@ -344,7 +344,7 @@ const STARTER_HINT: Record<SessionAction, string> = {
  * case, so it keeps its starters — the next attempt stays one activation away. The work status is the detail view's
  * (see `WorkStatus`), never a card's. `place` decides whether a start shows the new session (`startShowsConsole`).
  */
-export function SessionControls({ card, place }: { card: Pick<ChangeSnapshot, "repoId" | "name" | "archived" | "artifacts" | "stage" | "subState">; place: StarterPlace }) {
+export function SessionControls({ card, place }: { card: Pick<ChangeSnapshot, "repoId" | "name" | "archived" | "artifacts" | "stage" | "subState" | "blocked">; place: StarterPlace }) {
   const ui = useSessionUi();
   const [starting, setStarting] = useState<SessionAction>();
   const [failure, setFailure] = useState<string>();

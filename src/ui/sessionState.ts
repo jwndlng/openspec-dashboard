@@ -15,7 +15,7 @@ export function agentForRepo(config: Config | null, repoId: string): AgentProfil
 }
 
 /** What the change's stage allows, narrowed to what this repository's agent has an opening prompt for. */
-export function startersFor(config: Config | null, card: Pick<ChangeSnapshot, "repoId" | "archived" | "artifacts" | "stage" | "subState">): SessionAction[] {
+export function startersFor(config: Config | null, card: Pick<ChangeSnapshot, "repoId" | "archived" | "artifacts" | "stage" | "subState" | "blocked">): SessionAction[] {
   const agent = agentForRepo(config, card.repoId);
   if (!agent) return [];
   return availableActions(card).filter((action) => Boolean(agent.prompts[action]));
@@ -46,7 +46,7 @@ export function sessionsForChange(sessions: ChangeSession[], repoId: string, cha
 export function cardSessionControls(
   config: Config | null,
   sessions: ChangeSession[],
-  card: Pick<ChangeSnapshot, "repoId" | "name" | "archived" | "artifacts" | "stage" | "subState">,
+  card: Pick<ChangeSnapshot, "repoId" | "name" | "archived" | "artifacts" | "stage" | "subState" | "blocked">,
 ): { shown: ChangeSession[]; starters: SessionAction[] } {
   if (!sessionsEnabledFor(config, card.repoId)) return { shown: [], starters: [] };
   const shown = sessionsForChange(sessions, card.repoId, card.name);
@@ -60,7 +60,7 @@ export function cardSessionControls(
 export function cardIsLive(
   config: Config | null,
   sessions: ChangeSession[],
-  card: Pick<ChangeSnapshot, "repoId" | "name" | "archived" | "artifacts" | "stage" | "subState">,
+  card: Pick<ChangeSnapshot, "repoId" | "name" | "archived" | "artifacts" | "stage" | "subState" | "blocked">,
   now = Date.now(),
 ): boolean {
   return cardSessionControls(config, sessions, card).shown.some((s) => sessionBadge(s, now).live === true);

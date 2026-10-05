@@ -3,6 +3,7 @@
 //
 // All of it is invented, like the rest of the sample (see sampleData.ts): every repository, change, branch and path
 // comes from the sample, and terminal output comes from the hand-written transcripts.
+import { blockedReason } from "../../shared/dependencies.ts";
 import { availableActions, isChangeless, isConsole, isIntegration, OPEN_SESSION_STATES, projectConsoleSessions, repoAgentEnabled, type ChangeSession, type Config, type ConsoleSession, type IntegrationSession, type ProjectConsoleLike, type ProjectConsoleSession, type Session, type SessionAction, type PromptResult, type SessionWorktree, type ShipResult, SHIPPABLE_WORK, type Snapshot, type WorkStatus, type Worktree } from "../../shared/types.ts";
 import { sessionBranch } from "../../shared/sessionBranch.ts";
 import { ApiError, type TerminalConnection, type TerminalHandlers } from "../api.ts";
@@ -284,6 +285,8 @@ export function createDemoSessions({ now, getConfig, getSnapshot, integratable, 
       if (!scanned?.ok) throw new ApiError(409, "the repository's last scan failed");
       const snapshot = scanned.changes.find((c) => c.name === change && !c.archived);
       if (!snapshot) throw new ApiError(404, "unknown change");
+      const heldBack = action === "implement" ? blockedReason(snapshot) : undefined;
+      if (heldBack) throw new ApiError(400, heldBack);
       if (!availableActions(snapshot).includes(action)) throw new ApiError(400, `"${action}" is not available for this change in its current stage`);
       const existing = sessions.find((s) => s.session.repoId === repoId && s.session.change === change && s.session.state === "running");
       if (existing) return existing.session;
