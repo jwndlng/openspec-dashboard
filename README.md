@@ -75,6 +75,14 @@ dashboard; both are built in and work offline.
   leftovers, and that question is the validation. The dashboard only reads the marker: it never writes, ticks or
   clears a checkbox in any repository — your agent does that, in its own session.
   ([change-scanner](openspec/specs/change-scanner/spec.md), [kanban-board](openspec/specs/kanban-board/spec.md))
+- **Dependencies**: a change can say it must wait for others of the same repository with a `depends-on.yaml` next
+  to its proposal — `depends_on: [add-billing-schema, add-billing-api]` — or by picking them under **Depends on** in
+  the **New change** form, which writes that file. A dependency is met once the main checkout holds it archived or in
+  **Done**, so "implemented and merged" as of your last pull. Until every dependency is met, the card shows
+  `waits for …` where **Implement** would be and the server refuses Implement; drafting, validating and archiving stay
+  available. A name that does not exist, a cycle or an unreadable file is reported on the change and also holds
+  Implement back. The details view lists **Depends on** and **Required by**. The file is yours: edit it by hand or let
+  your agent do it. ([change-dependencies](openspec/specs/change-dependencies/spec.md))
 - **Change details**: **Show details** on a card opens the change's proposal, design, specs and tasks in an overlay
   over the board; close it with `Escape` to get back to the board as you left it. Apply and start commands are run
   by hand or through an agent session. ([change-detail](openspec/specs/change-detail/spec.md))
@@ -161,7 +169,7 @@ dashboard; both are built in and work offline.
   pull-request query runs `gh` outside every repository, writes nothing and changes nothing on GitHub.
 - It writes to a repository only when you click something: **Pull** (using git's own credentials) and, when you confirm **Resolve and pull**, removing the change files it created here that the incoming
   commits already contain — a copy of anything that differs is kept under `~/.openspec-dashboard/` first; **New
-  change**, **Dismiss change** (deleting that change's directory), **applying shared config**, creating or removing an
+  change** (the change's directory, with `depends-on.yaml` when you picked dependencies), **Dismiss change** (deleting that change's directory), **applying shared config**, creating or removing an
   **agent session's worktree**, and **Clean up** (removing worktrees and deleting merged local branches you selected).
   The full list is in the [dashboard-api spec](openspec/specs/dashboard-api/spec.md).
 - Outside repositories, it creates a folder only for **New project**: one empty folder directly inside a workspace root

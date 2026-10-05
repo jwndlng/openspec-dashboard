@@ -43,7 +43,8 @@ bun test test/scanner.test.ts   # a single test file
    from the index with `git rm --cached` (never `-f`), then retrying the fast-forward and, if it is still refused,
    writing them back and re-staging them with `git add -- <those paths>` (`src/server/pull.ts`, the only place that
    contacts a remote or changes a main checkout); and the **create-change action** — a new `openspec/changes/<name>/` directory
-   with the schema marker `.openspec.yaml` and, when the user typed one, `prompt.md`, written directly with an
+   with the schema marker `.openspec.yaml`, when the user typed one, `prompt.md`, and, when the user picked any
+   dependencies, `depends-on.yaml` (a `depends_on:` list of validated change names), written directly with an
    exclusive-create so two concurrent requests cannot both succeed, and never through git or the `openspec` CLI
    (`src/server/createChange.ts`, `POST /api/repos/<id>/changes`); and, once those files are written, **staging that
    new directory** — a single `git add -- openspec/changes/<name>/`, the directory just created and nothing else,

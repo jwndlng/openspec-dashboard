@@ -561,6 +561,12 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: 
 .card .meta > * { min-width: 0; }
 /* The running session's badge stands in for the starter here, so it sits on the starter's line and at its height. */
 .card .meta .session-badge { padding-block: 3px; }
+/* Waiting for dependencies: in the Implement button's place and at its height, but plain text, never a control. */
+.card .meta .waits-for {
+  display: inline-flex; align-items: center; padding: 3px 7px; font-size: 12px; font-family: var(--font-mono);
+  color: var(--fg-subtle); border: 1px dashed var(--border); border-radius: var(--radius-sm);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: help;
+}
 /* The change's pull request: a link on the status line, its state a symbol and a word; quieter once merged or closed. */
 .card .card-pr { display: inline-flex; align-items: center; gap: 5px; padding: 2px 7px; font-size: 11px; font-family: var(--font-mono); color: var(--fg-heading); border: 1px solid var(--border); border-radius: var(--radius-sm); text-decoration: none; white-space: nowrap; }
 .card .card-pr:hover { color: var(--brand-fg); border-color: var(--brand-soft); background: var(--brand-softer); }
@@ -859,6 +865,16 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: 
 .new-change .new-change-targets label { display: inline; flex: 0 1 auto; font-size: 13px; color: var(--fg-body); cursor: pointer; }
 .new-change-targets li.skipped label { color: var(--fg-subtle); cursor: default; }
 .new-change-targets .hint { margin-left: auto; color: var(--fg-subtle); }
+/* Depends on: the target repository's active changes as a checklist, like the label targets. */
+.new-change-depends { display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 0; margin: 0; padding: 0; border: 0; }
+.new-change-depends legend { padding: 0; margin-bottom: 4px; font-size: 12px; font-weight: 600; color: var(--fg-body); }
+.new-change-depends ul { display: flex; flex-direction: column; gap: 2px; margin: 0; padding: 6px 0; list-style: none; max-height: 180px; overflow-y: auto; border: 1px solid var(--border-light); border-radius: var(--radius); background: var(--bg-section); }
+.new-change-depends li { display: flex; align-items: center; gap: 8px; padding: 3px 10px; font-size: 13px; }
+.new-change .new-change-depends label { display: flex; flex: 1 1 auto; gap: 8px; align-items: baseline; min-width: 0; font-size: 13px; color: var(--fg-body); cursor: pointer; }
+.new-change .new-change-depends label span { font-weight: 400; }
+.new-change-depends label .mono { overflow-wrap: anywhere; }
+.new-change-depends label .hint { margin-left: auto; color: var(--fg-subtle); }
+.new-change-depends > .hint { margin: 0; }
 .new-change-summary { margin: 0; font-size: 13px; color: var(--fg-body); }
 .new-change-results li { display: flex; gap: 10px; align-items: baseline; padding: 3px 10px; font-size: 13px; }
 .new-change-results .repo { font-weight: 600; color: var(--fg-heading); min-width: 0; }
@@ -1107,6 +1123,18 @@ body:has(.detail-overlay) { overflow: hidden; }
 .detail-facts .meter { width: 220px; }
 .detail-pr { display: inline-flex; flex-wrap: wrap; align-items: baseline; gap: 4px 6px; min-width: 0; }
 .detail-pr-unavailable { font-size: 12px; }
+/* Depends on / Required by: two short lists under the facts, names linking to their changes. */
+.detail-deps { display: flex; flex-wrap: wrap; gap: 8px 24px; margin-top: 8px; font-size: 12px; }
+.detail-deps-group { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.detail-deps-label { font-weight: 600; color: var(--fg-body); }
+.detail-deps-label .warn-text { color: var(--warning); font-weight: 400; }
+.detail-deps-label .ok-text { color: var(--success); font-weight: 400; }
+.detail-deps ul { display: flex; flex-wrap: wrap; gap: 4px 12px; margin: 0; padding: 0; list-style: none; }
+.detail-deps li { min-width: 0; overflow-wrap: anywhere; }
+.detail-deps .dep-state { color: var(--fg-subtle); }
+.detail-deps .dep-missing .dep-state, .detail-deps .dep-cycle .dep-state { color: var(--danger); }
+.detail-deps .dep-waiting .dep-state { color: var(--warning); }
+.detail-deps .dep-met .dep-state { color: var(--success); }
 .detail-prompt {
   display: flex; gap: 10px; align-items: baseline; max-width: 860px; padding: 10px 14px;
   background: var(--bg-raised); border: 1px solid var(--border-light); border-radius: var(--radius);

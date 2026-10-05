@@ -583,7 +583,8 @@ async function artifactRoutes(state: AppState, url: URL, match: RegExpExecArray)
 
 /**
  * The one API route that writes into a tracked repository outside `openspec/config.yaml`: creates
- * `openspec/changes/<name>/` with its schema marker and, if given, `prompt.md`, then stages that directory. Refused
+ * `openspec/changes/<name>/` with its schema marker and, if given, `prompt.md` and `depends-on.yaml`, then stages that
+ * directory. Refused
  * for any reason means nothing was written and no git was run; the create itself is atomic (exclusive-create), so
  * two concurrent requests cannot both succeed. A staging failure is reported (`staged: false`), never a failure.
  */
@@ -604,9 +605,9 @@ async function postCreateChange(state: AppState, req: Request, repoId: string): 
   const prompt = body.prompt;
   if (typeof name !== "string") return json({ error: "name must be a string" }, 400);
   if (prompt !== undefined && prompt !== null && typeof prompt !== "string") return json({ error: "prompt must be a string" }, 400);
-  const result = await createChange(repo.path, name, typeof prompt === "string" ? prompt : undefined);
+  const result = await createChange(repo.path, name, typeof prompt === "string" ? prompt : undefined, body.dependsOn);
   if (!result.ok) {
-    const status = result.reason === "invalid-name" || result.reason === "invalid-prompt" ? 400 : result.reason === "no-openspec-dir" || result.reason === "duplicate-active" || result.reason === "duplicate-archived" ? 409 : 500;
+    const status = result.reason === "invalid-name" || result.reason === "invalid-prompt" || result.reason === "invalid-dependencies" ? 400 : result.reason === "no-openspec-dir" || result.reason === "duplicate-active" || result.reason === "duplicate-archived" ? 409 : 500;
     return json({ error: result.message }, status);
   }
   state.scanner.trigger();
