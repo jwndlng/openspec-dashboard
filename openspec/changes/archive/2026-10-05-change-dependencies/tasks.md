@@ -33,5 +33,5 @@
 
 - [x] 6.1 Update `CLAUDE.md` invariant 1 (the create-change action may also write `depends-on.yaml`) and `README.md` (the `depends-on.yaml` convention, what `met` means, that only Implement is held back); verify by reading the diff against the dashboard-api delta.
 - [x] 6.2 Run `bun run check` and `bun run build`, and confirm `dist/openspec-dashboard` scans the fixture with dependencies resolved (no module-relative file reads were added).
-- [~] 6.3 In `bun run dev` against a scratch repository: create a change with two dependencies from the form, see the "waits for" note on its card and both lists in the detail views, then archive the dependency into the main checkout and see **Implement** return on the next scan.
+- [x] 6.3 In `bun run dev` against a scratch repository: create a change with two dependencies from the form, see the "waits for" note on its card and both lists in the detail views, then archive the dependency into the main checkout and see **Implement** return on the next scan.
 - [x] 6.4 Add a What's new entry at the top of `src/ui/changelog.ts` for change dependencies (see "What's new" in CONTRIBUTING.md); verify with `test/whatsNew.test.ts`.
