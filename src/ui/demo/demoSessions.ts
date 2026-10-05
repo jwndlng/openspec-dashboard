@@ -4,7 +4,7 @@
 // All of it is invented, like the rest of the sample (see sampleData.ts): every repository, change, branch and path
 // comes from the sample, and terminal output comes from the hand-written transcripts.
 import { blockedReason } from "../../shared/dependencies.ts";
-import { availableActions, isChangeless, isConsole, isIntegration, OPEN_SESSION_STATES, projectConsoleSessions, repoAgentEnabled, type ChangeSession, type Config, type ConsoleSession, type IntegrationSession, type ProjectConsoleLike, type ProjectConsoleSession, type Session, type SessionAction, type PromptResult, type SessionWorktree, type ShipResult, SHIPPABLE_WORK, type Snapshot, type WorkStatus, type Worktree } from "../../shared/types.ts";
+import { availableActions, isChangeless, isConsole, isIntegration, OPEN_SESSION_STATES, projectConsoleSessions, repoAgentEnabled, type ChangeSession, type Config, type ConsoleSession, type IntegrationSession, type ProjectConsoleLike, type ProjectConsoleSession, type Session, type SessionAction, type AutoMergePromptResult, type PromptResult, type SessionWorktree, type ShipResult, SHIPPABLE_WORK, type StartResult, type Snapshot, type WorkStatus, type Worktree } from "../../shared/types.ts";
 import { sessionBranch } from "../../shared/sessionBranch.ts";
 import { ApiError, type TerminalConnection, type TerminalHandlers } from "../api.ts";
 import { DEMO_AGENT, DEMO_ROOT } from "./sampleData.ts";
@@ -276,7 +276,7 @@ export function createDemoSessions({ now, getConfig, getSnapshot, integratable, 
       };
     },
 
-    open(repoId: string, change: string, action: SessionAction): Session {
+    open(repoId: string, change: string, action: SessionAction): StartResult {
       requireEnabled();
       const repo = getConfig().repos.find((r) => r.id === repoId);
       if (!repo) throw new ApiError(404, "unknown repository");
@@ -289,7 +289,7 @@ export function createDemoSessions({ now, getConfig, getSnapshot, integratable, 
       if (heldBack) throw new ApiError(400, heldBack);
       if (!availableActions(snapshot).includes(action)) throw new ApiError(400, `"${action}" is not available for this change in its current stage`);
       const existing = sessions.find((s) => s.session.repoId === repoId && s.session.change === change && s.session.state === "running");
-      if (existing) return existing.session;
+      if (existing) return { ...existing.session, autoMerge: false };
 
       const place = placeFor(repoId, change, action);
       const at = now();
@@ -321,7 +321,8 @@ export function createDemoSessions({ now, getConfig, getSnapshot, integratable, 
       // a fresh session takes over the worktree an ended one left behind
       for (const old of sessions) if (old.session.worktreePath === place.path && old.session.state !== "running") created.work = workOf(old);
       sessions.unshift(created);
-      return created.session;
+      // The recording's agent archives nothing real, so it is never asked to enable auto-merge either.
+      return { ...created.session, autoMerge: false };
     },
 
     /**
@@ -445,7 +446,7 @@ export function createDemoSessions({ now, getConfig, getSnapshot, integratable, 
       return { ...s.session, submitted: true };
     },
 
-    prompt(id: string, action: SessionAction): PromptResult {
+    prompt(id: string, action: SessionAction): AutoMergePromptResult {
       requireEnabled();
       const s = find(id);
       if (isChangeless(s.session)) throw new ApiError(409, notAChange(s.session));
@@ -455,7 +456,7 @@ export function createDemoSessions({ now, getConfig, getSnapshot, integratable, 
       // Sent with one activation, as in the dashboard: the recording's agent takes the prompt up straight away.
       s.session.action = action;
       run(s, action);
-      return { ...s.session, submitted: true };
+      return { ...s.session, submitted: true, autoMerge: false };
     },
 
     status(id: string) {

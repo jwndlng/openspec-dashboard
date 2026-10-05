@@ -127,8 +127,11 @@ dashboard; both are built in and work offline.
   and pushes nothing itself; it only asks, exactly as **Ship** does.
   **Docs auto-merge** (off by default, per project): when everything a session would ship — committed or not — lies
   under `openspec/`, such as an archive branch or a drafted proposal, **Ship** also asks the agent to enable auto-merge
-  on the pull request, so it merges once its required checks pass. Anything else is left for review as before, and the
-  session panel says which kind of Ship was sent. The agent enables auto-merge; the dashboard itself merges nothing.
+  on the pull request, so it merges once its required checks pass. **Archive** does the same when its worktree holds
+  nothing outside `openspec/`, but only if the agent opens a pull request for the archive — say so in the Archive
+  prompt's additional instructions; the dashboard never asks for one just for this. Anything else is left for review as
+  before, and the session panel says when the agent was asked. A repository without required checks merges as soon as
+  auto-merge is on. The agent enables auto-merge; the dashboard itself merges nothing.
   A tracked folder that is not a git repository works too — there the agent runs in the folder itself, so it edits your
   files directly, with no branch and no undo, and the session says so. The same goes for an **Integrate** session and
   a project's console.

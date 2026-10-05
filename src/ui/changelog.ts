@@ -22,6 +22,13 @@ export const CHANGELOG: readonly ChangelogEntry[] = [
       "With the **Antigravity** preset, the main console and a project's console now start `agy` instead of failing on a dangling `-i`; a saved preset is fixed on its own. Starting a change session in a project without a first commit now says so instead of showing git's `invalid reference: HEAD`.",
   },
   {
+    id: "2026-10-05-archive-auto-merge-docs",
+    date: "2026-10-05",
+    title: "Docs auto-merge reaches Archive",
+    summary:
+      "With **Docs auto-merge** on, an **Archive** session whose worktree holds only files under `openspec/` now asks your agent to enable auto-merge on the pull request it opens for the archive — if your Archive instructions have it open one. The session panel says when it did.",
+  },
+  {
     id: "2026-10-05-pr-title-convention",
     date: "2026-10-05",
     title: "Pull request title convention per project",

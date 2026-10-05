@@ -81,8 +81,11 @@ const OPENSPEC_DIR = "openspec/";
  * since it forked from `base`, and every path the worktree's status reports — renames on both sides, untracked files
  * included, because Ship asks the agent to commit everything — lies under `openspec/`. Asked at the moment of Ship and
  * failing closed: an unknown base, a git error or no path at all is `false`.
+ *
+ * Archive asks it too, with `allowEmpty` (archive-auto-merge-docs design D1): an archive session normally starts in a
+ * fresh worktree from the base, where nothing has changed yet, and that is the case its instruction is for.
  */
-export async function shipsOnlyOpenSpec(worktreePath: string, base: string | undefined): Promise<boolean> {
+export async function shipsOnlyOpenSpec(worktreePath: string, base: string | undefined, { allowEmpty = false }: { allowEmpty?: boolean } = {}): Promise<boolean> {
   if (!base) return false;
   const [committed, status] = await Promise.all([
     git(worktreePath, ["diff", "--name-only", "-z", `${base}...HEAD`]),
@@ -99,7 +102,7 @@ export async function shipsOnlyOpenSpec(worktreePath: string, base: string | und
     paths.push(entry.slice(3));
     if (entry[0] === "R" || entry[0] === "C") paths.push(entries[++i] ?? "");
   }
-  return paths.length > 0 && paths.every((path) => path.startsWith(OPENSPEC_DIR));
+  return (allowEmpty || paths.length > 0) && paths.every((path) => path.startsWith(OPENSPEC_DIR));
 }
 
 /**
