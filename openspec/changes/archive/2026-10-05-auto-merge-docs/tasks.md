@@ -23,4 +23,4 @@
 ## 5. Docs and verification
 
 - [x] 5.1 Add a README paragraph on **Auto-merge docs-only pull requests** (what counts as docs-only, that the agent enables auto-merge, that the dashboard merges nothing) and extend the Ship sentence under *Work status* in `CLAUDE.md`; verify by reading both
-- [~] 5.2 Run `bun run check` and `bun run build`, start `dist/openspec-dashboard`, toggle the setting on a fixture repository's overview tile and confirm the config file gains and loses `autoMergeDocs`; `openspec validate auto-merge-docs --strict` passes
+- [x] 5.2 Run `bun run check` and `bun run build`, start `dist/openspec-dashboard`, toggle the setting on a fixture repository's overview tile and confirm the config file gains and loses `autoMergeDocs`; `openspec validate auto-merge-docs --strict` passes

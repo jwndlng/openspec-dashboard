@@ -393,6 +393,7 @@ Each managed project on the projects overview, as a table row and as a tile, SHA
 
 - **Agent sessions**: a toggle whose state reads **Enabled** or **Disabled**, exposed to assistive technology as a switch with the project's name in its accessible name. A project without a saved agent-session setting SHALL show **Enabled**. While agent sessions are switched off globally, the toggle SHALL still show the project's own setting but SHALL be inactive, and SHALL say that agent sessions are off with a link to the Agent sessions section of Settings.
 - **Agent**: a picker offering "default agent" and every configured agent profile by name, showing the project's current choice. It SHALL be shown only when more than one agent profile is configured and the project's agent sessions are enabled. Choosing "default agent" SHALL clear the project's own choice.
+- **Auto-merge docs-only pull requests**: a toggle whose state reads **On** or **Off**, exposed to assistive technology as a switch with the project's name in its accessible name, and explained in a tooltip: when on, Ship asks the agent to enable auto-merge on a pull request whose changes are all under `openspec/`, and on no other. A project without a saved setting SHALL show **Off**. It SHALL be shown only while the project's agent sessions are enabled and the project is a git repository; while agent sessions are switched off globally it SHALL be shown inactive, like the agent-session toggle.
 - **PR titles**: a picker offering **No convention** and **Conventional Commits**, showing the project's current choice, with an accessible name that includes the project's name and a tooltip saying that Ship asks the agent to title its pull requests this way. It SHALL be shown only for a project that is a git repository. Choosing **No convention** SHALL clear the project's convention. The setting is used by Ship, as the `agent-sessions` capability specifies; while agent sessions are switched off globally or for the project, the picker SHALL still show and change the project's own setting.
 - **Rename**: an action that turns the project's name into a text field in place, prefilled with the current name. Pressing Enter or moving focus out of the field SHALL save the trimmed name; pressing Escape SHALL leave the name unchanged. A name that is empty after trimming MUST NOT be saved, and the field SHALL say why. An unchanged name SHALL be saved without a request. The new name SHALL be shown on the overview, on the repository's board and in the board's repository groups at once.
 - **Labels**: an action that opens the project's labels dialog, as the `project-labels` capability specifies.
@@ -410,6 +411,18 @@ While a setting is being saved its control SHALL show that it is working and SHA
 #### Scenario: Sessions are off globally
 - **WHEN** agent sessions are switched off in Settings
 - **THEN** every project's toggle shows its own setting, is inactive, says that agent sessions are off and links to the Agent sessions section of Settings
+
+#### Scenario: Allowing docs-only pull requests to merge
+- **WHEN** agent sessions are on and the user switches **Auto-merge docs-only pull requests** on the tile of `demo-ops` to On
+- **THEN** the configuration has `autoMergeDocs: true` for `demo-ops` without any Save, the toggle reads On, its other agent settings are unchanged, and the board is not opened
+
+#### Scenario: Auto-merge is off by default
+- **WHEN** agent sessions are on and a project has no saved auto-merge setting
+- **THEN** its auto-merge toggle reads Off
+
+#### Scenario: No auto-merge toggle without agent sessions or git
+- **WHEN** a project's agent sessions are switched to Disabled, or the project is a folder without git
+- **THEN** it shows no auto-merge toggle
 
 #### Scenario: Choosing an agent
 - **WHEN** two agent profiles are configured and the user picks `my-agent` on the tile of `demo-ops`
