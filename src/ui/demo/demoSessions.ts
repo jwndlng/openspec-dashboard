@@ -3,7 +3,7 @@
 //
 // All of it is invented, like the rest of the sample (see sampleData.ts): every repository, change, branch and path
 // comes from the sample, and terminal output comes from the hand-written transcripts.
-import { availableActions, isChangeless, isConsole, isIntegration, type ChangeSession, type Config, type ConsoleSession, type IntegrationSession, type Session, type SessionAction, type PromptResult, type SessionWorktree, type ShipResult, SHIPPABLE_WORK, type Snapshot, type WorkStatus, type Worktree } from "../../shared/types.ts";
+import { availableActions, isChangeless, isConsole, isIntegration, OPEN_SESSION_STATES, projectConsoleSessions, repoAgentEnabled, type ChangeSession, type Config, type ConsoleSession, type IntegrationSession, type ProjectConsoleLike, type ProjectConsoleSession, type Session, type SessionAction, type PromptResult, type SessionWorktree, type ShipResult, SHIPPABLE_WORK, type Snapshot, type WorkStatus, type Worktree } from "../../shared/types.ts";
 import { sessionBranch } from "../../shared/sessionBranch.ts";
 import { ApiError, type TerminalConnection, type TerminalHandlers } from "../api.ts";
 import { DEMO_AGENT, DEMO_ROOT } from "./sampleData.ts";
@@ -20,7 +20,8 @@ export const sessionWorktreePath = (repoId: string, name: string) => `${DEMO_ROO
 export const DEMO_CONSOLE_DIR = `${DEMO_ROOT.replace(/\/[^/]+$/, "")}/.openspec-dashboard/console`;
 const NOT_A_CHANGE = "this is the main console, which belongs to no change";
 const NOT_A_CHANGE_INTEGRATING = "this session is setting a repository up for OpenSpec, so it belongs to no change";
-const notAChange = (session: Session) => (isIntegration(session) ? NOT_A_CHANGE_INTEGRATING : NOT_A_CHANGE);
+const NOT_A_CHANGE_PROJECT = "this is the project's console, which belongs to no change";
+const notAChange = (session: Session) => (isIntegration(session) ? NOT_A_CHANGE_INTEGRATING : session.projectConsole ? NOT_A_CHANGE_PROJECT : NOT_A_CHANGE);
 
 interface Seed {
   repo: string;
@@ -345,6 +346,38 @@ export function createDemoSessions({ now, getConfig, getSnapshot, integratable, 
         resumable: true,
       };
       sessions.unshift({ name: path.split("/").pop() ?? path, transcript: "integrate", startedAtMs: at, position: { index: 0, waiting: false }, work: { state: "missing" }, workFrom: 0, lastActivityMs: at, session });
+      return session;
+    },
+
+    /** A project's console: one per project, in its folder, playing the console recording; a running setup session is it. */
+    openProjectConsole(repoId: string): ProjectConsoleLike {
+      requireEnabled();
+      const repo = getConfig().repos.find((r) => r.id === repoId);
+      if (!repo) throw new ApiError(404, "unknown repository");
+      if (!repo.enabled) throw new ApiError(409, "the repository is not tracked");
+      if (!repoAgentEnabled(repo)) throw new ApiError(403, "agent sessions are switched off for this repository");
+      const running = projectConsoleSessions(
+        sessions.map((s) => s.session),
+        repo,
+      ).find((s) => OPEN_SESSION_STATES.includes(s.state));
+      if (running) return running;
+      const at = now();
+      const session: ProjectConsoleSession = {
+        id: `demo-${++counter}`,
+        projectConsole: true,
+        repoId,
+        folder: repo.path,
+        agentId: DEMO_AGENT.id,
+        agentName: DEMO_AGENT.name,
+        state: "running",
+        worktreePath: repo.path,
+        inPlace: true,
+        createdAt: iso(at),
+        updatedAt: iso(at),
+        lastOutputAt: iso(at),
+        resumable: true,
+      };
+      sessions.unshift({ name: repo.name, transcript: "console", startedAtMs: at, position: { index: 0, waiting: false }, work: { state: "missing" }, workFrom: 0, lastActivityMs: at, session });
       return session;
     },
 

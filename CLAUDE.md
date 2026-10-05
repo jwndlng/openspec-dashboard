@@ -71,7 +71,10 @@ bun test test/scanner.test.ts   # a single test file
    there, while the dashboard runs no git command and writes no file in that repository and adds it to its own config
    only once `openspec/config.yaml` is on disk. The same holds for the **main console** (`openConsole`, `src/server/sessions/consoleFolder.ts`):
    the default agent in the console folder — `~/.openspec-dashboard/console/` or a folder the user configured, which is
-   refused when it is, or lies inside, a tracked repository — with no worktree, no branch and no git command. Outside every tracked
+   refused when it is, or lies inside, a tracked repository — with no worktree, no branch and no git command. And for a
+   **project console** (`openProjectConsole`, `src/server/sessions/manager.ts`, `POST /api/repos/<id>/console`): the
+   project's agent, without a prompt, in place in a tracked repository's own folder — for a git repository its main
+   checkout — with no worktree, no branch and no git command by the dashboard. Outside every tracked
    repository, **creating a new project** (`src/server/createProject.ts`, `POST /api/projects`) is the one other
    write beyond the dashboard home: on the user's confirmation, one new, empty folder directly inside a configured
    workspace root, made with a non-recursive (exclusive) `mkdir` and refused in or below a tracked repository, an
@@ -140,13 +143,20 @@ bun test test/scanner.test.ts   # a single test file
   the text never appears, nothing is sent and the user is told it was typed but not confirmed. That echo check is the
   one thing the dashboard may read out of an agent's output, and only to decide about Enter. One running session per
   worktree; archiving has its own.
-- **Integrate** (`src/server/integration.ts`, `POST /api/integrations`) is the second in-place case, and the only one
+- **Integrate** (`src/server/integration.ts`, `POST /api/integrations`) is the second in-place case, and the first one
   in a git repository: the agent runs in the repository's **main checkout**, with no worktree and no branch, because
   `openspec init` has to leave `openspec/config.yaml` where discovery looks for it — on a branch in a worktree the
   repository would stay integratable. An `IntegrationSession` belongs to no tracked repository, no change and no
   action, so `changeSessions()` keeps it out of Open work, the activity log, work status, Ship, pull and cleanup, the
   same way it keeps the console out. The panel uses the same in-place wording. What decides that it worked is the
   marker on disk, re-checked when the session ends and on every discovery run — never anything the agent printed.
+- A **project console** (`openProjectConsole`, `src/shared/types.ts` `ProjectConsoleSession`) is the third in-place
+  case and the second — and last — one in a git repository's main checkout: one per tracked project, the project's
+  agent without a prompt, for anything that is not a change. It carries a `repoId` but no change, action or branch;
+  `isChangeless()` keeps it out of Open work, the activity log, work status, Ship, prompts and cleanup exactly as for
+  the console and integrations. An integration session in a tracked project's folder counts as that project's console
+  (`projectConsoleSessions`), which is how the agent **New project** started stays reachable once its overlay is
+  closed. A change session never runs in a main checkout; in a folder without git, one agent per folder still holds.
 - A tracked folder **without git** is a supported repository, so its sessions run **in place**: the agent's working
   directory is the folder itself, no worktree and no branch are made, and no git command runs for the session
   (`Session.inPlace`). It is decided from the scan's `isGit`, never by letting a git command fail. Such a session has

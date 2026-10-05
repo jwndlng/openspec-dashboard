@@ -2,13 +2,13 @@
 // worktree. The manager creates the worktree, starts the process, keeps a scrollback for late or returning viewers,
 // fans output out to attached terminals and takes their input. It does not interpret what the agent prints.
 import { randomUUID } from "node:crypto";
-import { realpath } from "node:fs/promises";
+import { realpath, stat } from "node:fs/promises";
 import { join } from "node:path";
-import { availableActions, changeSessions, isChangeless, isConsole, isIntegration, OPEN_SESSION_STATES, repoAgentEnabled, SESSION_ACTIONS, SHIPPABLE_WORK, type AgentAvailability, type ChangeSession, type Config, type ConsoleSession, type IntegrationSession, type Session, type SessionAction, type SessionWorktree, type Snapshot, type WorkStatus, type PromptResult, type ShipResult } from "../../shared/types.ts";
+import { availableActions, changeSessions, isChangeless, isConsole, isIntegration, isProjectConsole, OPEN_SESSION_STATES, projectConsoleSessions, repoAgentEnabled, SESSION_ACTIONS, SHIPPABLE_WORK, type AgentAvailability, type ChangeSession, type Config, type ConsoleSession, type IntegrationSession, type ProjectConsoleLike, type ProjectConsoleSession, type Session, type SessionAction, type SessionWorktree, type Snapshot, type WorkStatus, type PromptResult, type ShipResult } from "../../shared/types.ts";
 import { sessionBranch } from "../../shared/sessionBranch.ts";
 import { isCleaningUp } from "../cleanup.ts";
 import { isDismissing } from "../dismissChange.ts";
-import { worktreesDir } from "../paths.ts";
+import { canonicalPath, worktreesDir } from "../paths.ts";
 import { CHANGE_NAME } from "../source.ts";
 import { agentEnv, agentFor, availability, defaultAgentOf, presetAvailability, integratePrompt, launchCommand, launchWithoutPrompt, openingPrompt, resolveConflictsPrompt, shipPrompt } from "./agents.ts";
 import { consoleFolderProblem, prepareConsoleFolder } from "./consoleFolder.ts";
@@ -42,7 +42,8 @@ export { sessionBranch };
 
 const NOT_A_CHANGE = "this is the main console, which belongs to no change";
 const NOT_A_CHANGE_INTEGRATING = "this session is setting a repository up for OpenSpec, so it belongs to no change";
-const notAChange = (session: Session) => (isIntegration(session) ? NOT_A_CHANGE_INTEGRATING : NOT_A_CHANGE);
+const NOT_A_CHANGE_PROJECT = "this is the project's console, which belongs to no change";
+const notAChange = (session: Session) => (isIntegration(session) ? NOT_A_CHANGE_INTEGRATING : isProjectConsole(session) ? NOT_A_CHANGE_PROJECT : NOT_A_CHANGE);
 
 /** An adopted worktree was created outside the dashboard; removing it is its owner's call, however clean it is. */
 const NOT_OURS: Removable = { removable: false, reason: "this worktree was not created by the dashboard (the session adopted it), so it is kept" };
@@ -160,6 +161,8 @@ export class SessionManager {
     // directory is the repository folder itself, which no per-worktree rule would have kept a second agent out of.
     const existing = this.list().find((s) => s.repoId === repo.id && s.change === change && OPEN_SESSION_STATES.includes(s.state));
     if (existing) return existing;
+    // In a folder without git the change session would share the folder with the project's console: one agent per folder.
+    if (scanned.isGit === false && this.runningInFolder(repo.path).some(isProjectConsole)) throw new SessionError(409, "the project's console is running in this folder; end it first");
 
     const agent = agentFor(config, repo);
     if (!agent) throw new SessionError(503, "no agent is configured");
@@ -288,6 +291,69 @@ export class SessionManager {
   }
 
   /**
+   * A project's console: the project's agent, without a prompt, **in place** in the tracked folder — for a git
+   * repository its main checkout — with no worktree, no branch and no git command (project-console spec). One per
+   * project: a running one is returned, and so is a running integration session in the folder, which is the agent
+   * that set the project up. Not refused for a failed scan: the console is where a broken repository gets repaired.
+   */
+  async openProjectConsole(repoId: string): Promise<{ session: ProjectConsoleLike; created: boolean }> {
+    const config = this.deps.getConfig();
+    if (!config.agentSessions.enabled) throw new SessionError(403, "agent sessions are disabled");
+    const repo = config.repos.find((r) => r.id === repoId);
+    if (!repo) throw new SessionError(404, "unknown repository");
+    if (!repo.enabled) throw new SessionError(409, "the repository is not tracked");
+    if (!repoAgentEnabled(repo)) throw new SessionError(403, "agent sessions are switched off for this repository");
+    await this.checkProjectFolder(repo.path);
+    const folder = canonicalPath(repo.path);
+    const running = projectConsoleSessions(this.list(), { id: repo.id, path: folder }).find((s) => OPEN_SESSION_STATES.includes(s.state));
+    if (running) return { session: running, created: false };
+    this.refuseOtherAgentInFolder(folder);
+    const agent = agentFor(config, repo);
+    if (!agent) throw new SessionError(503, "no agent is configured");
+    if (!Bun.which(agent.command[0])) throw new SessionError(503, `${agent.name} was not found (${agent.command[0]}); install it or change its command in Settings`);
+    const now = new Date().toISOString();
+    const session: ProjectConsoleSession = {
+      id: randomUUID(),
+      projectConsole: true,
+      repoId: repo.id,
+      folder,
+      agentId: agent.id,
+      agentName: agent.name,
+      state: "running",
+      worktreePath: folder,
+      inPlace: true,
+      createdAt: now,
+      updatedAt: now,
+      resumable: agent.resumeCommand !== undefined,
+    };
+    this.sessions.set(session.id, session);
+    await this.store.saveMeta(session);
+    this.start(session, launchWithoutPrompt(agent), agentEnv(agent, process.env));
+    for (const removed of await this.store.prune(this.list())) this.sessions.delete(removed);
+    return { session, created: true };
+  }
+
+  /** Running sessions whose working directory is `folder`, compared as canonical paths. */
+  private runningInFolder(folder: string): Session[] {
+    const path = canonicalPath(folder);
+    return this.list().filter((s) => s.state === "running" && canonicalPath(s.worktreePath) === path);
+  }
+
+  /** One agent per folder: an in-place change session (a folder without git) keeps a project console out, and back. */
+  private refuseOtherAgentInFolder(folder: string, except?: string): void {
+    const other = this.runningInFolder(folder).find((s) => s.id !== except);
+    if (!other) return;
+    if (other.change) throw new SessionError(409, `a session for the change ${other.change} is running in this folder; end it first`);
+    throw new SessionError(409, "another session is running in this folder");
+  }
+
+  private async checkProjectFolder(path: string): Promise<void> {
+    const info = await stat(path).catch(() => undefined);
+    if (!info) throw new SessionError(409, `the project folder ${path} does not exist`);
+    if (!info.isDirectory()) throw new SessionError(409, `the project folder ${path} is not a directory`);
+  }
+
+  /**
    * Every session worktree with what became of its work. Cached briefly (the UI polls) and shared while in flight;
    * anything that changes a worktree's state drops the cache. With the feature off, no git runs at all.
    */
@@ -322,8 +388,8 @@ export class SessionManager {
   /** Checks shared by everything that starts an agent again in an existing session's worktree. */
   private async prepareRestart(session: ChangeSession) {
     const { agent, config } = this.prepareAgainAnywhere(session);
-    const running = this.list().find((s) => s.id !== session.id && s.worktreePath === session.worktreePath && s.state === "running");
-    if (running) throw new SessionError(409, "another session is running in this worktree");
+    const running = this.runningInFolder(session.worktreePath).find((s) => s.id !== session.id);
+    if (running) throw new SessionError(409, isProjectConsole(running) ? "the project's console is running in this folder; end it first" : "another session is running in this worktree");
     const repo = config.repos.find((r) => r.id === session.repoId);
     if (!repo) throw new SessionError(409, "the repository is no longer configured");
     if (isCleaningUp(repo.id)) throw new SessionError(409, "a cleanup of this repository is running");
@@ -344,6 +410,17 @@ export class SessionManager {
   private prepareIntegrationRestart(session: IntegrationSession) {
     const { agent } = this.prepareAgainAnywhere(session);
     if (this.list().some((s) => s.id !== session.id && s.worktreePath === session.worktreePath && s.state === "running")) throw new SessionError(409, "another session is running in this folder");
+    return { agent };
+  }
+
+  /** A project console runs in the tracked folder: nothing to re-create, only that it still exists and nothing else runs there. */
+  private async prepareProjectConsoleRestart(session: ProjectConsoleSession) {
+    const { agent, config } = this.prepareAgainAnywhere(session);
+    const repo = config.repos.find((r) => r.id === session.repoId);
+    if (!repo?.enabled) throw new SessionError(409, "the repository is no longer tracked");
+    if (!repoAgentEnabled(repo)) throw new SessionError(403, "agent sessions are switched off for this repository");
+    await this.checkProjectFolder(session.worktreePath);
+    this.refuseOtherAgentInFolder(session.worktreePath, session.id);
     return { agent };
   }
 
@@ -491,7 +568,9 @@ export class SessionManager {
       ? { ...(await this.prepareConsoleRestart(session)), repoPath: undefined }
       : isIntegration(session)
         ? { ...this.prepareIntegrationRestart(session), repoPath: undefined }
-        : await this.prepareRestart(session).then(({ agent, repo }) => ({ agent, repoPath: repo.path }));
+        : isProjectConsole(session)
+          ? { ...(await this.prepareProjectConsoleRestart(session)), repoPath: undefined }
+          : await this.prepareRestart(session).then(({ agent, repo }) => ({ agent, repoPath: repo.path }));
     if (!agent.resumeCommand) throw new SessionError(400, "this agent has no resume command configured");
     if (!Bun.which(agent.resumeCommand[0])) throw new SessionError(503, `${agent.name} was not found (${agent.resumeCommand[0]})`);
     await this.restart(session, repoPath, [...agent.resumeCommand], agentEnv(agent, process.env));
@@ -554,7 +633,7 @@ export class SessionManager {
     for (const viewer of live?.viewers ?? []) viewer(new Uint8Array()); // an empty chunk tells viewers the process ended
   }
 
-  /** The activity log is about repositories and changes; the console and an integration are neither, so neither is reported. */
+  /** The activity log is about changes; the consoles and integrations belong to none, so none of them is reported. */
   private report(session: Session, activity: SessionActivity): void {
     if (isChangeless(session)) return;
     try {
@@ -625,7 +704,7 @@ export class SessionManager {
     }
     let worktree: Removable | undefined;
     if (isChangeless(session)) {
-      // Neither has a worktree of its own: ending it ends the agent and nothing else.
+      // None has a worktree of its own: ending it ends the agent and nothing else.
     } else if (options.removeWorktree && session.adopted) {
       worktree = NOT_OURS;
     } else if (options.removeWorktree) {

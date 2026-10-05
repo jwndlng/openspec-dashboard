@@ -1,5 +1,5 @@
 import type { ActivityQuery } from "../shared/activity.ts";
-import type { ActivityPage, ConsoleSession, CleanupPreview, CleanupResult, CleanupSelection, CreateChangeResponse, DismissPreview, DismissResult, EnvironmentReport, PromptResult, PullRequestsResponse, PullResolve, PullResult, ShipResult, WorkStatus } from "../shared/types.ts";
+import type { ActivityPage, ConsoleSession, ProjectConsoleLike, CleanupPreview, CleanupResult, CleanupSelection, CreateChangeResponse, DismissPreview, DismissResult, EnvironmentReport, PromptResult, PullRequestsResponse, PullResolve, PullResult, ShipResult, WorkStatus } from "../shared/types.ts";
 import type { AgentAvailability, ArtifactFileContent, ChangeArtifacts, Config, CreateProjectResponse, DiscoverResult, IntegrationSession, RepoConfig, ScanTriggerResult, Session, SessionAction, SessionWorktree, SharedConfig, SharedConfigApplyResult, SharedConfigAssignment, SharedConfigPreview, Snapshot } from "../shared/types.ts";
 import { socketOrigin } from "./url.ts";
 
@@ -129,6 +129,11 @@ export interface Api {
   /** Opens the main console, or returns the one that is running. */
   openConsole(): Promise<ConsoleSession>;
   /**
+   * Opens a tracked project's console — in place in its folder, without a prompt — or returns the one running for it,
+   * which may be the integration session that set the project up.
+   */
+  openProjectConsole(repoId: string): Promise<ProjectConsoleLike>;
+  /**
    * Starts an agent in a repository that does not use OpenSpec yet, to set it up — in that folder, with no worktree
    * and no branch. Returns the one already running for the folder if there is one. `ApiError` 404 when the folder is
    * not offered for integration, 403/400/503 when the action is unavailable.
@@ -233,6 +238,7 @@ export const httpApi: Api = {
   sessions: () => call<{ sessions: Session[]; agents: AgentAvailability[]; presets: AgentAvailability[]; worktrees: SessionWorktree[] }>("/api/sessions"),
   openSession: (repoId, change, action) => call<Session>("/api/sessions", { method: "POST", body: JSON.stringify({ repoId, change, action }) }),
   openConsole: () => call<ConsoleSession>("/api/console", { method: "POST" }),
+  openProjectConsole: (repoId) => call<ProjectConsoleLike>(`/api/repos/${encodeURIComponent(repoId)}/console`, { method: "POST" }),
   startIntegration: (path) => call<IntegrationSession>("/api/integrations", { method: "POST", body: JSON.stringify({ path }) }),
   createProject: (root, name) => call<CreateProjectResponse>("/api/projects", { method: "POST", body: JSON.stringify({ root, name }) }),
   resumeSession: (id) => call<Session>(`/api/sessions/${id}/resume`, { method: "POST" }),
@@ -312,6 +318,7 @@ export const api: Api = {
   sessions: (...args) => current.sessions(...args),
   openSession: (...args) => current.openSession(...args),
   openConsole: () => current.openConsole(),
+  openProjectConsole: (repoId) => current.openProjectConsole(repoId),
   startIntegration: (path) => current.startIntegration(path),
   createProject: (...args) => current.createProject(...args),
   resumeSession: (...args) => current.resumeSession(...args),

@@ -1,5 +1,5 @@
 // Pure helpers for the agent-session UI; free of DOM access at import time so they can be unit-tested.
-import { availableActions, isChangeless, repoAgentEnabled, SHIPPABLE_WORK, type AgentProfile, type ChangeSnapshot, type Config, type RepoSnapshot, type ChangeSession, changeSessions, type ConsoleSession, type Session, type SessionAction, type SessionWorktree, type WorkStatus } from "../shared/types.ts";
+import { availableActions, isChangeless, OPEN_SESSION_STATES, repoAgentEnabled, SHIPPABLE_WORK, type AgentAvailability, type AgentProfile, type ProjectConsoleLike, type ChangeSnapshot, type Config, type RepoSnapshot, type ChangeSession, changeSessions, type ConsoleSession, type Session, type SessionAction, type SessionWorktree, type WorkStatus } from "../shared/types.ts";
 
 /** Session starters are shown when the feature is on, for every tracked repository that has not been switched off. */
 export function sessionsEnabledFor(config: Config | null, repoId: string): boolean {
@@ -392,4 +392,32 @@ export function consoleControl(consoles: readonly ConsoleSession[], now = Date.n
   if (!running) return { name: CONSOLE_CONTROL_NAME, title: `${CONSOLE_CONTROL_NAME}: talk to your agent about anything that is not a change` };
   const badge = sessionBadge(running, now);
   return { name: `${CONSOLE_CONTROL_NAME} — ${badge.label}`, title: `${CONSOLE_CONTROL_NAME} — ${badge.title}`, badge };
+}
+
+/**
+ * Why a project's console cannot be opened, or undefined when it can. `null` when no control is shown at all: agent
+ * sessions are off globally, or the project is not a managed one.
+ */
+export function projectConsoleUnavailable(config: Config | null, agents: readonly AgentAvailability[], repoId: string): string | null | undefined {
+  if (!config?.agentSessions.enabled) return null;
+  const repo = config.repos.find((r) => r.id === repoId);
+  if (!repo?.enabled) return null;
+  if (!repoAgentEnabled(repo)) return "agent sessions are off for this project";
+  const agent = agentForRepo(config, repoId);
+  if (!agent) return "no agent is configured";
+  if (agents.find((a) => a.id === agent.id)?.available === false) return `${agent.name} was not found (${agent.command[0]})`;
+  return undefined;
+}
+
+/**
+ * A project's console control: its name, tooltip and — while one of its console sessions runs — that session's badge,
+ * in words as part of the name, exactly like the top-bar console control. `unavailable` makes it inactive with a reason.
+ */
+export function projectConsoleControl(sessions: readonly ProjectConsoleLike[], projectName: string, unavailable?: string, now = Date.now()): { name: string; title: string; badge?: SessionBadge; disabled: boolean } {
+  const name = `Open the console of ${projectName}`;
+  if (unavailable) return { name: `${name} — unavailable: ${unavailable}`, title: `${name} — unavailable: ${unavailable}`, disabled: true };
+  const running = sessions.find((s) => OPEN_SESSION_STATES.includes(s.state));
+  if (!running) return { name, title: `${name}: your agent in this project's folder, for anything that is not a change`, disabled: false };
+  const badge = sessionBadge(running, now);
+  return { name: `${name} — ${badge.label}`, title: `${name} — ${badge.title}`, badge, disabled: false };
 }

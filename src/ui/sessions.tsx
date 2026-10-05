@@ -2,7 +2,7 @@
 // card shows (starter buttons, or a badge that opens the session panel).
 import { createContext, type ComponentChildren } from "preact";
 import { useCallback, useContext, useEffect, useMemo, useState } from "preact/hooks";
-import { changeSessions, isConsole, isIntegration, type AgentAvailability, type ChangeSession, type ChangeSnapshot, type Config, type ConsoleSession, type IntegrationSession, type SessionAction, type SessionWorktree, type Snapshot } from "../shared/types.ts";
+import { changeSessions, isConsole, isIntegration, isProjectConsole, type AgentAvailability, type ChangeSession, type ChangeSnapshot, type Config, type ConsoleSession, type IntegrationSession, type ProjectConsoleSession, type SessionAction, type SessionWorktree, type Snapshot } from "../shared/types.ts";
 import { api } from "./api.ts";
 import { cdCommand, relTime } from "./format.ts";
 import { assignRepoHues, repoTint } from "./repoGroups.ts";
@@ -27,6 +27,11 @@ interface SessionUi {
   /** The integration session whose overlay is open, if any. Like the console, not part of the route. */
   integrationId?: string;
   showIntegration(id: string | undefined): void;
+  /** Project console sessions, newest first; each belongs to one project and is shown only in its console overlay. */
+  projectConsoles: ProjectConsoleSession[];
+  /** The project whose console overlay is open, if any. Like the main console, not part of the route. */
+  projectConsoleRepoId?: string;
+  showProjectConsole(repoId: string | undefined): void;
   agents: AgentAvailability[];
   /** Every session worktree with what became of its work; outlives session records. */
   worktrees: SessionWorktree[];
@@ -53,7 +58,7 @@ interface SessionUi {
 }
 
 const noop = async () => undefined;
-const Context = createContext<SessionUi>({ config: null, snapshot: null, sessions: [], consoles: [], consoleOpen: false, showConsole: () => {}, integrations: [], showIntegration: () => {}, agents: [], worktrees: [], focusTick: { tick: 0 }, reportUnsent: () => {}, requestEnd: () => {}, openPanel: () => {}, start: noop, refresh: noop });
+const Context = createContext<SessionUi>({ config: null, snapshot: null, sessions: [], consoles: [], consoleOpen: false, showConsole: () => {}, integrations: [], showIntegration: () => {}, projectConsoles: [], showProjectConsole: () => {}, agents: [], worktrees: [], focusTick: { tick: 0 }, reportUnsent: () => {}, requestEnd: () => {}, openPanel: () => {}, start: noop, refresh: noop });
 
 export const useSessionUi = () => useContext(Context);
 
@@ -68,6 +73,8 @@ export function SessionProvider({
   showConsole = () => {},
   integrationId,
   showIntegration = () => {},
+  projectConsoleRepoId,
+  showProjectConsole = () => {},
   children,
 }: {
   config: Config | null;
@@ -76,12 +83,15 @@ export function SessionProvider({
   showConsole?: (open: boolean) => void;
   integrationId?: string;
   showIntegration?: (id: string | undefined) => void;
+  projectConsoleRepoId?: string;
+  showProjectConsole?: (repoId: string | undefined) => void;
   children: ComponentChildren;
 }) {
   const enabled = config?.agentSessions.enabled === true;
   const [sessions, setSessions] = useState<ChangeSession[]>([]);
   const [consoles, setConsoles] = useState<ConsoleSession[]>([]);
   const [integrations, setIntegrations] = useState<IntegrationSession[]>([]);
+  const [projectConsoles, setProjectConsoles] = useState<ProjectConsoleSession[]>([]);
   const [agents, setAgents] = useState<AgentAvailability[]>([]);
   const [worktrees, setWorktrees] = useState<SessionWorktree[]>([]);
   const [error, setError] = useState<string>();
@@ -92,6 +102,7 @@ export function SessionProvider({
       setSessions(changeSessions(result.sessions));
       setConsoles(result.sessions.filter(isConsole));
       setIntegrations(result.sessions.filter(isIntegration));
+      setProjectConsoles(result.sessions.filter(isProjectConsole));
       setAgents(result.agents);
       setWorktrees(result.worktrees ?? []);
       setError(undefined);
@@ -158,8 +169,8 @@ export function SessionProvider({
 
   const shown = consoleOpen && enabled;
   const value = useMemo(
-    () => ({ config, snapshot, sessions, consoles, consoleOpen: shown, showConsole, integrations, integrationId, showIntegration, agents, worktrees, endingId, focusTick, unsentId, reportUnsent, requestEnd, error, openPanel, start, refresh }),
-    [config, snapshot, sessions, consoles, shown, integrations, integrationId, showIntegration, agents, worktrees, endingId, focusTick, unsentId, error, openPanel, start, refresh],
+    () => ({ config, snapshot, sessions, consoles, consoleOpen: shown, showConsole, integrations, integrationId, showIntegration, projectConsoles, projectConsoleRepoId, showProjectConsole, agents, worktrees, endingId, focusTick, unsentId, reportUnsent, requestEnd, error, openPanel, start, refresh }),
+    [config, snapshot, sessions, consoles, shown, integrations, integrationId, showIntegration, projectConsoles, projectConsoleRepoId, showProjectConsole, agents, worktrees, endingId, focusTick, unsentId, error, openPanel, start, refresh],
   );
   return <Context.Provider value={value}>{children}</Context.Provider>;
 }

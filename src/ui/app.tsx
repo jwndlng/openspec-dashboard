@@ -8,6 +8,7 @@ import { AUTO_REFRESH_OPTIONS, type AutoRefreshInterval, createRefreshLoop, inte
 import { ChangeDetail } from "./changeDetail.tsx";
 import { ConsoleButton, ConsoleOverlay } from "./console.tsx";
 import { IntegrationOverlay } from "./integrate.tsx";
+import { ProjectConsoleOverlay } from "./projectConsole.tsx";
 import { relTime } from "./format.ts";
 import { Kanban } from "./kanban.tsx";
 import { Overview } from "./overview.tsx";
@@ -52,6 +53,8 @@ export function App() {
   const [consoleOpen, showConsole] = useState(false);
   // The terminal of an integration started from Settings; same reasoning, and the same need to make the page inert.
   const [integrationId, showIntegration] = useState<string>();
+  // The project whose console overlay is open; like the main console, not in the route.
+  const [projectConsoleRepoId, showProjectConsole] = useState<string>();
   /** What this machine is missing. Owned here because both Settings and the hero read the same report. */
   const [environment, setEnvironment] = useState<EnvironmentState>({ loading: true });
   /** The configuration request has answered, either way: until then the Console control may still appear. */
@@ -226,8 +229,9 @@ export function App() {
   // The overlay closes with the feature: nothing may be started while agent sessions are off.
   const consoleShown = consoleOpen && config?.agentSessions.enabled === true;
   const integrationShown = integrationId !== undefined && config?.agentSessions.enabled === true;
+  const projectConsoleShown = projectConsoleRepoId !== undefined && config?.agentSessions.enabled === true;
   /** An overlay other than the tour: the tour waits for it to close before starting by itself. */
-  const otherOverlayOpen = route.view === "change" || consoleShown || integrationShown;
+  const otherOverlayOpen = route.view === "change" || consoleShown || integrationShown || projectConsoleShown;
   const overlayOpen = otherOverlayOpen || tourOpen;
 
   const startTour = useCallback(() => {
@@ -278,7 +282,7 @@ export function App() {
     <PullRequestsProvider>
     {/* Above both the page and the overlay: the detail view's Console tab reads sessions from here too, and the
         end-session dialog it opens must not sit inside the part that goes inert. */}
-    <SessionProvider config={config} snapshot={shown} consoleOpen={consoleShown} showConsole={showConsole} integrationId={integrationShown ? integrationId : undefined} showIntegration={showIntegration}>
+    <SessionProvider config={config} snapshot={shown} consoleOpen={consoleShown} showConsole={showConsole} integrationId={integrationShown ? integrationId : undefined} showIntegration={showIntegration} projectConsoleRepoId={projectConsoleShown ? projectConsoleRepoId : undefined} showProjectConsole={showProjectConsole}>
     {/* Everything but the detail overlay: inert while it is open, so the board behind it takes no focus and no clicks. */}
     <div class="app" inert={overlayOpen} aria-hidden={overlayOpen ? "true" : undefined}>
       {/* The hero: the product's name, big, over a soft accent glow; below it the navigation, and — continuing the same
@@ -473,6 +477,7 @@ export function App() {
     )}
     <ConsoleOverlay />
     <IntegrationOverlay />
+    <ProjectConsoleOverlay />
     {tourOpen && <Tour onClose={endTour} />}
     </SessionProvider>
     </PullRequestsProvider>

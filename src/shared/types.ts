@@ -374,6 +374,7 @@ interface SessionBase {
 export interface ChangeSession extends SessionBase {
   console?: undefined;
   integration?: undefined;
+  projectConsole?: undefined;
   folder?: undefined;
   repoId: string;
   change: string;
@@ -387,6 +388,7 @@ export interface ChangeSession extends SessionBase {
 export interface ConsoleSession extends SessionBase {
   console: true;
   integration?: undefined;
+  projectConsole?: undefined;
   folder?: undefined;
   repoId?: undefined;
   change?: undefined;
@@ -405,6 +407,7 @@ export interface ConsoleSession extends SessionBase {
 export interface IntegrationSession extends SessionBase {
   integration: true;
   console?: undefined;
+  projectConsole?: undefined;
   /** Canonical path of the repository being set up; the agent's working directory. */
   folder: string;
   repoId?: undefined;
@@ -415,7 +418,27 @@ export interface IntegrationSession extends SessionBase {
   inPlace: true;
 }
 
-export type Session = ChangeSession | ConsoleSession | IntegrationSession;
+/**
+ * A project's console: the project's agent, without a prompt, run **in place** in the tracked folder — for a git
+ * repository its main checkout — for general project work that is not a change (project-console spec). It carries the
+ * repository it belongs to but no change, action or branch; it has no work status, no Ship and no pull, and is never
+ * part of Open work or the activity log.
+ */
+export interface ProjectConsoleSession extends SessionBase {
+  projectConsole: true;
+  console?: undefined;
+  integration?: undefined;
+  repoId: string;
+  /** The tracked folder; the agent's working directory. */
+  folder: string;
+  change?: undefined;
+  action?: undefined;
+  branch?: undefined;
+  adopted?: undefined;
+  inPlace: true;
+}
+
+export type Session = ChangeSession | ConsoleSession | IntegrationSession | ProjectConsoleSession;
 
 export function isConsole(session: Session): session is ConsoleSession {
   return session.console === true;
@@ -425,9 +448,29 @@ export function isIntegration(session: Session): session is IntegrationSession {
   return session.integration === true;
 }
 
-/** A session that belongs to no repository and no change: the console and integrations. */
-export function isChangeless(session: Session): session is ConsoleSession | IntegrationSession {
-  return isConsole(session) || isIntegration(session);
+export function isProjectConsole(session: Session): session is ProjectConsoleSession {
+  return session.projectConsole === true;
+}
+
+/** A session that belongs to no change: the main console, integrations and project consoles. */
+export function isChangeless(session: Session): session is ConsoleSession | IntegrationSession | ProjectConsoleSession {
+  return isConsole(session) || isIntegration(session) || isProjectConsole(session);
+}
+
+/** A session that may be shown as a project's console: one of its project consoles, or the setup session in its folder. */
+export type ProjectConsoleLike = ProjectConsoleSession | IntegrationSession;
+
+/**
+ * Every session that counts as the console of the project `repo`: its own project consoles, and the integration
+ * sessions that ran in its folder — the agent that set the project up stays reachable once the project is tracked.
+ */
+export function projectConsoleSessions(sessions: readonly Session[], repo: { id: string; path: string }): ProjectConsoleLike[] {
+  return sessions.filter((s): s is ProjectConsoleLike => (isProjectConsole(s) && s.repoId === repo.id) || (isIntegration(s) && s.folder === repo.path));
+}
+
+/** Which of a project's console sessions to show: a running one first, otherwise the newest. */
+export function projectConsoleToShow(sessions: readonly ProjectConsoleLike[], preferred?: string): ProjectConsoleLike | undefined {
+  return sessions.find((s) => OPEN_SESSION_STATES.includes(s.state)) ?? sessions.find((s) => s.id === preferred) ?? [...sessions].sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
 }
 
 /** Only the change sessions of a list: every view about repositories and changes starts here. */

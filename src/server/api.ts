@@ -399,6 +399,21 @@ async function consoleRoute(state: AppState): Promise<Response> {
   }
 }
 
+/**
+ * Opens a tracked project's console, or returns the one running for it — or the integration session still running in
+ * its folder, which is the agent that set the project up. Mutating, so the same-origin guard has run already.
+ */
+async function projectConsoleRoute(state: AppState, repoId: string): Promise<Response> {
+  if (!state.sessions) return json({ error: "agent sessions are not available" }, 403);
+  try {
+    const { session, created } = await state.sessions.openProjectConsole(repoId);
+    return json(session, created ? 201 : 200);
+  } catch (err) {
+    if (err instanceof SessionError) return json({ error: err.message }, err.status);
+    throw err;
+  }
+}
+
 /** Starts an integration session for one integratable repository, or returns the one running for it. Mutating. */
 async function integrationRoute(state: AppState, req: Request): Promise<Response> {
   if (!state.sessions) return json({ error: "agent sessions are not available" }, 403);
@@ -914,6 +929,8 @@ export function createFetchHandler({ state, indexHtml }: AppOptions): (req: Requ
       const dismissMatch = /^\/api\/repos\/([^/]+)\/changes\/([^/]+)\/dismiss$/.exec(pathname);
       if (dismissMatch && req.method === "GET") return getDismiss(state, decodeURIComponent(dismissMatch[1]), decodeURIComponent(dismissMatch[2]));
       if (dismissMatch && req.method === "POST") return postDismiss(state, req, decodeURIComponent(dismissMatch[1]), decodeURIComponent(dismissMatch[2]));
+      const projectConsoleMatch = /^\/api\/repos\/([^/]+)\/console$/.exec(pathname);
+      if (req.method === "POST" && projectConsoleMatch) return projectConsoleRoute(state, decodeURIComponent(projectConsoleMatch[1]));
       const createChangeMatch = /^\/api\/repos\/([^/]+)\/changes$/.exec(pathname);
       if (req.method === "POST" && createChangeMatch) return postCreateChange(state, req, decodeURIComponent(createChangeMatch[1]));
       if (req.method === "POST" && pathname === "/api/scan") {
