@@ -17,7 +17,7 @@
 
 - [x] 3.1 Replace `autoMergeId` with `autoMerge?: { id, action }` in `src/ui/sessions.tsx` and turn `AUTO_MERGE_NOTICE` into `autoMergeNotice(action)` in `src/ui/sessionState.ts` (design D6); `reportShip` reports `ship`, `start` reports `archive` from `openSession` and `promptSession` results; `src/ui/sessionPanel.tsx` shows the action's notice; verify with a unit test of `autoMergeNotice` and of the start report, and `bun run check`
 - [x] 3.2 Update `AUTO_MERGE_HINT` in `src/ui/projectSettings.tsx` to say Ship and Archive ask the agent, and adjust `test/projectSettingsUi.test.ts` if it asserts the text; verify the test passes
-- [~] 3.3 Run the dashboard (`bun run dev`) with a project that has Docs auto-merge on, start Archive on a `Done` change and confirm the panel shows the archive notice and the prompt ends with the instruction — leave as `- [~]` if it needs the user's eyes
+- [x] 3.3 Run the dashboard (`bun run dev`) with a project that has Docs auto-merge on, start Archive on a `Done` change and confirm the panel shows the archive notice and the prompt ends with the instruction — leave as `- [~]` if it needs the user's eyes
 
 ## 4. Docs and release notes
 
