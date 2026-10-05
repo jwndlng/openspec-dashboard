@@ -1310,14 +1310,14 @@ body:has(.detail-overlay) { overflow: hidden; }
 .untracked-path { grid-column: 2; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg-subtle); font-size: 12px; }
 .untracked-actions { grid-column: 3; grid-row: 1; display: inline-flex; gap: 6px; justify-content: flex-end; }
 .untracked-error { grid-column: 1 / -1; color: var(--danger); font-size: 11px; }
-/* A managed project's own settings (projectSettings.tsx): the agent-session switch at row size, the agent picker, the
-   pencil beside the name and the field that replaces it. */
+/* A managed project's own settings (projectSettings.tsx): the agent-session switch at row size, the agent and PR titles
+   pickers, the pencil beside the name and the field that replaces it. */
 .agent-controls { display: inline-flex; align-items: center; gap: 6px; }
 .control.agent-toggle { height: 24px; padding: 0 8px; gap: 6px; font-size: 11px; text-decoration: none; }
 .control.agent-toggle.off-globally { color: var(--fg-disabled); border-style: dashed; }
 .control.agent-toggle.off-globally .switch { opacity: 0.5; }
 .control.agent-toggle:disabled { cursor: progress; }
-.input.agent-picker { height: 24px; padding: 0 6px; font-size: 11px; max-width: 10rem; }
+.input.agent-picker, .input.pr-titles-picker { height: 24px; padding: 0 6px; font-size: 11px; max-width: 10rem; }
 .btn.rename { margin-left: 2px; padding-top: 0; padding-bottom: 0; color: var(--fg-subtle); opacity: 0; }
 .projects tr:hover .btn.rename, .tile:hover .btn.rename, .btn.rename:focus-visible { opacity: 1; }
 .input.rename-input { height: 26px; width: 14rem; max-width: 100%; padding: 0 6px; font-size: 13px; font-weight: 500; }

@@ -465,7 +465,7 @@ export class SessionManager {
     const { agent, repo } = await this.prepareRestart(session);
     const { work } = await readWorkStatus(repo.path, session.worktreePath);
     if (!SHIPPABLE_WORK.includes(work.state)) throw new SessionError(409, `there is nothing to ship (${work.state})`);
-    const prompt = shipPrompt(agent, session.change);
+    const prompt = shipPrompt(agent, session.change, repo.prTitleConvention);
     this.forgetWorktrees();
     const proc = this.live.get(id)?.proc;
     if (session.state === "running" && proc) {

@@ -1,5 +1,5 @@
 // Agent profiles (design.md D16): an agent is a command line plus opening prompts. Nothing here knows any vendor.
-import { DEFAULT_INTEGRATE_PROMPT, DEFAULT_RESOLVE_CONFLICTS_PROMPT, DEFAULT_SHIP_PROMPT, type AgentAvailability, type AgentProfile, type Config, type PromptKey, type RepoConfig, type SessionAction } from "../../shared/types.ts";
+import { CONVENTIONAL_COMMITS_SHIP_SENTENCE, DEFAULT_INTEGRATE_PROMPT, DEFAULT_RESOLVE_CONFLICTS_PROMPT, DEFAULT_SHIP_PROMPT, type AgentAvailability, type AgentProfile, type Config, type PrTitleConvention, type PromptKey, type RepoConfig, type SessionAction } from "../../shared/types.ts";
 import { AGENT_PRESETS } from "../../shared/agentDefaults.ts";
 import { whichOnPath } from "../paths.ts";
 import { CHANGE_NAME } from "../source.ts";
@@ -47,10 +47,15 @@ export function openingPrompt(agent: AgentProfile, action: SessionAction, change
   return compose(agent, action, template).replaceAll("{change}", change);
 }
 
-/** Every agent can ship: a profile without its own Ship prompt gets the agent-neutral default — suffix and all. */
-export function shipPrompt(agent: AgentProfile, change: string): string {
+/**
+ * Every agent can ship: a profile without its own Ship prompt gets the agent-neutral default — suffix and all. The
+ * project's pull request title convention goes between the prompt and the suffix, so the user's own text comes last.
+ */
+export function shipPrompt(agent: AgentProfile, change: string, convention?: PrTitleConvention): string {
   if (!CHANGE_NAME.test(change)) throw new Error("invalid change name");
-  return compose(agent, "ship", agent.prompts.ship ?? DEFAULT_SHIP_PROMPT).replaceAll("{change}", change);
+  const base = agent.prompts.ship ?? DEFAULT_SHIP_PROMPT;
+  const prompt = convention === "conventional-commits" ? `${base} ${CONVENTIONAL_COMMITS_SHIP_SENTENCE}` : base;
+  return compose(agent, "ship", prompt).replaceAll("{change}", change);
 }
 
 /**

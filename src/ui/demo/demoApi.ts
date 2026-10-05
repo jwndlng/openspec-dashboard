@@ -374,6 +374,11 @@ export function createDemoApi({ now = Date.now, latencyMs = 150, clock }: DemoAp
           return next;
         });
       }),
+    setRepoPrTitleConvention: (repoId, convention) =>
+      failing(() => {
+        if (convention !== null && convention !== "conventional-commits") throw new ApiError(400, "convention must be conventional-commits or null");
+        return updateRepo(repoId, ({ prTitleConvention: _old, ...r }) => (convention ? { ...r, prTitleConvention: convention } : r));
+      }),
     setLabelColor: (label, hue) =>
       failing(() => {
         const problem = labelProblem(label);

@@ -186,7 +186,12 @@ export interface RepoConfig {
   labels?: string[];
   /** Detected labels the user hid for this repository (compared ignoring case). Absent when there are none. */
   hiddenLabels?: string[];
+  /** How this project's pull requests are titled, which Ship asks the agent for. Absent means no convention. */
+  prTitleConvention?: PrTitleConvention;
 }
+
+/** A pull request title convention a project can declare. One value today; an enum so another needs no migration. */
+export type PrTitleConvention = "conventional-commits";
 
 /** A label the scan derived from the repository's files; `marker` says what produced it, e.g. "`.tf` files". */
 export interface DetectedLabel {
@@ -275,7 +280,11 @@ export type ShipResult = Session & { submitted: boolean };
 export type PromptResult = ShipResult;
 
 export const DEFAULT_SHIP_PROMPT =
-  "Ship the work in this worktree: commit everything that belongs to it with a Conventional Commit message, push the branch, and open a pull request against the default branch if there is none yet. Do not merge it. Tell me the pull request URL.";
+  "Ship the work in this worktree: commit everything that belongs to it with a commit message that follows this repository's conventions, push the branch, and open a pull request against the default branch if there is none yet. Do not merge it. Tell me the pull request URL.";
+
+/** What Ship adds for a project whose pull request titles follow Conventional Commits: one line, no placeholder. */
+export const CONVENTIONAL_COMMITS_SHIP_SENTENCE =
+  "Title the pull request as a Conventional Commit — <type>(<optional scope>): <summary>, for example feat(api): add pagination — and write the commit messages the same way.";
 
 /** Agent-neutral like Ship's, and deliberately silent about method: rebase or merge is the repository's convention,
  *  which the agent knows and the dashboard does not. */

@@ -15,6 +15,13 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    id: "2026-10-05-pr-title-convention",
+    date: "2026-10-05",
+    title: "Pull request title convention per project",
+    summary:
+      "Pick **Conventional Commits** under **PR titles** for a project on the **Projects** overview, and **Ship** asks the agent to title that project's pull requests and commits that way. Without it, Ship no longer asks for Conventional Commits and the agent follows the repository's own conventions.",
+  },
+  {
     id: "2026-10-03-whats-new",
     date: "2026-10-03",
     title: "What's new",
