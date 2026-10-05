@@ -8,7 +8,7 @@ import { SHIPPABLE_WORK, type ChangeSession, type Session, type SessionAction, t
 import { api, type TerminalMessage } from "./api.ts";
 import { cdCommand } from "./format.ts";
 import { NOT_SUBMITTED_NOTICE, shortcutHint, shortcutMessage, visibleShortcuts } from "./quickReplies.ts";
-import { nextStepFor, resolvable, sessionBadge, startersFor, workBadge, worktreeOfSession } from "./sessionState.ts";
+import { AUTO_MERGE_NOTICE, nextStepFor, reportShip, resolvable, sessionBadge, startersFor, workBadge, worktreeOfSession } from "./sessionState.ts";
 import { ConflictBadge, SessionBadgeView, SessionControls, useSessionUi } from "./sessions.tsx";
 
 export function Copy({ text, label }: { text: string; label: string }) {
@@ -64,7 +64,7 @@ export function TerminalView({ sessionId, running, onExit }: { sessionId: string
   // it. The server answers this socket with `submitted`; until then the activated shortcut stays inert.
   const pending = useRef<string[]>([]);
   // Text went into this terminal on the user's behalf (a next step): put the keyboard back where the agent is.
-  const { config, focusTick, unsentId, reportUnsent } = useSessionUi();
+  const { config, focusTick, unsentId, reportUnsent, autoMergeId, reportAutoMerge } = useSessionUi();
   // The shortcuts are the user's, the same for every session; an empty list means the row is not shown at all.
   const shortcuts = visibleShortcuts(config, running, status === "open");
   useEffect(() => {
@@ -101,6 +101,11 @@ export function TerminalView({ sessionId, running, onExit }: { sessionId: string
     const timer = setTimeout(() => reportUnsent(undefined), UNSENT_NOTICE_MS);
     return () => clearTimeout(timer);
   }, [unsentId, sessionId, reportUnsent]);
+  useEffect(() => {
+    if (autoMergeId !== sessionId) return;
+    const timer = setTimeout(() => reportAutoMerge(undefined), UNSENT_NOTICE_MS);
+    return () => clearTimeout(timer);
+  }, [autoMergeId, sessionId, reportAutoMerge]);
 
   useEffect(() => {
     const el = host.current;
@@ -161,6 +166,14 @@ export function TerminalView({ sessionId, running, onExit }: { sessionId: string
         <div class="session-unsent notice warn" role="status">
           <span>{NOT_SUBMITTED_NOTICE}</span>
           <button type="button" class="btn sm ghost" aria-label="Dismiss" onClick={() => reportUnsent(undefined)}>
+            ×
+          </button>
+        </div>
+      )}
+      {autoMergeId === sessionId && (
+        <div class="session-unsent notice" role="status">
+          <span>{AUTO_MERGE_NOTICE}</span>
+          <button type="button" class="btn sm ghost" aria-label="Dismiss" onClick={() => reportAutoMerge(undefined)}>
             ×
           </button>
         </div>
@@ -315,8 +328,7 @@ export function ConsolePanel({ session, worktree, of }: { session?: ChangeSessio
               }
               onClick={() =>
                 act(async () => {
-                  const result = await api.shipSession(session.id);
-                  ui.reportUnsent(result.submitted ? undefined : session.id);
+                  reportShip(ui, session.id, await api.shipSession(session.id));
                 })
               }
             >

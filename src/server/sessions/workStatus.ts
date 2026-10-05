@@ -12,11 +12,11 @@ export const MAX_CONFLICT_FILES = 50;
 /** One path segment; also what `POST /api/worktrees/remove` accepts. */
 export const WORKTREE_NAME = /^[a-z0-9][a-z0-9._-]*$/;
 
-async function run(cwd: string, args: string[], env: Record<string, string> = {}): Promise<{ code: number; out: string }> {
+async function run(cwd: string, args: string[], env: Record<string, string> = {}, trim = true): Promise<{ code: number; out: string }> {
   try {
     const proc = Bun.spawn(["git", ...args], { cwd, stdout: "pipe", stderr: "ignore", stdin: "ignore", env: { ...process.env, ...ENV, ...env } });
     const out = await new Response(proc.stdout).text();
-    return { code: await proc.exited, out: out.trim() };
+    return { code: await proc.exited, out: trim ? out.trim() : out };
   } catch {
     return { code: -1, out: "" };
   }
@@ -71,6 +71,35 @@ export async function contentIsInBase(cwd: string, base: string, ref = "HEAD"): 
   if (files.length > MAX_COMPARED_FILES) return false;
   if (files.length === 0) return true;
   return (await git(cwd, ["diff", "--quiet", base, ref, "--", ...files])).ok;
+}
+
+/** Where OpenSpec keeps its documents, as git prints repository-relative paths. Compared as written, no normalisation. */
+const OPENSPEC_DIR = "openspec/";
+
+/**
+ * Whether Ship would hand over nothing but OpenSpec documents (auto-merge-docs design D3): every path the branch changed
+ * since it forked from `base`, and every path the worktree's status reports — renames on both sides, untracked files
+ * included, because Ship asks the agent to commit everything — lies under `openspec/`. Asked at the moment of Ship and
+ * failing closed: an unknown base, a git error or no path at all is `false`.
+ */
+export async function shipsOnlyOpenSpec(worktreePath: string, base: string | undefined): Promise<boolean> {
+  if (!base) return false;
+  const [committed, status] = await Promise.all([
+    git(worktreePath, ["diff", "--name-only", "-z", `${base}...HEAD`]),
+    // Untrimmed: a status entry starts with a space when only the worktree side changed.
+    run(worktreePath, ["status", "--porcelain=v1", "-z", "--untracked-files=all"], {}, false),
+  ]);
+  if (!committed.ok || status.code !== 0) return false;
+  const paths = committed.out.split("\0").filter(Boolean);
+  // `XY path` entries; a rename or copy is followed by its source path as an entry of its own.
+  const entries = status.out.split("\0");
+  for (let i = 0; i < entries.length; i++) {
+    const entry = entries[i];
+    if (!entry) continue;
+    paths.push(entry.slice(3));
+    if (entry[0] === "R" || entry[0] === "C") paths.push(entries[++i] ?? "");
+  }
+  return paths.length > 0 && paths.every((path) => path.startsWith(OPENSPEC_DIR));
 }
 
 /**

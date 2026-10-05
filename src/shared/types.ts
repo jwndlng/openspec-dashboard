@@ -198,6 +198,8 @@ export interface RepoAgentConfig {
   enabled: boolean;
   /** Agent profile used for this repository; absent means the default agent. */
   agentId?: string;
+  /** Ship asks the agent to enable auto-merge when the session ships only files under `openspec/`. Absent means off. */
+  autoMergeDocs?: boolean;
 }
 
 /**
@@ -268,14 +270,23 @@ export const SESSION_ACTIONS: readonly SessionAction[] = ["draft", "implement", 
  */
 export type PromptKey = SessionAction | "ship" | "integrate" | "resolveConflicts";
 /** Agent-neutral on purpose, so every profile can ship without being configured for it. */
-/** What Ship answers: the session, and whether the prompt was submitted. `false` means the agent of a running session
- *  did not show the typed prompt (it may be showing a menu), so Enter was not pressed and nothing was confirmed. */
-export type ShipResult = Session & { submitted: boolean };
-/** What a next step sent into a running session answers: the same shape, under the same rules. */
-export type PromptResult = ShipResult;
+/** What a prompt sent on the user's behalf answers (a next step, Resolve conflicts): the session, and whether the prompt
+ *  was submitted. `false` means the agent of a running session did not show the typed prompt (it may be showing a
+ *  menu), so Enter was not pressed and nothing was confirmed. */
+export type PromptResult = Session & { submitted: boolean };
+/** What Ship answers: the same, plus whether the prompt carried `AUTO_MERGE_DOCS_INSTRUCTION`. */
+export type ShipResult = PromptResult & { autoMerge: boolean };
 
 export const DEFAULT_SHIP_PROMPT =
   "Ship the work in this worktree: commit everything that belongs to it with a Conventional Commit message, push the branch, and open a pull request against the default branch if there is none yet. Do not merge it. Tell me the pull request URL.";
+
+/** Appended to Ship's prompt, after the profile's additional instructions, only when the project allows docs-only pull
+ *  requests to merge and the dashboard found nothing outside `openspec/` (auto-merge-docs design D4). One line, because
+ *  it may be typed into a terminal; agent-neutral, so it names the GitHub feature and no tool; and worded to override an
+ *  earlier "do not merge", since it has to work with the default prompt and with a profile's own alike. Not editable:
+ *  it is the one instruction that loosens review. */
+export const AUTO_MERGE_DOCS_INSTRUCTION =
+  "This project lets a pull request that changes only files under openspec/ merge without review. So, in place of any instruction above not to merge it: once the pull request is open, check that every file it changes is under openspec/, and if so enable auto-merge on it so that it merges when its required checks pass; if any file is outside openspec/, leave it unmerged and tell me why. Tell me whether auto-merge was enabled.";
 
 /** Agent-neutral like Ship's, and deliberately silent about method: rebase or merge is the repository's convention,
  *  which the agent knows and the dashboard does not. */

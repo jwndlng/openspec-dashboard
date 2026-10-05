@@ -42,6 +42,9 @@ interface SessionUi {
   /** The session whose last text sent on the user's behalf was typed but not submitted; its panel says so. */
   unsentId?: string;
   reportUnsent(id: string | undefined): void;
+  /** The session whose last Ship asked the agent to enable auto-merge; its panel says so. */
+  autoMergeId?: string;
+  reportAutoMerge(id: string | undefined): void;
   /** Opens the end-session dialog; nothing is ended before the user confirms there. */
   requestEnd(id: string | undefined): void;
   /** The polling error, if the session list could not be read. */
@@ -58,7 +61,7 @@ interface SessionUi {
 }
 
 const noop = async () => undefined;
-const Context = createContext<SessionUi>({ config: null, snapshot: null, sessions: [], consoles: [], consoleOpen: false, showConsole: () => {}, integrations: [], showIntegration: () => {}, projectConsoles: [], showProjectConsole: () => {}, agents: [], worktrees: [], focusTick: { tick: 0 }, reportUnsent: () => {}, requestEnd: () => {}, openPanel: () => {}, start: noop, refresh: noop });
+const Context = createContext<SessionUi>({ config: null, snapshot: null, sessions: [], consoles: [], consoleOpen: false, showConsole: () => {}, integrations: [], showIntegration: () => {}, projectConsoles: [], showProjectConsole: () => {}, agents: [], worktrees: [], focusTick: { tick: 0 }, reportUnsent: () => {}, reportAutoMerge: () => {}, requestEnd: () => {}, openPanel: () => {}, start: noop, refresh: noop });
 
 export const useSessionUi = () => useContext(Context);
 
@@ -142,6 +145,7 @@ export function SessionProvider({
   const [endingId, requestEnd] = useState<string>();
   const [focusTick, setFocusTick] = useState<{ id?: string; tick: number }>({ tick: 0 });
   const [unsentId, reportUnsent] = useState<string>();
+  const [autoMergeId, reportAutoMerge] = useState<string>();
 
   const start = useCallback(
     async (repoId: string, change: string, action: SessionAction, show: boolean) => {
@@ -169,8 +173,8 @@ export function SessionProvider({
 
   const shown = consoleOpen && enabled;
   const value = useMemo(
-    () => ({ config, snapshot, sessions, consoles, consoleOpen: shown, showConsole, integrations, integrationId, showIntegration, projectConsoles, projectConsoleRepoId, showProjectConsole, agents, worktrees, endingId, focusTick, unsentId, reportUnsent, requestEnd, error, openPanel, start, refresh }),
-    [config, snapshot, sessions, consoles, shown, integrations, integrationId, showIntegration, projectConsoles, projectConsoleRepoId, showProjectConsole, agents, worktrees, endingId, focusTick, unsentId, error, openPanel, start, refresh],
+    () => ({ config, snapshot, sessions, consoles, consoleOpen: shown, showConsole, integrations, integrationId, showIntegration, projectConsoles, projectConsoleRepoId, showProjectConsole, agents, worktrees, endingId, focusTick, unsentId, reportUnsent, autoMergeId, reportAutoMerge, requestEnd, error, openPanel, start, refresh }),
+    [config, snapshot, sessions, consoles, shown, integrations, integrationId, showIntegration, projectConsoles, projectConsoleRepoId, showProjectConsole, agents, worktrees, endingId, focusTick, unsentId, autoMergeId, error, openPanel, start, refresh],
   );
   return <Context.Provider value={value}>{children}</Context.Provider>;
 }

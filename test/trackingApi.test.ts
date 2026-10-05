@@ -199,9 +199,17 @@ test("an agent is selected and cleared, keeping the on/off setting", async () =>
   expect((await alphaEntry())?.agent).toEqual({ enabled: true });
 });
 
+test("auto-merge of docs-only pull requests is switched on and off, and off removes the key", async () => {
+  expect((await send(`/api/repos/${alphaId()}/agent`, { autoMergeDocs: true })).status).toBe(200);
+  expect((await alphaEntry())?.agent).toEqual({ enabled: true, autoMergeDocs: true });
+  expect((await send(`/api/repos/${alphaId()}/agent`, { autoMergeDocs: false })).status).toBe(200);
+  expect((await alphaEntry())?.agent).toEqual({ enabled: true });
+  expect(triggered).toBe(0);
+});
+
 test("an unknown agent, a wrong type or an empty agent body is refused", async () => {
   const before = await saved();
-  for (const body of [{ agentId: "nope" }, { enabled: "no" }, { agentId: 3 }, {}]) expect((await send(`/api/repos/${alphaId()}/agent`, body)).status).toBe(400);
+  for (const body of [{ agentId: "nope" }, { enabled: "no" }, { agentId: 3 }, { autoMergeDocs: "yes" }, {}]) expect((await send(`/api/repos/${alphaId()}/agent`, body)).status).toBe(400);
   expect(await saved()).toEqual(before);
 });
 

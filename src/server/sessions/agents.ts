@@ -1,5 +1,5 @@
 // Agent profiles (design.md D16): an agent is a command line plus opening prompts. Nothing here knows any vendor.
-import { DEFAULT_INTEGRATE_PROMPT, DEFAULT_RESOLVE_CONFLICTS_PROMPT, DEFAULT_SHIP_PROMPT, type AgentAvailability, type AgentProfile, type Config, type PromptKey, type RepoConfig, type SessionAction } from "../../shared/types.ts";
+import { AUTO_MERGE_DOCS_INSTRUCTION, DEFAULT_INTEGRATE_PROMPT, DEFAULT_RESOLVE_CONFLICTS_PROMPT, DEFAULT_SHIP_PROMPT, type AgentAvailability, type AgentProfile, type Config, type PromptKey, type RepoConfig, type SessionAction } from "../../shared/types.ts";
 import { AGENT_PRESETS } from "../../shared/agentDefaults.ts";
 import { whichOnPath } from "../paths.ts";
 import { CHANGE_NAME } from "../source.ts";
@@ -47,10 +47,15 @@ export function openingPrompt(agent: AgentProfile, action: SessionAction, change
   return compose(agent, action, template).replaceAll("{change}", change);
 }
 
-/** Every agent can ship: a profile without its own Ship prompt gets the agent-neutral default — suffix and all. */
-export function shipPrompt(agent: AgentProfile, change: string): string {
+/**
+ * Every agent can ship: a profile without its own Ship prompt gets the agent-neutral default — suffix and all. With
+ * `autoMerge` (the project opted in and the session ships only OpenSpec documents) the fixed auto-merge instruction
+ * comes last, after the suffix, so nothing in the profile can follow and undo it.
+ */
+export function shipPrompt(agent: AgentProfile, change: string, { autoMerge = false }: { autoMerge?: boolean } = {}): string {
   if (!CHANGE_NAME.test(change)) throw new Error("invalid change name");
-  return compose(agent, "ship", agent.prompts.ship ?? DEFAULT_SHIP_PROMPT).replaceAll("{change}", change);
+  const prompt = compose(agent, "ship", agent.prompts.ship ?? DEFAULT_SHIP_PROMPT).replaceAll("{change}", change);
+  return autoMerge ? `${prompt} ${AUTO_MERGE_DOCS_INSTRUCTION}` : prompt;
 }
 
 /**

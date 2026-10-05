@@ -1,5 +1,5 @@
 // Pure helpers for the agent-session UI; free of DOM access at import time so they can be unit-tested.
-import { availableActions, isChangeless, OPEN_SESSION_STATES, repoAgentEnabled, SHIPPABLE_WORK, type AgentAvailability, type AgentProfile, type ProjectConsoleLike, type ChangeSnapshot, type Config, type RepoSnapshot, type ChangeSession, changeSessions, type ConsoleSession, type Session, type SessionAction, type SessionWorktree, type WorkStatus } from "../shared/types.ts";
+import { availableActions, isChangeless, OPEN_SESSION_STATES, repoAgentEnabled, SHIPPABLE_WORK, type AgentAvailability, type AgentProfile, type ProjectConsoleLike, type ChangeSnapshot, type Config, type RepoSnapshot, type ChangeSession, changeSessions, type ConsoleSession, type Session, type SessionAction, type SessionWorktree, type ShipResult, type WorkStatus } from "../shared/types.ts";
 
 /** Session starters are shown when the feature is on, for every tracked repository that has not been switched off. */
 export function sessionsEnabledFor(config: Config | null, repoId: string): boolean {
@@ -420,4 +420,13 @@ export function projectConsoleControl(sessions: readonly ProjectConsoleLike[], p
   if (!running) return { name, title: `${name}: your agent in this project's folder, for anything that is not a change`, disabled: false };
   const badge = sessionBadge(running, now);
   return { name: `${name} — ${badge.label}`, title: `${name} — ${badge.title}`, badge, disabled: false };
+}
+
+/** Said in the panel when Ship's prompt carried the auto-merge instruction (auto-merge-docs). */
+export const AUTO_MERGE_NOTICE = "Only OpenSpec documents changed, so Ship asked the agent to enable auto-merge on the pull request. The dashboard itself merges nothing.";
+
+/** What both Ship controls report afterwards: a prompt typed but not sent, and whether auto-merge was asked for. */
+export function reportShip(ui: { reportUnsent(id: string | undefined): void; reportAutoMerge(id: string | undefined): void }, sessionId: string, result: Pick<ShipResult, "submitted" | "autoMerge">): void {
+  ui.reportUnsent(result.submitted ? undefined : sessionId);
+  ui.reportAutoMerge(result.autoMerge ? sessionId : undefined);
 }
