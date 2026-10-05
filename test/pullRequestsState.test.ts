@@ -136,9 +136,11 @@ test("a machine-wide gh problem is explained once, and lists no repository as fa
 });
 
 test("the fetch age is the newest of the shown lists, and staleness ignores repositories that cannot be queried", () => {
-  expect(newestFetchedAt(response())).toBe(response().repos[2].fetchedAt);
-  expect(isStale(response(), 5 * 60_000)).toBe(false);
-  expect(isStale(response(), 60_000)).toBe(true);
+  // One response: each call stamps its ages from the clock, so two calls can differ by a millisecond.
+  const answer = response();
+  expect(newestFetchedAt(answer)).toBe(answer.repos[2].fetchedAt);
+  expect(isStale(answer, 5 * 60_000)).toBe(false);
+  expect(isStale(answer, 60_000)).toBe(true);
   expect(isStale(undefined, 5 * 60_000)).toBe(true);
   // Only repositories that are not on GitHub: nothing could be fetched, so nothing is stale.
   expect(isStale({ repos: [{ repoId: "notes", status: "unavailable", pullRequests: [] }] }, 5 * 60_000)).toBe(false);
