@@ -1,5 +1,5 @@
 import type { ActivityQuery } from "../shared/activity.ts";
-import type { ActivityPage, ConsoleSession, ProjectConsoleLike, CleanupPreview, CleanupResult, CleanupSelection, CreateChangeResponse, DismissPreview, DismissResult, EnvironmentReport, PromptResult, PullRequestsResponse, PullResolve, PullResult, ShipResult, WorkStatus } from "../shared/types.ts";
+import type { ActivityPage, AutoMergePromptResult, ConsoleSession, ProjectConsoleLike, CleanupPreview, CleanupResult, CleanupSelection, CreateChangeResponse, DismissPreview, DismissResult, EnvironmentReport, PromptResult, PullRequestsResponse, PullResolve, PullResult, ShipResult, StartResult, WorkStatus } from "../shared/types.ts";
 import type { AgentAvailability, ArtifactFileContent, ChangeArtifacts, Config, CreateProjectResponse, DiscoverResult, IntegrationSession, PrTitleConvention, RepoConfig, ScanTriggerResult, Session, SessionAction, SessionWorktree, SharedConfig, SharedConfigApplyResult, SharedConfigAssignment, SharedConfigPreview, Snapshot } from "../shared/types.ts";
 import { socketOrigin } from "./url.ts";
 
@@ -129,7 +129,7 @@ export interface Api {
 
   /** Agent sessions (optional feature): an agent CLI in a terminal, one per change. */
   sessions(): Promise<{ sessions: Session[]; agents: AgentAvailability[]; presets: AgentAvailability[]; worktrees: SessionWorktree[] }>;
-  openSession(repoId: string, change: string, action: SessionAction): Promise<Session>;
+  openSession(repoId: string, change: string, action: SessionAction): Promise<StartResult>;
   /** Opens the main console, or returns the one that is running. */
   openConsole(): Promise<ConsoleSession>;
   /**
@@ -161,7 +161,7 @@ export interface Api {
   /** Whether the worktree could be removed, and its work status read at this moment (not from the list's cache). */
   worktreeStatus(id: string): Promise<{ removable: boolean; reason?: string; work?: WorkStatus }>;
   /** Sends a starter's prompt to the running session's terminal, under the rules for text sent on the user's behalf. */
-  promptSession(id: string, action: SessionAction): Promise<PromptResult>;
+  promptSession(id: string, action: SessionAction): Promise<AutoMergePromptResult>;
   /**
    * The byte stream of a session's terminal. Part of this interface — not a WebSocket opened by the view — so that a
    * backend without a server (the demo) can stand in for it.
@@ -245,7 +245,7 @@ export const httpApi: Api = {
   previewSharedConfig: (assignments) => call<{ previews: SharedConfigPreview[] }>("/api/shared-config/preview", { method: "POST", body: JSON.stringify({ assignments }) }),
   applySharedConfig: (assignments) => call<{ results: SharedConfigApplyResult[] }>("/api/shared-config/apply", { method: "POST", body: JSON.stringify({ assignments }) }),
   sessions: () => call<{ sessions: Session[]; agents: AgentAvailability[]; presets: AgentAvailability[]; worktrees: SessionWorktree[] }>("/api/sessions"),
-  openSession: (repoId, change, action) => call<Session>("/api/sessions", { method: "POST", body: JSON.stringify({ repoId, change, action }) }),
+  openSession: (repoId, change, action) => call<StartResult>("/api/sessions", { method: "POST", body: JSON.stringify({ repoId, change, action }) }),
   openConsole: () => call<ConsoleSession>("/api/console", { method: "POST" }),
   openProjectConsole: (repoId) => call<ProjectConsoleLike>(`/api/repos/${encodeURIComponent(repoId)}/console`, { method: "POST" }),
   startIntegration: (path) => call<IntegrationSession>("/api/integrations", { method: "POST", body: JSON.stringify({ path }) }),
@@ -257,7 +257,7 @@ export const httpApi: Api = {
   closeSession: (id, removeWorktree) => call(`/api/sessions/${id}/close`, { method: "POST", body: JSON.stringify({ removeWorktree }) }),
   deleteSession: (id) => call<{ deleted: boolean }>(`/api/sessions/${id}`, { method: "DELETE" }),
   worktreeStatus: (id) => call<{ removable: boolean; reason?: string; work?: WorkStatus }>(`/api/sessions/${id}/worktree`),
-  promptSession: (id, action) => call<PromptResult>(`/api/sessions/${id}/prompt`, { method: "POST", body: JSON.stringify({ action }) }),
+  promptSession: (id, action) => call<AutoMergePromptResult>(`/api/sessions/${id}/prompt`, { method: "POST", body: JSON.stringify({ action }) }),
   openTerminal: (id, handlers) => {
     const socket = new WebSocket(terminalSocketUrl(id));
     socket.binaryType = "arraybuffer";

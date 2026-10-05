@@ -3,10 +3,12 @@ import { afterAll, afterEach, beforeAll, expect, setDefaultTimeout, test } from 
 import { mkdir, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { worktreesDir } from "../src/server/paths.ts";
-import { shipPrompt } from "../src/server/sessions/agents.ts";
+import { AUTO_MERGE_DOCS_ARCHIVE_INSTRUCTION } from "../src/shared/types.ts";
+import { openingPrompt, shipPrompt } from "../src/server/sessions/agents.ts";
+import { sessionBranch } from "../src/server/sessions/manager.ts";
 import { shipsOnlyOpenSpec } from "../src/server/sessions/workStatus.ts";
 import { ensureWorktree } from "../src/server/sessions/worktree.ts";
-import { AUTO_MERGE_NOTICE, reportShip } from "../src/ui/sessionState.ts";
+import { afterStart, autoMergeNotice, reportShip, type AutoMergeReport } from "../src/ui/sessionState.ts";
 import { useTempHome } from "./helpers.ts";
 import { installFakeGh } from "./ghHelpers.ts";
 import { git, harness, tempGitRepo, waitFor, watch, type Harness } from "./sessionHelpers.ts";
@@ -99,6 +101,22 @@ test("an unknown base, an unreadable base and an empty diff fail closed", async 
   expect(await shipsOnlyOpenSpec(join(wt, "gone"), "main")).toBe(false);
 });
 
+test("Archive's variant also accepts a worktree with nothing in it yet, and still nothing outside openspec/", async () => {
+  const repo = await tempGitRepo();
+  const empty = await worktree(repo, "archive-empty");
+  expect(await shipsOnlyOpenSpec(empty, "main", { allowEmpty: true })).toBe(true);
+  expect(await shipsOnlyOpenSpec(empty, undefined, { allowEmpty: true })).toBe(false);
+  // the change copied in uncommitted from the main checkout
+  await put(empty, "openspec/changes/rotate-keys/tasks.md");
+  expect(await shipsOnlyOpenSpec(empty, "main", { allowEmpty: true })).toBe(true);
+
+  const code = await worktree(repo, "archive-code");
+  await put(code, "src/keys.ts");
+  commitAll(code);
+  expect(await shipsOnlyOpenSpec(code, "main", { allowEmpty: true })).toBe(false);
+  expect(await shipsOnlyOpenSpec(code, "main")).toBe(false);
+});
+
 /** A running session of `upgrade-runtime` whose project has the setting as given, with `files` written into it. */
 async function shipping(autoMergeDocs: boolean | undefined, files: string[], opts: { resume?: boolean } = {}) {
   const h = await harness();
@@ -153,11 +171,109 @@ test("Ship's prompt is today's when the project did not opt in, or code is shipp
 
 test("both Ship controls report the auto-merge notice only when Ship asked for auto-merge", () => {
   const seen: string[] = [];
-  const ui = { reportUnsent: (id?: string) => seen.push(`unsent ${id}`), reportAutoMerge: (id?: string) => seen.push(`autoMerge ${id}`) };
+  const ui = { reportUnsent: (id?: string) => seen.push(`unsent ${id}`), reportAutoMerge: (r?: AutoMergeReport) => seen.push(`autoMerge ${r ? `${r.id} ${r.action}` : r}`) };
   reportShip(ui, "s1", { submitted: true, autoMerge: true });
   reportShip(ui, "s1", { submitted: true, autoMerge: false });
   reportShip(ui, "s1", { submitted: false, autoMerge: true });
-  expect(seen).toEqual(["unsent undefined", "autoMerge s1", "unsent undefined", "autoMerge undefined", "unsent s1", "autoMerge s1"]);
-  expect(AUTO_MERGE_NOTICE).toContain("auto-merge");
-  expect(AUTO_MERGE_NOTICE).toContain("merges nothing");
+  expect(seen).toEqual(["unsent undefined", "autoMerge s1 ship", "unsent undefined", "autoMerge undefined", "unsent s1", "autoMerge s1 ship"]);
+  for (const action of ["ship", "archive"] as const) {
+    expect(autoMergeNotice(action)).toContain("auto-merge");
+    expect(autoMergeNotice(action)).toContain("merges nothing");
+  }
+  expect(autoMergeNotice("ship")).toContain("Ship asked");
+  // Archive's is conditional, like its instruction: the Archive prompt may open no pull request at all.
+  expect(autoMergeNotice("archive")).toContain("Archive asked the agent to enable auto-merge if it opens a pull request");
+});
+
+test("a start reports Archive's notice when its prompt carried the instruction, and clears only its own session's", () => {
+  const other: AutoMergeReport = { id: "s2", action: "ship" };
+  expect(afterStart(undefined, "s1", true)).toEqual({ id: "s1", action: "archive" });
+  expect(afterStart(other, "s1", true)).toEqual({ id: "s1", action: "archive" });
+  expect(afterStart({ id: "s1", action: "archive" }, "s1", false)).toBeUndefined();
+  expect(afterStart(other, "s1", false)).toBe(other);
+});
+
+// Archive (archive-auto-merge-docs): the same check, decided once the archive worktree exists or where the session runs.
+
+/** A harness whose project has auto-merge set as given; `confirm-retention` is `Done`, so Archive is available for it. */
+async function archiving(autoMergeDocs: boolean | undefined, opts: { git?: boolean } = {}) {
+  const h = await harness({ ...opts, agent: { prompts: { draft: "draft {change}", implement: "implement {change}", validate: "validate {change}", archive: "archive {change}" } } });
+  h.config.repos[0].agent = { enabled: true, ...(autoMergeDocs === undefined ? {} : { autoMergeDocs }) };
+  managers.push(h.manager);
+  const agent = h.config.agentSessions.agents[0];
+  const archive = (change: string, autoMerge: boolean) => openingPrompt(agent, "archive", change, { autoMerge }) as string;
+  return { h, archive };
+}
+
+/** The opening prompt as the fake agent received it: its one argument. */
+async function openedWith(h: Harness, id: string, prompt: string): Promise<void> {
+  const seen = await watch(h.manager, id);
+  await waitFor(() => seen.text().includes(`args=${JSON.stringify([prompt])}`), "the opening prompt");
+}
+
+test("Archive in a fresh worktree of an opted-in project ends with the archive auto-merge instruction", async () => {
+  const { h, archive } = await archiving(true);
+  const refs = git(h.repoPath, "for-each-ref");
+  const s = await h.manager.open({ repoId: h.repoId, change: "confirm-retention", action: "archive" });
+  expect(s.autoMerge).toBe(true);
+  expect(archive("confirm-retention", true)).toEndWith(AUTO_MERGE_DOCS_ARCHIVE_INSTRUCTION);
+  await openedWith(h, s.id, archive("confirm-retention", true));
+  // Read-only: the only new ref is the archive branch the worktree was created on.
+  const added = git(h.repoPath, "for-each-ref").split("\n").filter((line) => !refs.includes(line));
+  expect(added.map((line) => line.split("\t")[1])).toEqual([`refs/heads/${sessionBranch("archive", "confirm-retention")}`]);
+});
+
+test("Archive's prompt is today's with the setting off, and for every other starter", async () => {
+  for (const setting of [false, undefined]) {
+    const { h, archive } = await archiving(setting);
+    const s = await h.manager.open({ repoId: h.repoId, change: "confirm-retention", action: "archive" });
+    expect(s.autoMerge).toBe(false);
+    await openedWith(h, s.id, archive("confirm-retention", false));
+  }
+  const { h } = await archiving(true);
+  const s = await h.manager.open({ repoId: h.repoId, change: "confirm-retention", action: "validate" });
+  expect(s.autoMerge).toBe(false);
+  await openedWith(h, s.id, "validate confirm-retention");
+});
+
+test("a leftover archive branch with code in it gets no instruction", async () => {
+  const { h, archive } = await archiving(true);
+  const branch = sessionBranch("archive", "confirm-retention");
+  git(h.repoPath, "checkout", "-q", "-b", branch);
+  await put(h.repoPath, "src/keys.ts");
+  commitAll(h.repoPath);
+  git(h.repoPath, "checkout", "-q", "main");
+  const s = await h.manager.open({ repoId: h.repoId, change: "confirm-retention", action: "archive" });
+  expect(s.autoMerge).toBe(false);
+  await openedWith(h, s.id, archive("confirm-retention", false));
+});
+
+test("Archive in a folder without git runs in place, with no instruction", async () => {
+  const { h, archive } = await archiving(true, { git: false });
+  const s = await h.manager.open({ repoId: h.repoId, change: "confirm-retention", action: "archive" });
+  expect([s.inPlace, s.autoMerge]).toEqual([true, false]);
+  await openedWith(h, s.id, archive("confirm-retention", false));
+});
+
+test("an Archive request that returns the session already open reports no instruction", async () => {
+  const { h } = await archiving(true);
+  const a = await h.manager.open({ repoId: h.repoId, change: "confirm-retention", action: "validate" });
+  const again = await h.manager.open({ repoId: h.repoId, change: "confirm-retention", action: "archive" });
+  expect([again.id, again.autoMerge]).toEqual([a.id, false]);
+});
+
+test("Archive sent into a running session: the instruction only where that worktree holds nothing but OpenSpec documents", async () => {
+  for (const [file, expected] of [["src/keys.ts", false], ["openspec/changes/confirm-retention/notes.md", true]] as const) {
+    const { h, archive } = await archiving(true);
+    const s = await h.manager.open({ repoId: h.repoId, change: "confirm-retention", action: "validate" });
+    const seen = await watch(h.manager, s.id);
+    await waitFor(() => seen.text().includes("fake-agent ready"), "the agent");
+    await put(s.worktreePath, file);
+    commitAll(s.worktreePath);
+    const result = await h.manager.prompt(s.id, { action: "archive" });
+    expect({ file, submitted: result.submitted, autoMerge: result.autoMerge }).toEqual({ file, submitted: true, autoMerge: expected });
+    await waitFor(() => seen.text().includes(`you said: ${archive("confirm-retention", expected)}`), "the archive prompt");
+    // Any other action sent carries nothing, in the same docs-only worktree too.
+    expect((await h.manager.prompt(s.id, { action: "validate" })).autoMerge).toBe(false);
+  }
 });

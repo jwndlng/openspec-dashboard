@@ -60,7 +60,7 @@ export function AgentToggle({ repo, config, tracking }: { repo: RepoConfig; conf
 }
 
 export const AUTO_MERGE_HINT =
-  "Auto-merge docs-only pull requests: when everything a session ships is under openspec/, Ship asks the agent to enable auto-merge on its pull request. Any other pull request is left for review. The dashboard itself merges nothing.";
+  "Auto-merge docs-only pull requests: when everything a session holds is under openspec/, Ship and Archive ask the agent to enable auto-merge on the pull request it opens for it. Any other pull request is left for review. The dashboard itself merges nothing.";
 
 /**
  * On / Off for auto-merging docs-only pull requests (auto-merge-docs). Only where Ship exists: a git project whose agent

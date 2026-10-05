@@ -243,6 +243,8 @@ test("a git project with agent sessions offers auto-merge of docs-only pull requ
     expect(toggle?.props["aria-label"]).toBe("Auto-merge docs-only pull requests for alpha-infra");
     expect(String(toggle?.props.title)).toContain(AUTO_MERGE_HINT);
     expect(textOf(toggle)).toBe("Docs auto-merge: Off");
+    // The tooltip names both actions that may ask for it (archive-auto-merge-docs).
+    expect(AUTO_MERGE_HINT).toContain("Ship and Archive ask the agent to enable auto-merge");
     expect(click(toggle!)).toBe(true);
   }
   expect(calls).toEqual(['agent a {"autoMergeDocs":true}', 'agent a {"autoMergeDocs":true}']);

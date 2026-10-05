@@ -1,5 +1,5 @@
 // Agent profiles (design.md D16): an agent is a command line plus opening prompts. Nothing here knows any vendor.
-import { AUTO_MERGE_DOCS_INSTRUCTION, CONVENTIONAL_COMMITS_SHIP_SENTENCE, DEFAULT_INTEGRATE_PROMPT, DEFAULT_RESOLVE_CONFLICTS_PROMPT, DEFAULT_SHIP_PROMPT, type AgentAvailability, type AgentProfile, type Config, type PrTitleConvention, type PromptKey, type RepoConfig, type SessionAction } from "../../shared/types.ts";
+import { AUTO_MERGE_DOCS_ARCHIVE_INSTRUCTION, AUTO_MERGE_DOCS_INSTRUCTION, CONVENTIONAL_COMMITS_SHIP_SENTENCE, DEFAULT_INTEGRATE_PROMPT, DEFAULT_RESOLVE_CONFLICTS_PROMPT, DEFAULT_SHIP_PROMPT, type AgentAvailability, type AgentProfile, type Config, type PrTitleConvention, type PromptKey, type RepoConfig, type SessionAction } from "../../shared/types.ts";
 import { AGENT_PRESETS } from "../../shared/agentDefaults.ts";
 import { whichOnPath } from "../paths.ts";
 import { CHANGE_NAME } from "../source.ts";
@@ -37,14 +37,19 @@ function compose(agent: AgentProfile, key: PromptKey, prompt: string): string {
   return suffix ? `${prompt} ${suffix}` : prompt;
 }
 
-/** The opening prompt for a starter, or undefined when this agent has none (the starter is then not offered). */
-export function openingPrompt(agent: AgentProfile, action: SessionAction, change: string): string | undefined {
+/**
+ * The opening prompt for a starter, or undefined when this agent has none (the starter is then not offered). With
+ * `autoMerge` (the project opted in and the worktree holds only OpenSpec documents) an Archive prompt ends with the fixed
+ * archive auto-merge instruction, after the suffix like Ship's; every other starter ignores it (archive-auto-merge-docs).
+ */
+export function openingPrompt(agent: AgentProfile, action: SessionAction, change: string, { autoMerge = false }: { autoMerge?: boolean } = {}): string | undefined {
   const template = agent.prompts[action];
   // Checked before the suffix: additional instructions are an addition, never a prompt of their own, so they never make
   // a starter available (agent-sessions spec).
   if (!template) return undefined;
   if (!CHANGE_NAME.test(change)) throw new Error("invalid change name");
-  return compose(agent, action, template).replaceAll("{change}", change);
+  const prompt = compose(agent, action, template).replaceAll("{change}", change);
+  return autoMerge && action === "archive" ? `${prompt} ${AUTO_MERGE_DOCS_ARCHIVE_INSTRUCTION}` : prompt;
 }
 
 /**

@@ -5,7 +5,7 @@ import { randomUUID } from "node:crypto";
 import { realpath, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { blockedReason } from "../../shared/dependencies.ts";
-import { availableActions, changeSessions, isChangeless, isConsole, isIntegration, isProjectConsole, OPEN_SESSION_STATES, projectConsoleSessions, repoAgentEnabled, SESSION_ACTIONS, SHIPPABLE_WORK, type AgentAvailability, type ChangeSession, type Config, type ConsoleSession, type IntegrationSession, type ProjectConsoleLike, type ProjectConsoleSession, type Session, type SessionAction, type SessionWorktree, type Snapshot, type WorkStatus, type PromptResult, type ShipResult } from "../../shared/types.ts";
+import { availableActions, changeSessions, isChangeless, isConsole, isIntegration, isProjectConsole, OPEN_SESSION_STATES, projectConsoleSessions, repoAgentEnabled, SESSION_ACTIONS, SHIPPABLE_WORK, type AgentAvailability, type ChangeSession, type Config, type ConsoleSession, type IntegrationSession, type ProjectConsoleLike, type ProjectConsoleSession, type Session, type SessionAction, type SessionWorktree, type Snapshot, type WorkStatus, type PromptResult, type RepoConfig, type ShipResult, type AutoMergePromptResult, type StartResult } from "../../shared/types.ts";
 import { sessionBranch } from "../../shared/sessionBranch.ts";
 import { isCleaningUp } from "../cleanup.ts";
 import { isDismissing } from "../dismissChange.ts";
@@ -136,7 +136,7 @@ export class SessionManager {
     return session;
   }
 
-  async open(input: { repoId?: unknown; change?: unknown; action?: unknown }): Promise<Session> {
+  async open(input: { repoId?: unknown; change?: unknown; action?: unknown }): Promise<StartResult> {
     const config = this.deps.getConfig();
     if (!config.agentSessions.enabled) throw new SessionError(403, "agent sessions are disabled");
     if (typeof input.change !== "string" || !CHANGE_NAME.test(input.change)) throw new SessionError(400, "invalid change name");
@@ -165,13 +165,13 @@ export class SessionManager {
     // returns the one the user started last. In-place sessions need this as much as worktrees do: their working
     // directory is the repository folder itself, which no per-worktree rule would have kept a second agent out of.
     const existing = this.list().find((s) => s.repoId === repo.id && s.change === change && OPEN_SESSION_STATES.includes(s.state));
-    if (existing) return existing;
+    if (existing) return { ...existing, autoMerge: false };
     // In a folder without git the change session would share the folder with the project's console: one agent per folder.
     if (scanned.isGit === false && this.runningInFolder(repo.path).some(isProjectConsole)) throw new SessionError(409, "the project's console is running in this folder; end it first");
 
     const agent = agentFor(config, repo);
     if (!agent) throw new SessionError(503, "no agent is configured");
-    const prompt = openingPrompt(agent, action, change);
+    let prompt = openingPrompt(agent, action, change);
     if (!prompt) throw new SessionError(400, `${agent.name} has no "${action}" prompt configured`);
     if (!Bun.which(agent.command[0])) throw new SessionError(503, `${agent.name} was not found (${agent.command[0]}); install it or change its command in Settings`);
 
@@ -211,13 +211,26 @@ export class SessionManager {
         throw new SessionError(500, err instanceof Error ? err.message : String(err));
       }
     }
+    // Decided once the worktree exists, so a leftover archive branch with code in it is seen (archive-auto-merge-docs D4).
+    const autoMerge = await this.archiveAutoMerge(repo, session, action);
+    if (autoMerge) prompt = openingPrompt(agent, action, change, { autoMerge }) as string;
     this.sessions.set(session.id, session);
     await this.store.saveMeta(session);
     const launch = launchCommand(agent, prompt);
     this.start(session, launch.argv, agentEnv(agent, process.env), launch.typed);
     if (session.state === "running") this.report(session, { kind: "session-started", action, agentName: session.agentName });
     for (const removed of await this.store.prune(this.list())) this.sessions.delete(removed);
-    return session;
+    return { ...session, autoMerge };
+  }
+
+  /**
+   * Whether an Archive prompt for this session gets the archive auto-merge instruction: the project opted in, the
+   * session has a worktree, and read-only git proves it holds nothing outside `openspec/` — nothing at all included,
+   * since an archive worktree starts empty. Any other action, an in-place session or any doubt is `false`, with no git.
+   */
+  private async archiveAutoMerge(repo: RepoConfig, session: ChangeSession, action: SessionAction): Promise<boolean> {
+    if (action !== "archive" || session.inPlace || repo.agent?.autoMergeDocs !== true) return false;
+    return shipsOnlyOpenSpec(session.worktreePath, await baseRef(repo.path), { allowEmpty: true });
   }
 
   /**
@@ -527,9 +540,10 @@ export class SessionManager {
    * Every action the change's stage allows may be sent, Archive included — it is how a completed change is archived
    * without ending the agent that worked on it — and the action the session was started with restricts nothing. The
    * prompt runs where that session runs: the change's own worktree, or the folder itself for a repository without
-   * git. Nothing is created and no git command runs for it; what the agent then does there is the agent's own doing.
+   * git. Nothing is created and no git command that writes runs for it — only Archive's read-only docs-only check, in
+   * a project with Docs auto-merge on; what the agent then does there is the agent's own doing.
    */
-  async prompt(id: string, input: { action?: unknown }): Promise<PromptResult> {
+  async prompt(id: string, input: { action?: unknown }): Promise<AutoMergePromptResult> {
     const session = this.get(id);
     if (isChangeless(session)) throw new SessionError(409, notAChange(session));
     const config = this.deps.getConfig();
@@ -547,13 +561,16 @@ export class SessionManager {
     if (heldBack) throw new SessionError(400, heldBack);
     if (!availableActions(change).includes(action)) throw new SessionError(400, `"${action}" is not available for this change in its current stage`);
     const agent = config.agentSessions.agents.find((a) => a.id === session.agentId);
-    const text = agent && openingPrompt(agent, action, session.change);
-    if (!text) throw new SessionError(400, `${session.agentName} has no "${action}" prompt configured`);
+    if (!agent || !openingPrompt(agent, action, session.change)) throw new SessionError(400, `${session.agentName} has no "${action}" prompt configured`);
+    // Archive sent here runs where this session runs — often an Implement worktree with code in it, which the check sees.
+    const repo = config.repos.find((r) => r.id === session.repoId);
+    const autoMerge = repo !== undefined && (await this.archiveAutoMerge(repo, session, action));
+    const text = openingPrompt(agent, action, session.change, { autoMerge }) as string;
     // The recorded action is what the user asked for, whether or not the agent's terminal echoed the prompt in time.
     session.action = action;
     this.touchLater(session);
     const { submitted } = await this.submit(id, text);
-    return { ...session, submitted };
+    return { ...session, submitted, autoMerge };
   }
 
   /** For worktrees whose session record is gone; the path is built here, never taken from the request. */
