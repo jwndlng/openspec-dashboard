@@ -70,6 +70,8 @@ Every preset's prompts SHALL carry the meaning of the `- [~]` task marker, which
 
 A saved configuration in which a profile whose id is a preset's id still carries one of that preset's former prompts for a starter verbatim SHALL be read as carrying that preset's current prompt for that starter; any other prompt, a removed one, and every prompt of a profile whose id is no preset's SHALL be left as saved. This SHALL apply per preset and per starter, so upgrading one prompt never rewrites another and one preset's former prompts never upgrade another preset's profile.
 
+When an **Archive** prompt is produced for a session of a git repository that has auto-merge of docs-only pull requests switched on, the dashboard SHALL decide whether the session's worktree holds **nothing outside OpenSpec documents**: that holds when the worktree's base is known and every path that differs between the base and the branch's last commit, and every path reported by the worktree's status — modified, staged, deleted, untracked, and both sides of a rename — lies under `openspec/` at the repository root. Unlike the check Ship makes, no path at all also holds: an Archive session normally starts in a fresh worktree on its own branch from the base, where nothing has changed yet. It SHALL be decided with read-only git, without contacting a remote, after the session's worktree exists and before the prompt is sent, and never from a cached status or from anything the agent printed. A git command that fails, an unknown base, or any path outside `openspec/` SHALL count as not holding. Only when it holds SHALL the dashboard append to the Archive prompt, after the profile's additional Archive instructions, a fixed agent-neutral instruction that: states that this project lets a pull request changing only files under `openspec/` merge without review; tells the agent not to open a pull request only because of this; asks the agent, **if** it opens a pull request for this work, to first confirm that every file the pull request changes is under `openspec/` and then to enable auto-merge on it so that it merges when its required checks pass, in place of any earlier instruction not to merge it, and otherwise to leave it unmerged and say why; and asks the agent, if it opened one, to say whether auto-merge was enabled. In every other case — the setting off or absent, an in-place session, the check failing — the Archive prompt SHALL be exactly the prompt without this setting. No other starter's prompt SHALL ever carry this instruction. The result of starting a session SHALL state whether the instruction was included — never for a session that was already open and was returned instead of started — and when it was, the session's panel SHALL say that the agent was asked to enable auto-merge on an archive pull request because only OpenSpec documents changed. Enabling auto-merge is the agent's action under its own permission prompts; the dashboard SHALL NOT verify, retry or undo it, and MUST NOT itself open, merge or enable auto-merge on a pull request.
+
 Syncing, archiving and ticking off a validated task are done by the agent in the session's working directory; the dashboard itself MUST NOT write specs, move a change or change a checkbox in `tasks.md`.
 
 A starter that does not result in a session MUST NOT fail silently. When starting is refused or fails, the dashboard SHALL show the reason to the user in the place the starter was activated from, without requiring a session panel to be open — a session that could not be created has no panel to report itself in. The message SHALL be the reason the request was refused with. It SHALL be cleared once a later start from the same place succeeds.
@@ -181,6 +183,34 @@ A starter that does not result in a session MUST NOT fail silently. When startin
 #### Scenario: A running session is left alone
 - **WHEN** an Implement session of `add-billing-ui` is running and a `depends-on.yaml` naming a `waiting` change is added to it
 - **THEN** the session keeps running and nothing is sent to it, and no new **Implement** is offered for the change
+
+#### Scenario: Archive in a fresh worktree with auto-merge on
+- **WHEN** a repository has auto-merge of docs-only pull requests on and the user starts **Archive** on change `rotate-keys`, whose worktree is created fresh from the base
+- **THEN** the opening prompt is the profile's Archive prompt with its additional Archive instructions, followed by the archive auto-merge instruction, and the start result states that it was included
+
+#### Scenario: The archive instruction presumes no pull request
+- **WHEN** the archive auto-merge instruction is included
+- **THEN** it tells the agent not to open a pull request only because of it, and asks for auto-merge only on a pull request the agent opens for this work
+
+#### Scenario: Archive with auto-merge off
+- **WHEN** a repository without auto-merge of docs-only pull requests starts **Archive** on `rotate-keys`
+- **THEN** the opening prompt is the profile's Archive prompt with its additional instructions and nothing else, and the start result states that no auto-merge instruction was included
+
+#### Scenario: Archive branch already carrying code
+- **WHEN** a repository has auto-merge on and **Archive** is started for `rotate-keys` whose archive branch already exists with a commit changing `src/keys.ts`
+- **THEN** the opening prompt carries no auto-merge instruction
+
+#### Scenario: Archive without git
+- **WHEN** a folder without git has auto-merge recorded in its configuration and **Archive** is started in place
+- **THEN** no git command runs for the check and the opening prompt carries no auto-merge instruction
+
+#### Scenario: Other starters never carry it
+- **WHEN** a repository has auto-merge on and **Draft artifacts**, **Implement** or **Validate** is started in a worktree that holds only OpenSpec documents
+- **THEN** the opening prompt carries no auto-merge instruction
+
+#### Scenario: A session that was already open
+- **WHEN** a repository has auto-merge on and **Archive** is requested for a change whose session is already open, so that session is returned
+- **THEN** nothing is typed into it and the result states that no auto-merge instruction was included
 
 ### Requirement: Additional instructions extend an action's prompt without replacing it
 A profile SHALL be able to carry **additional instructions** for each of its prompts — the session starters, Ship and Integrate — kept separately from the prompt itself. Whenever the dashboard produces the prompt of an action, it SHALL append that action's additional instructions to the prompt it would otherwise have sent, and SHALL send nothing else: the prompt template stays as configured, and additional instructions for one action MUST NOT reach another. This applies wherever that prompt is used — starting a session, sending a starter's prompt into a running session, Ship on a running or an ended session, and Integrate.
@@ -704,7 +734,7 @@ Whenever the dashboard produces the Ship prompt for a session of a repository wh
 - **THEN** it loads unchanged and no repository has a convention
 
 ### Requirement: Any available action can be sent to the change's running session
-For a running session of a change the dashboard SHALL be able to send the opening prompt of any starter to that session instead of opening a new one, under the same conditions as opening: the action must be available in the change's current stage and the session's agent must have a prompt for it. Every action qualifies, **Archive** included — it is how a completed change is archived without ending the agent that worked on it — and the action the session itself was started with SHALL NOT restrict what may be sent to it. The prompt SHALL be submitted to the session's terminal under the rules for text sent on the user's behalf, so that one activation sends it where the agent shows a text prompt and it is only typed, never confirmed, where it does not. The result SHALL state whether the prompt was submitted, and when it was only typed the dashboard SHALL say so as it does for any other text sent on the user's behalf. The session's recorded action SHALL become the one sent, whether or not the prompt was submitted. Nothing SHALL be sent to a session that is not running, and sending a prompt SHALL create no worktree, run no git command and start no process.
+For a running session of a change the dashboard SHALL be able to send the opening prompt of any starter to that session instead of opening a new one, under the same conditions as opening: the action must be available in the change's current stage and the session's agent must have a prompt for it. Every action qualifies, **Archive** included — it is how a completed change is archived without ending the agent that worked on it — and the action the session itself was started with SHALL NOT restrict what may be sent to it. The prompt SHALL be submitted to the session's terminal under the rules for text sent on the user's behalf, so that one activation sends it where the agent shows a text prompt and it is only typed, never confirmed, where it does not. The result SHALL state whether the prompt was submitted, and when it was only typed the dashboard SHALL say so as it does for any other text sent on the user's behalf. The session's recorded action SHALL become the one sent, whether or not the prompt was submitted. When **Archive** is sent, the dashboard SHALL decide, under the rules of the session starters' requirement and in the session's own working directory, whether to append the archive auto-merge instruction, and the result SHALL state whether it was included; that check is the only git it runs for a prompt, and it is read-only. Nothing SHALL be sent to a session that is not running, and sending a prompt SHALL create no worktree, run no git command that writes and start no process.
 
 #### Scenario: Draft finished, Implement next
 - **WHEN** a Draft session is still running, the change has reached `Ready`, and Implement is sent to it
@@ -729,6 +759,18 @@ For a running session of a change the dashboard SHALL be able to send the openin
 #### Scenario: The session has ended
 - **WHEN** a starter's prompt is sent to a session that is no longer running
 - **THEN** the request is refused, nothing is written to the terminal and no process is started
+
+#### Scenario: Archive into an implementing session that holds code
+- **WHEN** a repository has auto-merge on, a change's Implement session is running in a worktree whose branch changes `src/keys.ts`, and Archive is sent to it
+- **THEN** the Archive prompt is submitted without the auto-merge instruction and the result states that it was not included
+
+#### Scenario: Archive into a session that holds only OpenSpec documents
+- **WHEN** a repository has auto-merge on, a change's Draft session is running in a worktree whose branch changes only files under `openspec/`, and Archive is sent to it
+- **THEN** the submitted Archive prompt ends with the archive auto-merge instruction and the result states that it was included
+
+#### Scenario: Other actions sent stay unchanged
+- **WHEN** a repository has auto-merge on and Validate is sent to a running session
+- **THEN** no git command runs for it and the prompt carries no auto-merge instruction
 
 ### Requirement: Ending a session also offers to pull the repository
 Wherever the dashboard offers to remove a session's worktree when the session ends, it SHALL — for a repository the
