@@ -75,11 +75,12 @@ The form SHALL validate the change name against the same `^[A-Za-z0-9._-]+$` pat
 - **THEN** no error is shown and the submit action is enabled
 
 ### Requirement: Submitting the form creates the change directory
-On submit the dashboard SHALL send `POST /api/repos/<id>/changes` with `{ name, prompt? }` and, on success, close the form. The server SHALL create `openspec/changes/<name>/` in the repository, atomically (exclusive create so two concurrent requests cannot both succeed), and SHALL write into it:
+On submit the dashboard SHALL send `POST /api/repos/<id>/changes` with `{ name, prompt?, dependsOn? }` and, on success, close the form. The server SHALL create `openspec/changes/<name>/` in the repository, atomically (exclusive create so two concurrent requests cannot both succeed), and SHALL write into it:
 - `.openspec.yaml` — a marker with `schema:` taken from the repository's `openspec/config.yaml` (falling back to `spec-driven` when the repository has no `schema` set) and `created:` set to today's date in the server's local time zone. This is the same marker that `openspec new change` writes; the dashboard writes it directly and MUST NOT invoke the `openspec` CLI or any other external command for it.
 - `prompt.md` — only when a non-empty prompt was submitted, containing the text as written under a short fixed heading. The heading SHALL be `# Prompt`. `prompt.md` is not a schema artifact and does not affect the change's artifact status.
+- `depends-on.yaml` — only when at least one dependency was submitted, holding a `depends_on:` list of the submitted change names in the order given, under a one-line comment saying what the file means. It is the file the change-dependencies capability reads; it is not a schema artifact either.
 
-Once both writes have succeeded, and only then, the dashboard SHALL stage the new directory in the repository's index so that git tracks the change from the moment it exists, as specified in the "Creating a change stages the new directory" requirement.
+Once every one of these writes has succeeded, and only then, the dashboard SHALL stage the new directory in the repository's index so that git tracks the change from the moment it exists, as specified in the "Creating a change stages the new directory" requirement.
 
 After a successful create the repository SHALL be rescanned and the new change SHALL appear on the board without a page reload. The response SHALL be `201` with `{ name, staged }`, where `staged` says whether the new directory was staged.
 
@@ -102,6 +103,14 @@ After a successful create the repository SHALL be rescanned and the new change S
 #### Scenario: Staging is reported
 - **WHEN** the user submits `add-audit-trail` into a git repository and the directory is staged
 - **THEN** the `201` body reports `staged` as true
+
+#### Scenario: Create with dependencies
+- **WHEN** the user submits `add-billing-ui` with the dependencies `add-billing-schema` and `add-billing-api`
+- **THEN** the change directory contains `.openspec.yaml` and a `depends-on.yaml` whose `depends_on` lists `add-billing-schema` then `add-billing-api`, and after the rescan the change reports both dependencies
+
+#### Scenario: Create without dependencies writes no file
+- **WHEN** the user submits `add-audit-trail` without picking a dependency
+- **THEN** the change directory has no `depends-on.yaml`
 
 ### Requirement: Creation is refused with a reason
 The server SHALL refuse `POST /api/repos/<id>/changes` without touching the disk when: the name is not a valid change name (`400`); a change with that name already exists at `openspec/changes/<name>/`, active or under `openspec/changes/archive/YYYY-MM-DD-<name>/` (`409`); the repository is not an enabled, successfully scanned repository from the config (`409`); or the repository has no `openspec/changes/` parent directory to create into (`409`). The response body SHALL name the reason as text. The refusal MUST leave the repository untouched — no directory, file, git command or `openspec` invocation.
@@ -131,7 +140,7 @@ The server SHALL refuse `POST /api/repos/<id>/changes` without touching the disk
 - **THEN** exactly one succeeds with `201` and the other returns `409` with a message naming the clash
 
 ### Requirement: Creating a change stages the new directory
-After `.openspec.yaml` and any `prompt.md` have been written, the dashboard SHALL stage the new change directory by invoking git exactly once, as `git add -- openspec/changes/<name>/`, run in the repository the change was created in, with terminal prompting disabled and optional locks disabled. The path passed after `--` SHALL be the directory the dashboard has just created and nothing else, so that files the user had already modified or left untracked elsewhere in the repository are not staged.
+After `.openspec.yaml` and any `prompt.md` and `depends-on.yaml` have been written, the dashboard SHALL stage the new change directory by invoking git exactly once, as `git add -- openspec/changes/<name>/`, run in the repository the change was created in, with terminal prompting disabled and optional locks disabled. The path passed after `--` SHALL be the directory the dashboard has just created and nothing else, so that files the user had already modified or left untracked elsewhere in the repository are not staged.
 
 That invocation is the only git command creating a change may run and the only write the dashboard makes outside the new directory. Creating a change MUST NOT commit, push, stash, reset, switch a branch, create or delete a ref, contact a remote or run a repository hook, and MUST NOT invoke the `openspec` CLI or any other external command.
 
@@ -160,6 +169,10 @@ Staging is best-effort: the change already exists on disk, so if git is unavaila
 #### Scenario: A refused create runs no git
 - **WHEN** `POST /api/repos/<id>/changes` is refused for any reason
 - **THEN** no git command is run for that repository and its index is byte-for-byte unchanged
+
+#### Scenario: Dependencies are staged with the change
+- **WHEN** a change is created in a git repository with dependencies
+- **THEN** `git status` reports its `.openspec.yaml` and `depends-on.yaml` as added, staged paths, and the single `git add` is the only git command run
 
 ### Requirement: The combined board's form asks for the project
 The form opened from the combined board SHALL show a project dropdown before the change name. The dropdown SHALL list, by repository name, every eligible repository and no other, in the order the board lists repositories. It SHALL be pre-selected when the choice is unambiguous: when exactly one repository is eligible, or when the board's repository filter selects exactly one eligible repository. Otherwise it SHALL start on an empty "Choose a project" entry, and the form MUST NOT allow submission until a project is chosen, saying so as text next to the dropdown. On submit the form SHALL send `POST /api/repos/<id>/changes` for the chosen repository, exactly as the repository header's form does; everything the server does and refuses is unchanged. A refusal SHALL be shown in the form as it is for the header's form, with the chosen project kept. If the chosen repository stops being eligible while the form is open, the form SHALL clear the choice rather than submit to it.
@@ -278,3 +291,33 @@ be shown while the label filter is empty.
 #### Scenario: No label filter
 - **WHEN** the overview's label filter is empty
 - **THEN** the overview does not show **New change in these projects**
+
+### Requirement: The form can declare the change's dependencies
+When the form targets exactly one repository — the repository header's form, or the combined board's form once a
+project is chosen — it SHALL offer an optional **Depends on** field: a multi-select of that repository's active
+changes as the latest snapshot reports them, by name, sorted by name, each with its column. Nothing SHALL be selected
+when the form opens. Changing the chosen project SHALL clear the selection. When the form targets repositories by label
+(several repositories at once), it SHALL NOT offer the field and SHALL send no dependencies. The selected names SHALL be
+sent as `dependsOn` in the order the user selected them; with nothing selected the form SHALL send no `dependsOn`.
+Selecting dependencies MUST NOT write anything before submit, and MUST NOT change the existing changes in any way: the
+new change declares what it waits for, the changes it names are left as they are.
+
+#### Scenario: Picking dependencies
+- **WHEN** the user opens **New change** on `alpha-infra`'s board, types `add-billing-ui` and selects `add-billing-schema` and `add-billing-api`
+- **THEN** the form sends `{ "name": "add-billing-ui", "dependsOn": ["add-billing-schema", "add-billing-api"] }`
+
+#### Scenario: Only active changes are offered
+- **WHEN** `alpha-infra` has the active changes `add-billing-schema` and `add-billing-api` and the archived change `add-audit-log`
+- **THEN** the **Depends on** field offers `add-billing-api` and `add-billing-schema`, and not `add-audit-log`
+
+#### Scenario: The project changes
+- **WHEN** on the combined board the user chose `alpha-infra`, selected `add-billing-schema`, then chooses `beta-soc`
+- **THEN** the selection is empty and the field offers `beta-soc`'s active changes
+
+#### Scenario: Label targeting
+- **WHEN** the form targets every repository carrying the label `billing`
+- **THEN** the form offers no **Depends on** field and sends no `dependsOn`
+
+#### Scenario: No active changes
+- **WHEN** the target repository has no active change
+- **THEN** the **Depends on** field says there is nothing to depend on, and the form can still be submitted
