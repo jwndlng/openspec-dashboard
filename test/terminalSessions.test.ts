@@ -420,3 +420,26 @@ test("a folder that is not a git repository: archiving works there, and Ship is 
 
   await expect(h.manager.ship(arch.id)).rejects.toThrow(/not a git repository/);
 });
+
+test("close and shutdown return only once the ended session's record is written", async () => {
+  // The record is written after `state` turns `exited`; a caller that removes the home next must find nothing still
+  // writing (this race failed CI runs with ENOENT once a test's temp home was gone).
+  const h = track(await harness());
+  const s = await h.manager.open({ repoId: h.repoId, change: "upgrade-runtime", action: "implement" });
+  await h.manager.close(s.id);
+  const meta = JSON.parse(await readFile(join(sessionsDir(), s.id, "meta.json"), "utf8"));
+  expect(meta.state).toBe("exited");
+  expect(meta.updatedAt).toBe(h.manager.get(s.id).updatedAt);
+
+  // An agent that exits on its own: shutdown has no running session to end, but still waits for that record.
+  const other = await harness();
+  const t = await other.manager.open({ repoId: other.repoId, change: "upgrade-runtime", action: "implement" });
+  const seen = await watch(other.manager, t.id);
+  await waitFor(() => seen.text().includes("fake-agent ready"), "the agent");
+  other.manager.write(t.id, "exit\r");
+  await waitFor(() => other.manager.get(t.id).state === "exited", "exit");
+  await other.manager.shutdown();
+  const ended = JSON.parse(await readFile(join(sessionsDir(), t.id, "meta.json"), "utf8"));
+  expect(ended.state).toBe("exited");
+  expect(ended.updatedAt).toBe(other.manager.get(t.id).updatedAt);
+});

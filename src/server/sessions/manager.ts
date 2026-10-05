@@ -99,6 +99,8 @@ export interface ManagerDeps {
 export class SessionManager {
   private sessions = new Map<string, Session>();
   private live = new Map<string, Live>();
+  /** `end` started by an exit handler and not finished yet: its writes are what `close` and `shutdown` must wait for. */
+  private ending = new Map<string, Promise<void>>();
   private readonly store: SessionStore;
   private worktreeCache?: { at: number; list: Promise<SessionWorktree[]> };
 
@@ -601,7 +603,11 @@ export class SessionManager {
     void proc.exited.then((code) => {
       if (live.proc !== proc) return;
       live.proc = undefined;
-      void this.end(session, code);
+      // Kept, not dropped: `state` turns `exited` before the record is written, so only this promise says when it is.
+      // Best effort like `touchLater`: a failed write must not become an unhandled rejection.
+      const ended = this.end(session, code).catch(() => undefined);
+      this.ending.set(session.id, ended);
+      void ended.then(() => this.ending.get(session.id) === ended && this.ending.delete(session.id));
     });
   }
 
@@ -703,6 +709,7 @@ export class SessionManager {
       await proc.exited;
       // `end` runs from the exit handler; wait for the state it writes
       for (let i = 0; i < 50 && session.state === "running"; i++) await new Promise((r) => setTimeout(r, 20));
+      await this.ending.get(id);
     }
     let worktree: Removable | undefined;
     if (isChangeless(session)) {
@@ -752,7 +759,9 @@ export class SessionManager {
           await this.end(session, null, "the dashboard was stopped while this session was running");
         }),
     );
-    // Nothing of ours may still be writing once shutdown has returned (the caller may remove the directory next).
+    // Nothing of ours may still be writing once shutdown has returned (the caller may remove the directory next) —
+    // including an `end` an exit handler started, whose writes are queued only as it goes.
+    await Promise.all(this.ending.values());
     await this.store.idle();
   }
 
