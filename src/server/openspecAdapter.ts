@@ -73,9 +73,12 @@ export function readChangeArtifacts(projectRoot: string, changeName: string, opt
     }
   }
   const ready = new Set(graph.getNextArtifacts(completed));
+  // What `openspec apply` needs before implementing; without `apply.requires`, everything.
+  const requires = schema.apply?.requires;
   const artifacts: ArtifactStatus[] = graph.getBuildOrder().map((id) => ({
     id,
     status: completed.has(id) ? "done" : ready.has(id) ? "ready" : "blocked",
+    required: requires ? requires.includes(id) : true,
   }));
 
   const outputs: Record<string, string[]> = {};

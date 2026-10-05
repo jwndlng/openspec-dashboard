@@ -15,8 +15,25 @@ export interface StageInput {
 }
 
 /**
- * The lifecycle phase of a change: Backlog → Drafts → Ready → Implementing → Done → Archived. Which artifacts are
- * written, and in which order, does not matter — only how many of them. A task is *settled* once it is ticked or
+ * The artifacts a change needs before it can be implemented: those its schema's `apply.requires` names. Every artifact
+ * when none carries the flag — a snapshot recorded before it was reported — or when none is required, so a change is
+ * never ready with nothing written.
+ */
+export function requiredArtifacts(artifacts: ArtifactStatus[]): ArtifactStatus[] {
+  if (!artifacts.some((a) => a.required !== undefined)) return artifacts;
+  const required = artifacts.filter((a) => a.required);
+  return required.length ? required : artifacts;
+}
+
+/** Every artifact needed before implementing is written (`requiredArtifacts`); false for a change without artifacts. */
+export function isPlanned(artifacts: ArtifactStatus[]): boolean {
+  return artifacts.length > 0 && requiredArtifacts(artifacts).every((a) => a.status === "done");
+}
+
+/**
+ * The lifecycle phase of a change: Backlog → Drafts → Ready → Implementing → Done → Archived. A change is `Ready` once
+ * every *required* artifact is written (its schema's `apply.requires`; for spec-driven only `tasks`, so a design is
+ * optional); otherwise only how many artifacts are written matters, not which. A task is *settled* once it is ticked or
  * awaiting validation: both mean the agent is finished with it, so both carry the change towards `Done`. Only `done`
  * has a sub-state, `validate` while a person still has to confirm at least one task.
  */
@@ -28,10 +45,9 @@ export function deriveStage(input: StageInput): { stage: Stage; column: string; 
   if (tasks && tasks.total > 0 && settled === tasks.total) return at("done", tasks.awaiting ? "validate" : "complete");
   if (tasks && settled > 0) return at("implementing");
   if (artifacts.length === 0) return at("unknown");
-  const done = artifacts.filter((a) => a.status === "done").length;
-  // Fully planned but nothing ticked yet: ready to apply, not in progress.
-  if (done === artifacts.length) return at("ready");
-  return at(done === 0 ? "backlog" : "drafts");
+  // Planned but nothing ticked yet: ready to apply, not in progress.
+  if (isPlanned(artifacts)) return at("ready");
+  return at(artifacts.some((a) => a.status === "done") ? "drafts" : "backlog");
 }
 
 /** Board column order: every lifecycle column, with `Unknown` only when a change on this board is in it. */

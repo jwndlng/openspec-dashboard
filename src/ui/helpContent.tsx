@@ -20,9 +20,9 @@ export function AppLink({ path, query = "", children }: { path: string; query?: 
  */
 export const COLUMN_HELP: Record<Stage, string> = {
   backlog: "A change whose directory exists, but none of its planning artifacts (proposal, specs, design, tasks) is written yet.",
-  drafts: "Some planning artifacts are written, not all of them. The card's bar shows how many.",
+  drafts: "Some planning artifacts are written, but not yet every one needed to implement. The card's bar shows how many.",
   unknown: "The dashboard could not tell which artifacts the change has — for example an unknown schema. The column only appears while a change is in it.",
-  ready: "Every planning artifact is written and no task is ticked yet: ready to implement.",
+  ready: "Every artifact needed to implement is written and no task is ticked yet: ready to implement. Which ones are needed is up to the schema (its apply.requires) — for spec-driven only tasks, so a design is optional.",
   implementing: "At least one task in tasks.md is ticked, or marked as awaiting validation, and others are still open.",
   done: "Every task is ticked (- [x]) or awaiting your confirmation (- [~]). With tasks awaiting you, the card says Validate; the change is ready to archive either way.",
   archived: "The change was moved to openspec/changes/archive/, on the main checkout or on a worktree's branch that is not merged yet.",

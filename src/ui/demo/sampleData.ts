@@ -23,13 +23,14 @@ const SCHEMA = "spec-driven";
 /** Schema order (specs before design); the board shows design first. */
 const ARTIFACT_IDS = ["proposal", "specs", "design", "tasks"];
 
-/** How far the artifacts are written. "planned" means all four exist. */
-type Written = "none" | "proposal" | "design" | "specs" | "planned";
+/** How far the artifacts are written. "planned" means all four exist; "no-design" skips the optional design. */
+type Written = "none" | "proposal" | "design" | "specs" | "no-design" | "planned";
 const WRITTEN: Record<Written, string[]> = {
   none: [],
   proposal: ["proposal"],
   design: ["proposal", "design"],
   specs: ["proposal", "design", "specs"],
+  "no-design": ["proposal", "specs", "tasks"],
   planned: ARTIFACT_IDS,
 };
 
@@ -117,12 +118,15 @@ function checkout(path: string, branch: string, state: CheckoutState, isMain = f
 
 /** What each artifact waits for in the spec-driven schema. */
 const REQUIRES: Record<string, string[]> = { proposal: [], specs: ["proposal"], design: ["proposal"], tasks: ["specs", "design"] };
+/** The spec-driven schema's `apply.requires`: all a change needs to be implemented. */
+const APPLY_REQUIRES = ["tasks"];
 
 function artifacts(written: Written): ArtifactStatus[] {
   const done = WRITTEN[written];
   return ARTIFACT_IDS.map((id) => ({
     id,
     status: done.includes(id) ? "done" : REQUIRES[id].every((dep) => done.includes(dep)) ? "ready" : "blocked",
+    required: APPLY_REQUIRES.includes(id),
   }));
 }
 
@@ -224,6 +228,7 @@ const REPOS: SampleRepo[] = [
       { name: "dark-mode-tokens", tasks: [5, 9], age: 4 },
       { name: "keyboard-shortcuts", tasks: [0, 16], age: 11 },
       { name: "offline-drafts", written: "design", age: 7 },
+      { name: "trim-bundle-size", written: "no-design", tasks: [0, 5], age: 3 },
       { name: "virtualize-long-tables", written: "proposal", age: 2 },
       { name: "replace-date-picker", tasks: [10, 10], age: 1 },
       { name: "onboarding-checklist", written: "planned", tasks: [0, 0], age: 13, warnings: ["tasks file has no tasks"] },

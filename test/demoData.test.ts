@@ -141,6 +141,15 @@ test("the demo shows a change in Done awaiting validation, with a Validate promp
   expect(meterText(done, total, "tasks", awaiting)).toContain(`${awaiting} awaiting validation`);
 });
 
+test("the demo shows a change in Ready without a design: the spec-driven schema requires only tasks", () => {
+  const noDesign = changes.find((c) => c.name === "trim-bundle-size")!;
+  expect(noDesign.artifacts.find((a) => a.id === "design")).toMatchObject({ status: "ready", required: false });
+  expect(noDesign.artifacts.find((a) => a.id === "tasks")).toMatchObject({ status: "done", required: true });
+  expect(noDesign.column).toBe("Ready");
+  // Implement is offered; Draft artifacts too, since the optional design can still be written.
+  expect(availableActions(noDesign)).toEqual(["draft", "implement"]);
+});
+
 test("the demo shows a change in Ready waiting for one in Implementing, and that one lists it as required by", () => {
   const blocked = changes.filter((c) => c.blocked);
   expect(blocked.map((c) => [c.name, c.column, c.dependsOn])).toEqual([["blue-green-deploys", "Ready", [{ name: "centralize-log-shipping", state: "waiting" }]]]);

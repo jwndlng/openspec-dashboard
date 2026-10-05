@@ -52,6 +52,20 @@ test("scans a fixture repo: artifacts, tasks, archive dates, columns", async () 
   expect(archived.tasks?.done).toBe(archived.tasks?.total);
 });
 
+test("a change without a design is Ready: the spec-driven schema requires only tasks", async () => {
+  const snap = await scanRepo(nano);
+  const trim = snap.changes.find((c) => c.name === "trim-log-noise")!;
+  expect(trim.artifacts.map((a) => [a.id, a.status, a.required])).toEqual([
+    ["proposal", "done", false],
+    ["specs", "done", false],
+    ["design", "ready", false],
+    ["tasks", "done", true],
+  ]);
+  expect(trim.tasks).toEqual({ done: 0, awaiting: 0, total: 3 });
+  expect(trim.column).toBe("Ready");
+  expect(trim.warnings ?? []).not.toContain("tasks file has no tasks");
+});
+
 test("all artifacts done with an empty tasks file lands in Ready with a warning", async () => {
   const root = await tempDir();
   const change = join(root, "openspec", "changes", "empty-tasks");
@@ -72,6 +86,24 @@ test("all artifacts done with an empty tasks file lands in Ready with a warning"
   await rm(root, { recursive: true, force: true });
 });
 
+test("an empty tasks file without a design is Ready with the no-tasks warning", async () => {
+  const root = await tempDir();
+  const change = join(root, "openspec", "changes", "no-design");
+  await mkdir(join(change, "specs", "cap"), { recursive: true });
+  await writeFile(join(root, "openspec", "config.yaml"), "schema: spec-driven\n");
+  await writeFile(join(change, ".openspec.yaml"), "schema: spec-driven\ncreated: 2026-09-01\n");
+  await writeFile(join(change, "proposal.md"), "# x\n");
+  await writeFile(join(change, "specs", "cap", "spec.md"), "## ADDED Requirements\n");
+  await writeFile(join(change, "tasks.md"), "## 1. Nothing\n\n(no tasks yet)\n");
+
+  const snap = await scanRepo(newRepoConfig(root, true));
+  const noDesign = snap.changes.find((c) => c.name === "no-design")!;
+  expect(noDesign.artifacts.find((a) => a.id === "design")?.status).not.toBe("done");
+  expect(noDesign.column).toBe("Ready");
+  expect(noDesign.warnings).toContain("tasks file has no tasks");
+  await rm(root, { recursive: true, force: true });
+});
+
 test("skip_specs marks spec artifacts done; unknown schema is reported per change", async () => {
   const root = await tempDir();
   await mkdir(join(root, "openspec", "changes", "refactor"), { recursive: true });
@@ -84,10 +116,10 @@ test("skip_specs marks spec artifacts done; unknown schema is reported per chang
   const snap = await scanRepo(newRepoConfig(root, true));
   const refactor = snap.changes.find((c) => c.name === "refactor")!;
   expect(refactor.artifacts).toEqual([
-    { id: "proposal", status: "done" },
-    { id: "specs", status: "done" },
-    { id: "design", status: "ready" },
-    { id: "tasks", status: "blocked" },
+    { id: "proposal", status: "done", required: false },
+    { id: "specs", status: "done", required: false },
+    { id: "design", status: "ready", required: false },
+    { id: "tasks", status: "blocked", required: true },
   ]);
   // some artifacts written, not all
   expect(refactor.column).toBe("Drafts");

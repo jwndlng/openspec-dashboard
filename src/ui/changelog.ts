@@ -15,6 +15,13 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    id: "2026-10-05-design-optional",
+    date: "2026-10-05",
+    title: "A design is optional",
+    summary:
+      "A change moves to **Ready** and offers **Implement** as soon as its tasks are written, with or without a `design.md` — only the artifacts the schema needs for implementing count. **Draft artifacts** stays on the card if you still want a design.",
+  },
+  {
     id: "2026-10-05-pr-title-convention",
     date: "2026-10-05",
     title: "Pull request title convention per project",
