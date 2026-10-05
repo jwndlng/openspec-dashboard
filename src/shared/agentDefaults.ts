@@ -26,6 +26,8 @@ function starterPrompts(invoke: { draft: string; apply: string; archive: string 
 export interface AgentPreset {
   profile: AgentProfile;
   formerPrompts: Readonly<Partial<Record<PromptKey, readonly string[]>>>;
+  /** Earlier commands of the preset: a saved profile with the preset's id that has one verbatim gets the current one. */
+  formerCommands?: readonly (readonly string[])[];
 }
 
 /** Preconfigured. Ship, Resolve conflicts and Integrate use the agent-neutral defaults, as they do for every preset. */
@@ -53,11 +55,15 @@ export const CODEX_PROFILE: AgentProfile = {
   resumeCommand: ["codex", "resume", "--last"],
 };
 
-/** `openspec init --tools antigravity` installs workflows invoked as `/opsx-<workflow>`. `-i` keeps the session interactive. */
+/**
+ * `openspec init --tools antigravity` installs workflows invoked as `/opsx-<workflow>`. `--prompt-interactive` keeps the
+ * session interactive; flag and prompt are one argument, so a console, which leaves out the `{prompt}` argument, leaves
+ * out the flag with it instead of starting `agy` with an option that lacks its value.
+ */
 export const ANTIGRAVITY_PROFILE: AgentProfile = {
   id: "agy",
   name: "Antigravity",
-  command: ["agy", "-i", "{prompt}"],
+  command: ["agy", "--prompt-interactive={prompt}"],
   prompts: starterPrompts({ draft: "/opsx-ff {change}", apply: "/opsx-apply {change}", archive: "/opsx-archive {change}" }),
   resumeCommand: ["agy", "--continue"],
 };
@@ -75,7 +81,8 @@ export const AGENT_PRESETS: readonly AgentPreset[] = [
     },
   },
   { profile: CODEX_PROFILE, formerPrompts: {} },
-  { profile: ANTIGRAVITY_PROFILE, formerPrompts: {} },
+  // `agy -i {prompt}` left a console with `agy -i`, an option without its value.
+  { profile: ANTIGRAVITY_PROFILE, formerPrompts: {}, formerCommands: [["agy", "-i", "{prompt}"]] },
 ];
 
 /** The Claude Code preset's former prompts. */

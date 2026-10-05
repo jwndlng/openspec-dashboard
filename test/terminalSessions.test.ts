@@ -4,7 +4,7 @@ import { chmod, mkdir, readFile, realpath, rm, writeFile } from "node:fs/promise
 import { join } from "node:path";
 import { sessionsDir, worktreesDir } from "../src/server/paths.ts";
 import { scanRepo } from "../src/server/scanner.ts";
-import { SessionManager } from "../src/server/sessions/manager.ts";
+import { SessionError, SessionManager } from "../src/server/sessions/manager.ts";
 import { SessionStore } from "../src/server/sessions/store.ts";
 import { checkWorktreeRemovable, copyChangeIfMissing, ensureWorktree, removeWorktree } from "../src/server/sessions/worktree.ts";
 import { tempDir, useTempHome } from "./helpers.ts";
@@ -465,4 +465,21 @@ test("close and shutdown return only once the ended session's record is written"
   const ended = JSON.parse(await readFile(join(sessionsDir(), t.id, "meta.json"), "utf8"));
   expect(ended.state).toBe("exited");
   expect(ended.updatedAt).toBe(other.manager.get(t.id).updatedAt);
+});
+
+test("a repository without a commit refuses a change session plainly, before anything is created", async () => {
+  // What **New project** leaves: `git init` and nothing else, so `HEAD` names no commit to branch from.
+  const h = track(await harness());
+  await rm(join(h.repoPath, ".git"), { recursive: true, force: true });
+  git(h.repoPath, "init", "-q", "-b", "main");
+
+  const refused = await h.manager.open({ repoId: h.repoId, change: "upgrade-runtime", action: "implement" }).catch((e: unknown) => e);
+  expect(refused).toBeInstanceOf(SessionError);
+  expect((refused as SessionError).status).toBe(409);
+  expect((refused as SessionError).message).toContain("no commit yet");
+  expect((refused as SessionError).message).not.toContain("invalid reference"); // not git's own words
+  expect(h.manager.list()).toEqual([]); // no agent was started
+  expect(existsSync(join(worktreesDir(), h.repoId))).toBe(false); // not even the worktrees folder
+  expect(git(h.repoPath, "for-each-ref", "refs/heads")).toBe(""); // no branch
+  expect(git(h.repoPath, "worktree", "list", "--porcelain").match(/^worktree /gm)).toHaveLength(1); // only the checkout
 });

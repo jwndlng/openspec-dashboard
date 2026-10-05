@@ -72,10 +72,22 @@ async function isDirectory(path: string): Promise<boolean> {
 }
 
 /**
+ * A repository with no commit yet (`git init` and nothing else, as **New project** leaves it): `HEAD` names no commit, so
+ * there is nothing to branch from. Said plainly instead of git's `invalid reference: HEAD`; the project console runs in
+ * the checkout, so the user can make the first commit there.
+ */
+export class NoCommitError extends Error {
+  constructor() {
+    super("this repository has no commit yet: an agent session works on a branch of its own, which needs a first commit — make one (for example in the project console) and start again");
+  }
+}
+
+/**
  * Makes sure `worktreePath` is a worktree of `repoPath` on `branch`. An existing one is reused (an earlier session for
  * the same change); an existing branch is checked out; otherwise the branch is created from the repository's default
- * branch as the repository currently knows it (`origin/HEAD`, else `HEAD`). Deliberately no `git fetch`: the dashboard
- * does not talk to the network, and remotes behind a hardware key would block.
+ * branch as the repository currently knows it (`origin/HEAD`, else `HEAD`; refused with `NoCommitError` when that names
+ * no commit). Deliberately no `git fetch`: the dashboard does not talk to the network, and remotes behind a hardware key
+ * would block.
  */
 /**
  * The linked worktree that has `branch` checked out, if any. git allows a branch in one worktree only, so a session
@@ -93,16 +105,18 @@ export async function ensureWorktree(repoPath: string, worktreePath: string, bra
     if (inside.ok && inside.out === "true") return { created: false };
     throw new Error(`${worktreePath} exists but is not a git worktree`);
   }
+  // Everything is decided read-only first, so a refusal leaves nothing behind — not even the worktree's parent folder.
+  const hasBranch = (await git(repoPath, ["show-ref", "--verify", "--quiet", `refs/heads/${branch}`])).ok;
+  const remoteHead = hasBranch ? undefined : await git(repoPath, ["symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"]);
+  const base = remoteHead?.ok && remoteHead.out ? remoteHead.out : "HEAD";
+  if (!hasBranch && base === "HEAD" && !(await git(repoPath, ["rev-parse", "--verify", "--quiet", "HEAD^{commit}"])).ok) throw new NoCommitError();
   await mkdir(dirname(worktreePath), { recursive: true });
   await git(repoPath, ["worktree", "prune"]); // forget worktrees whose directory was deleted by hand
-  const hasBranch = (await git(repoPath, ["show-ref", "--verify", "--quiet", `refs/heads/${branch}`])).ok;
   if (hasBranch) {
     const added = await git(repoPath, ["worktree", "add", worktreePath, branch]);
     if (!added.ok) throw new Error(`could not create the worktree: ${added.err.split("\n").pop()}`);
     return { created: true };
   }
-  const remoteHead = await git(repoPath, ["symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"]);
-  const base = remoteHead.ok && remoteHead.out ? remoteHead.out : "HEAD";
   const added = await git(repoPath, ["worktree", "add", "-b", branch, worktreePath, base]);
   if (!added.ok) throw new Error(`could not create the worktree: ${added.err.split("\n").pop()}`);
   return { created: true, base };

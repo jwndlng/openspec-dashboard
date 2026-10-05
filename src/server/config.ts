@@ -268,9 +268,9 @@ export function validateConfig(input: unknown): Config {
 
 /**
  * Profiles are persisted from the first run on, so a reworded preset prompt would never reach an existing installation.
- * Only a verbatim former prompt of the preset with the profile's id is replaced: an edited prompt, a removed one, another
- * preset's former prompts and profiles of no preset are the user's. Nothing is written here; the value reaches the file
- * with the next save.
+ * Only a verbatim former prompt or command of the preset with the profile's id is replaced: an edited prompt or command,
+ * a removed prompt, another preset's former ones and profiles of no preset are the user's. Nothing is written here; the
+ * value reaches the file with the next save.
  */
 function upgradeFormerDefaults(config: Config): Config {
   const agents = config.agentSessions.agents.map((agent) => {
@@ -284,6 +284,9 @@ function upgradeFormerDefaults(config: Config): Config {
       prompts[key] = preset.profile.prompts[key];
       upgraded = true;
     }
+    const { command } = agent;
+    const formerCommand = preset.formerCommands?.some((former) => former.length === command.length && former.every((arg, i) => arg === command[i]));
+    if (formerCommand) return { ...agent, prompts, command: [...preset.profile.command] };
     return upgraded ? { ...agent, prompts } : agent;
   });
   return { ...config, agentSessions: { ...config.agentSessions, agents } };
