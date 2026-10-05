@@ -34,7 +34,7 @@
   agent sessions off, saving/failure/revert like the agent picker, accessible name with the project name, tooltip
   quoting the sentence), styles in `src/ui/styles.css`; verify in `test/projectSettingsUi.test.ts` (choose, clear,
   refused request reverts, absent for a non-git folder, does not open the board).
-- [~] 4.3 Run `bun run dev`, set the convention on a project, and confirm in a Ship that the agent receives the
+- [x] 4.3 Run `bun run dev`, set the convention on a project, and confirm in a Ship that the agent receives the
   sentence; check both themes and a narrow viewport.
 
 ## 5. Wrap-up
