@@ -23,5 +23,5 @@
 ## 5. Verify
 
 - [x] 5.1 Run `bun run check` and verify lint, typecheck and tests pass
-- [~] 5.2 Run `bun run dev` against a scratch repository with a change that has proposal, specs and tasks but no design, and verify its card sits in `Ready` and offers **Implement** (and **Draft artifacts**)
+- [x] 5.2 Run `bun run dev` against a scratch repository with a change that has proposal, specs and tasks but no design, and verify its card sits in `Ready` and offers **Implement** (and **Draft artifacts**)
 - [x] 5.3 Run `openspec validate redefine-implement-state --strict` and verify it passes
