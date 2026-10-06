@@ -472,6 +472,8 @@ test("close and shutdown return only once the ended session's record is written"
 function uncommit(repoPath: string): Promise<void> {
   return rm(join(repoPath, ".git"), { recursive: true, force: true }).then(() => {
     git(repoPath, "init", "-q", "-b", "main");
+    git(repoPath, "config", "user.email", "t@example.invalid"); // a fresh .git has no identity of its own
+    git(repoPath, "config", "user.name", "t");
   });
 }
 
