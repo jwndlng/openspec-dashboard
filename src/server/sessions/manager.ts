@@ -5,7 +5,7 @@ import { randomUUID } from "node:crypto";
 import { realpath, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { blockedReason } from "../../shared/dependencies.ts";
-import { availableActions, changeSessions, isChangeless, isConsole, isIntegration, isProjectConsole, OPEN_SESSION_STATES, projectConsoleSessions, repoAgentEnabled, SESSION_ACTIONS, SHIPPABLE_WORK, type AgentAvailability, type ChangeSession, type Config, type ConsoleSession, type IntegrationSession, type ProjectConsoleLike, type ProjectConsoleSession, type Session, type SessionAction, type SessionWorktree, type Snapshot, type WorkStatus, type PromptResult, type RepoConfig, type ShipResult, type AutoMergePromptResult, type StartResult } from "../../shared/types.ts";
+import { availableActions, changeSessions, isChangeless, isConsole, isIntegration, isProjectConsole, OPEN_SESSION_STATES, projectConsoleSessions, repoAgentEnabled, SESSION_ACTIONS, SHIPPABLE_WORK, type AgentAvailability, type ChangeSession, type Config, type ConsoleSession, type IntegrationSession, type ProjectConsoleLike, type ProjectConsoleSession, type Session, type SessionAction, type SessionWorktree, type Snapshot, type WorkStatus, type PromptResult, type PullRequest, type RepoConfig, type ShipResult, type AutoMergePromptResult, type StartResult } from "../../shared/types.ts";
 import { sessionBranch } from "../../shared/sessionBranch.ts";
 import { isCleaningUp } from "../cleanup.ts";
 import { isDismissing } from "../dismissChange.ts";
@@ -104,6 +104,8 @@ export class SessionManager {
   private ending = new Map<string, Promise<void>>();
   private readonly store: SessionStore;
   private worktreeCache?: { at: number; list: Promise<SessionWorktree[]> };
+  /** Sessions being ended because their auto-merge pull request merged: their end is reported once, as that. */
+  private autoEnding = new Set<string>();
 
   constructor(private readonly deps: ManagerDeps) {
     this.store = deps.store ?? new SessionStore();
@@ -217,7 +219,10 @@ export class SessionManager {
     }
     // Decided once the worktree exists, so a leftover archive branch with code in it is seen (archive-auto-merge-docs D4).
     const autoMerge = await this.archiveAutoMerge(repo, session, action);
-    if (autoMerge) prompt = openingPrompt(agent, action, change, { autoMerge }) as string;
+    if (autoMerge) {
+      prompt = openingPrompt(agent, action, change, { autoMerge }) as string;
+      session.autoMergeAskedAt = new Date().toISOString();
+    }
     this.sessions.set(session.id, session);
     await this.store.saveMeta(session);
     const launch = launchCommand(agent, prompt);
@@ -493,12 +498,14 @@ export class SessionManager {
     this.forgetWorktrees();
     const proc = this.live.get(id)?.proc;
     if (session.state === "running" && proc) {
+      if (autoMerge) this.askedForAutoMerge(session);
       const { submitted } = await this.submit(id, prompt);
       this.report(session, { kind: "session-shipped", submitted });
       return { ...session, submitted, autoMerge };
     }
     const launch = agent.resumeCommand ? { argv: [...agent.resumeCommand], typed: prompt } : launchCommand(agent, prompt);
     if (!Bun.which(launch.argv[0])) throw new SessionError(503, `${agent.name} was not found (${launch.argv[0]})`);
+    if (autoMerge) session.autoMergeAskedAt = new Date().toISOString(); // saved by `restart`
     await this.restart(session, repo.path, launch.argv, agentEnv(agent, process.env), launch.typed);
     this.report(session, { kind: "session-shipped", submitted: true });
     // Handed to a starting agent (as its argument, or submitted once it has started); the terminal shows how that went.
@@ -572,9 +579,50 @@ export class SessionManager {
     const text = openingPrompt(agent, action, session.change, { autoMerge }) as string;
     // The recorded action is what the user asked for, whether or not the agent's terminal echoed the prompt in time.
     session.action = action;
+    if (autoMerge) session.autoMergeAskedAt = new Date().toISOString();
     this.touchLater(session);
     const { submitted } = await this.submit(id, text);
     return { ...session, submitted, autoMerge };
+  }
+
+  /** Records that this session's agent was just asked to enable auto-merge (auto-merge-cleanup D1); the latest ask wins. */
+  private askedForAutoMerge(session: ChangeSession): void {
+    session.autoMergeAskedAt = new Date().toISOString();
+    this.touchLater(session);
+  }
+
+  /**
+   * A pull-request query for `repoId` has completed: every session of that repository whose agent was asked to enable
+   * auto-merge and whose pull request the list shows merged since is ended, and its worktree removed under the same
+   * checks as the end-session dialog (auto-merge-cleanup D3, D4). Decided from the list and read-only git only — no
+   * query, no fetch, and the branch is kept for repository cleanup. Once a session carries `autoEnded` it never
+   * matches again, so seeing the same merged pull request twice changes nothing.
+   */
+  async endMergedAutoMerge(repoId: string, pullRequests: readonly PullRequest[]): Promise<void> {
+    const config = this.deps.getConfig();
+    if (!config.agentSessions.enabled) return;
+    const repo = config.repos.find((r) => r.id === repoId);
+    if (repo?.agent?.autoMergeDocs !== true) return;
+    for (const session of changeSessions(this.list())) {
+      if (session.repoId !== repoId || session.inPlace || session.adopted || !session.autoMergeAskedAt || session.autoEnded || this.autoEnding.has(session.id)) continue;
+      const askedAt = Date.parse(session.autoMergeAskedAt);
+      const merged = pullRequests.find((pr) => pr.state === "merged" && pr.head === session.branch && pr.mergedAt !== undefined && Date.parse(pr.mergedAt) > askedAt);
+      if (!merged) continue;
+      // Taken before the first await, so a second query settling meanwhile cannot end the same session again.
+      this.autoEnding.add(session.id);
+      try {
+        // Nothing left to end or remove: the user already ended the session and removed its worktree.
+        if (session.state !== "running" && !(await stat(session.worktreePath).catch(() => undefined))) continue;
+        const { worktree } = await this.close(session.id, { removeWorktree: true });
+        const gone = worktree?.reason === "worktree no longer exists";
+        const removed = worktree?.removable === true || gone;
+        session.autoEnded = { pr: merged.number, at: new Date().toISOString(), removed, ...(removed || !worktree?.reason ? {} : { reason: worktree.reason }) };
+        await this.touch(session);
+        this.report(session, { kind: "session-auto-ended", pr: merged.number, removed, ...(session.autoEnded.reason ? { reason: session.autoEnded.reason } : {}) });
+      } finally {
+        this.autoEnding.delete(session.id);
+      }
+    }
   }
 
   /** For worktrees whose session record is gone; the path is built here, never taken from the request. */
@@ -656,7 +704,7 @@ export class SessionManager {
     const live = this.live.get(session.id);
     if (live) await this.store.saveOutput(session.id, live.scrollback.bytes()).catch(() => undefined);
     await this.touch(session);
-    this.report(session, { kind: "session-ended", ...(exitCode === null ? {} : { exitCode }), ...(error ? { error } : {}) });
+    if (!this.autoEnding.has(session.id)) this.report(session, { kind: "session-ended", ...(exitCode === null ? {} : { exitCode }), ...(error ? { error } : {}) });
     if (isIntegration(session)) {
       try {
         this.deps.onIntegrationEnded?.(session);

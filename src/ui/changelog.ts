@@ -15,6 +15,13 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    id: "2026-10-06-auto-merge-cleanup",
+    date: "2026-10-06",
+    title: "Merged docs pull requests clean up after themselves",
+    summary:
+      "With **Docs auto-merge** on, once a pull-request refresh shows the pull request your agent was asked to auto-merge as merged, the dashboard ends that session and removes its worktree when that is safe. The session panel and card say so, or why the worktree was kept; the branch stays for repository cleanup.",
+  },
+  {
     id: "2026-10-06-project-console-button",
     date: "2026-10-06",
     title: "An easier-to-find project console",

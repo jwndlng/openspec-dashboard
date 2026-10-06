@@ -245,6 +245,8 @@ test("a git project with agent sessions offers auto-merge of docs-only pull requ
     expect(textOf(toggle)).toBe("Docs auto-merge: Off");
     // The tooltip names both actions that may ask for it (archive-auto-merge-docs).
     expect(AUTO_MERGE_HINT).toContain("Ship and Archive ask the agent to enable auto-merge");
+    // …and what happens once it has merged (auto-merge-cleanup).
+    expect(AUTO_MERGE_HINT).toContain("ends its session and removes its worktree when that is safe");
     expect(click(toggle!)).toBe(true);
   }
   expect(calls).toEqual(['agent a {"autoMergeDocs":true}', 'agent a {"autoMergeDocs":true}']);

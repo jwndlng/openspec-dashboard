@@ -443,6 +443,24 @@ export interface ChangeSession extends SessionBase {
   repoId: string;
   change: string;
   action: SessionAction;
+  /**
+   * When the dashboard last appended an auto-merge instruction to a prompt for this session (Ship, Archive started or
+   * sent). Only a session that carries it is ever ended because its pull request merged (auto-merge-cleanup D1).
+   */
+  autoMergeAskedAt?: string;
+  /** Set once the dashboard ended this session because its auto-merge pull request merged; it is never ended twice. */
+  autoEnded?: AutoEnded;
+}
+
+/** What ending a session because its auto-merge pull request merged came to (auto-merge-cleanup D4). */
+export interface AutoEnded {
+  /** The merged pull request's number. */
+  pr: number;
+  at: string;
+  /** Whether the worktree was removed (or was already gone). */
+  removed: boolean;
+  /** Why the worktree was kept, when it was. */
+  reason?: string;
 }
 
 /**
@@ -780,6 +798,8 @@ export type ActivityEvent = ActivityBase &
     | { kind: "session-shipped"; change: string; submitted?: boolean }
     /** The resolve prompt was handed over — not that the conflict was resolved: that is re-derived from git. */
     | { kind: "session-conflicts-resolve"; change: string; submitted?: boolean }
+    /** Ended by the dashboard because the session's auto-merge pull request merged; `reason` says why the worktree was kept. */
+    | { kind: "session-auto-ended"; change: string; pr: number; removed: boolean; reason?: string }
   );
 
 export type ActivityKind = ActivityEvent["kind"];
@@ -798,13 +818,14 @@ export const ACTIVITY_KINDS: readonly ActivityKind[] = [
   "session-ended",
   "session-shipped",
   "session-conflicts-resolve",
+  "session-auto-ended",
 ];
 
 /** The filter groups of the Activity view. */
 export const ACTIVITY_GROUPS: Readonly<Record<"changes" | "tasks" | "sessions" | "repositories", readonly ActivityKind[]>> = {
   changes: ["change-created", "change-moved", "change-archived", "change-removed"],
   tasks: ["tasks-progress"],
-  sessions: ["session-started", "session-ended", "session-shipped", "session-conflicts-resolve"],
+  sessions: ["session-started", "session-ended", "session-shipped", "session-conflicts-resolve", "session-auto-ended"],
   repositories: ["repo-tracked", "repo-untracked", "repo-failing", "repo-recovered"],
 };
 

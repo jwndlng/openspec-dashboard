@@ -131,7 +131,11 @@ dashboard; both are built in and work offline.
   nothing outside `openspec/`, but only if the agent opens a pull request for the archive — say so in the Archive
   prompt's additional instructions; the dashboard never asks for one just for this. Anything else is left for review as
   before, and the session panel says when the agent was asked. A repository without required checks merges as soon as
-  auto-merge is on. The agent enables auto-merge; the dashboard itself merges nothing.
+  auto-merge is on. The agent enables auto-merge; the dashboard itself merges nothing. Once a pull-request refresh —
+  yours, or an open board's watch — shows such a pull request merged, the dashboard ends that session and removes its
+  worktree under the same checks as **End session**, without asking: your opt-in stands for it. A worktree that is not
+  clean or holds work found nowhere else is kept and the session says why; the local branch is always kept, for
+  repository cleanup after your next **Pull**. Nothing happens until a pull-request list is refreshed.
   A tracked folder that is not a git repository works too — there the agent runs in the folder itself, so it edits your
   files directly, with no branch and no undo, and the session says so. The same goes for an **Integrate** session and
   a project's console.
