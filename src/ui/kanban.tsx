@@ -23,7 +23,7 @@ import { assignRepoHues, dependencyChoices, groupByRepo, newChangeTargets, recen
 import { columnKind } from "./boardMarks.ts";
 import { IconChevronRight, IconPlus, IconTerminal } from "./icons.tsx";
 import { SessionControls, useSessionUi } from "./sessions.tsx";
-import { archivedShown, cardSessionControls, cardWorkingState, type CardWorkingState, consoleTabAvailable } from "./sessionState.ts";
+import { archivedShown, cardSessionControls, cardWorkingState, type CardWorkingState, consoleTabAvailable, projectConsoleUnavailable } from "./sessionState.ts";
 import { boardFrom, changePath, CONSOLE_TAB, repoPath, serializeDetailQuery } from "./routes.ts";
 import { currentQuery, followInApp, href, navigate, replaceQuery } from "./url.ts";
 import { ProjectConsoleButton } from "./projectConsole.tsx";
@@ -337,6 +337,9 @@ function RepoHeader({ repo, config, now, stats, onCreated }: { repo: RepoSnapsho
   const notice = branchNotice(repo);
   const [creating, setCreating] = useState(false);
   const canGit = repo.isGit && repo.ok;
+  // The same check the console control renders on, so the action area never shows up empty; it needs no good scan.
+  const ui = useSessionUi();
+  const consoleOffered = projectConsoleUnavailable(ui.config, ui.agents, repo.id) !== null;
   return (
     <div class="band repo-head">
       <div class="band-main">
@@ -385,11 +388,11 @@ function RepoHeader({ repo, config, now, stats, onCreated }: { repo: RepoSnapsho
         <div class="row path">
           <code>{repo.path}</code>
           <CopyButton text={cdCommand(repo.path)} label="Copy cd" />
-          <ProjectConsoleButton repoId={repo.id} />
         </div>
       </div>
-      {(canGit || repo.ok) && (
+      {(canGit || repo.ok || consoleOffered) && (
         <div class="band-actions">
+          <ProjectConsoleButton repoId={repo.id} variant="board" />
           {canGit && <PullButton repoId={repo.id} repoName={repo.name} />}
           {canGit && <CleanupButton repoId={repo.id} repoName={repo.name} onDone={onCreated} />}
           {repo.ok && (
@@ -499,8 +502,9 @@ export function Kanban({ snapshot, config, repoId, query, onReload }: { snapshot
   // ends it, and disarmed when the board is left or the tab hidden (openspec/specs/pull-requests).
   const hidden = useTabHidden();
   const { watch, lastSettledAt, running: prsRunning } = prs;
+  // Wrapped, never passed bare: `io.setTimer(…)` would call the browser's setTimeout on `io` — "Illegal invocation".
   useEffect(
-    () => armWatch({ plan: watchPlan(cards, prs.data?.repos, Date.now(), lastSettledAt()), hidden, now: Date.now(), watch, setTimer: setTimeout, clearTimer: (h) => clearTimeout(h as number) }),
+    () => armWatch({ plan: watchPlan(cards, prs.data?.repos, Date.now(), lastSettledAt()), hidden, now: Date.now(), watch, setTimer: (run, ms) => setTimeout(run, ms), clearTimer: (h) => clearTimeout(h as number) }),
     [cards, prs.data, prsRunning, hidden, watch, lastSettledAt],
   );
 

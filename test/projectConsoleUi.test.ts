@@ -11,20 +11,31 @@ const change = (id: string): ChangeSession => ({ id, repoId: "r", change: "add-x
 test("the control names the project, and the running console's state in words", () => {
   const idle = projectConsoleControl([], "demo-ops", undefined, NOW);
   expect(idle).toMatchObject({ name: "Open the console of demo-ops", disabled: false });
+  expect(idle.title).toBe("Open the console of demo-ops: your agent in this project's folder, for anything that is not a change");
   expect(idle.badge).toBeUndefined();
-  expect(projectConsoleControl([pc("old", { state: "exited", exitCode: 0 })], "demo-ops", undefined, NOW).badge).toBeUndefined();
+  expect(idle.state).toBeUndefined();
+  const ended = projectConsoleControl([pc("old", { state: "exited", exitCode: 0 })], "demo-ops", undefined, NOW);
+  expect(ended.badge).toBeUndefined();
+  expect(ended.state).toBeUndefined();
 
   const working = projectConsoleControl([pc("c", { lastOutputAt: at(1_000) })], "demo-ops", undefined, NOW);
   expect(working.name).toBe("Open the console of demo-ops — working");
   expect(working.badge).toMatchObject({ tone: "info", live: true });
+  expect(working.state).toBe("working");
 
   const quiet = projectConsoleControl([pc("c", { lastOutputAt: at(NEEDS_YOU_AFTER_MS + 180_000) })], "demo-ops", undefined, NOW);
   expect(quiet.name).toBe("Open the console of demo-ops — may need you 3m");
   expect(quiet.title).toContain("may be waiting for you");
+  // The visible text is the badge's own label, so the words on the control and in its name cannot diverge.
+  expect(quiet.state).toBe("may need you 3m");
+  expect(quiet.state).toBe(quiet.badge?.label);
 
   const off = projectConsoleControl([], "demo-ops", "agent sessions are off for this project", NOW);
   expect(off).toMatchObject({ disabled: true });
   expect(off.name).toContain("agent sessions are off for this project");
+  expect(off.state).toBeUndefined();
+  // Unavailable says so even while a console still runs: no state on an inactive control.
+  expect(projectConsoleControl([pc("c")], "demo-ops", "agent sessions are off for this project", NOW).state).toBeUndefined();
 });
 
 test("why a project's console is unavailable, and when no control is shown at all", () => {
