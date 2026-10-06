@@ -1,6 +1,6 @@
 // Pure helpers for the agent-session UI; free of DOM access at import time so they can be unit-tested.
 import { pullRequestReadiness } from "../shared/pullRequestReadiness.ts";
-import { availableActions, isChangeless, OPEN_SESSION_STATES, repoAgentEnabled, SHIPPABLE_WORK, type AgentAvailability, type AgentProfile, type ProjectConsoleLike, type ChangeSnapshot, type Config, type RepoSnapshot, type ChangeSession, changeSessions, type ConsoleSession, type PullRequest, type Session, type SessionAction, type SessionWorktree, type ShipResult, type WorkStatus } from "../shared/types.ts";
+import { availableActions, isChangeless, OPEN_SESSION_STATES, repoAgentEnabled, SHIPPABLE_WORK, type AgentAvailability, type AgentProfile, type AutoEnded, type ProjectConsoleLike, type ChangeSnapshot, type Config, type RepoSnapshot, type ChangeSession, changeSessions, type ConsoleSession, type PullRequest, type Session, type SessionAction, type SessionWorktree, type ShipResult, type WorkStatus } from "../shared/types.ts";
 
 /** Session starters are shown when the feature is on, for every tracked repository that has not been switched off. */
 export function sessionsEnabledFor(config: Config | null, repoId: string): boolean {
@@ -32,7 +32,13 @@ export function sessionsForChange(sessions: ChangeSession[], repoId: string, cha
   const running = mine.filter((s) => s.state === "running");
   if (running.length > 0) return running;
   const latest = mine[0];
-  return latest && (latest.state === "failed" || (latest.exitCode ?? 0) !== 0) ? [latest] : [];
+  // An end the dashboard decided on (its auto-merge pull request merged) stays on the card, so the user sees what happened.
+  return latest && (latest.state === "failed" || latest.autoEnded !== undefined || (latest.exitCode ?? 0) !== 0) ? [latest] : [];
+}
+
+/** Why the dashboard ended a session on its own, and what became of its worktree (auto-merge-cleanup D6). */
+export function autoEndedText(ended: AutoEnded): string {
+  return `Ended because #${ended.pr} merged; ${ended.removed ? "worktree removed" : `worktree kept: ${ended.reason ?? "it could not be removed"}`}`;
 }
 
 /**
@@ -234,6 +240,10 @@ export function sessionBadge(session: Session, now = Date.now()): SessionBadge {
       return { icon: "◆", label: `may need you ${duration}`, tone: "warning", title: `the terminal has printed nothing for ${duration} — ${session.agentName} may be waiting for you` };
     }
     return { icon: "●", label: "working", live: true, tone: "info", title: `the terminal of ${session.agentName} is producing output` };
+  }
+  if (!isChangeless(session) && session.autoEnded) {
+    const ended = session.autoEnded;
+    return { icon: "✓", label: `ended · #${ended.pr} merged`, tone: ended.removed ? "success" : "warning", title: autoEndedText(ended) };
   }
   if (session.state === "failed") return { icon: "⚠", label: "failed", tone: "danger", title: session.error ?? "the agent could not be started" };
   const code = session.exitCode;

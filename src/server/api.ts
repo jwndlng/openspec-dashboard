@@ -2,7 +2,7 @@ import { ACTIVITY_KINDS, type ActivityKind } from "../shared/types.ts";
 import { availableName } from "../shared/nameHints.ts";
 import { labelKey } from "../shared/labels.ts";
 import { MAX_PAGE, type ActivityLog, type PageQuery } from "./activity/log.ts";
-import type { CleanupSelection, Config, DiscoverResult, PullBlockingFile, PullResolve, RepoConfig, RepoSnapshot, ScanTriggerResult, SharedConfigApplyResult, SharedConfigAssignment, SharedConfigPreview } from "../shared/types.ts";
+import type { CleanupSelection, Config, DiscoverResult, PullBlockingFile, PullRequestsResponse, PullResolve, RepoConfig, RepoSnapshot, ScanTriggerResult, SharedConfigApplyResult, SharedConfigAssignment, SharedConfigPreview } from "../shared/types.ts";
 import { applyCleanup, CleanupBusyError, previewCleanup } from "./cleanup.ts";
 import { changeDirFor, listArtifactFiles, readArtifactFile } from "./artifacts.ts";
 import { consoleFolderProblem } from "./sessions/consoleFolder.ts";
@@ -831,9 +831,23 @@ async function postPullRequestsRefresh(state: AppState, req: Request): Promise<R
     if (!Array.isArray(repoIds) || !repoIds.every((r) => typeof r === "string")) return json({ error: "repoIds must be a list of strings" }, 400);
     if (!repoIds.every((r) => targets.some((t) => t.id === r))) return json({ error: "unknown or disabled repository" }, 404);
   }
-  return json(
-    await pullRequestStore(state).refresh(targets, { repoId: repoId as string | undefined, repoIds: repoIds as string[] | undefined, force: body.force === true }),
-  );
+  const response = await pullRequestStore(state).refresh(targets, { repoId: repoId as string | undefined, repoIds: repoIds as string[] | undefined, force: body.force === true });
+  endMergedAutoMerge(state, response);
+  return json(response);
+}
+
+/**
+ * A completed query is what ends a session whose auto-merge pull request merged (auto-merge-cleanup D2): handed to the
+ * session manager after `gh` has finished, never waited for, and never a reason to query. Only lists that are good
+ * right now count — a failed one is the last good list, which says nothing new.
+ */
+function endMergedAutoMerge(state: AppState, response: PullRequestsResponse): void {
+  const sessions = state.sessions;
+  if (!sessions) return;
+  for (const repo of response.repos) {
+    if (repo.status !== "ok") continue;
+    void sessions.endMergedAutoMerge(repo.repoId, repo.pullRequests).catch((err) => console.warn("could not end a session whose pull request merged:", err instanceof Error ? err.message : err));
+  }
 }
 
 const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "[::1]"]);

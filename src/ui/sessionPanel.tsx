@@ -9,7 +9,7 @@ import { api, type TerminalMessage } from "./api.ts";
 import { cdCommand } from "./format.ts";
 import { inPlaceReason } from "./inPlaceText.ts";
 import { NOT_SUBMITTED_NOTICE, shortcutHint, shortcutMessage, visibleShortcuts } from "./quickReplies.ts";
-import { autoMergeNotice, nextStepFor, reportShip, resolvable, sessionBadge, startersFor, workBadge, worktreeOfSession } from "./sessionState.ts";
+import { autoEndedText, autoMergeNotice, nextStepFor, reportShip, resolvable, sessionBadge, startersFor, workBadge, worktreeOfSession } from "./sessionState.ts";
 import { ConflictBadge, SessionBadgeView, SessionControls, useSessionUi } from "./sessions.tsx";
 
 export function Copy({ text, label }: { text: string; label: string }) {
@@ -390,6 +390,7 @@ export function ConsolePanel({ session, worktree, of }: { session?: ChangeSessio
           {path && <Copy text={cdCommand(path)} label="Copy cd" />}
         </div>
         {(error ?? session?.error) && <div class="notice danger">{error ?? session?.error}</div>}
+        {session?.autoEnded && <div class={`notice ${session.autoEnded.removed ? "ok" : "warn"}`}>{autoEndedText(session.autoEnded)}</div>}
       </header>
       {session ? (
         <TerminalView key={`${session.id}:${generation}`} sessionId={session.id} running={session.state === "running"} onExit={ui.refresh} />

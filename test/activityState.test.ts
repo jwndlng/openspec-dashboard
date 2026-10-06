@@ -23,6 +23,7 @@ test("groups map to the kinds the API filters by", () => {
     "session-ended",
     "session-shipped",
     "session-conflicts-resolve",
+    "session-auto-ended",
     "repo-tracked",
     "repo-untracked",
     "repo-failing",

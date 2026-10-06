@@ -1,0 +1,224 @@
+// A merged auto-merge pull request ends its session (auto-merge-cleanup): the record, the match, the end and the
+// removal, the activity it leaves, and the refresh route that hands a completed query to the session manager.
+import { afterAll, afterEach, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
+import { mkdir, rm, stat, writeFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
+import { type AppState, createFetchHandler } from "../src/server/api.ts";
+import type { SessionActivity } from "../src/server/activity/events.ts";
+import { sessionsDir } from "../src/server/paths.ts";
+import { Scanner } from "../src/server/scanner.ts";
+import { SessionManager } from "../src/server/sessions/manager.ts";
+import { SessionStore } from "../src/server/sessions/store.ts";
+import { sessionBranch } from "../src/shared/sessionBranch.ts";
+import type { ChangeSession, PullRequest } from "../src/shared/types.ts";
+import { describe as describeEvent } from "../src/ui/activityState.ts";
+import { autoEndedText, sessionBadge, sessionsForChange } from "../src/ui/sessionState.ts";
+import { ghPr, installFakeGh } from "./ghHelpers.ts";
+import { useTempHome } from "./helpers.ts";
+import { git, harness, waitFor, watch, type Harness } from "./sessionHelpers.ts";
+
+setDefaultTimeout(30_000);
+
+let cleanup: () => Promise<void>;
+const managers: SessionManager[] = [];
+
+beforeAll(async () => {
+  ({ cleanup } = await useTempHome());
+});
+afterEach(async () => {
+  for (const m of managers.splice(0)) await m.shutdown();
+});
+afterAll(() => cleanup());
+
+const CHANGE = "confirm-retention";
+const BRANCH = sessionBranch("archive", CHANGE);
+const exists = (path: string) => stat(path).then(() => true, () => false);
+
+function merged(patch: Partial<PullRequest> & { number: number; mergedAt: string }): PullRequest {
+  return { title: "archive", url: `https://github.com/acme/demo-ops/pull/${patch.number}`, author: "octo", head: BRANCH, base: "main", draft: false, state: "merged", createdAt: patch.mergedAt, review: "none", reviewRequestedFromViewer: false, checks: "passing", ...patch };
+}
+
+const later = (iso: string | undefined, ms = 1000) => new Date(Date.parse(iso as string) + ms).toISOString();
+
+/** A project with docs auto-merge as given, and a manager whose activity reports are collected. */
+async function project(autoMergeDocs = true) {
+  const h = await harness({ agent: { prompts: { draft: "draft {change}", implement: "implement {change}", validate: "validate {change}", archive: "archive {change}" } } });
+  h.config.repos[0].agent = { enabled: true, autoMergeDocs };
+  const events: SessionActivity[] = [];
+  const manager = h.newManager({ onActivity: (_session, activity) => events.push(activity) });
+  managers.push(manager);
+  return { h, manager, events };
+}
+
+/** An Archive session asked to enable auto-merge, with its agent up. */
+async function archiveSession(manager: SessionManager, h: Harness) {
+  const started = await manager.open({ repoId: h.repoId, change: CHANGE, action: "archive" });
+  expect(started.autoMerge).toBe(true);
+  const seen = await watch(manager, started.id);
+  await waitFor(() => seen.text().includes("fake-agent ready"), "the agent");
+  return manager.get(started.id) as ChangeSession;
+}
+
+// ---- the record (1.1, 1.2) ----
+
+test("a session record written before the fields existed still loads", async () => {
+  const id = "00000000-0000-4000-8000-000000000001";
+  const old = { id, repoId: "r", change: CHANGE, action: "archive", agentId: "fake", agentName: "Fake Agent", state: "exited", worktreePath: "/w/acme/x", branch: BRANCH, createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:00:00.000Z", resumable: false };
+  await mkdir(join(sessionsDir(), id), { recursive: true });
+  await writeFile(join(sessionsDir(), id, "meta.json"), JSON.stringify(old));
+  const loaded = (await new SessionStore().loadAll()).find((s) => s.id === id) as ChangeSession;
+  expect(loaded).toMatchObject({ id, change: CHANGE });
+  expect([loaded.autoMergeAskedAt, loaded.autoEnded]).toEqual([undefined, undefined]);
+  await rm(join(sessionsDir(), id), { recursive: true });
+});
+
+test("the time is recorded and stored when Archive starts with the instruction, and not for a returned open session", async () => {
+  const { h, manager } = await project();
+  const s = await archiveSession(manager, h);
+  expect(Date.parse(s.autoMergeAskedAt as string)).toBeGreaterThan(Date.now() - 60_000);
+  const stored = (await new SessionStore().loadAll()).find((x) => x.id === s.id) as ChangeSession;
+  expect(stored.autoMergeAskedAt).toBe(s.autoMergeAskedAt);
+  const before = s.autoMergeAskedAt;
+  await new Promise((r) => setTimeout(r, 5));
+  const again = await manager.open({ repoId: h.repoId, change: CHANGE, action: "archive" });
+  expect([again.id, again.autoMerge, (manager.get(s.id) as ChangeSession).autoMergeAskedAt]).toEqual([s.id, false, before]);
+});
+
+// ---- the trigger (2.1, 2.3) ----
+
+test("merged after the ask: the agent is ended, the worktree removed, the branch kept, one event recorded", async () => {
+  const { h, manager, events } = await project();
+  const s = await archiveSession(manager, h);
+  const refs = git(h.repoPath, "for-each-ref");
+  await manager.endMergedAutoMerge(h.repoId, [merged({ number: 88, mergedAt: later(s.autoMergeAskedAt) })]);
+  const after = manager.get(s.id) as ChangeSession;
+  expect(after.state).toBe("exited");
+  expect(after.autoEnded).toMatchObject({ pr: 88, removed: true });
+  expect(after.autoEnded?.reason).toBeUndefined();
+  expect(await exists(s.worktreePath)).toBe(false);
+  expect(git(h.repoPath, "for-each-ref")).toBe(refs);
+  expect(git(h.repoPath, "show-ref", "--verify", `refs/heads/${BRANCH}`)).toContain(BRANCH);
+  expect(events.filter((e) => e.kind !== "session-started")).toEqual([{ kind: "session-auto-ended", pr: 88, removed: true }]);
+  const stored = (await new SessionStore().loadAll()).find((x) => x.id === s.id) as ChangeSession;
+  expect(stored.autoEnded).toEqual(after.autoEnded);
+
+  // Seen again: nothing more is ended, removed or recorded.
+  const updatedAt = after.updatedAt;
+  await manager.endMergedAutoMerge(h.repoId, [merged({ number: 88, mergedAt: later(s.autoMergeAskedAt) })]);
+  expect([manager.get(s.id).updatedAt, events.length]).toEqual([updatedAt, 2]);
+});
+
+test("nothing happens without an ask, with the setting off, for an earlier merge, or for another branch", async () => {
+  // An Implement-like session never asked to enable auto-merge.
+  {
+    const { h, manager } = await project();
+    const s = await manager.open({ repoId: h.repoId, change: CHANGE, action: "validate" });
+    expect((manager.get(s.id) as ChangeSession).autoMergeAskedAt).toBeUndefined();
+    await manager.endMergedAutoMerge(h.repoId, [merged({ number: 1, head: s.branch, mergedAt: new Date(Date.now() + 1000).toISOString() })]);
+    expect(manager.get(s.id).state).toBe("running");
+  }
+  // Switched off since the ask; an earlier merge of the same branch; a different branch.
+  const { h, manager } = await project();
+  const s = await archiveSession(manager, h);
+  h.config.repos[0].agent = { enabled: true, autoMergeDocs: false };
+  await manager.endMergedAutoMerge(h.repoId, [merged({ number: 2, mergedAt: later(s.autoMergeAskedAt) })]);
+  h.config.repos[0].agent = { enabled: true, autoMergeDocs: true };
+  await manager.endMergedAutoMerge(h.repoId, [merged({ number: 3, mergedAt: later(s.autoMergeAskedAt, -30 * 60_000) })]);
+  await manager.endMergedAutoMerge(h.repoId, [merged({ number: 4, head: "feat/other", mergedAt: later(s.autoMergeAskedAt) })]);
+  await manager.endMergedAutoMerge("another-repo", [merged({ number: 5, mergedAt: later(s.autoMergeAskedAt) })]);
+  await manager.endMergedAutoMerge(h.repoId, [{ ...merged({ number: 6, mergedAt: later(s.autoMergeAskedAt) }), state: "open" }]);
+  const after = manager.get(s.id) as ChangeSession;
+  expect([after.state, after.autoEnded, await exists(s.worktreePath)]).toEqual(["running", undefined, true]);
+});
+
+test("uncommitted work: the agent is ended, the worktree kept, and the reason kept", async () => {
+  const { h, manager, events } = await project();
+  const s = await archiveSession(manager, h);
+  await writeFile(join(s.worktreePath, "notes.md"), "left behind");
+  await manager.endMergedAutoMerge(h.repoId, [merged({ number: 89, mergedAt: later(s.autoMergeAskedAt) })]);
+  const after = manager.get(s.id) as ChangeSession;
+  expect(after.state).toBe("exited");
+  expect(after.autoEnded).toMatchObject({ pr: 89, removed: false, reason: "the worktree has uncommitted changes" });
+  expect(await exists(s.worktreePath)).toBe(true);
+  expect(events.filter((e) => e.kind !== "session-started")).toEqual([{ kind: "session-auto-ended", pr: 89, removed: false, reason: "the worktree has uncommitted changes" }]);
+});
+
+test("ended by the user with the worktree kept: only the removal happens; with the worktree gone too, nothing", async () => {
+  const { h, manager, events } = await project();
+  const s = await archiveSession(manager, h);
+  await manager.close(s.id);
+  expect(await exists(s.worktreePath)).toBe(true);
+  const ended = events.length;
+  await manager.endMergedAutoMerge(h.repoId, [merged({ number: 90, mergedAt: later(s.autoMergeAskedAt) })]);
+  expect((manager.get(s.id) as ChangeSession).autoEnded).toMatchObject({ pr: 90, removed: true });
+  expect(await exists(s.worktreePath)).toBe(false);
+  expect(events.slice(ended)).toEqual([{ kind: "session-auto-ended", pr: 90, removed: true }]);
+
+  // A second archive session ended and removed by the user leaves nothing to do.
+  const { h: h2, manager: m2, events: e2 } = await project();
+  const t = await archiveSession(m2, h2);
+  await m2.close(t.id, { removeWorktree: true });
+  const count = e2.length;
+  await m2.endMergedAutoMerge(h2.repoId, [merged({ number: 91, mergedAt: later(t.autoMergeAskedAt) })]);
+  expect([(m2.get(t.id) as ChangeSession).autoEnded, e2.length]).toEqual([undefined, count]);
+});
+
+test("two queries settling at once end the session once", async () => {
+  const { h, manager, events } = await project();
+  const s = await archiveSession(manager, h);
+  const list = [merged({ number: 92, mergedAt: later(s.autoMergeAskedAt) })];
+  await Promise.all([manager.endMergedAutoMerge(h.repoId, list), manager.endMergedAutoMerge(h.repoId, list)]);
+  expect(events.filter((e) => e.kind === "session-auto-ended")).toHaveLength(1);
+  expect(events.filter((e) => e.kind === "session-ended")).toHaveLength(0);
+});
+
+// ---- the refresh route (2.2) ----
+
+test("a refresh that shows the merged pull request ends the session; the only gh calls are pr list and api user", async () => {
+  const { h, manager } = await project();
+  git(h.repoPath, "remote", "add", "origin", "https://github.com/acme/demo-ops.git");
+  const s = await archiveSession(manager, h);
+  const gh = await installFakeGh({
+    login: "demo-user",
+    repos: { "acme/demo-ops": { open: [], closed: [ghPr({ number: 88, headRefName: BRANCH, state: "MERGED", mergedAt: later(s.autoMergeAskedAt), closedAt: later(s.autoMergeAskedAt) })] } },
+  });
+  const state: AppState = { config: h.config, scanner: undefined as unknown as Scanner, sessions: manager };
+  state.scanner = new Scanner(() => state.config, { persist: false });
+  await state.scanner.trigger().done;
+  const server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: createFetchHandler({ state, indexHtml: "" }) });
+  try {
+    const res = await fetch(`http://127.0.0.1:${server.port}/api/pull-requests/refresh`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ force: true }) });
+    expect(res.status).toBe(200);
+    await waitFor(() => (manager.get(s.id) as ChangeSession).autoEnded !== undefined, "the automatic end");
+    expect((manager.get(s.id) as ChangeSession).autoEnded).toMatchObject({ pr: 88, removed: true });
+    expect(await exists(s.worktreePath)).toBe(false);
+    const calls = await gh.calls();
+    expect(calls.length).toBeGreaterThan(0);
+    for (const call of calls) expect(call.argv.slice(0, 2).join(" ")).toMatch(/^(pr list|api user)$/);
+    for (const call of calls) expect(call.cwd.startsWith(dirname(h.repoPath))).toBe(false);
+  } finally {
+    state.scanner.stop();
+    server.stop(true);
+    gh.restore();
+  }
+});
+
+// ---- the wording (3.1) ----
+
+test("the panel, the card and the feed say why the session ended and what became of its worktree", () => {
+  const removed = { pr: 88, at: "2026-10-06T10:00:00.000Z", removed: true };
+  const kept = { pr: 88, at: "2026-10-06T10:00:00.000Z", removed: false, reason: "the worktree has uncommitted changes" };
+  expect(autoEndedText(removed)).toBe("Ended because #88 merged; worktree removed");
+  expect(autoEndedText(kept)).toBe("Ended because #88 merged; worktree kept: the worktree has uncommitted changes");
+
+  const session: ChangeSession = { id: "s1", repoId: "r", change: CHANGE, action: "archive", agentId: "fake", agentName: "Fake Agent", state: "exited", exitCode: 143, worktreePath: "/w/acme/x", branch: BRANCH, createdAt: "2026-10-06T09:00:00.000Z", updatedAt: "2026-10-06T10:00:00.000Z", resumable: false };
+  // An ordinary clean end is not shown on the card; an automatic one is, with its own words instead of a failure.
+  expect(sessionsForChange([{ ...session, exitCode: 0 }], "r", CHANGE)).toEqual([]);
+  expect(sessionsForChange([{ ...session, exitCode: 0, autoEnded: removed }], "r", CHANGE)).toHaveLength(1);
+  expect(sessionBadge({ ...session, autoEnded: removed })).toMatchObject({ label: "ended · #88 merged", tone: "success", title: autoEndedText(removed) });
+  expect(sessionBadge({ ...session, autoEnded: kept })).toMatchObject({ tone: "warning", title: autoEndedText(kept) });
+
+  const event = { v: 1 as const, id: "e", at: removed.at, detectedAt: removed.at, repoId: "r", repoName: "demo-ops", change: CHANGE };
+  expect(describeEvent({ ...event, kind: "session-auto-ended", pr: 88, removed: true })).toBe("session ended because #88 merged · worktree removed");
+  expect(describeEvent({ ...event, kind: "session-auto-ended", pr: 88, removed: false, reason: kept.reason })).toBe("session ended because #88 merged · worktree kept: the worktree has uncommitted changes");
+});

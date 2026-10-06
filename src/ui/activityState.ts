@@ -97,6 +97,8 @@ export function describe(event: ActivityEvent): string {
     case "session-conflicts-resolve":
       // What was handed over, not what came of it: the outcome is re-read from git, never taken from the agent.
       return event.submitted === false ? "conflict resolution requested — typed, not sent" : "conflict resolution requested";
+    case "session-auto-ended":
+      return `session ended because #${event.pr} merged · ${event.removed ? "worktree removed" : `worktree kept: ${event.reason ?? "it could not be removed"}`}`;
   }
 }
 

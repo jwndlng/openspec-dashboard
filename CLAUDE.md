@@ -31,7 +31,10 @@ bun test test/scanner.test.ts   # a single test file
    `src/server/sharedConfig.ts`); for agent sessions, off by default, a session's git worktree, created with
    `git worktree add` (directory under `~/.openspec-dashboard/worktrees/`, never inside the repository's working tree)
    and removed with a non-forcing `git worktree remove` after the user confirmed and read-only checks proved nothing
-   would be lost (`src/server/sessions/worktree.ts`); the **pull action** — `git fetch` of the repository's own
+   would be lost (`src/server/sessions/worktree.ts`) — or, with no dialog, when a pull-request query that already ran
+   shows merged the pull request of a session whose agent the dashboard asked to enable auto-merge, in a project that
+   still has Docs auto-merge on (the opt-in is the confirmation; same checks, same command, the branch kept, no fetch,
+   no new git or `gh` subcommand, `SessionManager.endMergedAutoMerge`); the **pull action** — `git fetch` of the repository's own
    remote, then a fast-forward-only `git merge` of the main checkout's upstream, with hooks disabled, never a merge
    commit, rebase, stash, reset, force or branch switch, and only fetching when the checkout is off its default branch,
    has no upstream, has diverged or has overlapping local edits — and, when a fast-forward is refused because
@@ -181,7 +184,10 @@ bun test test/scanner.test.ts   # a single test file
   project opted in (`agent.autoMergeDocs`) and `shipsOnlyOpenSpec` proved, at that moment, that everything it ships is
   under `openspec/`; an **Archive** prompt, started or sent, likewise gets `AUTO_MERGE_DOCS_ARCHIVE_INSTRUCTION` — for a
   pull request the agent opens, if any — when the same check, with `allowEmpty` for a fresh archive worktree, proves the
-  worktree holds nothing else — the agent enables auto-merge, never the dashboard. A status that holds work the base lacks also
+  worktree holds nothing else — the agent enables auto-merge, never the dashboard. A session records when it was asked
+  (`autoMergeAskedAt`); once the refresh route's completed query lists its branch's pull request merged after that, the
+  session is ended and its worktree removed as described in invariant 1 (`autoEnded` records the outcome). The query
+  is never started for it. A status that holds work the base lacks also
   carries a **conflict signal** — whether the branch still merges into that base, and which files clash — computed with
   `merge-tree` as invariant 1 describes, and as stale as the last fetch, which the UI says. **Resolve conflicts** is the
   second prompt-only action, shaped exactly like Ship (`prompts.resolveConflicts`, else
