@@ -20,7 +20,7 @@
 
 ## 3. Verify
 
-- [~] 3.1 Run `bun run check` and, in `bun run dev`, end a session whose worktree is clean and pushed: both checkboxes
+- [x] 3.1 Run `bun run check` and, in `bun run dev`, end a session whose worktree is clean and pushed: both checkboxes
   are ticked, and confirming removes the worktree, keeps the branch and pulls
-- [~] 3.2 Manually confirm in the dashboard that ending a session with unshipped work shows "Not shipped", no removal,
+- [x] 3.2 Manually confirm in the dashboard that ending a session with unshipped work shows "Not shipped", no removal,
   and a ticked pull
