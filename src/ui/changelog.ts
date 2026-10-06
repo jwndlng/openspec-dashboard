@@ -15,6 +15,13 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    id: "2026-10-06-overview-without-stage-counts",
+    date: "2026-10-06",
+    title: "A calmer projects overview",
+    summary:
+      "The projects overview no longer repeats the Kanban columns: each row and tile shows how many changes are open and ready to archive, without a count per stage. The breakdown per stage is on each project's board and on **All changes**.",
+  },
+  {
     id: "2026-10-06-cleanup-by-default",
     date: "2026-10-06",
     title: "End session cleans up and pulls by default",
