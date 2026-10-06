@@ -178,6 +178,11 @@ export interface RepoSnapshot {
    * from the main checkout, so off the default branch they may be outdated. Omitted with `defaultBranch`.
    */
   onDefaultBranch?: boolean;
+  /**
+   * A git repository with nothing to branch a session from: `HEAD` names no commit and there is no `origin/HEAD` (as
+   * **New project** leaves it). Its change sessions run in place. Omitted otherwise, when unknown and for non-git folders.
+   */
+  noCommit?: true;
   /** Every checkout, the main one included. */
   worktrees: Worktree[];
   /** Absent for non-git repositories and in snapshots cached by older versions. */

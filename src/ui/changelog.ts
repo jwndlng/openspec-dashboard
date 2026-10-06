@@ -15,6 +15,13 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    id: "2026-10-06-agent-without-commit",
+    date: "2026-10-06",
+    title: "Agents in a project with no commit yet",
+    summary:
+      "In a git repository with no commit yet — such as one made with **New project** — **Draft artifacts**, **Implement** and the other starters now start your agent in the project's checkout instead of refusing. Once the repository has a commit, new sessions get their own worktree again.",
+  },
+  {
     id: "2026-10-05-design-optional",
     date: "2026-10-05",
     title: "A design is optional",

@@ -156,17 +156,22 @@ bun test test/scanner.test.ts   # a single test file
   same way it keeps the console out. The panel uses the same in-place wording. What decides that it worked is the
   marker on disk, re-checked when the session ends and on every discovery run — never anything the agent printed.
 - A **project console** (`openProjectConsole`, `src/shared/types.ts` `ProjectConsoleSession`) is the third in-place
-  case and the second — and last — one in a git repository's main checkout: one per tracked project, the project's
+  case and the second one in a git repository's main checkout: one per tracked project, the project's
   agent without a prompt, for anything that is not a change. It carries a `repoId` but no change, action or branch;
   `isChangeless()` keeps it out of Open work, the activity log, work status, Ship, prompts and cleanup exactly as for
   the console and integrations. An integration session in a tracked project's folder counts as that project's console
   (`projectConsoleSessions`), which is how the agent **New project** started stays reachable once its overlay is
-  closed. A change session never runs in a main checkout; in a folder without git, one agent per folder still holds.
+  closed. A change session never runs in a main checkout — except in a git repository with no commit yet, below; in
+  every in-place folder, one agent per folder still holds.
 - A tracked folder **without git** is a supported repository, so its sessions run **in place**: the agent's working
   directory is the folder itself, no worktree and no branch are made, and no git command runs for the session
   (`Session.inPlace`). It is decided from the scan's `isGit`, never by letting a git command fail. Such a session has
   no work status, no Ship, no worktree to remove and no pull; the panel says the agent edits the folder directly, with
-  no undo. A starter that cannot start says why **on the card** — `start` resolves with the reason, because a session
+  no undo. A **git repository with no commit yet** (what **New project** leaves) is treated the same way: nothing to
+  branch a worktree from, so its change sessions run in place in the main checkout, decided from the scan's
+  `noCommit` (`HEAD` names no commit and there is no `origin/HEAD`). A session started that way stays in place after the
+  first commit; later sessions get worktrees. `NoCommitError` in `worktree.ts` only covers an out-of-date scan. A
+  starter that cannot start says why **on the card** — `start` resolves with the reason, because a session
   that was never created has no panel to report itself in.
 - **Work status** (`workStatus.ts`) is read per worktree *directory* — directories outlive session records — with
   read-only git and no network, so `merged` means "as of the user's last fetch"; squash merges are recognised by

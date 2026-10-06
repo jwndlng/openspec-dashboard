@@ -6,6 +6,7 @@ import { sessionsDir, worktreesDir } from "../src/server/paths.ts";
 import { scanRepo } from "../src/server/scanner.ts";
 import { SessionError, SessionManager } from "../src/server/sessions/manager.ts";
 import { SessionStore } from "../src/server/sessions/store.ts";
+import { availableActions, type ChangeSnapshot, type Config, type SessionAction, type Snapshot } from "../src/shared/types.ts";
 import { checkWorktreeRemovable, copyChangeIfMissing, ensureWorktree, removeWorktree } from "../src/server/sessions/worktree.ts";
 import { tempDir, useTempHome } from "./helpers.ts";
 import { FAKE_AGENT, git, harness, tempGitRepo, waitFor, watch } from "./sessionHelpers.ts";
@@ -467,11 +468,97 @@ test("close and shutdown return only once the ended session's record is written"
   expect(ended.updatedAt).toBe(other.manager.get(t.id).updatedAt);
 });
 
-test("a repository without a commit refuses a change session plainly, before anything is created", async () => {
-  // What **New project** leaves: `git init` and nothing else, so `HEAD` names no commit to branch from.
+/** What **New project** leaves: `git init` and nothing else, so `HEAD` names no commit to branch from. */
+function uncommit(repoPath: string): Promise<void> {
+  return rm(join(repoPath, ".git"), { recursive: true, force: true }).then(() => {
+    git(repoPath, "init", "-q", "-b", "main");
+    git(repoPath, "config", "user.email", "t@example.invalid"); // a fresh .git has no identity of its own
+    git(repoPath, "config", "user.name", "t");
+  });
+}
+
+/** Scans the harness's repository again, as the scanner would after the repository changed. */
+async function rescan(h: { config: Config; snapshot: Snapshot }): Promise<void> {
+  h.snapshot.repos[0] = await scanRepo(h.config.repos[0]);
+}
+
+/** Another change of the fixture that can be started with Draft artifacts or Implement — prompts the fake agent has — and that action. */
+function otherStartable(h: { snapshot: Snapshot }, except: string): { change: string; action: SessionAction } {
+  const startable = (c: ChangeSnapshot) => availableActions(c).find((a) => a === "draft" || a === "implement");
+  const change = h.snapshot.repos[0].changes.find((c) => !c.archived && c.name !== except && startable(c)) as ChangeSnapshot;
+  return { change: change.name, action: startable(change) as SessionAction };
+}
+
+test("a repository without a commit: the change session runs in the checkout, with no worktree, no branch and no git", async () => {
   const h = track(await harness());
-  await rm(join(h.repoPath, ".git"), { recursive: true, force: true });
-  git(h.repoPath, "init", "-q", "-b", "main");
+  await uncommit(h.repoPath);
+  await rescan(h);
+  expect(h.snapshot.repos[0]).toMatchObject({ isGit: true, noCommit: true });
+
+  const s = await h.manager.open({ repoId: h.repoId, change: "upgrade-runtime", action: "implement" });
+  expect(s).toMatchObject({ state: "running", inPlace: true, worktreePath: h.repoPath });
+  expect(s.branch).toBeUndefined();
+  expect(existsSync(join(worktreesDir(), h.repoId))).toBe(false); // no worktree was made
+  expect(git(h.repoPath, "for-each-ref", "refs/heads")).toBe(""); // no branch
+  expect(git(h.repoPath, "worktree", "list", "--porcelain").match(/^worktree /gm)).toHaveLength(1); // only the checkout
+
+  const view = await watch(h.manager, s.id);
+  await waitFor(() => view.text().includes("implement upgrade-runtime"), "the agent to receive its prompt");
+  view.detach();
+});
+
+test("a repository without a commit: one agent in the checkout at a time", async () => {
+  const h = track(await harness());
+  await uncommit(h.repoPath);
+  await rescan(h);
+  const other = otherStartable(h, "upgrade-runtime");
+
+  const first = await h.manager.open({ repoId: h.repoId, change: "upgrade-runtime", action: "implement" });
+  const second = await h.manager.open({ repoId: h.repoId, ...other }).catch((e: unknown) => e);
+  expect(second).toBeInstanceOf(SessionError);
+  expect((second as SessionError).status).toBe(409);
+  expect((second as SessionError).message).toContain("upgrade-runtime");
+  const console = await h.manager.openProjectConsole(h.repoId).catch((e: unknown) => e);
+  expect(console).toBeInstanceOf(SessionError);
+  expect((console as SessionError).message).toContain("upgrade-runtime");
+
+  await h.manager.close(first.id);
+  const { session } = await h.manager.openProjectConsole(h.repoId);
+  const refused = await h.manager.open({ repoId: h.repoId, change: "upgrade-runtime", action: "implement" }).catch((e: unknown) => e);
+  expect(refused).toBeInstanceOf(SessionError);
+  expect((refused as SessionError).message).toContain("the project's console is running in this folder");
+  await h.manager.close(session.id);
+});
+
+test("a session started in place stays in place after the first commit; new sessions then get a worktree", async () => {
+  const h = track(await harness());
+  await uncommit(h.repoPath);
+  await rescan(h);
+  const first = await h.manager.open({ repoId: h.repoId, change: "upgrade-runtime", action: "implement" });
+  await h.manager.close(first.id);
+
+  // The agent (here: the test) makes the first commit, and the scanner notices.
+  git(h.repoPath, "add", "-A");
+  git(h.repoPath, "commit", "-q", "-m", "init");
+  await rescan(h);
+  expect("noCommit" in (h.snapshot.repos[0] as object)).toBe(false);
+
+  const resumed = await h.manager.resume(first.id);
+  expect(resumed).toMatchObject({ state: "running", inPlace: true, worktreePath: h.repoPath });
+  expect(existsSync(join(worktreesDir(), h.repoId))).toBe(false);
+  await h.manager.close(first.id);
+
+  const other = otherStartable(h, "upgrade-runtime");
+  const next = await h.manager.open({ repoId: h.repoId, ...other });
+  expect(next.inPlace).toBeUndefined();
+  expect(next.branch).toBeDefined();
+  expect(next.worktreePath.startsWith(join(worktreesDir(), h.repoId))).toBe(true);
+});
+
+test("an out-of-date scan of a repository without a commit refuses plainly, before anything is created", async () => {
+  // The snapshot still says there is a commit; the worktree's fallback check is what refuses.
+  const h = track(await harness());
+  await uncommit(h.repoPath);
 
   const refused = await h.manager.open({ repoId: h.repoId, change: "upgrade-runtime", action: "implement" }).catch((e: unknown) => e);
   expect(refused).toBeInstanceOf(SessionError);
