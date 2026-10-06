@@ -34,7 +34,7 @@ import {
   wipIndicator,
 } from "./overviewState.ts";
 import { Stat } from "./band.tsx";
-import { IconCheck, IconChevronDown, IconFolderGit, IconGitBranch, IconPlus, IconSearch, IconX } from "./icons.tsx";
+import { IconCheck, IconChevronDown, IconFolderGit, IconGitBranch, IconPlus, IconSearch, IconSettings, IconX } from "./icons.tsx";
 import { LabelChips, labelHueStyle } from "./labels.tsx";
 import { NewChangeDialog } from "./newChangeForm.tsx";
 import { assignRepoHues, labelTargets, newChangeTargets } from "./repoGroups.ts";
@@ -266,38 +266,86 @@ export function NothingTracked({ config }: { config: Config | null }) {
 }
 
 /** A tile's checkouts as two counts; the full list is in the tooltip and on the repository board. */
-function TileCheckouts({ row, children }: { row: OverviewRow; children?: ComponentChildren }) {
-  if (!hasCheckoutInfo(row.worktrees)) {
-    return (
-      <div class="checkouts">
-        <span class="none">no checkout details</span>
-        {children}
-      </div>
-    );
-  }
+function TileCheckouts({ row }: { row: OverviewRow }) {
+  if (!hasCheckoutInfo(row.worktrees)) return <span class="tile-checkouts none">no checkout details</span>;
   const summary = checkoutSummary(row.worktrees);
   return (
-    <div class="checkouts" title={summary.detail}>
+    <span class="tile-checkouts" title={summary.detail}>
       <span class="checkout-count">
         <IconFolderGit />
         <strong>{summary.worktrees}</strong> {summary.worktrees === 1 ? "worktree" : "worktrees"}
       </span>
+      {" · "}
       <span class="checkout-count">
         <IconGitBranch />
         <strong>{summary.branches}</strong> {summary.branches === 1 ? "branch" : "branches"} active
       </span>
+    </span>
+  );
+}
+
+/** One figure of a tile: a large number over its label. */
+function TileFigure({ label, tone, children }: { label: string; tone?: string; children: ComponentChildren }) {
+  return (
+    <div class={`tile-figure ${tone ?? ""}`}>
+      <span class="n">{children}</span>
+      <span class="label">{label}</span>
+    </div>
+  );
+}
+
+/** One labelled line of a tile's settings panel; nothing when the control does not apply to the project. */
+function SettingLine({ label, children }: { label: string; children: ComponentChildren }) {
+  if (children === null || children === undefined) return null;
+  return (
+    <div class="setting-line">
+      <span class="setting-label">{label}</span>
       {children}
     </div>
   );
 }
 
 /**
- * Everything a row shows, plus the room a row lacks: one chip per checkout. Every tile has the same size and places its
- * parts in the same spots; the badge and checkout areas scroll inside the tile instead of growing it.
+ * The tile's own settings and Disable, behind a native disclosure: no state in the tile, so it stays hook-free and its
+ * controls are always in the tree. The panel lies over the tile; `useTileSettingsPanels` keeps one open at a time. The
+ * controls are called as functions so one that does not apply (null) leaves no line behind.
+ */
+function TileSettings({ row, repo, config, tracking }: { row: OverviewRow; repo?: RepoConfig; config?: Config | null; tracking: Tracking }) {
+  const stopClick = (e: MouseEvent) => e.stopPropagation();
+  return (
+    // biome-ignore lint/a11y/useKeyWithClickEvents: only keeps the tile's pointer shortcut from firing; the summary is the keyboard path
+    <details class="tile-settings" onClick={stopClick}>
+      <summary class="btn sm ghost icon-only" aria-label={`Settings of ${row.name}`} title="Settings: this project's own settings, Labels and Disable, saved at once">
+        <IconSettings size={15} />
+      </summary>
+      <div class="tile-settings-panel">
+        {repo && config && (
+          <>
+            <SettingLine label="Agent sessions">{AgentToggle({ repo, config, tracking })}</SettingLine>
+            <SettingLine label="Agent">{AgentPicker({ repo, config, tracking })}</SettingLine>
+            <SettingLine label="PR titles">{PrTitlesPicker({ repo, isGit: row.isGit, tracking })}</SettingLine>
+            <SettingLine label="Docs auto-merge">{AutoMergeToggle({ repo, config, isGit: row.isGit, tracking, short: true })}</SettingLine>
+          </>
+        )}
+        {repo && <SettingLine label="Labels">{LabelsButton({ id: row.id, name: repo.name, tracking })}</SettingLine>}
+        <div class="setting-line setting-disable">
+          <span class="setting-label">Stop tracking</span>
+          <DisableButton id={row.id} name={row.name} tracking={tracking} />
+        </div>
+      </div>
+    </details>
+  );
+}
+
+/**
+ * Everything a row shows, in fixed zones that put each part at the same height on every tile: identity, status,
+ * figures, stages, the checkout summary and the footer with the tile's actions. The project's settings sit in the
+ * footer's Settings panel instead of beside the actions, so the footer never wraps.
  */
 export function Tile({ row, stages, now, hue, tracking, labelFilter, config }: { row: OverviewRow; stages: string[]; now: number; hue?: number; tracking: Tracking; labelFilter?: LabelFilter } & ProjectSettingsProps) {
   const idle = row.open === 0;
   const repo = repoOf(config, row.id);
+  const error = tracking.errors[row.id];
   return (
     // biome-ignore lint/a11y/useKeyWithClickEvents: the click is a pointer shortcut, as on a table row; the keyboard path is the repository link inside
     <article class={`tile ${idle ? "idle" : ""}`} title={`${row.path} · ${row.archived} archived`} onClick={openOnPlainClick(row)}>
@@ -314,49 +362,85 @@ export function Tile({ row, stages, now, hue, tracking, labelFilter, config }: {
             updated {lastUpdated(row, now)}
           </span>
         </div>
-        <span class="tile-actions">
-          {row.isGit && row.ok && <PullButton repoId={row.id} repoName={row.name} compact />}
-          {repo && <LabelsButton id={row.id} name={repo.name} tracking={tracking} />}
-          <DisableButton id={row.id} name={row.name} tracking={tracking} />
-        </span>
       </header>
+      {/* Wraps and scrolls inside the tile, so every tile keeps one size. */}
       <div class="tile-badges">
+        {error && (
+          <span class="badge danger" role="alert" title={error}>
+            ⚠ {error}
+          </span>
+        )}
         <RepoBadges row={row} />
         <WipIndicator summary={row.workInProgress} />
-        {/* In the badge area, which wraps and scrolls inside the tile, so every tile keeps one size. */}
         <LabelChips labels={row.labels} isActive={labelFilter?.isActive} onToggle={labelFilter?.onToggle} />
       </div>
-      <div class="tile-prs">
-        <OpenPrCount repoId={row.id} compact />
-        <span class="label">open PRs</span>
+      <div class="tile-figures">
+        <TileFigure label="open" tone={idle ? "zero" : ""}>
+          {row.open}
+        </TileFigure>
+        <TileFigure label="to archive" tone={row.toArchive > 0 ? "success" : "zero"}>
+          {row.toArchive}
+        </TileFigure>
+        {/* Cached only: the overview never contacts GitHub. The figure links to the Pull requests view. */}
+        <TileFigure label="open PRs">
+          <OpenPrCount repoId={row.id} compact />
+        </TileFigure>
       </div>
       {idle ? (
-        <p class="tile-body none">no open changes</p>
+        <p class="tile-stages none">no open changes</p>
       ) : (
-        <div class="tile-body">
-          <div class="tile-totals">
-            <span class="big">
-              <span class="n">{row.open}</span> open
-            </span>
-            <span class={`big ${row.toArchive > 0 ? "success" : "zero"}`}>
-              <span class="n">{row.toArchive}</span> to archive
-            </span>
-          </div>
-          <ol class="stage-strip" aria-label="Open changes per stage">
-            {stages.map((s) => (
-              <li key={s} class={row.stageCounts[s] ? "" : "zero"} title={`${row.stageCounts[s] ?? 0} in ${s}`}>
-                <span class="n">{row.stageCounts[s] ?? 0}</span>
-                <span class="label">{s}</span>
-              </li>
-            ))}
-          </ol>
-        </div>
+        <ol class="tile-stages stage-strip" aria-label="Open changes per stage">
+          {stages.map((s) => (
+            <li key={s} class={row.stageCounts[s] ? "" : "zero"} title={`${row.stageCounts[s] ?? 0} in ${s}`}>
+              <span class="n">{row.stageCounts[s] ?? 0}</span>
+              <span class="label">{s}</span>
+            </li>
+          ))}
+        </ol>
       )}
-      <TileCheckouts row={row}>
-        <AgentControls repo={repo} config={config} isGit={row.isGit} tracking={tracking} />
-      </TileCheckouts>
+      <TileCheckouts row={row} />
+      <footer class="tile-foot">
+        {repo && <ProjectConsoleButton repoId={repo.id} variant="project" />}
+        {row.isGit && row.ok && <PullButton repoId={row.id} repoName={row.name} compact />}
+        <TileSettings row={row} repo={repo} config={config} tracking={tracking} />
+      </footer>
     </article>
   );
+}
+
+/**
+ * At most one tile's settings panel is open, and Escape or a click outside closes it (project-overview: "Tiles have one
+ * size and one layout"). The DOM's `open` attribute is the only state, so the tiles stay hook-free.
+ */
+function useTileSettingsPanels() {
+  useEffect(() => {
+    const open = () => [...document.querySelectorAll<HTMLDetailsElement>("details.tile-settings[open]")];
+    // `toggle` does not bubble: listened for in the capture phase.
+    const onToggle = (e: Event) => {
+      const opened = e.target;
+      if (!(opened instanceof HTMLDetailsElement) || !opened.matches(".tile-settings") || !opened.open) return;
+      for (const d of open()) if (d !== opened) d.open = false;
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      for (const d of open()) {
+        const hadFocus = d.contains(document.activeElement);
+        d.open = false;
+        if (hadFocus) d.querySelector("summary")?.focus();
+      }
+    };
+    const onPointer = (e: PointerEvent) => {
+      for (const d of open()) if (!(e.target instanceof Node && d.contains(e.target))) d.open = false;
+    };
+    document.addEventListener("toggle", onToggle, true);
+    document.addEventListener("keydown", onKey);
+    document.addEventListener("pointerdown", onPointer);
+    return () => {
+      document.removeEventListener("toggle", onToggle, true);
+      document.removeEventListener("keydown", onKey);
+      document.removeEventListener("pointerdown", onPointer);
+    };
+  }, []);
 }
 
 /** The overview's discovery runs, kept across visits: coming back shows the last result while a new run is under way. */
@@ -407,6 +491,7 @@ export function Overview({ snapshot, config, onConfig, onReload }: { snapshot: S
     });
   };
   const tracking = useTracking({ onConfig, rediscover });
+  useTileSettingsPanels();
   // Against the saved roots and ignore paths, whenever the overview opens or they change (a save in Settings).
   const rootsKey = config ? JSON.stringify([config.scanRoots, config.ignorePaths]) : undefined;
   useEffect(() => {

@@ -42,8 +42,9 @@ dashboard; both are built in and work offline.
   board. Below these **Managed projects**, **Unmanaged projects** lists in one list what you could bring in —
   disabled repositories, OpenSpec repositories found under your workspace roots, and git repositories without
   OpenSpec, each labelled — with the actions that fit it (**Enable**, **Ignore**, **Integrate**, **Forget** for a
-  disabled one), each saved at once; **Disable** on a row or tile moves a repository down there. Each managed project
-  also carries its own settings on its row or tile, saved at once: **Rename** (the pencil beside its name), **Labels**,
+  disabled one), each saved at once; **Disable** on a row or in a tile's **Settings** moves a repository down there.
+  Each managed project also carries its own settings on its row or in its tile's **Settings** panel, saved at once:
+  **Rename** (the pencil beside its name), **Labels**,
   and an **Agent sessions** switch — Enabled unless you turn it off — with an agent picker when you configured more
   than one agent, and **Docs auto-merge** (see Agent sessions).
   ([project-overview](openspec/specs/project-overview/spec.md))

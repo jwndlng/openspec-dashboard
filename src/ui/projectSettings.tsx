@@ -65,12 +65,14 @@ export const AUTO_MERGE_HINT =
 /**
  * On / Off for auto-merging docs-only pull requests (auto-merge-docs). Only where Ship exists: a git project whose agent
  * sessions are enabled. While agent sessions are off globally it shows the setting as a link to Settings, like
- * `AgentToggle`.
+ * `AgentToggle`. `short` drops the setting's name from the visible text, for a place that names it already.
  */
-export function AutoMergeToggle({ repo, config, isGit, tracking }: { repo: RepoConfig; config: Config; isGit: boolean; tracking: Tracking }) {
+export function AutoMergeToggle({ repo, config, isGit, tracking, short = false }: { repo: RepoConfig; config: Config; isGit: boolean; tracking: Tracking; short?: boolean }) {
   if (!isGit || !repoAgentEnabled(repo)) return null;
   const on = repo.agent?.autoMergeDocs === true;
   const state = on ? "On" : "Off";
+  // A tile's settings panel names the setting on its line, so the switch there reads just On or Off.
+  const text = short ? state : `Docs auto-merge: ${state}`;
   if (!config.agentSessions.enabled) {
     return (
       <a
@@ -84,7 +86,7 @@ export function AutoMergeToggle({ repo, config, isGit, tracking }: { repo: RepoC
         }}
       >
         <span class="switch" aria-hidden="true" />
-        Docs auto-merge: {state}
+        {text}
       </a>
     );
   }
@@ -104,7 +106,7 @@ export function AutoMergeToggle({ repo, config, isGit, tracking }: { repo: RepoC
       }}
     >
       <span class="switch" aria-hidden="true" />
-      {busy ? "Saving…" : `Docs auto-merge: ${state}`}
+      {busy ? "Saving…" : text}
     </button>
   );
 }

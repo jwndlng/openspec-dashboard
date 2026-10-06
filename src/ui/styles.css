@@ -691,21 +691,24 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: 
 .projects .wip-cell { white-space: nowrap; }
 .wip.plain { color: var(--fg-subtle); font-size: 12px; }
 
-/* Tiles: the same rows in a grid that reflows to the width it gets — never a horizontal scrollbar. */
 /* Tiles: one size for every repository, in a grid that reflows to the width it gets — never a horizontal scrollbar.
-   Each part has its own row, so every tile places it in the same spot; badge and checkout areas scroll inside. */
+   Fixed zones, each on its own grid row, so every tile puts the same part at the same height: identity, status badges,
+   figures, stage counts and the footer. The badge area scrolls inside; the settings panel lies over the tile. */
 .tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(340px, 100%), 1fr)); gap: var(--gap-2); }
 .tile {
-  --tile-pad: 16px;
-  display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: 40px 46px minmax(0, 1fr) minmax(44px, auto); gap: 12px; min-height: 296px; min-width: 0;
-  padding: var(--tile-pad); cursor: pointer; overflow: hidden;
+  --tile-pad: 16px; --tile-foot: 52px;
+  position: relative; display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: 40px 46px auto minmax(44px, 1fr) 18px var(--tile-foot);
+  gap: 12px; min-height: 330px; min-width: 0;
+  padding: var(--tile-pad) var(--tile-pad) 0; cursor: pointer; overflow: hidden;
   background: var(--bg-raised); border: 1px solid var(--border-light); border-radius: var(--radius-lg); box-shadow: var(--shadow-sm);
   transition: border-color 200ms, background-color 200ms, transform 200ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 .tile:hover { background: color-mix(in oklch, var(--bg-surface) 45%, var(--bg-raised)); border-color: color-mix(in oklch, var(--brand) 45%, var(--bg-raised)); }
 @media (prefers-reduced-motion: no-preference) {
   .tile:hover { transform: translateY(-2px); }
+  .tile:has(.tile-settings[open]):hover { transform: none; }
 }
+.tile:has(.tile-settings[open]) { cursor: default; }
 .tile-head { display: flex; align-items: center; gap: 12px; min-width: 0; }
 /* The monogram: the repository's initials in its colour, beside its name. */
 .monogram {
@@ -719,23 +722,52 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: 
 .tile .path-hint { margin-left: 6px; color: var(--fg-subtle); font-weight: 400; font-size: 11px; }
 .tile .when { color: var(--fg-subtle); font-size: 12px; }
 .tile-badges { display: flex; flex-wrap: wrap; align-content: flex-start; align-items: center; gap: 4px 6px; min-width: 0; overflow-y: auto; }
-.tile-body { display: flex; flex-direction: column; justify-content: flex-end; gap: 12px; min-height: 0; margin: 0; }
-.tile-body.none { align-items: center; justify-content: center; color: var(--fg-subtle); font-size: 13px; border: 1px dashed var(--border); border-radius: var(--radius); }
-.tile-totals { display: flex; align-items: baseline; gap: var(--gap-3); color: var(--fg-subtle); font-size: 12px; }
-.tile-totals .big { display: inline-flex; align-items: baseline; gap: 6px; }
-.tile-totals .n { font-family: var(--font-mono); font-size: 26px; font-weight: 600; line-height: 1; letter-spacing: -0.02em; color: var(--fg-heading); }
-.tile-totals .big.success, .tile-totals .big.success .n { color: var(--success); }
-.tile-totals .big.zero .n { color: var(--fg-disabled); }
-/* The footer: how many worktrees and active branches, not the list of them. */
-.tile .checkouts {
-  display: flex; align-items: center; gap: var(--gap-3); min-width: 0;
-  margin: 0 calc(-1 * var(--tile-pad)) calc(-1 * var(--tile-pad)); padding: 0 var(--tile-pad);
+.tile-badges .badge.danger[role="alert"] { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* The figures: open, to archive and open pull requests, three equal columns of the same style. */
+.tile-figures { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--gap-2); }
+.tile-figure { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.tile-figure .n { font-family: var(--font-mono); font-size: 26px; font-weight: 600; line-height: 1; letter-spacing: -0.02em; color: var(--fg-heading); }
+.tile-figure .n .pr-count, .tile-figure .n .zero { font-size: inherit; font-weight: inherit; }
+.tile-figure .n .zero { color: var(--fg-disabled); }
+.tile-figure .label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--fg-subtle); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tile-figure.success .n { color: var(--success); }
+.tile-figure.zero .n { color: var(--fg-disabled); }
+.tile-stages { align-self: start; }
+.tile-stages.none, .tile-body.none {
+  align-self: stretch; display: flex; align-items: center; justify-content: center; margin: 0;
+  color: var(--fg-subtle); font-size: 13px; border: 1px dashed var(--border); border-radius: var(--radius);
+}
+/* The footer: the tile's actions, Settings last at the right. Never wraps. */
+.tile-foot {
+  display: flex; align-items: center; gap: 4px; min-width: 0;
+  margin: 0 calc(-1 * var(--tile-pad)); padding: 0 var(--tile-pad);
   background: var(--bg-section); border-top: 1px solid var(--border-light);
   font-size: 12px; color: var(--fg-subtle);
 }
+/* How many worktrees and active branches, not the list of them. Inline text, not flex, so a very narrow tile ends it
+   with an ellipsis; the full list stays in the tooltip. */
+.tile-checkouts { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 12px; line-height: 18px; color: var(--fg-subtle); }
+.tile-checkouts.none { color: var(--fg-disabled); }
+.tile-checkouts .checkout-count { display: inline; }
+.tile-checkouts .checkout-count svg { display: inline-block; vertical-align: -2px; margin-right: 4px; }
 .checkout-count { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
 .checkout-count strong { font-family: var(--font-mono); font-weight: 600; color: var(--fg-heading); }
-.tile .checkouts .none { color: var(--fg-disabled); font-size: 12px; }
+.tile-foot .tile-settings { margin-left: auto; }
+/* Settings: a native disclosure whose panel covers the zones between the identity and the footer. */
+.tile-settings > summary { list-style: none; display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+.tile-settings > summary::-webkit-details-marker { display: none; }
+.tile-settings[open] > summary { color: var(--brand-fg); background: var(--brand-softer); }
+.tile-settings-panel {
+  position: absolute; z-index: 2; top: calc(var(--tile-pad) + 40px + 6px); bottom: var(--tile-foot); left: 0; right: 0;
+  display: flex; flex-direction: column; overflow-y: auto; cursor: default;
+  padding: 6px var(--tile-pad); background: var(--bg-raised); border-top: 1px solid var(--border-light);
+}
+.setting-line { display: flex; align-items: center; justify-content: space-between; gap: var(--gap-1); min-height: 32px; border-top: 1px solid var(--border-light); }
+.setting-line:first-child { border-top: 0; }
+.setting-label { font-size: 12px; color: var(--fg-body); white-space: nowrap; }
+.setting-line .input.agent-picker, .setting-line .input.pr-titles-picker { max-width: 12rem; }
+/* Disable is not a setting: set apart below them. */
+.setting-line.setting-disable { margin-top: auto; border-top-color: var(--border); }
 .stage-strip { display: flex; gap: 3px; margin: 0; padding: 0; list-style: none; min-width: 0; }
 .stage-strip li {
   flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 1px; padding: 5px 2px;
@@ -1307,8 +1339,6 @@ body:has(.detail-overlay) { overflow: hidden; }
 .pr-count { display: inline-flex; align-items: baseline; gap: 4px; color: var(--fg-heading); }
 .pr-count:hover, .pr-count:focus-visible { color: var(--brand-fg); }
 .pr-count .for-you { font-size: 10px; padding: 0 4px; border-radius: var(--radius-sm); color: var(--brand-fg); background: var(--brand-softer); border: 1px solid var(--brand-soft); }
-.tile-prs { display: flex; align-items: baseline; gap: 6px; font-size: 12px; color: var(--fg-subtle); }
-.tile-prs .pr-count.compact { font-size: 13px; font-weight: 600; }
 
 @media (max-width: 720px) {
   .pull-requests { padding: 16px var(--gap-2) var(--gap-3); }
@@ -1321,11 +1351,10 @@ body:has(.detail-overlay) { overflow: hidden; }
 .disable { display: inline-flex; align-items: center; gap: 6px; margin-left: 4px; }
 .disable-error { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--danger); font-size: 11px; }
 .btn.icon-only { padding-left: 6px; padding-right: 6px; }
-.tile-actions { flex: none; display: inline-flex; align-items: center; }
 .pending-name { color: var(--fg-subtle); font-weight: 400; }
 .projects tr.pending { cursor: default; }
 .projects tr.pending .none { font-style: italic; }
-.tile.pending { cursor: default; grid-template-rows: 40px minmax(0, 1fr); }
+.tile.pending { cursor: default; grid-template-rows: 40px minmax(0, 1fr); padding-bottom: var(--tile-pad); }
 .tile.pending:hover { transform: none; background: var(--bg-raised); border-color: var(--border-light); }
 .overview .empty.inline { margin: 0 auto var(--gap-3); }
 .nothing-tracked-title { margin: 0; font-size: 16px; }
@@ -1363,10 +1392,6 @@ body:has(.detail-overlay) { overflow: hidden; }
 .btn.rename { margin-left: 2px; padding-top: 0; padding-bottom: 0; color: var(--fg-subtle); opacity: 0; }
 .projects tr:hover .btn.rename, .tile:hover .btn.rename, .btn.rename:focus-visible { opacity: 1; }
 .input.rename-input { height: 26px; width: 14rem; max-width: 100%; padding: 0 6px; font-size: 13px; font-weight: 500; }
-.tile .checkouts .agent-controls { margin-left: auto; }
-/* A tile is narrow: its settings and console wrap onto further lines instead of being cut off. */
-.tile .checkouts { flex-wrap: wrap; row-gap: 0; }
-.tile .checkouts .agent-controls { flex-wrap: wrap; justify-content: flex-end; row-gap: 4px; padding: 4px 0; }
 /* The console is an action, not one of the settings before it: set apart by a rule and a gap. */
 .agent-controls .project-console-btn { margin-left: 6px; }
 .agent-controls .project-console-btn::after { content: ""; position: absolute; left: -7px; top: 3px; bottom: 3px; border-left: 1px solid var(--border); }
