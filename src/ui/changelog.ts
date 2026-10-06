@@ -15,6 +15,13 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    id: "2026-10-06-project-console-button",
+    date: "2026-10-06",
+    title: "An easier-to-find project console",
+    summary:
+      "The project console is now a labelled **Console** button: first among a board's actions, next to **Pull** and **New change**, and set apart from the agent settings on each project's row and tile. While it runs, the button says whether your agent is `working` or `may need you`.",
+  },
+  {
     id: "2026-10-06-agent-without-commit",
     date: "2026-10-06",
     title: "Agents in a project with no commit yet",

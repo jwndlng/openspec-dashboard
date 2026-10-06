@@ -439,13 +439,13 @@ export function projectConsoleUnavailable(config: Config | null, agents: readonl
  * A project's console control: its name, tooltip and — while one of its console sessions runs — that session's badge,
  * in words as part of the name, exactly like the top-bar console control. `unavailable` makes it inactive with a reason.
  */
-export function projectConsoleControl(sessions: readonly ProjectConsoleLike[], projectName: string, unavailable?: string, now = Date.now()): { name: string; title: string; badge?: SessionBadge; disabled: boolean } {
+export function projectConsoleControl(sessions: readonly ProjectConsoleLike[], projectName: string, unavailable?: string, now = Date.now()): { name: string; title: string; badge?: SessionBadge; state?: string; disabled: boolean } {
   const name = `Open the console of ${projectName}`;
   if (unavailable) return { name: `${name} — unavailable: ${unavailable}`, title: `${name} — unavailable: ${unavailable}`, disabled: true };
   const running = sessions.find((s) => OPEN_SESSION_STATES.includes(s.state));
   if (!running) return { name, title: `${name}: your agent in this project's folder, for anything that is not a change`, disabled: false };
   const badge = sessionBadge(running, now);
-  return { name: `${name} — ${badge.label}`, title: `${name} — ${badge.title}`, badge, disabled: false };
+  return { name: `${name} — ${badge.label}`, title: `${name} — ${badge.title}`, badge, state: badge.label, disabled: false };
 }
 
 /** Which session's panel says that its last prompt carried an auto-merge instruction, and which action's prompt it was. */

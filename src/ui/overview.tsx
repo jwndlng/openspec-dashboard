@@ -155,7 +155,7 @@ function AgentControls({ repo, config, isGit, tracking }: { repo?: RepoConfig; c
       <AgentPicker repo={repo} config={config} tracking={tracking} />
       <PrTitlesPicker repo={repo} isGit={isGit} tracking={tracking} />
       <AutoMergeToggle repo={repo} config={config} isGit={isGit} tracking={tracking} />
-      <ProjectConsoleButton repoId={repo.id} />
+      <ProjectConsoleButton repoId={repo.id} variant="project" />
     </span>
   );
 }

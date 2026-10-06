@@ -22,11 +22,13 @@ function useProjectConsoles(repoId: string | undefined): { name: string; path: s
 }
 
 /**
- * The console control of one managed project, on its overview row, its tile and its board header. Absent while agent
- * sessions are off; inactive, with the reason in its name and tooltip, while the project's own sessions are off or its
- * agent is missing. It never opens the board it sits on.
+ * The console control of one managed project, on its overview row, its tile and its board header: the terminal icon,
+ * the label **Console** and, while a console runs, its state in the session badge's words. `"board"` matches the other
+ * actions of the board header; `"project"` is the outlined, smaller button on the overview row and tile. Absent while
+ * agent sessions are off; inactive, with the reason in its name and tooltip, while the project's own sessions are off or
+ * its agent is missing. It never opens the board it sits on.
  */
-export function ProjectConsoleButton({ repoId }: { repoId: string }) {
+export function ProjectConsoleButton({ repoId, variant }: { repoId: string; variant: "board" | "project" }) {
   const ui = useSessionUi();
   const project = useProjectConsoles(repoId);
   const unavailable = projectConsoleUnavailable(ui.config, ui.agents, repoId);
@@ -36,7 +38,7 @@ export function ProjectConsoleButton({ repoId }: { repoId: string }) {
   return (
     <button
       type="button"
-      class="btn sm ghost console-btn project-console-btn"
+      class={`btn${variant === "project" ? " sm" : ""} console-btn project-console-btn on-${variant}`}
       aria-label={control.name}
       title={control.title}
       disabled={control.disabled}
@@ -47,6 +49,13 @@ export function ProjectConsoleButton({ repoId }: { repoId: string }) {
       }}
     >
       <IconTerminal size={15} />
+      Console
+      {/* The name already says the state; shown here for sighted users, not announced a second time. */}
+      {control.state && (
+        <span class="console-state" aria-hidden="true">
+          {control.state}
+        </span>
+      )}
       {badge && <span class={`console-dot ${badge.tone}${badge.live ? " live" : ""}`} aria-hidden="true" />}
     </button>
   );
