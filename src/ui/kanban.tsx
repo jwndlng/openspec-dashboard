@@ -499,8 +499,9 @@ export function Kanban({ snapshot, config, repoId, query, onReload }: { snapshot
   // ends it, and disarmed when the board is left or the tab hidden (openspec/specs/pull-requests).
   const hidden = useTabHidden();
   const { watch, lastSettledAt, running: prsRunning } = prs;
+  // Wrapped, never passed bare: `io.setTimer(…)` would call the browser's setTimeout on `io` — "Illegal invocation".
   useEffect(
-    () => armWatch({ plan: watchPlan(cards, prs.data?.repos, Date.now(), lastSettledAt()), hidden, now: Date.now(), watch, setTimer: setTimeout, clearTimer: (h) => clearTimeout(h as number) }),
+    () => armWatch({ plan: watchPlan(cards, prs.data?.repos, Date.now(), lastSettledAt()), hidden, now: Date.now(), watch, setTimer: (run, ms) => setTimeout(run, ms), clearTimer: (h) => clearTimeout(h as number) }),
     [cards, prs.data, prsRunning, hidden, watch, lastSettledAt],
   );
 
