@@ -31,5 +31,5 @@
 
 ## 4. Wrap-up
 
-- [~] 4.1 Run `bun run check` (lint, typecheck, tests) and `bun run build`. Both succeed. Open the built binary's UI
+- [x] 4.1 Run `bun run check` (lint, typecheck, tests) and `bun run build`. Both succeed. Open the built binary's UI
   once to confirm the control shows on the board and the overview.
