@@ -482,10 +482,11 @@ async function rescan(h: { config: Config; snapshot: Snapshot }): Promise<void> 
   h.snapshot.repos[0] = await scanRepo(h.config.repos[0]);
 }
 
-/** Another change of the fixture that can be started with some action, and that action. */
+/** Another change of the fixture that can be started with Draft artifacts or Implement — prompts the fake agent has — and that action. */
 function otherStartable(h: { snapshot: Snapshot }, except: string): { change: string; action: SessionAction } {
-  const change = h.snapshot.repos[0].changes.find((c) => !c.archived && c.name !== except && availableActions(c).length > 0) as ChangeSnapshot;
-  return { change: change.name, action: availableActions(change)[0] };
+  const startable = (c: ChangeSnapshot) => availableActions(c).find((a) => a === "draft" || a === "implement");
+  const change = h.snapshot.repos[0].changes.find((c) => !c.archived && c.name !== except && startable(c)) as ChangeSnapshot;
+  return { change: change.name, action: startable(change) as SessionAction };
 }
 
 test("a repository without a commit: the change session runs in the checkout, with no worktree, no branch and no git", async () => {
