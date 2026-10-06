@@ -662,7 +662,6 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: 
   position: sticky; top: calc(-1 * var(--gap-2)); z-index: 1; background: var(--bg-section);
   font-size: 11px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.06em; color: var(--fg-subtle);
 }
-.projects th.stage { font-weight: 400; }
 .projects .num { text-align: right; font-family: var(--font-mono); font-size: 12px; }
 .projects thead .num { font-family: var(--font-sans); font-size: 11px; }
 .projects .when { text-align: right; color: var(--fg-subtle); font-size: 12px; }
@@ -736,15 +735,6 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: 
 .checkout-count { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
 .checkout-count strong { font-family: var(--font-mono); font-weight: 600; color: var(--fg-heading); }
 .tile .checkouts .none { color: var(--fg-disabled); font-size: 12px; }
-.stage-strip { display: flex; gap: 3px; margin: 0; padding: 0; list-style: none; min-width: 0; }
-.stage-strip li {
-  flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 1px; padding: 5px 2px;
-  background: var(--bg-surface); border: 1px solid var(--border-light); border-radius: 6px;
-}
-.stage-strip .n { font-family: var(--font-mono); font-size: 13px; font-weight: 600; color: var(--fg-heading); }
-.stage-strip .label { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 9px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--fg-subtle); }
-.stage-strip .zero { background: transparent; border-style: dashed; }
-.stage-strip .zero .n, .stage-strip .zero .label { color: var(--fg-disabled); }
 
 /* One checkout: branch, then text markers. Colour only repeats what the text already says. */
 .checkout {

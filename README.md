@@ -37,7 +37,7 @@ dashboard; both are built in and work offline.
 
 ## Features
 
-- **Projects**: one row per repository, showing open changes per stage, changes ready to archive, work in progress
+- **Projects**: one row per repository, showing how many changes are open and ready to archive, work in progress
   and when it was last updated, as a table or as tiles (`view=tiles`). Click a row or tile to open that repository's
   board. Below these **Managed projects**, **Unmanaged projects** lists in one list what you could bring in —
   disabled repositories, OpenSpec repositories found under your workspace roots, and git repositories without

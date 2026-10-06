@@ -49,7 +49,7 @@ function configWith(patch: { sessions?: boolean; agents?: number; agent?: Config
   };
 }
 
-const layouts = (config: Config, t: Tracking) => [Row({ row, stages: [], now: 0, tracking: t, config }), Tile({ row, stages: [], now: 0, tracking: t, config })];
+const layouts = (config: Config, t: Tracking) => [Row({ row, now: 0, tracking: t, config }), Tile({ row, now: 0, tracking: t, config })];
 const switchOf = (node: unknown) => byTag(node as never, "button").find((b) => b.props.role === "switch");
 const click = (el: { props: Record<string, unknown> }) => {
   let stopped = false;
@@ -93,7 +93,7 @@ const agentSelects = selectNamed("Agent for ");
 const prTitleSelects = selectNamed("PR titles for ");
 
 test("the agent picker appears only with two agents and sessions on for the project; default agent clears the choice", () => {
-  const picker = (config: Config) => agentSelects(Row({ row, stages: [], now: 0, tracking: tracking().t, config }));
+  const picker = (config: Config) => agentSelects(Row({ row, now: 0, tracking: tracking().t, config }));
   expect(picker(configWith())).toHaveLength(0);
   expect(picker(configWith({ agents: 2, agent: { enabled: false } }))).toHaveLength(0);
   expect(picker(configWith({ agents: 2, sessions: false }))).toHaveLength(0);
@@ -135,7 +135,7 @@ test("every git project offers a PR titles picker in both layouts, with agent se
 
 test("the PR titles picker is not offered for a folder without git, and is inactive while a setting saves", () => {
   const [plain] = overviewRows({ generatedAt: "2026-10-01T00:00:00Z", repos: [{ ...snapshotRepo, isGit: false }] });
-  for (const node of [Row({ row: plain, stages: [], now: 0, tracking: tracking().t, config: configWith() }), Tile({ row: plain, stages: [], now: 0, tracking: tracking().t, config: configWith() })]) {
+  for (const node of [Row({ row: plain, now: 0, tracking: tracking().t, config: configWith() }), Tile({ row: plain, now: 0, tracking: tracking().t, config: configWith() })]) {
     expect(prTitleSelects(node)).toHaveLength(0);
   }
   for (const node of layouts(configWith(), tracking({ busy: { a: "prTitles" } }).t)) expect(prTitleSelects(node)[0].props.disabled).toBe(true);
@@ -266,7 +266,7 @@ test("a git project with agent sessions offers auto-merge of docs-only pull requ
 test("no auto-merge toggle for a project without git or with its agent sessions disabled; inactive while sessions are off", () => {
   const [plainRow] = overviewRows({ generatedAt: "2026-10-01T00:00:00Z", repos: [{ ...snapshotRepo, isGit: false }] });
   const t = tracking().t;
-  for (const node of [Row({ row: plainRow, stages: [], now: 0, tracking: t, config: configWith() }), Tile({ row: plainRow, stages: [], now: 0, tracking: t, config: configWith() })]) {
+  for (const node of [Row({ row: plainRow, now: 0, tracking: t, config: configWith() }), Tile({ row: plainRow, now: 0, tracking: t, config: configWith() })]) {
     expect(autoMergeOf(node)).toBeUndefined();
   }
   for (const node of layouts(configWith({ agent: { enabled: false, autoMergeDocs: true } }), t)) expect(autoMergeOf(node)).toBeUndefined();
@@ -291,7 +291,7 @@ test("a project still being scanned offers none of its settings", () => {
 });
 
 test("without a config entry yet, a row shows only what it showed before", () => {
-  const node = Row({ row, stages: [], now: 0, tracking: tracking().t });
+  const node = Row({ row, now: 0, tracking: tracking().t });
   expect(switchOf(node)).toBeUndefined();
   const labels = byTag(node, "button").map((b) => String(b.props["aria-label"]));
   expect(labels).toContain("Disable alpha-infra");
