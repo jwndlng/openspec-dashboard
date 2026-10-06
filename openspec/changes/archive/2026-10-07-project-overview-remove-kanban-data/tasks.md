@@ -13,7 +13,7 @@
       Work in progress, Updated, Agent sessions and the actions column, and no stage name.
 - [x] 2.2 Remove the `stages` prop and the `.stage-strip` list from `Tile`, keeping the totals and "no open changes" in
       the tile body; verify a tile for a repository with open changes renders no element with class `stage-strip`.
-- [~] 2.3 Delete the `.stage-strip` and `.projects th.stage` rules from `src/ui/styles.css`, and check with
+- [x] 2.3 Delete the `.stage-strip` and `.projects th.stage` rules from `src/ui/styles.css`, and check with
       `bun run dev` that tiles keep one size in both themes and the table fits without the stage columns.
 - [x] 2.4 Update the `Row`/`Tile` call sites in `test/untrackedUi.test.ts`, `test/labelChipsUi.test.ts` and
       `test/projectSettingsUi.test.ts` for the removed `stages` prop, and add a test that `Row` and `Tile` for a
