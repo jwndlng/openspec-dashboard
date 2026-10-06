@@ -15,7 +15,7 @@
 
 - [x] 3.1 Show `autoEnded` in `src/ui/sessionPanel.tsx` and on the card's session line, worded as in design D6, plus the activity feed's sentence for `session-auto-ended`; verify with unit tests of the wording helpers in `src/ui/sessionState.ts` and `bun run check`
 - [x] 3.2 Extend `AUTO_MERGE_HINT` in `src/ui/projectSettings.tsx` and adjust `test/projectSettingsUi.test.ts`; verify the test passes
-- [~] 3.3 Run the dashboard (`bun run dev`) against a test repository with a fake `gh` scenario that turns a pull request merged, and confirm that the panel and card show the automatic end. Leave as `- [~]` if it needs the user's eyes
+- [x] 3.3 Run the dashboard (`bun run dev`) against a test repository with a fake `gh` scenario that turns a pull request merged, and confirm that the panel and card show the automatic end. Leave as `- [~]` if it needs the user's eyes
 
 ## 4. Docs and release notes
 
