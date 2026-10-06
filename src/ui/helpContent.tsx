@@ -153,7 +153,11 @@ export const HELP_SECTIONS: readonly HelpSection[] = [
             undo. The session that set a new project up shows here until you start a new console.
           </li>
         </ul>
-        <p>In a tracked folder that is not a git repository, the agent works in the folder itself, with no branch and no undo.</p>
+        <p>
+          In a tracked folder that is not a git repository, the agent works in the folder itself, with no branch and no
+          undo. So it does in a git repository with no commit yet, such as a new project: there is nothing to branch from,
+          so the agent works in the checkout. Once the repository has a commit, new sessions get their own worktree.
+        </p>
       </>
     ),
   },

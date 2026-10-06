@@ -7,6 +7,7 @@ import { useEffect, useRef, useState } from "preact/hooks";
 import { SHIPPABLE_WORK, type ChangeSession, type Session, type SessionAction, type SessionWorktree, type Shortcut } from "../shared/types.ts";
 import { api, type TerminalMessage } from "./api.ts";
 import { cdCommand } from "./format.ts";
+import { inPlaceReason } from "./inPlaceText.ts";
 import { NOT_SUBMITTED_NOTICE, shortcutHint, shortcutMessage, visibleShortcuts } from "./quickReplies.ts";
 import { autoMergeNotice, nextStepFor, reportShip, resolvable, sessionBadge, startersFor, workBadge, worktreeOfSession } from "./sessionState.ts";
 import { ConflictBadge, SessionBadgeView, SessionControls, useSessionUi } from "./sessions.tsx";
@@ -296,7 +297,7 @@ export function ConsolePanel({ session, worktree, of }: { session?: ChangeSessio
           {repo && <span class="hint">· {repo.name}</span>}
           {!session?.inPlace && (session?.branch ?? tree?.branch) && <span class="hint mono pane-branch">{session?.branch ?? tree?.branch}</span>}
           {session?.inPlace && (
-            <span class="badge warning" title={`${session.worktreePath} is not a git repository, so the agent works in the folder itself. There is no branch, no commit and no undo.`}>
+            <span class="badge warning" title={inPlaceReason(session.worktreePath, ui.snapshot?.repos.find((r) => r.id === repoId)?.isGit)}>
               in the folder — no undo
             </span>
           )}

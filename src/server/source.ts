@@ -5,7 +5,7 @@ import { readdir, readFile, realpath, stat } from "node:fs/promises";
 import { dirname, join, relative } from "node:path";
 import type { LabelEntry } from "../shared/labels.ts";
 import { CHANGE_NAME_PATTERN, type Worktree } from "../shared/types.ts";
-import { checkoutStatus, currentBranch, defaultBranch, hasRemoteRefs, isGitRepo, lastCommitDate, localOnlyCommits, type ParsedStatus, statusPaths, subdirectory, worktrees } from "./git.ts";
+import { checkoutStatus, currentBranch, defaultBranch, hasCommitToBranchFrom, hasRemoteRefs, isGitRepo, lastCommitDate, localOnlyCommits, type ParsedStatus, statusPaths, subdirectory, worktrees } from "./git.ts";
 
 export const CHANGE_NAME = CHANGE_NAME_PATTERN;
 const ARCHIVE_PREFIX = /^(\d{4}-\d{2}-\d{2})-(.+)$/;
@@ -63,6 +63,8 @@ export interface RepoSource {
   branch(): Promise<string | undefined>;
   /** The default branch as known locally (no remote is asked); undefined when it cannot be told. */
   defaultBranch(): Promise<string | undefined>;
+  /** Whether `HEAD` names a commit or `origin/HEAD` exists; false with no commit yet, undefined when it cannot be told. */
+  hasCommitToBranchFrom(): Promise<boolean | undefined>;
   worktrees(): Promise<Worktree[]>;
   /** Working-tree status of one checkout; `path` must come from `worktrees()`. Undefined when it cannot be determined. */
   checkoutStatus(path: string): Promise<ParsedStatus | undefined>;
@@ -209,6 +211,10 @@ export class LocalRepoSource implements RepoSource {
 
   defaultBranch(): Promise<string | undefined> {
     return defaultBranch(this.path);
+  }
+
+  hasCommitToBranchFrom(): Promise<boolean | undefined> {
+    return hasCommitToBranchFrom(this.path);
   }
 
   worktrees(): Promise<Worktree[]> {

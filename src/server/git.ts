@@ -67,6 +67,16 @@ export async function defaultBranch(cwd: string): Promise<string | undefined> {
 }
 
 /**
+ * Whether a session's branch has something to be created from: `HEAD` names a commit, or `origin/HEAD` exists. False
+ * for a repository with no commit yet (`git init` and nothing else); undefined when git itself cannot be asked.
+ */
+export async function hasCommitToBranchFrom(cwd: string): Promise<boolean | undefined> {
+  if ((await git(cwd, ["rev-parse", "--verify", "--quiet", "HEAD^{commit}"])) !== undefined) return true;
+  if ((await git(cwd, ["symbolic-ref", "--quiet", "refs/remotes/origin/HEAD"])) !== undefined) return true;
+  return (await git(cwd, ["rev-parse", "--git-dir"])) !== undefined ? false : undefined;
+}
+
+/**
  * Parses `git worktree list --porcelain`: one entry per record, in git's order — the main working tree first, then the
  * linked worktrees. Detached worktrees have no branch; locked, prunable and bare records are kept and flagged. Flags are
  * only set when they apply.

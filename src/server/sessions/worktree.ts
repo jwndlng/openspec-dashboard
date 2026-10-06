@@ -73,12 +73,12 @@ async function isDirectory(path: string): Promise<boolean> {
 
 /**
  * A repository with no commit yet (`git init` and nothing else, as **New project** leaves it): `HEAD` names no commit, so
- * there is nothing to branch from. Said plainly instead of git's `invalid reference: HEAD`; the project console runs in
- * the checkout, so the user can make the first commit there.
+ * there is nothing to branch from. Its change sessions normally run in place — the scan says so (`noCommit`) — so this is
+ * only reached when that scan is out of date; said plainly instead of git's `invalid reference: HEAD`.
  */
 export class NoCommitError extends Error {
   constructor() {
-    super("this repository has no commit yet: an agent session works on a branch of its own, which needs a first commit — make one (for example in the project console) and start again");
+    super("this repository has no commit yet, so there is no branch to work on; refresh the board and start again — the agent will then work in the checkout itself");
   }
 }
 

@@ -594,3 +594,35 @@ test("dependencies: the leading copy declares, and the archive reaching the main
   expect(uiChange.dependsOn).toEqual([{ name: "add-billing-schema", state: "met" }]);
   expect(uiChange.blocked).toBeUndefined();
 });
+
+// --- A git repository with nothing to branch a session from. ---
+
+test("a git repository with no commit reports noCommit until its first commit", async () => {
+  const base = await tempDir("osd-nocommit-");
+  const repo = join(base, "fresh-app");
+  await mkdir(join(repo, "openspec", "changes", "first-feature"), { recursive: true });
+  await writeFile(join(repo, "openspec", "config.yaml"), "schema: spec-driven\n");
+  await gitIn(repo, "init", "-q");
+  const before = await scanRepo(newRepoConfig(repo, true));
+  expect(before.ok).toBe(true);
+  expect(before.isGit).toBe(true);
+  expect(before.noCommit).toBe(true);
+
+  await gitIn(repo, "add", "-A");
+  await gitIn(repo, "commit", "-q", "-m", "init");
+  const after = await scanRepo(newRepoConfig(repo, true));
+  expect(after.ok).toBe(true);
+  expect("noCommit" in after).toBe(false);
+  await rm(base, { recursive: true, force: true });
+});
+
+test("a folder without git carries no noCommit", async () => {
+  const base = await tempDir("osd-nogit-");
+  const repo = join(base, "plain");
+  await mkdir(join(repo, "openspec", "changes"), { recursive: true });
+  await writeFile(join(repo, "openspec", "config.yaml"), "schema: spec-driven\n");
+  const snapshot = await scanRepo(newRepoConfig(repo, true));
+  expect(snapshot.isGit).toBe(false);
+  expect("noCommit" in snapshot).toBe(false);
+  await rm(base, { recursive: true, force: true });
+});

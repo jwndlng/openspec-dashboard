@@ -166,8 +166,15 @@ export class SessionManager {
     // directory is the repository folder itself, which no per-worktree rule would have kept a second agent out of.
     const existing = this.list().find((s) => s.repoId === repo.id && s.change === change && OPEN_SESSION_STATES.includes(s.state));
     if (existing) return { ...existing, autoMerge: false };
-    // In a folder without git the change session would share the folder with the project's console: one agent per folder.
-    if (scanned.isGit === false && this.runningInFolder(repo.path).some(isProjectConsole)) throw new SessionError(409, "the project's console is running in this folder; end it first");
+    // A tracked folder without git is a supported repository, it just cannot be isolated: the agent runs in the folder
+    // itself. So does a git repository with no commit yet, which has nothing to branch a worktree from. Decided from the
+    // scan, never by letting a git command fail — see the agent-sessions spec.
+    const inPlace = scanned.isGit === false || scanned.noCommit === true;
+    // In place the change session would share the folder with the project's console or another change: one agent per folder.
+    if (inPlace) {
+      if (this.runningInFolder(repo.path).some(isProjectConsole)) throw new SessionError(409, "the project's console is running in this folder; end it first");
+      this.refuseOtherAgentInFolder(repo.path);
+    }
 
     const agent = agentFor(config, repo);
     if (!agent) throw new SessionError(503, "no agent is configured");
@@ -175,9 +182,6 @@ export class SessionManager {
     if (!prompt) throw new SessionError(400, `${agent.name} has no "${action}" prompt configured`);
     if (!Bun.which(agent.command[0])) throw new SessionError(503, `${agent.name} was not found (${agent.command[0]}); install it or change its command in Settings`);
 
-    // A tracked folder without git is a supported repository, it just cannot be isolated: the agent runs in the folder
-    // itself. Decided from the scan, never by letting a git command fail — see the agent-sessions spec.
-    const inPlace = scanned.isGit === false;
     const now = new Date().toISOString();
     const session: ChangeSession = {
       id: randomUUID(),
@@ -357,7 +361,7 @@ export class SessionManager {
     return this.list().filter((s) => s.state === "running" && canonicalPath(s.worktreePath) === path);
   }
 
-  /** One agent per folder: an in-place change session (a folder without git) keeps a project console out, and back. */
+  /** One agent per folder: an in-place change session (a folder without git, a repository with no commit) keeps any other agent out. */
   private refuseOtherAgentInFolder(folder: string, except?: string): void {
     const other = this.runningInFolder(folder).find((s) => s.id !== except);
     if (!other) return;

@@ -262,6 +262,8 @@ export async function scanRepo(repo: RepoConfig, source: RepoSource = new LocalR
   // Archives, specs and progress come from the main checkout; off its default branch they may be outdated.
   const mainBranch = isGit ? await source.defaultBranch().catch(() => undefined) : undefined;
   const onDefaultBranch = mainBranch === undefined ? undefined : branch === mainBranch;
+  // Nothing to branch a session from: its change sessions run in place (agent-sessions spec).
+  const noCommit = isGit && (await source.hasCommitToBranchFrom().catch(() => undefined)) === false;
   const configYaml = await source.readText(join(repo.path, "openspec", "config.yaml"));
   const projectSchema = parseMarker(configYaml).schema;
   const sharedConfig = shared && shared.profiles.length > 0 ? repoSharedConfig(configYaml, shared) : undefined;
@@ -303,6 +305,7 @@ export async function scanRepo(repo: RepoConfig, source: RepoSource = new LocalR
     currentBranch: branch,
     defaultBranch: mainBranch,
     onDefaultBranch,
+    ...(noCommit ? { noCommit: true as const } : {}),
     worktrees,
     workInProgress,
     // A repository whose only activity is in a worktree is still an active repository.
@@ -482,6 +485,7 @@ export class Scanner {
             currentBranch: prev?.currentBranch,
             defaultBranch: prev?.defaultBranch,
             onDefaultBranch: prev?.onDefaultBranch,
+            ...(prev?.noCommit ? { noCommit: true as const } : {}),
             worktrees: prev?.worktrees ?? [],
             workInProgress: prev?.workInProgress,
             lastUpdatedAt: prev?.lastUpdatedAt,

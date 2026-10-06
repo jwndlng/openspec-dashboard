@@ -6,6 +6,7 @@ import type { PullResult, WorkStatus } from "../shared/types.ts";
 import { api } from "./api.ts";
 import { PullBlockedList, usePull } from "./pull.tsx";
 import { pullNeedsReport, pullOutcome } from "./pullState.ts";
+import { inPlaceLeftover } from "./inPlaceText.ts";
 import { endSeverity, endWarning, pullOffer, reportShip, worktreeRemovalPossible } from "./sessionState.ts";
 import { useSessionUi } from "./sessions.tsx";
 
@@ -182,7 +183,8 @@ export function EndSessionDialog() {
           {!hasWorktree ? (
             <div class="hint">
               {running && `${session.agentName} is stopped, as if you closed its terminal window. `}
-              Whatever the agent changed stays in <span class="mono">{session.worktreePath}</span>, which is not a git repository: there is no worktree to remove and nothing to merge.
+              Whatever the agent changed stays in <span class="mono">{session.worktreePath}</span>
+              {inPlaceLeftover(repo?.isGit)}
             </div>
           ) : (
             <div class="hint">
