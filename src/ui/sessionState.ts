@@ -189,18 +189,29 @@ export function worktreeRemovalPossible(session: Pick<Session, "inPlace"> | unde
 export interface PullOffer {
   /** Whether the end-session dialog offers to pull at all: only a repository the pull action can run in. */
   offered: boolean;
-  /** Whether that offer starts ticked. Merged work is the case the offer exists for. */
+  /** Whether that offer starts ticked: whenever it is made, so a habitual confirm keeps the checkout current. */
   preselected: boolean;
 }
 
 /**
- * Ending a session is the moment the user knows the work landed, so the dialog offers to bring the main checkout —
- * what archives, specs and progress are read from — up to date with it. Deliberately independent of whether the
- * worktree can be removed: a worktree kept for a reason should still let the checkout catch up.
+ * Ending a session usually means the work landed, so the dialog offers to bring the main checkout — what archives,
+ * specs and progress are read from — up to date with it, ticked whatever the work status: the work status is only as
+ * fresh as the last fetch, and the pull is fast-forward-only and never touches the session's worktree or branch.
+ * Deliberately independent of whether the worktree can be removed: a worktree kept for a reason should still let the
+ * checkout catch up.
  */
-export function pullOffer(repo: Pick<RepoSnapshot, "isGit" | "ok"> | undefined, work: Pick<WorkStatus, "state"> | undefined): PullOffer {
+export function pullOffer(repo: Pick<RepoSnapshot, "isGit" | "ok"> | undefined): PullOffer {
   const offered = repo?.isGit === true && repo.ok === true;
-  return { offered, preselected: offered && work?.state === "merged" };
+  return { offered, preselected: offered };
+}
+
+/**
+ * Whether the end-session dialog's worktree removal starts ticked: whenever the server says the worktree may be
+ * removed, whatever its work status. `removable` already excludes uncommitted work and commits that exist only on the
+ * branch — all a removal could lose — and the branch itself is kept.
+ */
+export function removalPreselected(status: { removable: boolean; reason?: string; work?: Pick<WorkStatus, "state"> } | undefined): boolean {
+  return status?.removable === true;
 }
 
 /** The one session a card stands for, where only one fits (see `sessionsForChange`). */

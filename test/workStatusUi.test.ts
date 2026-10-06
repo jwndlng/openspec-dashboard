@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import type { ChangeSession, Session, SessionWorktree, WorkStatus } from "../src/shared/types.ts";
 import { ConflictBadge } from "../src/ui/sessions.tsx";
 import { byTag, textOf } from "./vnode.ts";
-import { conflictBadge, consoleAvailable, consoleSession, consoleSessions, consoleTabAvailable, endSeverity, pullOffer, endWarning, nextStepFor, openWork, resolvable, sessionsForChange, staleAge, workBadge, worktreeForChange, worktreeOfSession, worktreeRemovalPossible } from "../src/ui/sessionState.ts";
+import { conflictBadge, consoleAvailable, consoleSession, consoleSessions, consoleTabAvailable, endSeverity, pullOffer, endWarning, nextStepFor, openWork, removalPreselected, resolvable, sessionsForChange, staleAge, workBadge, worktreeForChange, worktreeOfSession, worktreeRemovalPossible } from "../src/ui/sessionState.ts";
 
 const NOW = Date.parse("2026-09-21T12:00:00Z");
 const ago = (hours: number) => new Date(NOW - hours * 3_600_000).toISOString();
@@ -90,18 +90,24 @@ test("ending is questioned as loudly as the work is unshipped", () => {
   expect(endWarning({ state: "clean" })).toBeUndefined();
 });
 
-test("the pull is offered for a repository it can run in, and starts ticked only for merged work", () => {
-  const git = { isGit: true, ok: true };
-  expect(pullOffer(git, { state: "merged" })).toEqual({ offered: true, preselected: true });
-  // offered, but the user has to ask for it: the work is not known to have landed
-  for (const state of ["uncommitted", "unpushed", "pushed", "clean", "missing"] as const) {
-    expect(pullOffer(git, { state })).toEqual({ offered: true, preselected: false });
+test("the pull is offered for a repository it can run in, and then always starts ticked", () => {
+  // whatever the work status: it does not enter the decision at all
+  expect(pullOffer({ isGit: true, ok: true })).toEqual({ offered: true, preselected: true });
+  // nothing the pull action can run in: neither offered nor ticked
+  expect(pullOffer({ isGit: false, ok: true })).toEqual({ offered: false, preselected: false });
+  expect(pullOffer({ isGit: true, ok: false })).toEqual({ offered: false, preselected: false });
+  expect(pullOffer(undefined)).toEqual({ offered: false, preselected: false });
+});
+
+test("the worktree removal starts ticked exactly when the worktree may be removed", () => {
+  for (const state of ["merged", "pushed", "clean", "missing"] as const) {
+    expect(removalPreselected({ removable: true, work: { state } })).toBe(true);
   }
-  expect(pullOffer(git, undefined)).toEqual({ offered: true, preselected: false });
-  // nothing the pull action can run in
-  expect(pullOffer({ isGit: false, ok: true }, { state: "merged" })).toEqual({ offered: false, preselected: false });
-  expect(pullOffer({ isGit: true, ok: false }, { state: "merged" })).toEqual({ offered: false, preselected: false });
-  expect(pullOffer(undefined, { state: "merged" })).toEqual({ offered: false, preselected: false });
+  expect(removalPreselected({ removable: true })).toBe(true);
+  // unshipped work is never removable, and nothing is ticked for it
+  expect(removalPreselected({ removable: false, reason: "1 commit exists only on this branch", work: { state: "unpushed" } })).toBe(false);
+  expect(removalPreselected({ removable: false, work: { state: "merged" } })).toBe(false);
+  expect(removalPreselected(undefined)).toBe(false);
 });
 
 
@@ -233,8 +239,8 @@ test("a session in a folder without git has no worktree, so no work status, no S
   expect(worktreeRemovalPossible(undefined)).toBe(false);
 
   // Ending it offers no pull either: the pull action only runs in a git repository.
-  expect(pullOffer({ isGit: false, ok: true }, undefined)).toEqual({ offered: false, preselected: false });
-  expect(pullOffer({ isGit: true, ok: true }, { state: "merged" })).toEqual({ offered: true, preselected: true });
+  expect(pullOffer({ isGit: false, ok: true })).toEqual({ offered: false, preselected: false });
+  expect(pullOffer({ isGit: true, ok: true })).toEqual({ offered: true, preselected: true });
 });
 
 test("the conflict badge names the base, the files and how fresh the answer is", () => {

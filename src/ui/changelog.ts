@@ -15,6 +15,13 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    id: "2026-10-06-cleanup-by-default",
+    date: "2026-10-06",
+    title: "End session cleans up and pulls by default",
+    summary:
+      "**End session** now ticks **also remove the worktree** whenever nothing would be lost, and **also pull** for every git repository, not only once the work shows as merged. Clear either box before confirming to keep the worktree or skip the pull; the branch is always kept.",
+  },
+  {
     id: "2026-10-06-auto-merge-cleanup",
     date: "2026-10-06",
     title: "Merged docs pull requests clean up after themselves",

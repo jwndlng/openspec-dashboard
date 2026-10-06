@@ -141,7 +141,8 @@ export const HELP_SECTIONS: readonly HelpSection[] = [
           </li>
           <li>
             <strong>Open work</strong> in the top bar lists running agents and worktrees that still hold something.{" "}
-            <strong>End session</strong> stops an agent and, when nothing would be lost, offers to remove its worktree.
+            <strong>End session</strong> stops an agent and, by default, pulls the repository and — when nothing would be
+            lost — removes its worktree; clear either box before confirming to skip it.
           </li>
           <li>
             The <strong>Console</strong> button in the top bar opens your agent outside every change, in a console folder of its
