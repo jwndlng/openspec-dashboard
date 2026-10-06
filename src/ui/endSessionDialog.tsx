@@ -7,7 +7,7 @@ import { api } from "./api.ts";
 import { PullBlockedList, usePull } from "./pull.tsx";
 import { pullNeedsReport, pullOutcome } from "./pullState.ts";
 import { inPlaceLeftover } from "./inPlaceText.ts";
-import { endSeverity, endWarning, pullOffer, reportShip, worktreeRemovalPossible } from "./sessionState.ts";
+import { endSeverity, endWarning, pullOffer, removalPreselected, reportShip, worktreeRemovalPossible } from "./sessionState.ts";
 import { useSessionUi } from "./sessions.tsx";
 
 interface Status {
@@ -54,7 +54,7 @@ export function EndSessionDialog() {
       .then((result) => {
         if (stale) return;
         setStatus(result);
-        setRemove(result.removable && result.work?.state === "merged"); // merged work: removing the worktree is what is left to do
+        setRemove(removalPreselected(result)); // nothing would be lost: removing the worktree is what is left to do
       })
       .catch(() => !stale && setStatus({ removable: false, reason: "could not check the worktree" }));
     return () => {
@@ -75,7 +75,7 @@ export function EndSessionDialog() {
   const running = session.state === "running";
   const severity = endSeverity(status?.work);
   const warning = endWarning(status?.work);
-  const offer = pullOffer(repo, status?.work);
+  const offer = pullOffer(repo);
   const pullSelected = offer.offered && (pullChoice ?? offer.preselected);
   const close = () => ui.requestEnd(undefined);
   const run = async (fn: () => Promise<unknown>) => {
