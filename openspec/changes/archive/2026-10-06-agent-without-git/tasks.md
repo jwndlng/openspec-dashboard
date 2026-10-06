@@ -15,10 +15,10 @@
 ## 3. UI wording
 
 - [x] 3.1 In `src/ui/sessionPanel.tsx` and `src/ui/endSessionDialog.tsx` (via the new `src/ui/inPlaceText.ts`; `sessions.tsx` shows no in-place text, only hides the branch), choose the in-place explanation from the repository snapshot: for `isGit` (no commit) say the agent works in the checkout because there is no commit to branch from yet, with no branch of its own and no undo; keep today's text for a folder without git — verify with a UI/state test (extend an existing session UI test, e.g. `test/projectConsoleUi.test.ts` or a new small test) that the git case never says "is not a git repository"
-- [~] 3.2 Add the no-commit case to the in-place sentence in `src/ui/helpContent.tsx` — verify the help page test (if any) still passes and the text reads correctly in `bun run dev`
+- [x] 3.2 Add the no-commit case to the in-place sentence in `src/ui/helpContent.tsx` — verify the help page test (if any) still passes and the text reads correctly in `bun run dev`
 
 ## 4. Docs and checks
 
 - [x] 4.1 Update `CLAUDE.md`: the in-place bullet under **Agent sessions** and "A change session never runs in a main checkout" now name the one exception, a git repository with no commit yet — verify by reading the diff
 - [x] 4.2 Run `bun run check` (lint, typecheck, tests) and `openspec validate agent-without-git --strict`; both pass
-- [~] 4.3 Build with `bun run build`, then with `dist/openspec-dashboard` track a fresh `git init` folder with an `openspec/` tree and start **Draft artifacts** for a change: the agent starts in the folder, the panel shows the no-commit wording, and the main checkout gets no worktree or branch
+- [x] 4.3 Build with `bun run build`, then with `dist/openspec-dashboard` track a fresh `git init` folder with an `openspec/` tree and start **Draft artifacts** for a change: the agent starts in the folder, the panel shows the no-commit wording, and the main checkout gets no worktree or branch
