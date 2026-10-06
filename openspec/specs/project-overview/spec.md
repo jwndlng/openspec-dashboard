@@ -1,7 +1,7 @@
 # project-overview Specification
 
 ## Purpose
-Defines the repository-first navigation: the projects overview that lists every enabled repository with its per-stage change counts and last-updated time (sorting, search, same-name disambiguation), and the drill-down to a single repository's board with its header.
+Defines the repository-first navigation: the projects overview that lists every enabled repository with its open and to-archive change counts and last-updated time (sorting, search, same-name disambiguation), and the drill-down to a single repository's board with its header.
 
 ## Requirements
 
@@ -29,11 +29,15 @@ The dashboard SHALL show a projects overview at `/` made of two sections, each u
 - **THEN** Managed projects shows `alpha-infra` with `Scanning…` and no counts, and once the scan finishes the entry shows its counts like every other row
 
 ### Requirement: Overview rows summarise each repository
-Each row SHALL show the repository name, the number of non-archived changes in each board stage column (using the same column list and order as the combined board, excluding `Archived`), the total of non-archived changes, the number of changes that are complete but not archived, and the relative age of the repository's last update. Zero counts SHALL be rendered as a neutral placeholder rather than `0`. The to-archive count SHALL be conveyed with text and not by colour alone. A repository with no non-archived changes SHALL be shown de-emphasised with the text "no open changes". A repository whose last scan failed SHALL show a warning indicator exposing the error message while still showing its retained counts.
+Each row SHALL show the repository name, the total of non-archived changes, the number of changes that are complete but not archived, and the relative age of the repository's last update. A row MUST NOT show the number of changes per board stage column; that breakdown is on the repository's board and on the combined board. Zero counts SHALL be rendered as a neutral placeholder rather than `0`. The to-archive count SHALL be conveyed with text and not by colour alone. A repository with no non-archived changes SHALL be shown de-emphasised with the text "no open changes". A repository whose last scan failed SHALL show a warning indicator exposing the error message while still showing its retained counts.
 
 #### Scenario: Row content
 - **WHEN** repository `alpha-infra` has 1 change in `Drafts`, 9 in `Implementing`, 2 in `Done`, 40 archived, and was last updated 1 day ago
-- **THEN** its row shows `1` under Drafts, `9` under Implementing, `2` under Done, an open total of `12`, a to-archive count of `2`, and `1d ago`
+- **THEN** its row shows an open total of `12`, a to-archive count of `2`, and `1d ago`
+
+#### Scenario: No stage columns
+- **WHEN** the overview is shown in the table layout and the combined board has the columns `Backlog`, `Drafts`, `Ready`, `Implementing`, `Done` and `Archived`
+- **THEN** the table has no column headed by any of those stage names, and no row shows a count per stage
 
 #### Scenario: Repository without open changes
 - **WHEN** a repository has only archived changes
@@ -222,7 +226,7 @@ Each repository on the overview SHALL show a work-in-progress indicator built fr
 - **THEN** its indicator still reads `2 uncommitted` next to the scan warning
 
 ### Requirement: Overview offers a table and a tiles layout
-The overview SHALL offer two layouts of the same repositories, `Table` and `Tiles`, selectable with a toggle that marks the active layout. The table SHALL be the default. The chosen layout SHALL persist in the URL query string as `view=tiles`, omitted for the table, and SHALL survive a reload. Switching the layout MUST NOT change the sort, the search, the work-in-progress filter, or which repositories are listed and in which order. A tile SHALL show everything a row shows — the repository name with its path hint and full-path tooltip when names collide, the scan-failure warning, the per-stage counts in the same column order with zero counts de-emphasised, the open and to-archive totals with the to-archive count conveyed with text, "no open changes" de-emphasis, the last-updated age, the carried shared-config profiles when any exist, and the work-in-progress indicator — and in addition a checkout summary: the number of linked worktrees and the number of distinct branches checked out in any checkout, main included, as `<n> worktrees · <m> branches active`, with every checkout listed in its tooltip. A tile SHALL NOT list the checkouts or branches themselves; the repository board header does. In a tile the repository name SHALL be a real link, and activating the tile SHALL navigate to the repository board without a page reload, exactly as activating a row does. The tiles SHALL reflow to the available width without horizontal scrolling. The empty state and the "no repository matches" state SHALL be the same in both layouts.
+The overview SHALL offer two layouts of the same repositories, `Table` and `Tiles`, selectable with a toggle that marks the active layout. The table SHALL be the default. The chosen layout SHALL persist in the URL query string as `view=tiles`, omitted for the table, and SHALL survive a reload. Switching the layout MUST NOT change the sort, the search, the work-in-progress filter, or which repositories are listed and in which order. A tile SHALL show everything a row shows — the repository name with its path hint and full-path tooltip when names collide, the scan-failure warning, the open and to-archive totals with the to-archive count conveyed with text, "no open changes" de-emphasis, the last-updated age, the carried shared-config profiles when any exist, and the work-in-progress indicator — and in addition a checkout summary: the number of linked worktrees and the number of distinct branches checked out in any checkout, main included, as `<n> worktrees · <m> branches active`, with every checkout listed in its tooltip. A tile MUST NOT show the number of changes per board stage. A tile SHALL NOT list the checkouts or branches themselves; the repository board header does. In a tile the repository name SHALL be a real link, and activating the tile SHALL navigate to the repository board without a page reload, exactly as activating a row does. The tiles SHALL reflow to the available width without horizontal scrolling. The empty state and the "no repository matches" state SHALL be the same in both layouts.
 
 #### Scenario: Switching to tiles
 - **WHEN** the user activates `Tiles` on `/?sort=open&q=ops`
@@ -246,7 +250,7 @@ The overview SHALL offer two layouts of the same repositories, `Table` and `Tile
 
 #### Scenario: Tile content
 - **WHEN** repository `alpha-infra` has 1 change in `Drafts`, 9 in `Implementing`, 2 in `Done`, was last updated 1 day ago, and has a clean main checkout on `main` plus a worktree on `feat/report` with 4 uncommitted items
-- **THEN** its tile shows those stage counts, an open total of `12`, a to-archive count of `2`, `1d ago`, the indicator `1 worktree · 1 uncommitted`, and the checkout summary `1 worktree · 2 branches active`, whose tooltip names `main` as the main checkout and `feat/report` as a worktree
+- **THEN** its tile shows an open total of `12`, a to-archive count of `2`, `1d ago`, the indicator `1 worktree · 1 uncommitted`, and the checkout summary `1 worktree · 2 branches active`, whose tooltip names `main` as the main checkout and `feat/report` as a worktree, and it shows no count per stage
 
 #### Scenario: Drill down from a tile
 - **WHEN** the user clicks the tile for `beta-soc`
@@ -265,7 +269,7 @@ The overview SHALL offer two layouts of the same repositories, `Table` and `Tile
 - **THEN** the same "no repository matches" message as in the table is shown
 
 ### Requirement: Tiles have one size and one layout
-In the tiles layout every tile SHALL have the same width and the same height, whatever its repository holds, and SHALL place its parts in the same positions: a header with the repository's monogram in its repository colour, its name and path hint, the last-updated age and the Pull action; one line of badges (shared-config profiles, scan failure, off-default-branch notice, work-in-progress indicator); the open and to-archive totals as large numbers; the per-stage counts; and the checkout summary. A tile whose repository has no open changes SHALL keep the same size and show "no open changes" where the totals and stage counts would be. When the badges do not fit their area, that area SHALL scroll within the tile, keeping every badge reachable, instead of growing the tile. Everything the "Overview offers a table and a tiles layout" requirement lists for a tile SHALL still be shown.
+In the tiles layout every tile SHALL have the same width and the same height, whatever its repository holds, and SHALL place its parts in the same positions: a header with the repository's monogram in its repository colour, its name and path hint, the last-updated age and the Pull action; one line of badges (shared-config profiles, scan failure, off-default-branch notice, work-in-progress indicator); the open and to-archive totals as large numbers; and the checkout summary. A tile whose repository has no open changes SHALL keep the same size and show "no open changes" where the totals would be. When the badges do not fit their area, that area SHALL scroll within the tile, keeping every badge reachable, instead of growing the tile. Everything the "Overview offers a table and a tiles layout" requirement lists for a tile SHALL still be shown.
 
 #### Scenario: Uneven repositories
 - **WHEN** `alpha-infra` has five worktrees and three config profiles and `quill-docs` has no worktree and no open change
