@@ -51,7 +51,7 @@ function configWith(patch: { sessions?: boolean; agents?: number; agent?: Config
   };
 }
 
-const layouts = (config: Config, t: Tracking) => [Row({ row, stages: [], now: 0, tracking: t, config }), Tile({ row, stages: [], now: 0, tracking: t, config })];
+const layouts = (config: Config, t: Tracking) => [Row({ row, now: 0, tracking: t, config }), Tile({ row, now: 0, tracking: t, config })];
 const switchOf = (node: unknown) => byTag(node as never, "button").find((b) => b.props.role === "switch");
 const click = (el: { props: Record<string, unknown> }) => {
   let stopped = false;
@@ -95,7 +95,7 @@ const agentSelects = selectNamed("Agent for ");
 const prTitleSelects = selectNamed("PR titles for ");
 
 test("the agent picker appears only with two agents and sessions on for the project; default agent clears the choice", () => {
-  const picker = (config: Config) => agentSelects(Row({ row, stages: [], now: 0, tracking: tracking().t, config }));
+  const picker = (config: Config) => agentSelects(Row({ row, now: 0, tracking: tracking().t, config }));
   expect(picker(configWith())).toHaveLength(0);
   expect(picker(configWith({ agents: 2, agent: { enabled: false } }))).toHaveLength(0);
   expect(picker(configWith({ agents: 2, sessions: false }))).toHaveLength(0);
@@ -137,7 +137,7 @@ test("every git project offers a PR titles picker in both layouts, with agent se
 
 test("the PR titles picker is not offered for a folder without git, and is inactive while a setting saves", () => {
   const [plain] = overviewRows({ generatedAt: "2026-10-01T00:00:00Z", repos: [{ ...snapshotRepo, isGit: false }] });
-  for (const node of [Row({ row: plain, stages: [], now: 0, tracking: tracking().t, config: configWith() }), Tile({ row: plain, stages: [], now: 0, tracking: tracking().t, config: configWith() })]) {
+  for (const node of [Row({ row: plain, now: 0, tracking: tracking().t, config: configWith() }), Tile({ row: plain, now: 0, tracking: tracking().t, config: configWith() })]) {
     expect(prTitleSelects(node)).toHaveLength(0);
   }
   for (const node of layouts(configWith(), tracking({ busy: { a: "prTitles" } }).t)) expect(prTitleSelects(node)[0].props.disabled).toBe(true);
@@ -269,7 +269,7 @@ test("a git project with agent sessions offers auto-merge of docs-only pull requ
 test("no auto-merge toggle for a project without git or with its agent sessions disabled; inactive while sessions are off", () => {
   const [plainRow] = overviewRows({ generatedAt: "2026-10-01T00:00:00Z", repos: [{ ...snapshotRepo, isGit: false }] });
   const t = tracking().t;
-  for (const node of [Row({ row: plainRow, stages: [], now: 0, tracking: t, config: configWith() }), Tile({ row: plainRow, stages: [], now: 0, tracking: t, config: configWith() })]) {
+  for (const node of [Row({ row: plainRow, now: 0, tracking: t, config: configWith() }), Tile({ row: plainRow, now: 0, tracking: t, config: configWith() })]) {
     expect(autoMergeOf(node)).toBeUndefined();
   }
   for (const node of layouts(configWith({ agent: { enabled: false, autoMergeDocs: true } }), t)) expect(autoMergeOf(node)).toBeUndefined();
@@ -294,7 +294,7 @@ test("a project still being scanned offers none of its settings", () => {
 });
 
 test("without a config entry yet, a row shows only what it showed before", () => {
-  const node = Row({ row, stages: [], now: 0, tracking: tracking().t });
+  const node = Row({ row, now: 0, tracking: tracking().t });
   expect(switchOf(node)).toBeUndefined();
   const labels = byTag(node, "button").map((b) => String(b.props["aria-label"]));
   expect(labels).toContain("Disable alpha-infra");
@@ -307,9 +307,9 @@ const zone = (node: unknown, name: string) => elements(node as never).find((el) 
 const settingLines = (node: unknown) => elements(node as never).filter((el) => classOf(el).split(" ").includes("setting-line")).map((el) => textOf(byTag(el, "span").find((s) => classOf(s) === "setting-label")));
 
 test("a tile has its zones in order, and its header holds no action but Rename", () => {
-  const node = Tile({ row, stages: [], now: 0, tracking: tracking().t, config: configWith() });
-  const order = elements(node).map((el) => classOf(el).split(" ")[0]).filter((c) => ["tile-head", "tile-badges", "tile-figures", "tile-stages", "tile-checkouts", "tile-foot"].includes(c));
-  expect(order).toEqual(["tile-head", "tile-badges", "tile-figures", "tile-stages", "tile-checkouts", "tile-foot"]);
+  const node = Tile({ row, now: 0, tracking: tracking().t, config: configWith() });
+  const order = elements(node).map((el) => classOf(el).split(" ")[0]).filter((c) => ["tile-head", "tile-badges", "tile-figures", "tile-checkouts", "tile-foot"].includes(c));
+  expect(order).toEqual(["tile-head", "tile-badges", "tile-figures", "tile-checkouts", "tile-foot"]);
   expect(byTag(zone(node, "tile-head"), "button").map((b) => b.props["aria-label"])).toEqual(["Rename alpha-infra"]);
   // Pull and Settings stand in the footer; the settings themselves are in the panel, not beside them.
   const foot = zone(node, "tile-foot");
@@ -318,41 +318,41 @@ test("a tile has its zones in order, and its header holds no action but Rename",
   expect(switchOf(zone(node, "tile-settings-panel"))).toBeDefined();
 });
 
-test("a tile shows open, to archive and open PRs as figures; without open changes they are zeros and the stages say so", () => {
-  const busy = Tile({ row: { ...row, open: 3, toArchive: 1, stageCounts: { Drafts: 2, Done: 1 } }, stages: ["Drafts", "Done"], now: 0, tracking: tracking().t, config: configWith() });
+test("a tile shows open, to archive and open PRs as figures; without open changes the totals give way to a note", () => {
+  const busy = Tile({ row: { ...row, open: 3, toArchive: 1 }, now: 0, tracking: tracking().t, config: configWith() });
   const figures = elements(zone(busy, "tile-figures")).filter((el) => classOf(el).startsWith("tile-figure "));
   expect(figures.map((f) => textOf(byTag(f, "span").find((s) => classOf(s) === "label")))).toEqual(["open", "to archive", "open PRs"]);
   expect(textOf(byTag(figures[0], "span")[0])).toBe("3");
   expect(classOf(figures[1])).toContain("success");
   expect(byComponent(figures[2], OpenPrCount)).toHaveLength(1);
-  expect(textOf(zone(busy, "tile-stages"))).toContain("Drafts");
+  // No count per stage (project-overview-remove-kanban-data).
+  expect(textOf(busy)).not.toContain("Drafts");
 
-  const idle = Tile({ row, stages: ["Drafts"], now: 0, tracking: tracking().t, config: configWith() });
+  const idle = Tile({ row, now: 0, tracking: tracking().t, config: configWith() });
   const idleFigures = elements(zone(idle, "tile-figures")).filter((el) => classOf(el).startsWith("tile-figure "));
-  expect(classOf(idleFigures[0])).toContain("zero");
-  expect(classOf(idleFigures[1])).toContain("zero");
-  expect(textOf(zone(idle, "tile-stages"))).toBe("no open changes");
+  expect(idleFigures.map((f) => textOf(byTag(f, "span").find((s) => classOf(s) === "label")))).toEqual(["open PRs"]);
+  expect(textOf(zone(idle, "tile-idle"))).toBe("no open changes");
 });
 
 test("a folder without git offers no Pull on its tile, and a failed scan none either", () => {
   const [plainRow] = overviewRows({ generatedAt: "2026-10-01T00:00:00Z", repos: [{ ...snapshotRepo, isGit: false }] });
-  expect(byComponent(Tile({ row: plainRow, stages: [], now: 0, tracking: tracking().t, config: configWith() }), PullButton)).toHaveLength(0);
-  expect(byComponent(Tile({ row: { ...row, ok: false }, stages: [], now: 0, tracking: tracking().t, config: configWith() }), PullButton)).toHaveLength(0);
+  expect(byComponent(Tile({ row: plainRow, now: 0, tracking: tracking().t, config: configWith() }), PullButton)).toHaveLength(0);
+  expect(byComponent(Tile({ row: { ...row, ok: false }, now: 0, tracking: tracking().t, config: configWith() }), PullButton)).toHaveLength(0);
 });
 
 test("a tile's settings panel lists the lines a row offers, in order, then Disable — and never opens the board", () => {
   const t = tracking().t;
-  const tileOf = (config: Config, r = row) => Tile({ row: r, stages: [], now: 0, tracking: t, config });
+  const tileOf = (config: Config, r = row) => Tile({ row: r, now: 0, tracking: t, config });
   expect(settingLines(tileOf(configWith({ agents: 2 })))).toEqual(["Agent sessions", "Agent", "PR titles", "Docs auto-merge", "Labels", "Stop tracking"]);
   expect(settingLines(tileOf(configWith()))).toEqual(["Agent sessions", "PR titles", "Docs auto-merge", "Labels", "Stop tracking"]);
   const [plainRow] = overviewRows({ generatedAt: "2026-10-01T00:00:00Z", repos: [{ ...snapshotRepo, isGit: false }] });
   expect(settingLines(tileOf(configWith(), plainRow))).toEqual(["Agent sessions", "Labels", "Stop tracking"]);
-  expect(settingLines(Tile({ row, stages: [], now: 0, tracking: t }))).toEqual(["Stop tracking"]);
+  expect(settingLines(Tile({ row, now: 0, tracking: t }))).toEqual(["Stop tracking"]);
 
   // The same controls as on the row, by their accessible names.
   for (const config of [configWith({ agents: 2 }), configWith(), configWith({ sessions: false })]) {
     const names = (node: unknown) => [...byTag(node as never, "button"), ...byTag(node as never, "select"), ...byTag(node as never, "a")].map((el) => String(el.props["aria-label"])).filter((n) => /^(Agent|PR titles|Auto-merge|Labels|Disable)/.test(n)).sort();
-    expect(names(zone(tileOf(config), "tile-settings-panel"))).toEqual(names(Row({ row, stages: [], now: 0, tracking: t, config })));
+    expect(names(zone(tileOf(config), "tile-settings-panel"))).toEqual(names(Row({ row, now: 0, tracking: t, config })));
   }
 
   const details = byTag(tileOf(configWith()), "details")[0];

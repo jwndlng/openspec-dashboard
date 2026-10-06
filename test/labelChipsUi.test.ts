@@ -39,8 +39,8 @@ const holds = (chip: { props: { children?: ComponentChildren } }, icon: Componen
 const hueOf = (chip: { props: Record<string, unknown> }) => (chip.props.style as Record<string, string>)["--label-hue"];
 
 test("a label wears the same colour on every row and tile, ignoring case, and a chosen colour wins", () => {
-  const rowChips = [...chipsOf(Row({ row: rows[0], stages: [], now: 0, tracking })), ...chipsOf(Row({ row: rows[1], stages: [], now: 0, tracking }))];
-  const tileChips = [...chipsOf(Tile({ row: rows[0], stages: [], now: 0, tracking })), ...chipsOf(Tile({ row: rows[1], stages: [], now: 0, tracking }))];
+  const rowChips = [...chipsOf(Row({ row: rows[0], now: 0, tracking })), ...chipsOf(Row({ row: rows[1], now: 0, tracking }))];
+  const tileChips = [...chipsOf(Tile({ row: rows[0], now: 0, tracking })), ...chipsOf(Tile({ row: rows[1], now: 0, tracking }))];
   const client = [...rowChips, ...tileChips].filter((c) => String(c.props.title).startsWith("Your label"));
   expect(client).toHaveLength(4);
   expect(new Set(client.map(hueOf))).toEqual(new Set([String(labelHue("client", undefined))]));

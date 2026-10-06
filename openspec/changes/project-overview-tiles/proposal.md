@@ -13,7 +13,7 @@ end up with their controls in different places, so the grid looks disorganised a
 - Every tile is split into fixed zones, each holding one kind of content, in this order: **identity** (monogram, name with
   path hint and rename, last-updated age), **status** (one badge area: scan failure, off-default-branch notice,
   work-in-progress indicator, shared-config profiles, labels), **figures** (Open, To archive and Open PRs as three
-  labelled figures of the same style, side by side), **stages** (the per-stage counts), **checkouts** (the checkout
+  labelled figures of the same style, side by side), **checkouts** (the checkout
   summary on one line), and a **footer** holding only the tile's actions.
 - The header holds no buttons any more apart from Rename. The footer's actions are **Console**, **Pull** (git repositories that scanned)
   and **Settings**.
@@ -21,8 +21,8 @@ end up with their controls in different places, so the grid looks disorganised a
   project's own settings as labelled lines (Agent sessions, Agent, PR titles, Docs auto-merge, Labels) and, set apart at
   the bottom, **Disable**. It closes when Settings is activated again, on Escape, on a click outside it, or when another
   tile's Settings opens.
-- A tile without open changes keeps its figures, de-emphasised at zero, and shows "no open changes" where the stage counts
-  would be.
+- A tile without open changes shows "no open changes" in place of its open and to-archive figures and keeps its open
+  pull request figure. Tiles show no count per stage, as `project-overview-remove-kanban-data` (merged first) decided.
 - The table layout, the pending (`Scanning…`) tile, the Unmanaged projects section, sorting, search, filters and URL
   state do not change. Every setting and action keeps its behaviour; only where it sits on a tile changes.
 

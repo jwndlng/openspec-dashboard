@@ -108,8 +108,6 @@ export interface OverviewRow {
   hint?: string;
   ok: boolean;
   error?: string;
-  /** Non-archived changes per board column. */
-  stageCounts: Record<string, number>;
   open: number;
   toArchive: number;
   archived: number;
@@ -196,7 +194,6 @@ function addHints(rows: Hinted[]): void {
 export function overviewRows(snapshot: Snapshot, config?: Config | null): OverviewRow[] {
   const configured = new Map((config?.repos ?? []).map((r) => [r.id, r]));
   const rows = snapshot.repos.map((repo): OverviewRow => {
-    const stageCounts: Record<string, number> = {};
     let open = 0;
     let toArchive = 0;
     let archived = 0;
@@ -207,7 +204,6 @@ export function overviewRows(snapshot: Snapshot, config?: Config | null): Overvi
       }
       open++;
       if (isComplete(c.stage)) toArchive++;
-      stageCounts[c.column] = (stageCounts[c.column] ?? 0) + 1;
     }
     return {
       id: repo.id,
@@ -215,7 +211,6 @@ export function overviewRows(snapshot: Snapshot, config?: Config | null): Overvi
       path: repo.path,
       ok: repo.ok,
       error: repo.error,
-      stageCounts,
       open,
       toArchive,
       archived,

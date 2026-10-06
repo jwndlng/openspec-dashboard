@@ -2,9 +2,9 @@
 
 ## 1. Tile structure
 
-- [x] 1.1 Rearrange `Tile` in `src/ui/overview.tsx` into the identity, status, figures, stages and footer zones: remove Pull, Labels and Disable from the header, order the badge area as the spec lists, and verify by walking the node tree in a test that the header holds no button and the zones appear in order
-- [x] 1.2 Move `OpenPrCount` into a figures row with Open and To archive as three labelled figures; render the idle tile with de-emphasised zero figures and "no open changes" in the stages row; verify with a test on an idle and a busy tile
-- [x] 1.3 Give `TileCheckouts` (no children) its own line below the stages, and make the footer Console, Pull (git and scan ok only) and the Settings summary; verify with a test that a folder without git offers no Pull and a pending tile has no footer actions
+- [x] 1.1 Rearrange `Tile` in `src/ui/overview.tsx` into the identity, status, figures, checkouts and footer zones: remove Pull, Labels and Disable from the header, order the badge area as the spec lists, and verify by walking the node tree in a test that the header holds no button and the zones appear in order
+- [x] 1.2 Move `OpenPrCount` into a figures row with Open and To archive as three labelled figures; render the idle tile with "no open changes" in place of the two totals, keeping the PR figure, and no count per stage; verify with a test on an idle and a busy tile
+- [x] 1.3 Give `TileCheckouts` (no children) its own line below the figures, and make the footer Console, Pull (git and scan ok only) and the Settings summary; verify with a test that a folder without git offers no Pull and a pending tile has no footer actions
 
 ## 2. Settings panel
 

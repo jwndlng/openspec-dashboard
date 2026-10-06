@@ -19,7 +19,14 @@ export const CHANGELOG: readonly ChangelogEntry[] = [
     date: "2026-10-06",
     title: "Tidier project tiles",
     summary:
-      "Every tile on **Projects › Tiles** now has the same layout: name, badges, the **open**, **to archive** and **open PRs** figures side by side, the stage counts, and a footer with **Console**, **Pull** and **Settings**. A project's own settings, **Labels** and **Disable** moved into that **Settings** panel.",
+      "Every tile on **Projects › Tiles** now has the same layout: name, badges, the **open**, **to archive** and **open PRs** figures side by side, its worktrees and branches, and a footer with **Console**, **Pull** and **Settings**. A project's own settings, **Labels** and **Disable** moved into that **Settings** panel.",
+  },
+  {
+    id: "2026-10-06-overview-without-stage-counts",
+    date: "2026-10-06",
+    title: "A calmer projects overview",
+    summary:
+      "The projects overview no longer repeats the Kanban columns: each row and tile shows how many changes are open and ready to archive, without a count per stage. The breakdown per stage is on each project's board and on **All changes**.",
   },
   {
     id: "2026-10-06-cleanup-by-default",

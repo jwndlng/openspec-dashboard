@@ -49,11 +49,12 @@ Disable sits after a divider. `projectSettings.tsx` changes only if a control's 
 label (for example `Docs auto-merge: On` can stay as is; the line label then reads `Auto-merge`), and never its
 `aria-label` or tooltip.
 
-**Grid rows.** `.tile` gets explicit rows: identity 40px, status 46px, figures auto, stages `minmax(44px, 1fr)`,
+**Grid rows.** `.tile` gets explicit rows: identity 40px, status 46px, figures auto, a `1fr` spacer,
 checkouts 18px and the footer 52px. The checkout summary has its own line rather than sharing the footer with the
 actions: beside Console, Pull and Settings a 340px tile had room for only part of `n worktrees · m branches active`. The figures row is a three-column grid (Open, To archive, Open PRs) using the existing `.tile-totals`
-number style; `OpenPrCount` moves into it with a label under its number. The idle tile renders the same figures with
-the `zero` class and puts "no open changes" in the stages row. The footer is a flex row of `ProjectConsoleButton`,
+number style; `OpenPrCount` moves into it with a label under its number. The idle tile puts
+"no open changes" across the first two columns of the figures row instead of the two totals; the stage strip that
+`project-overview-remove-kanban-data` removed stays removed. The footer is a flex row of `ProjectConsoleButton`,
 `PullButton` and the Settings summary (an icon button with an accessible name, pushed to the right), which never wrap.
 
 ## Risks / Trade-offs

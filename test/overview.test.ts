@@ -69,9 +69,8 @@ test("toggleSort flips the active key and starts a new key in its natural direct
   expect(toggleSort(byName, "name")).toEqual({ sort: "name", dir: "desc", q: "x", wip: false, view: "table" });
 });
 
-test("overviewRows counts open changes per column and falls back to change activity", () => {
+test("overviewRows counts open changes and falls back to change activity", () => {
   const [aws, soc, fit, broken] = overviewRows(snapshot);
-  expect(aws.stageCounts).toEqual({ Drafts: 1, Implementing: 9, Done: 2 });
   expect([aws.open, aws.toArchive, aws.archived]).toEqual([12, 2, 1]);
   expect(soc.lastUpdatedAt).toBe("2026-07-10T00:00:00Z");
   expect([fit.open, fit.archived]).toEqual([0, 1]);
@@ -304,8 +303,7 @@ test("the Done column and every 'to archive' count cover both sub-states", () =>
     change("z", "building", "Implementing", { tasks: { done: 1, awaiting: 1, total: 4 } }),
   ];
   const [row] = overviewRows({ generatedAt: "", repos: [repo("z", "gamma-net", changes)] });
-  // `Done` is one column with one count; a change awaiting validation can be archived, so it is counted.
-  expect(row.stageCounts).toEqual({ Done: 3, Implementing: 1 });
+  // A change awaiting validation can be archived, so it is counted.
   expect([row.open, row.toArchive, row.archived]).toEqual([4, 3, 0]);
   // And the board's own "To archive" stat is the same rule (`isComplete`), which is per stage, not per sub-state.
   expect(changes.filter((c) => isComplete(c.stage)).length).toBe(3);

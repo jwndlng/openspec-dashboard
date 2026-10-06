@@ -1,6 +1,5 @@
 import type { ComponentChildren } from "preact";
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
-import { boardColumns } from "../shared/columns.ts";
 import { integrateUnavailable, type Config, type RepoConfig, type Snapshot, type WorkInProgress } from "../shared/types.ts";
 import { api } from "./api.ts";
 import { hasCheckoutInfo } from "./checkoutMarkers.ts";
@@ -167,7 +166,7 @@ export interface ProjectSettingsProps {
 
 const repoOf = (config: Config | null | undefined, id: string) => config?.repos.find((r) => r.id === id);
 
-export function Row({ row, stages, now, tracking, labelFilter, config }: { row: OverviewRow; stages: string[]; now: number; tracking: Tracking; labelFilter?: LabelFilter } & ProjectSettingsProps) {
+export function Row({ row, now, tracking, labelFilter, config }: { row: OverviewRow; now: number; tracking: Tracking; labelFilter?: LabelFilter } & ProjectSettingsProps) {
   const idle = row.open === 0;
   const repo = repoOf(config, row.id);
   return (
@@ -179,16 +178,11 @@ export function Row({ row, stages, now, tracking, labelFilter, config }: { row: 
         <LabelChips labels={row.labels} limit={ROW_LABEL_LIMIT} isActive={labelFilter?.isActive} onToggle={labelFilter?.onToggle} />
       </th>
       {idle ? (
-        <td class="none" colSpan={stages.length + 2}>
+        <td class="none" colSpan={2}>
           no open changes
         </td>
       ) : (
         <>
-          {stages.map((s) => (
-            <td key={s} class="num">
-              {row.stageCounts[s] ?? <span class="zero">·</span>}
-            </td>
-          ))}
           <td class="num total">{row.open}</td>
           <td class="num">{row.toArchive > 0 ? <span class="badge warning">{row.toArchive} to archive</span> : <span class="zero">·</span>}</td>
         </>
@@ -288,7 +282,7 @@ function TileCheckouts({ row }: { row: OverviewRow }) {
 function TileFigure({ label, tone, children }: { label: string; tone?: string; children: ComponentChildren }) {
   return (
     <div class={`tile-figure ${tone ?? ""}`}>
-      <span class="n">{children}</span>
+      <span class="n">{children}</span>{" "}
       <span class="label">{label}</span>
     </div>
   );
@@ -339,10 +333,10 @@ function TileSettings({ row, repo, config, tracking }: { row: OverviewRow; repo?
 
 /**
  * Everything a row shows, in fixed zones that put each part at the same height on every tile: identity, status,
- * figures, stages, the checkout summary and the footer with the tile's actions. The project's settings sit in the
+ * figures, the checkout summary and the footer with the tile's actions. The project's settings sit in the
  * footer's Settings panel instead of beside the actions, so the footer never wraps.
  */
-export function Tile({ row, stages, now, hue, tracking, labelFilter, config }: { row: OverviewRow; stages: string[]; now: number; hue?: number; tracking: Tracking; labelFilter?: LabelFilter } & ProjectSettingsProps) {
+export function Tile({ row, now, hue, tracking, labelFilter, config }: { row: OverviewRow; now: number; hue?: number; tracking: Tracking; labelFilter?: LabelFilter } & ProjectSettingsProps) {
   const idle = row.open === 0;
   const repo = repoOf(config, row.id);
   const error = tracking.errors[row.id];
@@ -374,30 +368,23 @@ export function Tile({ row, stages, now, hue, tracking, labelFilter, config }: {
         <WipIndicator summary={row.workInProgress} />
         <LabelChips labels={row.labels} isActive={labelFilter?.isActive} onToggle={labelFilter?.onToggle} />
       </div>
+      {/* Without open changes the two totals give way to the note; the pull request figure keeps its place. */}
       <div class="tile-figures">
-        <TileFigure label="open" tone={idle ? "zero" : ""}>
-          {row.open}
-        </TileFigure>
-        <TileFigure label="to archive" tone={row.toArchive > 0 ? "success" : "zero"}>
-          {row.toArchive}
-        </TileFigure>
+        {idle ? (
+          <p class="tile-idle">no open changes</p>
+        ) : (
+          <>
+            <TileFigure label="open">{row.open}</TileFigure>
+            <TileFigure label="to archive" tone={row.toArchive > 0 ? "success" : "zero"}>
+              {row.toArchive}
+            </TileFigure>
+          </>
+        )}
         {/* Cached only: the overview never contacts GitHub. The figure links to the Pull requests view. */}
         <TileFigure label="open PRs">
           <OpenPrCount repoId={row.id} compact />
         </TileFigure>
       </div>
-      {idle ? (
-        <p class="tile-stages none">no open changes</p>
-      ) : (
-        <ol class="tile-stages stage-strip" aria-label="Open changes per stage">
-          {stages.map((s) => (
-            <li key={s} class={row.stageCounts[s] ? "" : "zero"} title={`${row.stageCounts[s] ?? 0} in ${s}`}>
-              <span class="n">{row.stageCounts[s] ?? 0}</span>
-              <span class="label">{s}</span>
-            </li>
-          ))}
-        </ol>
-      )}
       <TileCheckouts row={row} />
       <footer class="tile-foot">
         {repo && <ProjectConsoleButton repoId={repo.id} variant="project" />}
@@ -507,8 +494,6 @@ export function Overview({ snapshot, config, onConfig, onReload }: { snapshot: S
   const pending = pendingRows(config, snapshot);
   const untracked = untrackedEntries(config, discovered.result);
   hintAcross(rows, pending, untracked);
-  // Same stage columns, in the same order, as the combined board.
-  const stages = useMemo(() => (snapshot ? boardColumns(snapshot).filter((c) => c !== "Archived") : []), [snapshot]);
   const visible = sortRows(filterRows(rows, state.q, state.wip, state.labels), state.sort, state.dir);
   const labelFilter: LabelFilter = { isActive: (label) => isLabelActive(state, label), onToggle: (label) => setState(toggleLabel(state, label)) };
   const labelChoices = labelOptions(rows, state.labels, config?.labelColors);
@@ -665,7 +650,7 @@ export function Overview({ snapshot, config, onConfig, onReload }: { snapshot: S
               <PendingTile key={row.id} row={row} />
             ))}
             {visible.map((row) => (
-              <Tile key={row.id} row={row} stages={stages} now={now} hue={hues.get(row.id)} tracking={tracking} labelFilter={labelFilter} config={config} />
+              <Tile key={row.id} row={row} now={now} hue={hues.get(row.id)} tracking={tracking} labelFilter={labelFilter} config={config} />
             ))}
           </div>
         ) : (
@@ -673,11 +658,6 @@ export function Overview({ snapshot, config, onConfig, onReload }: { snapshot: S
             <thead>
               <tr>
                 {header("name", SORT_LABEL.name)}
-                {stages.map((s) => (
-                  <th key={s} scope="col" class="num stage">
-                    {s}
-                  </th>
-                ))}
                 {header("open", SORT_LABEL.open, "num")}
                 {header("archive", SORT_LABEL.archive, "num")}
                 <th scope="col" class="num" title="Open pull requests from the last fetch; the overview never contacts GitHub">
@@ -695,10 +675,10 @@ export function Overview({ snapshot, config, onConfig, onReload }: { snapshot: S
             </thead>
             <tbody>
               {pendingShown.map((row) => (
-                <PendingTableRow key={row.id} row={row} columns={stages.length + 7} />
+                <PendingTableRow key={row.id} row={row} columns={7} />
               ))}
               {visible.map((row) => (
-                <Row key={row.id} row={row} stages={stages} now={now} tracking={tracking} labelFilter={labelFilter} config={config} />
+                <Row key={row.id} row={row} now={now} tracking={tracking} labelFilter={labelFilter} config={config} />
               ))}
             </tbody>
           </table>

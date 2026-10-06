@@ -152,7 +152,7 @@ test("Disable on a row and a tile disables without opening the repository", () =
   const repo: RepoSnapshot = { id: "a", name: "alpha-infra", path: "/w/alpha-infra", ok: true, scannedAt: "2026-10-01T00:00:00Z", isGit: true, worktrees: [], changes: [] };
   const [row] = overviewRows({ generatedAt: "2026-10-01T00:00:00Z", repos: [repo] });
   const { t, calls } = tracking();
-  for (const node of [Row({ row, stages: [], now: 0, tracking: t }), Tile({ row, stages: [], now: 0, tracking: t })]) {
+  for (const node of [Row({ row, now: 0, tracking: t }), Tile({ row, now: 0, tracking: t })]) {
     const disable = byTag(node, "button").filter((b) => b.props["aria-label"] === "Disable alpha-infra");
     expect(disable).toHaveLength(1);
     const btn = disable[0];

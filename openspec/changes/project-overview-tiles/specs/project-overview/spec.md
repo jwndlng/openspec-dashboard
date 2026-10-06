@@ -8,11 +8,10 @@ In the tiles layout every tile SHALL have the same width and the same height, wh
 1. **Identity**: the repository's monogram in its repository colour, its name with the path hint and the rename action, and the last-updated age. The identity zone SHALL hold no other action.
 2. **Status**: one badge area holding, in this order, the scan failure, the off-default-branch notice, the work-in-progress indicator, the shared-config profiles and the labels. When the badges do not fit their area, that area SHALL scroll within the tile, keeping every badge reachable, instead of growing the tile; an empty status area SHALL keep its space.
 3. **Figures**: the open total, the to-archive total and the open pull request figure, side by side as three figures of the same style, each with its label below or beside its number.
-4. **Stages**: the per-stage counts, in the board's column order, with zero counts de-emphasised.
-5. **Checkouts**: the checkout summary, on one line.
-6. **Footer**: the tile's actions — **Console**, then **Pull** for a git repository whose last scan succeeded, and **Settings** at the end.
+4. **Checkouts**: the checkout summary, on one line.
+5. **Footer**: the tile's actions — **Console**, then **Pull** for a git repository whose last scan succeeded, and **Settings** at the end.
 
-A tile whose repository has no open changes SHALL keep the same size, show its open and to-archive figures as de-emphasised zeros, and show "no open changes" where the stage counts would be.
+A tile MUST NOT show the number of changes per board stage. A tile whose repository has no open changes SHALL keep the same size and show "no open changes" where the open and to-archive figures would be, keeping its open pull request figure.
 
 **Settings** SHALL be a disclosure that marks whether it is open. Opening it SHALL show the project's own settings and **Disable**, as the "Each managed project carries its own settings on the overview" requirement describes, in a panel laid over the tile without changing the tile's size or moving any other tile. The panel SHALL close when Settings is activated again, when the user presses Escape, when the user clicks outside it, and when another tile's Settings opens; at most one panel SHALL be open at a time. Opening, using or closing the panel MUST NOT open the repository's board. A pending `Scanning…` tile SHALL show no footer actions.
 
@@ -20,7 +19,7 @@ Everything the "Overview offers a table and a tiles layout" requirement lists fo
 
 #### Scenario: Uneven repositories
 - **WHEN** `alpha-infra` has five worktrees and three config profiles and `quill-docs` has no worktree and no open change
-- **THEN** both tiles have the same height, `quill-docs` shows `0 open` and `0 to archive` de-emphasised and "no open changes" in place of the stage counts, and `alpha-infra` reads `5 worktrees · 5 branches active` rather than listing them
+- **THEN** both tiles have the same height, `quill-docs` shows "no open changes" in place of its open and to-archive figures, and `alpha-infra` reads `5 worktrees · 5 branches active` rather than listing them
 
 #### Scenario: Grid reflows
 - **WHEN** the window narrows
@@ -28,7 +27,7 @@ Everything the "Overview offers a table and a tiles layout" requirement lists fo
 
 #### Scenario: Same places on every tile
 - **WHEN** `alpha-infra` is a git repository with agent sessions enabled and `notes-folder` is a folder without git
-- **THEN** on both tiles the name, the badges, the figures, the stage counts, the checkout summary and the footer sit at the same heights, the identity zone holds no button, and only `alpha-infra`'s footer offers Pull
+- **THEN** on both tiles the name, the badges, the figures, the checkout summary and the footer sit at the same heights, the identity zone holds no button, and only `alpha-infra`'s footer offers Pull
 
 #### Scenario: Pull requests among the figures
 - **WHEN** the cached list of `alpha-infra` has 3 open pull requests
