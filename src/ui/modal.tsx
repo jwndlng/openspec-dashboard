@@ -12,6 +12,7 @@ export function Modal({
   onClose,
   canClose,
   wide,
+  returnFocus,
   children,
 }: {
   /** The dialog's accessible name. */
@@ -23,12 +24,26 @@ export function Modal({
   /** Asked before any close; false keeps the dialog open (e.g. while a request is in flight). */
   canClose?: () => boolean;
   wide?: boolean;
+  /**
+   * Where focus goes once the dialog is gone: asked one frame after it unmounts, so the page behind has re-rendered,
+   * and only followed while that element is still on the page. Without it focus is left where the browser puts it.
+   */
+  returnFocus?: () => HTMLElement | null;
   children: ComponentChildren;
 }) {
   const pressed = useRef(false);
   const close = () => {
     if (!canClose || canClose()) onClose();
   };
+  const focusTarget = useRef(returnFocus);
+  focusTarget.current = returnFocus;
+  useEffect(
+    () => () => {
+      const target = focusTarget.current;
+      if (target) requestAnimationFrame(() => restoreFocus(target));
+    },
+    [],
+  );
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
@@ -70,4 +85,10 @@ export function Modal({
       </div>
     </div>
   );
+}
+
+/** Focuses what `find` returns, if it is still on the page. */
+export function restoreFocus(find: () => HTMLElement | null): void {
+  const el = find();
+  if (el?.isConnected) el.focus();
 }

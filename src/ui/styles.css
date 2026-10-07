@@ -702,7 +702,7 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: 
 
 /* Tiles: one size for every repository, in a grid that reflows to the width it gets — never a horizontal scrollbar.
    Fixed zones, each on its own grid row, so every tile puts the same part at the same height: identity, status badges,
-   figures, the checkout summary and the footer. The badge area scrolls inside; the settings panel lies over the tile. */
+   figures, the checkout summary and the footer. The badge area scrolls inside. */
 .tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(340px, 100%), 1fr)); gap: var(--gap-2); }
 .tile {
   --tile-pad: 16px; --tile-foot: 52px;
@@ -715,9 +715,7 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: 
 .tile:hover { background: color-mix(in oklch, var(--bg-surface) 45%, var(--bg-raised)); border-color: color-mix(in oklch, var(--brand) 45%, var(--bg-raised)); }
 @media (prefers-reduced-motion: no-preference) {
   .tile:hover { transform: translateY(-2px); }
-  .tile:has(.tile-settings[open]):hover { transform: none; }
 }
-.tile:has(.tile-settings[open]) { cursor: default; }
 .tile-head { display: flex; align-items: center; gap: 12px; min-width: 0; }
 /* The monogram: the repository's initials in its colour, beside its name. */
 .monogram {
@@ -746,7 +744,7 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: 
   align-self: stretch; display: flex; align-items: center; justify-content: center; margin: 0;
   color: var(--fg-subtle); font-size: 13px; border: 1px dashed var(--border); border-radius: var(--radius);
 }
-/* The footer: the tile's actions, Settings last at the right. Never wraps. */
+/* The footer: the tile's actions, the settings gear last at the right. Never wraps. */
 .tile-foot {
   display: flex; align-items: center; gap: 4px; min-width: 0;
   margin: 0 calc(-1 * var(--tile-pad)); padding: 0 var(--tile-pad);
@@ -761,22 +759,19 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: 
 .tile-checkouts .checkout-count svg { display: inline-block; vertical-align: -2px; margin-right: 4px; }
 .checkout-count { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
 .checkout-count strong { font-family: var(--font-mono); font-weight: 600; color: var(--fg-heading); }
-.tile-foot .tile-settings { margin-left: auto; }
-/* Settings: a native disclosure whose panel covers the zones between the identity and the footer. */
-.tile-settings > summary { list-style: none; display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
-.tile-settings > summary::-webkit-details-marker { display: none; }
-.tile-settings[open] > summary { color: var(--brand-fg); background: var(--brand-softer); }
-.tile-settings-panel {
-  position: absolute; z-index: 2; top: calc(var(--tile-pad) + 40px + 6px); bottom: var(--tile-foot); left: 0; right: 0;
-  display: flex; flex-direction: column; overflow-y: auto; cursor: default;
-  padding: 4px var(--tile-pad); background: var(--bg-raised); border-top: 1px solid var(--border-light);
-}
-.setting-line { display: flex; align-items: center; justify-content: space-between; gap: var(--gap-1); min-height: 30px; border-top: 1px solid var(--border-light); }
-.setting-line:first-child { border-top: 0; }
-.setting-label { font-size: 12px; color: var(--fg-body); white-space: nowrap; }
-.setting-line .input.agent-picker, .setting-line .input.pr-titles-picker { max-width: 12rem; }
+.tile-foot .settings-btn { margin-left: auto; }
+/* The project settings dialog (projectSettings.tsx): one labelled line per setting, Labels, then Disable set apart. */
+.project-settings { display: flex; flex-direction: column; padding: 8px 24px 20px; }
+.project-settings .setting-line { display: flex; align-items: center; justify-content: space-between; gap: var(--gap-1); min-height: 38px; border-top: 1px solid var(--border-light); }
+.project-settings .setting-line:first-child { border-top: 0; }
+.project-settings .setting-label { font-size: 12px; color: var(--fg-body); white-space: nowrap; }
+.project-settings .setting-line .input.agent-picker, .project-settings .setting-line .input.pr-titles-picker { max-width: 12rem; }
 /* Disable is not a setting: set apart below them. */
-.setting-line.setting-disable { margin-top: auto; border-top-color: var(--border); }
+.project-settings .setting-line.setting-disable { margin-top: var(--gap-1); border-top-color: var(--border); }
+/* Empty, the live region takes no room; it says Saving… or Disabling… under the lines while a save runs. */
+.overview .project-settings .settings-status { margin: 0; padding: 0; text-align: left; font-size: 12px; }
+.project-settings .settings-status:not(:empty) { padding-top: 8px; }
+.project-settings .notice { margin-top: 8px; }
 
 /* One checkout: branch, then text markers. Colour only repeats what the text already says. */
 .checkout {
@@ -1401,10 +1396,9 @@ body:has(.detail-overlay) { overflow: hidden; }
 }
 
 /* ---- Projects overview: tracking ---- */
-/* Disable beside Pull, a pending row while the first scan runs, and the Untracked & disabled section below. Own class
-   names throughout, so none of these rules competes with the generic .name/.path/.count ones elsewhere. */
-.disable { display: inline-flex; align-items: center; gap: 6px; margin-left: 4px; }
-.disable-error { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--danger); font-size: 11px; }
+/* A row's failed save before its actions, a pending row while the first scan runs, and the Untracked & disabled section
+   below. Own class names throughout, so none of these rules competes with the generic .name/.path/.count ones elsewhere. */
+.row-error { display: inline-block; vertical-align: middle; max-width: 220px; margin-right: 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--danger); font-size: 11px; }
 .btn.icon-only { padding-left: 6px; padding-right: 6px; }
 .pending-name { color: var(--fg-subtle); font-weight: 400; }
 .projects tr.pending { cursor: default; }
@@ -1436,9 +1430,8 @@ body:has(.detail-overlay) { overflow: hidden; }
 .untracked-path { grid-column: 2; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg-subtle); font-size: 12px; }
 .untracked-actions { grid-column: 3; grid-row: 1; display: inline-flex; gap: 6px; justify-content: flex-end; }
 .untracked-error { grid-column: 1 / -1; color: var(--danger); font-size: 11px; }
-/* A managed project's own settings (projectSettings.tsx): the agent-session switch at row size, the agent and PR titles
-   pickers, the pencil beside the name and the field that replaces it. */
-.agent-controls { display: inline-flex; align-items: center; gap: 6px; }
+/* A managed project's own settings (projectSettings.tsx): the agent-session switch, the agent and PR titles pickers,
+   the pencil beside the name and the field that replaces it. */
 .control.agent-toggle { height: 24px; padding: 0 8px; gap: 6px; font-size: 11px; text-decoration: none; }
 .control.agent-toggle.off-globally { color: var(--fg-disabled); border-style: dashed; }
 .control.agent-toggle.off-globally .switch { opacity: 0.5; }
@@ -1447,9 +1440,11 @@ body:has(.detail-overlay) { overflow: hidden; }
 .btn.rename { margin-left: 2px; padding-top: 0; padding-bottom: 0; color: var(--fg-subtle); opacity: 0; }
 .projects tr:hover .btn.rename, .tile:hover .btn.rename, .btn.rename:focus-visible { opacity: 1; }
 .input.rename-input { height: 26px; width: 14rem; max-width: 100%; padding: 0 6px; font-size: 13px; font-weight: 500; }
-/* The console is an action, not one of the settings before it: set apart by a rule and a gap. */
-.agent-controls .project-console-btn { margin-left: 6px; }
-.agent-controls .project-console-btn::after { content: ""; position: absolute; left: -7px; top: 3px; bottom: 3px; border-left: 1px solid var(--border); }
+/* In a row's actions the console and Pull are actions; the settings gear after them is not: set apart by a rule and a gap. */
+.row-actions > * { vertical-align: middle; }
+.row-actions .project-console-btn { margin-right: 4px; }
+.row-actions .settings-btn { position: relative; margin-left: 10px; }
+.row-actions .settings-btn::before { content: ""; position: absolute; left: -6px; top: 3px; bottom: 3px; border-left: 1px solid var(--border); }
 @media (hover: none) {
   .btn.rename { opacity: 1; }
 }
@@ -1457,7 +1452,7 @@ body:has(.detail-overlay) { overflow: hidden; }
   .untracked-entry { grid-template-columns: minmax(0, 1fr) auto; }
   .untracked-meta, .untracked-path { grid-column: 1 / -1; }
   .untracked-actions { grid-column: 2; }
-  .disable-error { max-width: 120px; }
+  .row-error { max-width: 120px; }
 }
 
 /* Repository labels (project-labels). A label is a grouping, not a status, so it takes no role colour: it wears its own

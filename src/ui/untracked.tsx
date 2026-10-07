@@ -15,8 +15,8 @@ export type TrackingAction = "enable" | "disable" | "ignore" | "integrate" | "fo
 
 /**
  * The overview's per-repository actions and their state, keyed by repository id: bringing a repository in or out
- * (Enable, Disable, Ignore, Integrate, Forget) and a managed project's own settings (name, agent sessions, labels,
- * pull request titles).
+ * (Enable, Disable, Ignore, Integrate, Forget), a managed project's own settings (name, agent sessions, labels,
+ * pull request titles) and which of its dialogs is open.
  * Every one is saved at once.
  */
 export interface Tracking {
@@ -40,8 +40,42 @@ export interface Tracking {
   setLabelColor(id: string, label: string, hue: number | null): void;
   /** The project whose labels dialog is open. */
   labelsOpen?: string;
+  /** Replaces the settings dialog, if one is open, with the labels dialog of `id`. */
   openLabels(id: string): void;
   closeLabels(): void;
+  /** The project whose settings dialog is open. */
+  settingsOpen?: string;
+  openSettings(id: string): void;
+  closeSettings(): void;
+}
+
+/** Which per-project dialog is open on the overview: at most one of each, and never both. */
+export interface OverviewDialogs {
+  settingsOpen?: string;
+  labelsOpen?: string;
+}
+
+export type OverviewDialogEvent =
+  | { type: "openSettings" | "openLabels" | "disabled"; id: string }
+  | { type: "closeSettings" | "closeLabels" };
+
+/**
+ * Labels replaces the settings dialog instead of stacking on it, so two Escape handlers never compete; a project that
+ * was disabled closes its settings dialog, so a later Enable does not bring back a stale one.
+ */
+export function overviewDialogs(state: OverviewDialogs, event: OverviewDialogEvent): OverviewDialogs {
+  switch (event.type) {
+    case "openSettings":
+      return { settingsOpen: event.id };
+    case "closeSettings":
+      return { ...state, settingsOpen: undefined };
+    case "openLabels":
+      return { labelsOpen: event.id };
+    case "closeLabels":
+      return { ...state, labelsOpen: undefined };
+    case "disabled":
+      return state.settingsOpen === event.id ? { ...state, settingsOpen: undefined } : state;
+  }
 }
 
 export const NAME_REQUIRED = "A name is required.";
@@ -56,7 +90,8 @@ export function useTracking({ onConfig, rediscover }: { onConfig: (config: Confi
   const [busy, setBusy] = useState<Record<string, TrackingAction>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [renaming, setRenaming] = useState<string>();
-  const [labelsOpen, setLabelsOpen] = useState<string>();
+  const [dialogs, setDialogs] = useState<OverviewDialogs>({});
+  const dialog = (event: OverviewDialogEvent) => setDialogs((d) => overviewDialogs(d, event));
   const run = async (id: string, action: TrackingAction, work: () => Promise<void>) => {
     if (busy[id]) return;
     setBusy((b) => ({ ...b, [id]: action }));
@@ -78,7 +113,7 @@ export function useTracking({ onConfig, rediscover }: { onConfig: (config: Confi
     busy,
     errors,
     enable: (entry) => void run(entry.id, "enable", () => api.trackRepo(entry.path).then(save(rediscover))),
-    disable: (id) => void run(id, "disable", () => api.setRepoEnabled(id, false).then(save())),
+    disable: (id) => void run(id, "disable", () => api.setRepoEnabled(id, false).then(save(() => dialog({ type: "disabled", id })))),
     ignore: (entry) => void run(entry.id, "ignore", () => api.ignorePath(entry.path).then(save(rediscover))),
     integrate: (entry) =>
       void run(entry.id, "integrate", async () => {
@@ -106,12 +141,18 @@ export function useTracking({ onConfig, rediscover }: { onConfig: (config: Confi
     setLabels: (id, patch) => void run(id, "labels", () => api.setRepoLabels(id, patch).then(save())),
     setPrTitleConvention: (id, convention) => void run(id, "prTitles", () => api.setRepoPrTitleConvention(id, convention).then(save())),
     setLabelColor: (id, label, hue) => void run(id, "labels", () => api.setLabelColor(label, hue).then(save())),
-    labelsOpen,
+    labelsOpen: dialogs.labelsOpen,
     openLabels: (id) => {
       setErrors(({ [id]: _old, ...rest }) => rest);
-      setLabelsOpen(id);
+      dialog({ type: "openLabels", id });
     },
-    closeLabels: () => setLabelsOpen(undefined),
+    closeLabels: () => dialog({ type: "closeLabels" }),
+    settingsOpen: dialogs.settingsOpen,
+    openSettings: (id) => {
+      setErrors(({ [id]: _old, ...rest }) => rest);
+      dialog({ type: "openSettings", id });
+    },
+    closeSettings: () => dialog({ type: "closeSettings" }),
   };
 }
 
@@ -271,32 +312,24 @@ export function UnmanagedSection(props: UntrackedSectionProps) {
 }
 
 /**
- * A tracked repository's Disable: saved at once, and never opens the repository the row or tile stands for. An icon to
- * keep the table's width; the accessible name and the tooltip say what it does.
+ * A tracked repository's Disable, in its settings dialog: saved at once, and never opens the repository the row or tile
+ * stands for. An icon; the accessible name and the tooltip say what it does. A failure's reason is shown by the dialog.
  */
 export function DisableButton({ id, name, tracking }: { id: string; name: string; tracking: Tracking }) {
   const busy = tracking.busy[id];
-  const error = tracking.errors[id];
   return (
-    <span class="disable">
-      <button
-        type="button"
-        class="btn sm ghost icon-only"
-        title={`Disable: stop tracking ${name}: no more scans, off the boards. It is listed under Unmanaged projects below, where Enable brings it back.`}
-        aria-label={`Disable ${name}`}
-        disabled={busy !== undefined}
-        onClick={(e) => {
-          e.stopPropagation(); // in an overview row or tile, a click must not open the repository
-          tracking.disable(id);
-        }}
-      >
-        {busy === "disable" ? "Disabling…" : <IconEyeOff />}
-      </button>
-      {error && (
-        <span class="disable-error" role="alert" title={error}>
-          {error}
-        </span>
-      )}
-    </span>
+    <button
+      type="button"
+      class="btn sm ghost icon-only"
+      title={`Disable: stop tracking ${name}: no more scans, off the boards. It is listed under Unmanaged projects below, where Enable brings it back.`}
+      aria-label={`Disable ${name}`}
+      disabled={busy !== undefined}
+      onClick={(e) => {
+        e.stopPropagation(); // in an overview row or tile, a click must not open the repository
+        tracking.disable(id);
+      }}
+    >
+      {busy === "disable" ? "Disabling…" : <IconEyeOff />}
+    </button>
   );
 }

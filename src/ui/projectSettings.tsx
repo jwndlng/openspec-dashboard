@@ -1,13 +1,15 @@
 // A managed project's own settings on the projects overview — its agent sessions, its agent, its pull request titles,
 // its name and its labels —
-// each saved at once through `Tracking` (project-overview: "Each managed project carries its own settings"). Hook-free,
-// so tests can walk them; the state lives in `useTracking`. Every control stops the click, so a row or tile that holds
-// one never opens the repository's board because of it.
+// each saved at once through `Tracking` (project-overview: "Each managed project carries its own settings"). Apart from
+// Rename, which stays beside the name, they live in the project's settings dialog, opened by the gear on its row or
+// tile. Hook-free, so tests can walk them; the state lives in `useTracking`. Every control stops the click, so a row or
+// tile that holds one never opens the repository's board because of it.
+import type { ComponentChildren } from "preact";
 import { CONVENTIONAL_COMMITS_SHIP_SENTENCE, repoAgentEnabled, type Config, type DetectedLabel, type PrTitleConvention, type RepoConfig } from "../shared/types.ts";
-import { IconPencil, IconTag } from "./icons.tsx";
+import { IconPencil, IconSettings, IconTag } from "./icons.tsx";
 import { labelSuggestions, RepoLabelsEditor } from "./labels.tsx";
 import { Modal } from "./modal.tsx";
-import type { Tracking } from "./untracked.tsx";
+import { DisableButton, type Tracking } from "./untracked.tsx";
 import { followInApp, hrefWithQuery } from "./url.ts";
 
 const stop = (e: Event) => e.stopPropagation();
@@ -71,7 +73,7 @@ export function AutoMergeToggle({ repo, config, isGit, tracking, short = false }
   if (!isGit || !repoAgentEnabled(repo)) return null;
   const on = repo.agent?.autoMergeDocs === true;
   const state = on ? "On" : "Off";
-  // A tile's settings panel names the setting on its line, so the switch there reads just On or Off.
+  // The settings dialog names the setting on its line, so the switch there reads just On or Off.
   const text = short ? state : `Docs auto-merge: ${state}`;
   if (!config.agentSessions.enabled) {
     return (
@@ -235,12 +237,83 @@ export function LabelsButton({ id, name, tracking }: { id: string; name: string;
   );
 }
 
+/**
+ * The gear of a project's row or tile, found again by its project when a dialog closes: the element that opened the
+ * dialog may be gone by then (Labels replaced the settings dialog), the gear is not.
+ */
+export function settingsButtonOf(id: string): () => HTMLElement | null {
+  return () => [...document.querySelectorAll<HTMLElement>("[data-project-settings]")].find((el) => el.dataset.projectSettings === id) ?? null;
+}
+
+/** Opens the project's settings dialog; on a row and a tile alike. */
+export function SettingsButton({ id, name, tracking }: { id: string; name: string; tracking: Tracking }) {
+  return (
+    <button
+      type="button"
+      class="btn sm ghost icon-only settings-btn"
+      data-project-settings={id}
+      aria-label={`Settings of ${name}`}
+      title="Settings: this project's agent sessions, agent, PR titles, docs auto-merge, labels and Disable"
+      onClick={(e) => {
+        e.stopPropagation();
+        tracking.openSettings(id);
+      }}
+    >
+      <IconSettings size={15} />
+    </button>
+  );
+}
+
+/** One labelled line of the settings dialog; nothing when the control does not apply to the project. */
+export function SettingLine({ label, children }: { label: string; children: ComponentChildren }) {
+  if (children === null || children === undefined) return null;
+  return (
+    <div class="setting-line">
+      <span class="setting-label">{label}</span>
+      {children}
+    </div>
+  );
+}
+
+/**
+ * One project's settings, Labels and Disable, in a dialog that rows and tiles open alike. The controls are called as
+ * functions so one that does not apply (null) leaves no line behind. Its saving state and error are the project's, as
+ * in the labels dialog.
+ */
+export function ProjectSettingsDialog({ repo, config, isGit, tracking }: { repo: RepoConfig; config: Config; isGit: boolean; tracking: Tracking }) {
+  const busy = tracking.busy[repo.id];
+  const error = tracking.errors[repo.id];
+  return (
+    <Modal label={`Settings of ${repo.name}`} title="Settings" subtitle={repo.name} icon={<IconSettings />} onClose={tracking.closeSettings} returnFocus={settingsButtonOf(repo.id)}>
+      <div class="project-settings">
+        <SettingLine label="Agent sessions">{AgentToggle({ repo, config, tracking })}</SettingLine>
+        <SettingLine label="Agent">{AgentPicker({ repo, config, tracking })}</SettingLine>
+        <SettingLine label="PR titles">{PrTitlesPicker({ repo, isGit, tracking })}</SettingLine>
+        <SettingLine label="Docs auto-merge">{AutoMergeToggle({ repo, config, isGit, tracking, short: true })}</SettingLine>
+        <SettingLine label="Labels">{LabelsButton({ id: repo.id, name: repo.name, tracking })}</SettingLine>
+        <div class="setting-line setting-disable">
+          <span class="setting-label">Stop tracking</span>
+          <DisableButton id={repo.id} name={repo.name} tracking={tracking} />
+        </div>
+        <p class="hint settings-status" aria-live="polite">
+          {busy === "disable" ? "Disabling…" : busy ? "Saving…" : ""}
+        </p>
+        {error && (
+          <div class="notice danger" role="alert">
+            {error}
+          </div>
+        )}
+      </div>
+    </Modal>
+  );
+}
+
 /** The labels editor for one project, in a dialog; every edit is saved at once. */
 export function RepoLabelsDialog({ repo, repos, detected, labelColors, tracking }: { repo: RepoConfig; repos: RepoConfig[]; detected: DetectedLabel[]; labelColors?: Config["labelColors"]; tracking: Tracking }) {
   const busy = tracking.busy[repo.id] === "labels";
   const error = tracking.errors[repo.id];
   return (
-    <Modal label={`Labels of ${repo.name}`} title="Labels" subtitle={repo.name} icon={<IconTag />} onClose={tracking.closeLabels}>
+    <Modal label={`Labels of ${repo.name}`} title="Labels" subtitle={repo.name} icon={<IconTag />} onClose={tracking.closeLabels} returnFocus={settingsButtonOf(repo.id)}>
       <p class="hint">
         Your labels group projects on the overview. Labels marked with the scan icon were detected from the repository's files; activate one to hide it for this project. The
         swatch before a label chooses its colour on every project. Every change is saved at once.
