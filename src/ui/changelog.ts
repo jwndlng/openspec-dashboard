@@ -15,6 +15,13 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    id: "2026-10-06-project-overview-tiles",
+    date: "2026-10-06",
+    title: "Tidier project tiles",
+    summary:
+      "Every tile on **Projects › Tiles** now has the same layout: name, badges, the **open**, **to archive** and **open PRs** figures side by side, its worktrees and branches, and a footer with **Console**, **Pull** and **Settings**. A project's own settings, **Labels** and **Disable** moved into that **Settings** panel.",
+  },
+  {
     id: "2026-10-06-overview-without-stage-counts",
     date: "2026-10-06",
     title: "A calmer projects overview",

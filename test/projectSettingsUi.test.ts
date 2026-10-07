@@ -9,7 +9,9 @@ import { PendingTableRow, PendingTile, Row, Tile } from "../src/ui/overview.tsx"
 import { overviewRows } from "../src/ui/overviewState.ts";
 import { AUTO_MERGE_HINT, RenameField, RepoLabelsDialog, SESSIONS_OFF } from "../src/ui/projectSettings.tsx";
 import type { Tracking } from "../src/ui/untracked.tsx";
-import { byComponent, byTag, textOf } from "./vnode.ts";
+import { PullButton } from "../src/ui/pull.tsx";
+import { OpenPrCount } from "../src/ui/pullRequests.tsx";
+import { byComponent, byTag, elements, textOf } from "./vnode.ts";
 
 function tracking(state: Partial<Pick<Tracking, "busy" | "errors" | "renaming" | "labelsOpen">> = {}) {
   const calls: string[] = [];
@@ -236,13 +238,14 @@ const autoMergeOf = (node: unknown) => byTag(node as never, "button").find((b) =
 
 test("a git project with agent sessions offers auto-merge of docs-only pull requests, Off by default, saved at once", () => {
   const { t, calls } = tracking();
-  for (const node of layouts(configWith(), t)) {
+  for (const [i, node] of layouts(configWith(), t).entries()) {
     const toggle = autoMergeOf(node);
     expect(toggle?.props.role).toBe("switch");
     expect(toggle?.props["aria-checked"]).toBe(false);
     expect(toggle?.props["aria-label"]).toBe("Auto-merge docs-only pull requests for alpha-infra");
     expect(String(toggle?.props.title)).toContain(AUTO_MERGE_HINT);
-    expect(textOf(toggle)).toBe("Docs auto-merge: Off");
+    // A tile's settings panel names the setting on the line, so its switch reads just the state.
+    expect(textOf(toggle)).toBe(i === 0 ? "Docs auto-merge: Off" : "Off");
     // The tooltip names both actions that may ask for it (archive-auto-merge-docs).
     expect(AUTO_MERGE_HINT).toContain("Ship and Archive ask the agent to enable auto-merge");
     // …and what happens once it has merged (auto-merge-cleanup).
@@ -252,8 +255,8 @@ test("a git project with agent sessions offers auto-merge of docs-only pull requ
   expect(calls).toEqual(['agent a {"autoMergeDocs":true}', 'agent a {"autoMergeDocs":true}']);
 
   const on = tracking();
-  for (const node of layouts(configWith({ agent: { enabled: true, autoMergeDocs: true } }), on.t)) {
-    expect(textOf(autoMergeOf(node))).toBe("Docs auto-merge: On");
+  for (const [i, node] of layouts(configWith({ agent: { enabled: true, autoMergeDocs: true } }), on.t).entries()) {
+    expect(textOf(autoMergeOf(node))).toBe(i === 0 ? "Docs auto-merge: On" : "On");
     click(autoMergeOf(node)!);
   }
   expect(on.calls).toEqual(['agent a {"autoMergeDocs":false}', 'agent a {"autoMergeDocs":false}']);
@@ -272,11 +275,11 @@ test("no auto-merge toggle for a project without git or with its agent sessions 
   for (const node of layouts(configWith({ agent: { enabled: false, autoMergeDocs: true } }), t)) expect(autoMergeOf(node)).toBeUndefined();
 
   const off = tracking();
-  for (const node of layouts(configWith({ sessions: false, agent: { enabled: true, autoMergeDocs: true } }), off.t)) {
+  for (const [i, node] of layouts(configWith({ sessions: false, agent: { enabled: true, autoMergeDocs: true } }), off.t).entries()) {
     expect(autoMergeOf(node)).toBeUndefined();
     const link = byTag(node, "a").find((a) => String(a.props.class).includes("auto-merge-toggle"));
     expect(String(link?.props.href)).toBe("/settings?section=agents");
-    expect(textOf(link)).toBe("Docs auto-merge: On");
+    expect(textOf(link)).toBe(i === 0 ? "Docs auto-merge: On" : "On");
   }
   expect(off.calls).toEqual([]);
 });
@@ -296,4 +299,62 @@ test("without a config entry yet, a row shows only what it showed before", () =>
   const labels = byTag(node, "button").map((b) => String(b.props["aria-label"]));
   expect(labels).toContain("Disable alpha-infra");
   expect(labels.some((l) => l.startsWith("Rename") || l.startsWith("Labels"))).toBe(false);
+});
+
+// project-overview: "Tiles have one size and one layout" — fixed zones, the actions in the footer, settings in a panel.
+const classOf = (el: { props: Record<string, unknown> }) => String(el.props.class ?? "");
+const zone = (node: unknown, name: string) => elements(node as never).find((el) => classOf(el).split(" ").includes(name));
+const settingLines = (node: unknown) => elements(node as never).filter((el) => classOf(el).split(" ").includes("setting-line")).map((el) => textOf(byTag(el, "span").find((s) => classOf(s) === "setting-label")));
+
+test("a tile has its zones in order, and its header holds no action but Rename", () => {
+  const node = Tile({ row, now: 0, tracking: tracking().t, config: configWith() });
+  const order = elements(node).map((el) => classOf(el).split(" ")[0]).filter((c) => ["tile-head", "tile-badges", "tile-figures", "tile-checkouts", "tile-foot"].includes(c));
+  expect(order).toEqual(["tile-head", "tile-badges", "tile-figures", "tile-checkouts", "tile-foot"]);
+  expect(byTag(zone(node, "tile-head"), "button").map((b) => b.props["aria-label"])).toEqual(["Rename alpha-infra"]);
+  // Pull and Settings stand in the footer; the settings themselves are in the panel, not beside them.
+  const foot = zone(node, "tile-foot");
+  expect(byComponent(foot, PullButton)).toHaveLength(1);
+  expect(byTag(foot, "summary").map((s) => s.props["aria-label"])).toEqual(["Settings of alpha-infra"]);
+  expect(switchOf(zone(node, "tile-settings-panel"))).toBeDefined();
+});
+
+test("a tile shows open, to archive and open PRs as figures; without open changes the totals give way to a note", () => {
+  const busy = Tile({ row: { ...row, open: 3, toArchive: 1 }, now: 0, tracking: tracking().t, config: configWith() });
+  const figures = elements(zone(busy, "tile-figures")).filter((el) => classOf(el).startsWith("tile-figure "));
+  expect(figures.map((f) => textOf(byTag(f, "span").find((s) => classOf(s) === "label")))).toEqual(["open", "to archive", "open PRs"]);
+  expect(textOf(byTag(figures[0], "span")[0])).toBe("3");
+  expect(classOf(figures[1])).toContain("success");
+  expect(byComponent(figures[2], OpenPrCount)).toHaveLength(1);
+  // No count per stage (project-overview-remove-kanban-data).
+  expect(textOf(busy)).not.toContain("Drafts");
+
+  const idle = Tile({ row, now: 0, tracking: tracking().t, config: configWith() });
+  const idleFigures = elements(zone(idle, "tile-figures")).filter((el) => classOf(el).startsWith("tile-figure "));
+  expect(idleFigures.map((f) => textOf(byTag(f, "span").find((s) => classOf(s) === "label")))).toEqual(["open PRs"]);
+  expect(textOf(zone(idle, "tile-idle"))).toBe("no open changes");
+});
+
+test("a folder without git offers no Pull on its tile, and a failed scan none either", () => {
+  const [plainRow] = overviewRows({ generatedAt: "2026-10-01T00:00:00Z", repos: [{ ...snapshotRepo, isGit: false }] });
+  expect(byComponent(Tile({ row: plainRow, now: 0, tracking: tracking().t, config: configWith() }), PullButton)).toHaveLength(0);
+  expect(byComponent(Tile({ row: { ...row, ok: false }, now: 0, tracking: tracking().t, config: configWith() }), PullButton)).toHaveLength(0);
+});
+
+test("a tile's settings panel lists the lines a row offers, in order, then Disable — and never opens the board", () => {
+  const t = tracking().t;
+  const tileOf = (config: Config, r = row) => Tile({ row: r, now: 0, tracking: t, config });
+  expect(settingLines(tileOf(configWith({ agents: 2 })))).toEqual(["Agent sessions", "Agent", "PR titles", "Docs auto-merge", "Labels", "Stop tracking"]);
+  expect(settingLines(tileOf(configWith()))).toEqual(["Agent sessions", "PR titles", "Docs auto-merge", "Labels", "Stop tracking"]);
+  const [plainRow] = overviewRows({ generatedAt: "2026-10-01T00:00:00Z", repos: [{ ...snapshotRepo, isGit: false }] });
+  expect(settingLines(tileOf(configWith(), plainRow))).toEqual(["Agent sessions", "Labels", "Stop tracking"]);
+  expect(settingLines(Tile({ row, now: 0, tracking: t }))).toEqual(["Stop tracking"]);
+
+  // The same controls as on the row, by their accessible names.
+  for (const config of [configWith({ agents: 2 }), configWith(), configWith({ sessions: false })]) {
+    const names = (node: unknown) => [...byTag(node as never, "button"), ...byTag(node as never, "select"), ...byTag(node as never, "a")].map((el) => String(el.props["aria-label"])).filter((n) => /^(Agent|PR titles|Auto-merge|Labels|Disable)/.test(n)).sort();
+    expect(names(zone(tileOf(config), "tile-settings-panel"))).toEqual(names(Row({ row, now: 0, tracking: t, config })));
+  }
+
+  const details = byTag(tileOf(configWith()), "details")[0];
+  expect(click(details)).toBe(true);
 });

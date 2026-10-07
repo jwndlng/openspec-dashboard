@@ -29,7 +29,7 @@ const config = {
   labelColors: { go: 290 },
 } as unknown as Config;
 const rows = overviewRows({ generatedAt: "2026-10-01T00:00:00Z", repos: [repo("a", "alpha-infra", ["go"]), repo("b", "beta-soc")] }, config);
-const tracking = {} as Tracking;
+const tracking = { busy: {}, errors: {} } as unknown as Tracking;
 
 /** The label chips a hook-free component renders. */
 const chipsOf = (node: ComponentChildren) => elements(node).filter((e) => /(^| )label-chip( |$)/.test(String(e.props.class ?? "")));

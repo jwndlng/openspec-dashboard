@@ -23,7 +23,7 @@ const repo: RepoSnapshot = {
   ],
 };
 const [row] = overviewRows({ generatedAt: "2026-10-01T00:00:00Z", repos: [repo] });
-const tracking = {} as Tracking;
+const tracking = { busy: {}, errors: {} } as unknown as Tracking;
 const STAGES = ["Backlog", "Drafts", "Ready", "Implementing", "Done"];
 
 test("a row shows the open and to-archive totals and no count per stage", () => {
