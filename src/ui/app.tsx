@@ -24,7 +24,7 @@ import { currentPath, currentQuery, followInApp, href, hrefWithQuery, navigate, 
 import { applyTheme, loadPreference, nextPreference, resolveTheme, savePreference, type ThemePreference } from "./theme.ts";
 import { Help } from "./help.tsx";
 import { IconActivity, IconChevronDown, IconClock, IconGitPullRequest, IconHelp, IconKanban, IconLayoutGrid, IconMonitor, IconMoon, IconRefresh, IconSettings, IconSun } from "./icons.tsx";
-import { LogoMark } from "./logo.tsx";
+import { HeroHomeMark, HeroHomeTitle } from "./heroHome.tsx";
 import { WhatsNew } from "./whatsNew.tsx";
 import { Tour } from "./tour.tsx";
 import { loadTourSeen, saveTourSeen, shouldAutoStart, TOUR_ANCHOR, type TourAnchor, tourAutoStarts } from "./tourState.ts";
@@ -289,10 +289,12 @@ export function App() {
           ground — the current view's own header band and filter bar. The status and actions keep their corner. */}
       <header class="topbar hero">
         <div class="hero-brand">
-          <LogoMark size={60} />
+          <HeroHomeMark size={60} />
           <div class="hero-copy">
             <h1 class="hero-title">
-              Spec <span class="hero-accent">Control</span>
+              <HeroHomeTitle current={route.view === "overview"}>
+                Spec <span class="hero-accent">Control</span>
+              </HeroHomeTitle>
             </h1>
             <p class="hero-tagline">Mission control for every agent change across your repositories. Never miss a change.</p>
           </div>

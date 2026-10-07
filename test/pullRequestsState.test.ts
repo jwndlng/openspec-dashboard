@@ -115,8 +115,8 @@ test("unavailable and failed repositories become notices, not entries", () => {
   answer.repos[0] = { ...answer.repos[0], status: "failed", reason: "gh timed out" };
   const notices = pullRequestNotices(answer, REPOS);
   expect(notices).toEqual([
-    { repoId: "alpha", repoName: "alpha-infra", status: "failed", reason: "gh timed out", fetchedAt: answer.repos[0].fetchedAt, hasList: true },
-    { repoId: "notes", repoName: "plain-notes", status: "unavailable", reason: "not a git repository", hasList: false },
+    { repoId: "alpha", repoName: "alpha-infra", status: "failed", kind: "failed", reason: "gh timed out", fetchedAt: answer.repos[0].fetchedAt, hasList: true },
+    { repoId: "notes", repoName: "plain-notes", status: "unavailable", kind: "not-on-github", reason: "not a git repository", hasList: false },
   ]);
   // A failed repository keeps showing its last good list.
   expect(pullRequestEntries(answer, REPOS).open.map((e) => e.pr.number)).toEqual([2, 42, 1]);
