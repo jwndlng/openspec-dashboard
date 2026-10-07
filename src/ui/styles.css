@@ -936,6 +936,13 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: 
 .settings-section:focus-visible { outline: 1px solid var(--border-strong); outline-offset: 2px; }
 .panel { background: var(--bg-section); border: 1px solid var(--border-light); border-radius: var(--radius-lg); padding: var(--gap-2); display: flex; flex-direction: column; gap: var(--gap-1); }
 .panel h2 { margin-bottom: 4px; }
+/* Settings headings (settings-page: "Sections open with a coloured headline"): the section's headline in the accent,
+   larger and heavier than everything below it; a group inside the section one step down, in heading colour; a group
+   inside an agent profile one more step down. Scoped to Settings, so other views keep the global h2. */
+.settings-section > .panel > h2 { font-size: 16px; font-weight: 600; text-transform: none; letter-spacing: -0.01em; color: var(--brand-fg); margin-bottom: 2px; }
+.settings-section > .panel > h2 .hint { font-size: 12px; font-weight: 400; letter-spacing: 0; }
+.settings-section .panel h3 { font-size: 13px; font-weight: 600; color: var(--fg-heading); margin-top: var(--gap-1); }
+.settings-section .panel h4 { margin: 0; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--fg-subtle); }
 .panel .hint { color: var(--fg-subtle); font-size: 12px; }
 .row { display: flex; align-items: center; gap: var(--gap-1); flex-wrap: wrap; }
 .row .grow { flex: 1; }
@@ -999,13 +1006,34 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: 
 .session-terminal-note { position: absolute; right: 12px; bottom: 8px; font-size: 11px; color: var(--fg-subtle); background: var(--bg-section); padding: 2px 6px; border-radius: var(--radius-sm); }
 .agent-fields { border: 0; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--gap-1); min-width: 0; }
 .agent-fields:disabled { opacity: 0.5; }
-.agent-card { border: 1px solid var(--border-light); border-radius: var(--radius); padding: 6px 10px; }
-.agent-card summary { cursor: pointer; display: flex; align-items: center; gap: var(--gap-1); flex-wrap: wrap; }
-.agent-card .agent-fields { margin-top: var(--gap-1); }
+/* One agent profile: a header that works collapsed (toggle with badges, then Make default / Remove agent) and, expanded,
+   the Command, Change starters and Action prompts groups. */
+.agent-card { border: 1px solid var(--border-light); border-radius: var(--radius); min-width: 0; }
+.agent-card-head { display: flex; align-items: center; gap: var(--gap-1); flex-wrap: wrap; padding: 4px 8px 4px 4px; }
+.agent-toggle {
+  flex: 1; min-width: 0; display: flex; align-items: center; gap: var(--gap-1); flex-wrap: wrap; text-align: left;
+  padding: 4px 6px; border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--fg-body); cursor: pointer;
+}
+.agent-toggle:hover { background: var(--bg-surface); }
+.agent-toggle:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--brand-ring); }
+.agent-toggle strong { color: var(--fg-heading); }
+.agent-chevron { width: 1em; color: var(--fg-subtle); }
+.agent-card-actions { display: flex; gap: 4px; flex-wrap: wrap; }
+.agent-card-body { display: flex; flex-direction: column; gap: var(--gap-2); padding: var(--gap-1) 12px 12px; border-top: 1px solid var(--border-light); }
+.agent-group { display: flex; flex-direction: column; gap: var(--gap-1); min-width: 0; }
+.agent-group .hint { margin: 0; }
+.agent-prompt { display: flex; flex-direction: column; gap: 4px; }
+.agent-prompt-label { font-weight: 500; color: var(--fg-heading); }
+/* Additional instructions hang under their own prompt, so they never read as belonging to the next one. */
+.agent-suffix { margin-left: var(--gap-2); padding-left: var(--gap-1); border-left: 2px solid var(--border-light); }
 .agent-repo { display: grid; grid-template-columns: minmax(140px, 220px) 1fr; gap: 4px var(--gap-1); align-items: center; padding: 4px 6px; }
 .agent-repo .path { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-mono); font-size: 11px; }
 .agent-shortcut { display: grid; grid-template-columns: minmax(120px, 200px) 1fr auto; gap: 4px var(--gap-1); align-items: center; padding: 4px 6px; }
-@media (max-width: 720px) { .agent-shortcut { grid-template-columns: 1fr; } }
+@media (max-width: 720px) {
+  .agent-shortcut { grid-template-columns: 1fr; }
+  .agent-card-actions { width: 100%; padding-left: 4px; }
+  .agent-suffix { margin-left: var(--gap-1); }
+}
 .agent-tools { display: flex; flex-direction: column; gap: 4px; }
 .agent-tools textarea { resize: vertical; }
 .open-work { position: relative; }

@@ -175,7 +175,7 @@ export function Settings({ config, snapshot, onSaved, onRescan, environment, onR
               {discovering ? "Discovering…" : discovered ? <FoundSummary candidates={untrackedCandidates} integratable={untrackedIntegratable} /> : null}
             </p>
           )}
-          <h2>Ignored paths</h2>
+          <h3>Ignored paths</h3>
           <p class="hint">Discovery skips these directories and everything below them. Ignored paths only affect discovery: a repository that is already tracked stays tracked until you forget it on Projects.</p>
           <div class="list">
             {draft.ignorePaths.map((path) => (

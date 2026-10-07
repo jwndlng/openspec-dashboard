@@ -310,7 +310,7 @@ export function SharedConfigPanel({ config, snapshot, onApplied }: { config: Con
 
       {profiles.length > 0 && (
         <>
-          <h2>Repositories</h2>
+          <h3>Repositories</h3>
           <p class="hint">Tick the profiles each repository should carry. Ticks start from what each repository's file carries now; nothing is written until you confirm the preview.</p>
           <div class="grid-wrap">
             <table class="assign">
