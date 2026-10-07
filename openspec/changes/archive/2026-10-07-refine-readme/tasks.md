@@ -21,6 +21,6 @@
 
 ## 4. Check
 
-- [~] 4.1 Read the README top to bottom as a stranger and cut anything that does not help decide, install or trust; verify it is under ~110 lines (`wc -l README.md`), has no superlatives or emoji, and uses only made-up names in examples
+- [x] 4.1 Read the README top to bottom as a stranger and cut anything that does not help decide, install or trust; verify it is under ~110 lines (`wc -l README.md`), has no superlatives or emoji, and uses only made-up names in examples
 - [x] 4.2 Verify every relative link in `README.md` and `CONTRIBUTING.md` points to an existing file (a short `grep -o '](\([^)]*\))'` check), and that `grep -n "openspec-dashboard" README.md` finds only the pre-rename release note
 - [x] 4.3 Run `bun run check` and `openspec validate refine-readme --strict`; verify both pass
