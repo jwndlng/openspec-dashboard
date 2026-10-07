@@ -102,7 +102,7 @@ Workflows MUST pin third-party actions to a full commit SHA, and automated updat
 - **THEN** no job holding `contents: write`, `id-token: write`, `attestations: write` or `pages: write` runs for it
 
 ### Requirement: Contribution and agent conventions are documented
-The repository SHALL contain `CONTRIBUTING.md` describing branch naming (`feat/<openspec-change-name>`, `fix/…`, `chore/…`), Conventional Commits including the `openspec` scope for proposals and archives, one OpenSpec change per pull request, and running `bun run check` before pushing. It SHALL contain `CLAUDE.md` stating the project commands and the invariants agents must preserve — read-only behaviour towards tracked repositories with the read-only git allow-list, loopback-only binding, access to `@fission-ai/openspec` internals only through `src/server/openspecAdapter.ts`, a self-contained UI without runtime network access, state confined to `~/.spec-control/`, and staying within a change's declared Impact when sessions run in parallel — and an `AGENTS.md` that points to `CLAUDE.md`.
+The repository SHALL contain `CONTRIBUTING.md` describing branch naming (`feat/<openspec-change-name>`, `fix/…`, `chore/…`), Conventional Commits including the `openspec` scope for proposals and archives, one OpenSpec change per pull request, and running `bun run check` before pushing. It SHALL contain `CLAUDE.md` stating the project commands and the invariants agents must preserve — read-only behaviour towards tracked repositories with the read-only git allow-list, loopback-only binding, framework-specific code only in that framework's module under `src/server/frameworks/<id>/` and access to `@fission-ai/openspec` internals only through `src/server/frameworks/openspec/adapter.ts`, a self-contained UI without runtime network access, state confined to `~/.spec-control/`, and staying within a change's declared Impact when sessions run in parallel — and an `AGENTS.md` that points to `CLAUDE.md`.
 
 #### Scenario: Branch name matches the change
 - **WHEN** a contributor starts implementing the OpenSpec change `dedupe-discovery`
@@ -111,3 +111,7 @@ The repository SHALL contain `CONTRIBUTING.md` describing branch naming (`feat/<
 #### Scenario: Agent finds the invariants
 - **WHEN** an agent session opens the repository
 - **THEN** `CLAUDE.md` (or `AGENTS.md` pointing to it) lists the invariants and the `dev`, `check` and `build` commands
+
+#### Scenario: Agent finds where framework code belongs
+- **WHEN** an agent session is asked to change how OpenSpec changes are read
+- **THEN** `CLAUDE.md` names `src/server/frameworks/openspec/` as the place for that code and the framework contract it implements
