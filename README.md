@@ -1,204 +1,102 @@
 # Spec Control
 
-**Spec Control — mission control for every agent change across your repositories. Never miss a change.**
-
-A local Kanban board for every [OpenSpec](https://github.com/Fission-AI/OpenSpec) repository on your machine.
-It reads your repositories and shows where each change stands. It ships as a single binary and runs on `127.0.0.1` only.
+A local Kanban board that shows where every [OpenSpec](https://github.com/Fission-AI/OpenSpec) change stands, across
+all the repositories on your machine — and lets you hand each one to a coding agent without leaving the board.
 
 **[Live demo →](https://blog.wndlng.ch/spec-control/)** — the real UI on sample data, nothing to install.
 
 <a href="https://blog.wndlng.ch/spec-control/#/board">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="https://blog.wndlng.ch/spec-control/screenshots/board-dark.png">
-    <img alt="The combined Kanban board: one column per lifecycle step from New to Archived, cards grouped and coloured by repository, with task progress, last activity, branch badges and warnings." src="https://blog.wndlng.ch/spec-control/screenshots/board-light.png">
+    <img alt="The combined Kanban board: one column per lifecycle step from Backlog to Archived, cards grouped and coloured by repository, with task progress, last activity, branch badges and warnings." src="https://blog.wndlng.ch/spec-control/screenshots/board-light.png">
   </picture>
 </a>
 
+## Why
+
+OpenSpec keeps every change as plain files in its repository: a proposal, specs, a design, a task list. That works
+well for one repository. With ten of them, and agents working on several changes at once in different branches and
+worktrees, you lose track: which changes are still drafts, which are being implemented, which are done and waiting
+for you, which can be archived, and which agent is still running.
+
+Spec Control reads your repositories and puts all of that on one board. There is no server to host, no account and
+no database — the repositories are the source of truth, and the dashboard only looks at them unless you click
+something.
+
+## Features
+
+- **One board for everything** — a column per lifecycle step (Backlog, Drafts, Ready, Implementing, Done, Archived),
+  per repository or across all of them, including work that only exists in a worktree so far.
+- **Projects at a glance** — open changes, work in progress (uncommitted, unpushed, stale checkouts) and your own
+  labels for every repository under your workspace folders.
+- **Agent sessions** — start Claude Code, Codex or any terminal agent on a change; it works in its own git worktree,
+  and its terminal opens in the browser next to the change.
+- **Everyday actions** — create or dismiss a change, pull a repository, clean up merged branches and worktrees —
+  each only when you ask for it.
+- **Pull requests** — each change's pull request on its card, with checks and readiness, read through your GitHub CLI.
+- **New projects** — set up OpenSpec in an existing repository, or start a new one, with your agent doing the
+  `openspec init`.
+- **One file, offline** — a single binary with the UI built in, a short tour on first start and a Help page for the
+  details.
+
+The built-in **Help** explains every part of the dashboard; the full requirements are in
+[`openspec/specs/`](openspec/specs/).
+
+## How it is organised
+
+Spec Control has three levels, and an agent can work at each of them. The further down you go, the narrower its
+reach.
+
+| Level | What you see | Where an agent runs |
+| --- | --- | --- |
+| **Global** | The projects overview and the board across all repositories | The **console**: your agent in a folder of its own, outside every repository — for drafting, comparing or chores |
+| **Project** | One repository's board and settings | The **project console**: your agent in the repository's own folder, for anything that is not a change |
+| **Change** | A card and its detail view: proposal, specs, design, tasks | An **agent session** on its own branch, in its own git worktree, so your checkout stays untouched |
+
 ## Run
 
-Download `spec-control-<tag>-<platform>` for macOS (arm64, x64) or Linux (x64, arm64) from the
-[releases page](https://github.com/jwndlng/spec-control/releases). It needs nothing else. Check it with
-`shasum -a 256 -c --ignore-missing SHA256SUMS` and `gh attestation verify <file> --repo jwndlng/spec-control`,
-then `chmod +x` it. The macOS binaries are not notarised: if macOS refuses to open one, run
-`xattr -d com.apple.quarantine <file>`. Releases built before the rename to Spec Control are named
-`openspec-dashboard-<tag>-<platform>` and verify with `--repo jwndlng/openspec-dashboard`.
-What's new in your version is in the dashboard itself: the **What's new** button in the top corner, offline.
+1. Download `spec-control-<tag>-<platform>` for macOS (arm64, x64) or Linux (x64, arm64) from the
+   [releases page](https://github.com/jwndlng/spec-control/releases). It needs nothing else.
+2. Verify it: `shasum -a 256 -c --ignore-missing SHA256SUMS` and
+   `gh attestation verify <file> --repo jwndlng/spec-control`.
+3. `chmod +x` it and run it; it opens your browser. Options: `--port N`, `--no-open`, `--version`.
 
-Building from source needs [Bun](https://bun.sh) ≥ 1.4. The compiled binary needs nothing else.
+The macOS binaries are not notarised: if macOS refuses to open one, run `xattr -d com.apple.quarantine <file>`.
+Releases from before the rename are named `openspec-dashboard-<tag>-<platform>` and verify with
+`--repo jwndlng/openspec-dashboard`.
+
+**First run.** Open **Settings** and add a workspace root such as `~/Workspace`. Back on **Projects**, the
+repositories found under it are listed below your tracked ones; **Enable** starts tracking one. Agent sessions are off
+until you turn them on in Settings.
+
+**From source.** Needs [Bun](https://bun.sh) ≥ 1.4.
 
 ```sh
 bun install
 bun run build                  # → dist/spec-control
-./dist/spec-control            # opens the browser; options: --port N, --no-open, --version
 bun run dev                    # or run from source on http://127.0.0.1:4711
 ```
 
-On first run, open **Settings** and add a workspace root such as `~/Workspace`. Then go back to **Projects**: the
-repositories found under it are listed below your tracked ones, and **Enable** starts tracking one right away.
-A short tour points out the main controls on your first visit, and the **Help** tab explains each part of the
-dashboard; both are built in and work offline.
-
-## Features
-
-- **Projects**: one row per repository, showing how many changes are open and ready to archive, work in progress
-  and when it was last updated, as a table or as tiles (`view=tiles`). Click a row or tile to open that repository's
-  board. Below these **Managed projects**, **Unmanaged projects** lists in one list what you could bring in —
-  disabled repositories, OpenSpec repositories found under your workspace roots, and git repositories without
-  OpenSpec, each labelled — with the actions that fit it (**Enable**, **Ignore**, **Integrate**, **Forget** for a
-  disabled one), each saved at once; **Disable** on a row or in a tile's **Settings** moves a repository down there.
-  Each managed project also carries its own settings on its row or in its tile's **Settings** panel, saved at once:
-  **Rename** (the pencil beside its name), **Labels**,
-  and an **Agent sessions** switch — Enabled unless you turn it off — with an agent picker when you configured more
-  than one agent, and **Docs auto-merge** (see Agent sessions).
-  ([project-overview](openspec/specs/project-overview/spec.md))
-- **Work in progress**: for the main checkout and every git worktree of a repository, whether it holds uncommitted
-  changes or unpushed commits, or is stale, e.g. `2 worktrees · 1 uncommitted · 1 unpushed`. Sort by it or filter to
-  it. Chips on tiles and on a repository's header show each checkout's branch with `●N` uncommitted items, `↑N`
-  unpushed commits (ahead of the upstream, or never pushed), `↓N` behind, `stale`, `locked` or `?` (unknown), each with
-  a tooltip. Ahead, behind and unpushed reflect your last `git fetch`: the dashboard never fetches. Only counts are
-  recorded, never file names. ([change-scanner](openspec/specs/change-scanner/spec.md))
-- **Labels**: give a repository your own labels (`client`, `platform`, …) with **Labels** on its row or tile, and
-  the scan adds technology labels from marker files in the project folder and its immediate subfolders: `terraform`
-  (`.tf` files), `go` (`go.mod`), `rust` (`Cargo.toml`), `javascript` (`package.json`), `typescript`
-  (`tsconfig.json`), `python` (`pyproject.toml`, `requirements.txt`, `setup.py`, `Pipfile`), `ruby` (`Gemfile`),
-  `java` (`pom.xml`, `build.gradle`, `build.gradle.kts`), `dotnet` (`.csproj`, `.sln`), `php` (`composer.json`),
-  `swift` (`Package.swift`), `docker` (`Dockerfile`, `compose.yaml`, `docker-compose.yml`), `helm` (`Chart.yaml`) and
-  `ansible` (`ansible.cfg`). Detection only lists file names — it opens no file and runs no git. Hide a wrong guess per
-  repository in the same dialog. Labels show on rows, tiles and a repository's header; activate one to filter Projects by it
-  (`?label=terraform&label=client` lists repositories carrying both). Your labels live in
-  `~/.spec-control/config.json`, never in the repository. ([project-labels](openspec/specs/project-labels/spec.md))
-- **Boards**: one board per repository, plus one across all of them. Columns follow the lifecycle: Backlog → Drafts
-  (with a bar of written artifacts) → Ready → Implementing → Done → Archived. Changes in git worktrees are included, so work shows
-  up before it is merged. ([kanban-board](openspec/specs/kanban-board/spec.md),
-  [change-scanner](openspec/specs/change-scanner/spec.md))
-- **Awaiting validation**: a task written `- [~]` in `tasks.md` means the agent finished it but a person still has to
-  confirm it — "check it in the browser", "try the packaged build". It counts towards the change being finished but
-  never towards `done`, so a change whose tasks are all `- [x]` or `- [~]` sits in **Done** with a **Validate** badge
-  and a bar like `13 + 2 awaiting / 15 Tasks`, and offers **Validate** instead of **Implement**. **Archive** is
-  offered for the whole `Done` column, so you can archive straight away; `openspec archive` will ask about the
-  leftovers, and that question is the validation. The dashboard only reads the marker: it never writes, ticks or
-  clears a checkbox in any repository — your agent does that, in its own session.
-  ([change-scanner](openspec/specs/change-scanner/spec.md), [kanban-board](openspec/specs/kanban-board/spec.md))
-- **Dependencies**: a change can say it must wait for others of the same repository with a `depends-on.yaml` next
-  to its proposal — `depends_on: [add-billing-schema, add-billing-api]` — or by picking them under **Depends on** in
-  the **New change** form, which writes that file. A dependency is met once the main checkout holds it archived or in
-  **Done**, so "implemented and merged" as of your last pull. Until every dependency is met, the card shows
-  `waits for …` where **Implement** would be and the server refuses Implement; drafting, validating and archiving stay
-  available. A name that does not exist, a cycle or an unreadable file is reported on the change and also holds
-  Implement back. The details view lists **Depends on** and **Required by**. The file is yours: edit it by hand or let
-  your agent do it. ([change-dependencies](openspec/specs/change-dependencies/spec.md))
-- **Change details**: **Show details** on a card opens the change's proposal, design, specs and tasks in an overlay
-  over the board; close it with `Escape` to get back to the board as you left it. Apply and start commands are run
-  by hand or through an agent session. ([change-detail](openspec/specs/change-detail/spec.md))
-- **Activity**: a feed of changes created, moved, archived and tasks ticked, including what happened while the
-  dashboard was not running. ([activity-feed](openspec/specs/activity-feed/spec.md))
-- **Pull requests**: every open pull request of your tracked GitHub repositories, plus those merged or closed in the
-  last 7 days, with state, review decision, checks and a "review requested from you" marker; filter by repository,
-  state or what awaits your review. Each repository's open count also shows on Projects, and its board header opens
-  that repository's list. A card whose change's branch is exactly a pull request's head branch shows `PR #<number>`
-  with its state and, while it is open, whether it is **ready** (every check green, no merge conflict) or why not, linking
-  to it on GitHub; until it is ready the card keeps its working tint. The change's detail header shows its title,
-  state, review decision, checks, conflicts and readiness; a change on an off-convention branch simply shows none. It
-  reads them with your own [GitHub CLI](https://cli.github.com) (`gh pr list`, `gh api user` — nothing else, and nothing
-  is ever changed on GitHub), and only when you open the view, a repository's dialog or a board with a list older than
-  five minutes, or activate **Refresh** — and, as the one timed case, while an open board in a visible tab shows a pull
-  request that is not ready: then it re-reads just those repositories every minute while checks run, every five minutes
-  otherwise. Never during a scan or from Projects. Without `gh`, without being signed in, or for a
-  repository that is not on `github.com`, it simply says so. ([pull-requests](openspec/specs/pull-requests/spec.md))
-- **New change**: create and stage `openspec/changes/<name>/` from a repository's board, or from the combined
-  board with a project dropdown, optionally with a prompt.
-  Nothing is committed.
-  ([change-creation](openspec/specs/change-creation/spec.md))
-- **Dismiss change**: drop a change you are not going ahead with from its detail view. The confirmation lists every file
-  and says which ones git can restore and which are lost for good; confirming deletes `openspec/changes/<name>/` from
-  the main checkout and stages that removal. Nothing is committed, and worktrees and branches are left alone.
-  ([change-dismissal](openspec/specs/change-dismissal/spec.md))
-- **Pull**: fetch and fast-forward a repository's main checkout. Never merges, rebases, stashes or switches branches.
-  ([repository-pull](openspec/specs/repository-pull/spec.md))
-- **Clean up**: remove a repository's leftover worktrees and delete local branches whose work is merged, including
-  squash merges. Only what provably holds no work of its own is offered, and nothing goes before you confirm.
-  Remote branches are never touched. ([repository-cleanup](openspec/specs/repository-cleanup/spec.md))
-- **Shared config**: keep `context` and `rules` for `openspec/config.yaml` as profiles and apply them to selected
-  repositories, with a diff preview first. ([shared-config](openspec/specs/shared-config/spec.md))
-- **Agent sessions** (off by default): start your agent CLI, such as Claude Code, for a change in its own git worktree.
-  Its terminal is the **Console** tab of that change's detail view, next to the change's artifacts, so one change is
-  one place, and every card carries a link to it in the same top-right corner. While an agent works, the card's start
-  button becomes its status — activate it to open the terminal, where the next step and **End session** are.
-  **Open work** in the top bar lists every running agent and every worktree that still holds something
-  (uncommitted, unpushed, pushed, merged) across all repositories.
-  A branch that no longer merges into the default branch says so, with the files that clash — worked out locally, so it
-  is as fresh as your last fetch — and **Resolve conflicts** hands your agent the job. The dashboard merges, rebases
-  and pushes nothing itself; it only asks, exactly as **Ship** does.
-  **Docs auto-merge** (off by default, per project): when everything a session would ship — committed or not — lies
-  under `openspec/`, such as an archive branch or a drafted proposal, **Ship** also asks the agent to enable auto-merge
-  on the pull request, so it merges once its required checks pass. **Archive** does the same when its worktree holds
-  nothing outside `openspec/`, but only if the agent opens a pull request for the archive — say so in the Archive
-  prompt's additional instructions; the dashboard never asks for one just for this. Anything else is left for review as
-  before, and the session panel says when the agent was asked. A repository without required checks merges as soon as
-  auto-merge is on. The agent enables auto-merge; the dashboard itself merges nothing. Once a pull-request refresh —
-  yours, or an open board's watch — shows such a pull request merged, the dashboard ends that session and removes its
-  worktree under the same checks as **End session**, without asking: your opt-in stands for it. A worktree that is not
-  clean or holds work found nowhere else is kept and the session says why; the local branch is always kept, for
-  repository cleanup after your next **Pull**. Nothing happens until a pull-request list is refreshed.
-  A tracked folder that is not a git repository works too — there the agent runs in the folder itself, so it edits your
-  files directly, with no branch and no undo, and the session says so. The same goes for an **Integrate** session and
-  a project's console.
-  Claude Code is configured by default; **Codex** and **Antigravity** are presets one click away in Settings, each
-  marked with whether its executable was found on this machine — nothing is added just because an agent is installed.
-  Each preset's prompts expect the OpenSpec commands or skills that `openspec init --tools <tool>` installs for that
-  agent (`/opsx:*` for Claude Code, `/opsx-*` for Antigravity, the `openspec-*` skills for Codex). Any other agent CLI
-  that runs in a terminal can be added with its own command line and prompts.
-  ([agent-sessions](openspec/specs/agent-sessions/spec.md))
-- **Integrate a repository**: Projects lists the git repositories under your workspace roots that do not use OpenSpec
-  yet, next to the discovered ones that already do. **Integrate** starts your agent in that repository to run
-  `openspec init` there and answer its questions. The dashboard writes nothing itself, and starts tracking the
-  repository only once `openspec/config.yaml` is actually on disk — never on the agent's word. That one session runs
-  in the checkout itself, with no branch and no undo, because that is where the marker has to land.
-  ([repo-integration](openspec/specs/repo-integration/spec.md))
-- **New project**: from the projects overview, pick one of your workspace roots and type a folder name. The dashboard
-  creates that one empty folder, runs `git init` in it — no commit, no remote — and starts your agent there exactly as
-  **Integrate** does, to run `openspec init`; the project is tracked once `openspec/config.yaml` exists, and you carry
-  on in the same terminal — the project's console button reopens it after you closed it.
-  ([project-creation](openspec/specs/project-creation/spec.md))
-- **Console**: the terminal button next to the theme control opens your default agent outside every change, with no
-  prompt — for drafting a new change, looking across repositories or any chore. It runs in a console folder
-  (`~/.spec-control/console/` unless you pick another one in Settings, never inside a tracked repository), one at
-  a time, and keeps running when you close it. ([main-console](openspec/specs/main-console/spec.md))
-- **Project console**: each managed project has its own console button — on its overview row and tile and on its
-  board — that opens the project's agent with no prompt, for anything about the project that is not a change. It runs
-  in the project's own folder (the main checkout), with no branch and no undo, and the console says so; one per
-  project, kept running when you close it. The session that set a new project up is its console until you start
-  another. ([project-console](openspec/specs/project-console/spec.md))
-- Light and dark themes.
-
 ## What it touches
 
-- It listens only on `127.0.0.1`. Mutating API calls must come from the same origin, so a script calling them has to
-  send `Content-Type: application/json`.
-- It reads repositories with read-only git commands. Scanning, polling and discovery never write anything or contact
-  a remote.
-- It reaches the network in two places, both on something you do: **Pull**, using git's own credentials, and the
-  **Pull requests** query, using your `gh` sign-in — when you click Refresh, open a view that shows pull requests
-  (including a board) with a list older than five minutes, or keep a board open in a visible tab while one of its
-  cards' pull requests is not ready (at most once a minute, only for those repositories). Neither ever sees, stores or asks for a credential, and the
-  pull-request query runs `gh` outside every repository, writes nothing and changes nothing on GitHub.
-- It writes to a repository only when you click something: **Pull** (using git's own credentials) and, when you confirm **Resolve and pull**, removing the change files it created here that the incoming
-  commits already contain — a copy of anything that differs is kept under `~/.spec-control/` first; **New
-  change** (the change's directory, with `depends-on.yaml` when you picked dependencies), **Dismiss change** (deleting that change's directory), **applying shared config**, creating or removing an
-  **agent session's worktree**, and **Clean up** (removing worktrees and deleting merged local branches you selected).
-  The one exception is the first start after upgrading from `~/.openspec-dashboard/`: moving its folder runs
-  `git worktree repair` for the session worktrees it created, so each repository knows where they are now.
-  The full list is in the [dashboard-api spec](openspec/specs/dashboard-api/spec.md).
-- Outside repositories, it creates a folder only for **New project**: one empty folder directly inside a workspace root
-  you picked, never inside a tracked repository, with `git init` run in it.
-- Its own state lives in `~/.spec-control/` (or `$SPEC_CONTROL_HOME`). Upgrading from a release that kept it in
-  `~/.openspec-dashboard/` needs nothing: the first start moves it there, worktrees included, and leaves a link at the
-  old path. `OPENSPEC_DASHBOARD_HOME` is still read when `SPEC_CONTROL_HOME` is unset, for one more release.
+- It listens on `127.0.0.1` only.
+- It reads your repositories with read-only git commands. Scanning and polling never write, fetch or contact a remote.
+- It changes a repository only on something you do — Pull, New change, Dismiss, Clean up, applying shared config,
+  or starting and ending an agent session's worktree. It never commits or pushes; your agent does that, under
+  its own permission prompts.
+- It uses the network only for **Pull** (through git) and to read pull requests (through `gh`), with those tools' own
+  sign-ins. It never sees your credentials and never changes anything on GitHub.
+- Its own state lives in `~/.spec-control/`.
+
+The complete list is in the [dashboard-api spec](openspec/specs/dashboard-api/spec.md).
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md). Run `bun run check` (lint, typecheck, tests) before you push. Agents should
-start with [CLAUDE.md](CLAUDE.md). Requirements live in [`openspec/specs/`](openspec/specs/).
+Found a bug, or have an idea? Please [open an issue](https://github.com/jwndlng/spec-control/issues) rather than a
+pull request. Every change here is planned as an OpenSpec change and implemented by the maintainer and their agents,
+so an issue is the quickest way to get something in.
+
+Working on the project itself? Start with [CONTRIBUTING.md](CONTRIBUTING.md) and, for agents, [CLAUDE.md](CLAUDE.md).
 
 ## License
 
