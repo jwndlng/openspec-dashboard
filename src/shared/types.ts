@@ -93,6 +93,12 @@ export interface ChangeSnapshot {
    * otherwise — and in snapshots cached by older versions, which therefore read as not blocked.
    */
   blocked?: boolean;
+  /**
+   * The GitHub issue this change was imported from, as its `issue.yaml` records it (openspec/specs/issue-import). Read
+   * for active and archived changes; display only, never an input to columns, counts or actions. The link is always
+   * derived with `issueUrl`, never read from the file.
+   */
+  sourceIssue?: SourceIssue;
   /** Non-fatal problems while reading this change. */
   warnings?: string[];
 }
@@ -1078,6 +1084,53 @@ export interface RepoPullRequests {
   /** A limit was reached, so the list is not complete. */
   truncated?: { open: boolean; closed: boolean };
   pullRequests: PullRequest[];
+}
+
+/** A change's source issue: the GitHub repository as `owner/name`, the issue number and its title at import time. */
+export interface SourceIssue {
+  github: string;
+  number: number;
+  title?: string;
+}
+
+/** One open issue of a GitHub repository, as the dashboard reads it from `gh issue list` (openspec/specs/issue-import). */
+export interface GithubIssue {
+  number: number;
+  title: string;
+  /** The issue text as written; Markdown, never rendered as HTML by the dialog. */
+  body: string;
+  /** The issue on github.com; the UI links to it and never fetches it. */
+  url: string;
+  /** Login of the author; empty when GitHub reports none. */
+  author: string;
+  labels: string[];
+  createdAt: string;
+  updatedAt?: string;
+}
+
+/**
+ * The open issues of one tracked repository, fetched on the user's request and kept in memory only. `issues` is empty
+ * unless `status` is `ok`.
+ */
+export interface RepoIssues {
+  repoId: string;
+  /** `owner/name` when the repository's `origin` is on github.com. */
+  github?: string;
+  /** `unavailable`: cannot be queried at all (not on GitHub, no `gh`, not signed in). `failed`: this attempt did not work. */
+  status: "ok" | "unavailable" | "failed";
+  /** Why it is `unavailable` or `failed`; credentials in any text from `gh` are masked. */
+  reason?: string;
+  setup?: RepoPullRequests["setup"];
+  fetchedAt?: string;
+  /** The limit of 100 was reached, so the list is not complete. */
+  truncated?: boolean;
+  issues: GithubIssue[];
+}
+
+/** What the import sends along with a create request: which issue the change comes from. */
+export interface ChangeIssueRef {
+  number: number;
+  title?: string;
 }
 
 export interface PullRequestsResponse {

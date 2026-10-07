@@ -1,5 +1,5 @@
 import type { ActivityQuery } from "../shared/activity.ts";
-import type { ActivityPage, AutoMergePromptResult, ConsoleSession, ProjectConsoleLike, CleanupPreview, CleanupResult, CleanupSelection, CreateChangeResponse, DismissPreview, DismissResult, EnvironmentReport, PromptResult, PullRequestsResponse, PullResolve, PullResult, ShipResult, StartResult, WorkStatus } from "../shared/types.ts";
+import type { ActivityPage, AutoMergePromptResult, ConsoleSession, ProjectConsoleLike, CleanupPreview, CleanupResult, CleanupSelection, ChangeIssueRef, CreateChangeResponse, DismissPreview, DismissResult, EnvironmentReport, PromptResult, PullRequestsResponse, PullResolve, PullResult, RepoIssues, ShipResult, StartResult, WorkStatus } from "../shared/types.ts";
 import type { AgentAvailability, ArtifactFileContent, ChangeArtifacts, Config, CreateProjectResponse, DiscoverResult, IntegrationSession, PrTitleConvention, RepoConfig, ScanTriggerResult, Session, SessionAction, SessionWorktree, SharedConfig, SharedConfigApplyResult, SharedConfigAssignment, SharedConfigPreview, Snapshot } from "../shared/types.ts";
 import { socketOrigin } from "./url.ts";
 
@@ -85,10 +85,15 @@ export interface Api {
   environment(force?: boolean): Promise<EnvironmentReport>;
   /**
    * Creates a new change directory in the repository: `openspec/changes/<name>/` with the schema marker and, when a
-   * non-empty prompt is given, `prompt.md`, and with dependencies `depends-on.yaml`. Atomic; a duplicate name is refused
-   * with `409`.
+   * non-empty prompt is given, `prompt.md`, with dependencies `depends-on.yaml`, and for an imported issue `issue.yaml`.
+   * Atomic; a duplicate name is refused with `409`.
    */
-  createChange(repoId: string, name: string, prompt?: string, dependsOn?: string[]): Promise<CreateChangeResponse>;
+  createChange(repoId: string, name: string, prompt?: string, dependsOn?: string[], issue?: ChangeIssueRef): Promise<CreateChangeResponse>;
+  /**
+   * The repository's open GitHub issues, through the GitHub CLI's read-only `gh issue list`. Reaches GitHub, so it is
+   * only ever called when the user opens the Import from issues dialog or activates its Refresh.
+   */
+  listIssues(repoId: string): Promise<RepoIssues>;
   /**
    * Fetches the repository's remote and fast-forwards its main checkout when that is safe. The only operation that
    * makes the dashboard contact a remote; it never runs unless the user asks.
@@ -225,11 +230,12 @@ export const httpApi: Api = {
     call<DiscoverResult>("/api/discover", { method: "POST", body: scanRoots || ignorePaths ? JSON.stringify({ scanRoots, ignorePaths }) : undefined }),
   scan: () => call<ScanTriggerResult>("/api/scan", { method: "POST" }),
   environment: (force) => call<EnvironmentReport>(`/api/environment${force ? "?force=1" : ""}`),
-  createChange: (repoId, name, prompt, dependsOn) =>
+  createChange: (repoId, name, prompt, dependsOn, issue) =>
     call<CreateChangeResponse>(`/api/repos/${encodeURIComponent(repoId)}/changes`, {
       method: "POST",
-      body: JSON.stringify({ name, ...(prompt !== undefined && prompt !== "" ? { prompt } : {}), ...(dependsOn?.length ? { dependsOn } : {}) }),
+      body: JSON.stringify({ name, ...(prompt !== undefined && prompt !== "" ? { prompt } : {}), ...(dependsOn?.length ? { dependsOn } : {}), ...(issue ? { issue } : {}) }),
     }),
+  listIssues: (repoId) => call<RepoIssues>(`/api/repos/${encodeURIComponent(repoId)}/issues`, { method: "POST" }),
   pullRepo: (repoId) => call<PullResult>(`/api/repos/${encodeURIComponent(repoId)}/pull`, { method: "POST" }),
   pullAll: () => call<{ results: PullResult[] }>("/api/pull", { method: "POST" }),
   resolvePull: (repoId, resolve) => call<PullResult>(`/api/repos/${encodeURIComponent(repoId)}/pull`, { method: "POST", body: JSON.stringify({ resolve }) }),
@@ -309,6 +315,7 @@ export const api: Api = {
   scan: () => current.scan(),
   environment: (force) => current.environment(force),
   createChange: (...args) => current.createChange(...args),
+  listIssues: (repoId) => current.listIssues(repoId),
   pullRepo: (repoId) => current.pullRepo(repoId),
   pullAll: () => current.pullAll(),
   resolvePull: (...args) => current.resolvePull(...args),

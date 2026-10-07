@@ -14,6 +14,7 @@ import { discoverRepos } from "./discover.ts";
 import { environmentReport } from "./environment.ts";
 import { confirmPendingIntegrations, startIntegration } from "./integration.ts";
 import { MAX_BLOCKING_FILES, PullBusyError, pullAll, pullRepository, resolvePullRepository } from "./pull.ts";
+import { Issues } from "./issues.ts";
 import { PullRequests, type RepoTarget } from "./pullRequests.ts";
 import type { Scanner } from "./scanner.ts";
 import { applyTo, EMPTY_SHARED_CONFIG, loadSharedConfig, previewFor, SharedConfigValidationError, saveSharedConfig } from "./sharedConfig.ts";
@@ -29,6 +30,8 @@ export interface AppState {
   activity?: ActivityLog;
   /** Cached pull-request lists; created on first use, so a state without one still serves the endpoints. */
   pullRequests?: PullRequests;
+  /** Issue queries in flight; created on first use. Holds no list between requests. */
+  issues?: Issues;
 }
 
 /** The part of Bun's server object the handler needs: upgrading the terminal request to a WebSocket. */
@@ -590,7 +593,7 @@ async function artifactRoutes(state: AppState, url: URL, match: RegExpExecArray)
 
 /**
  * The one API route that writes into a tracked repository outside `openspec/config.yaml`: creates
- * `openspec/changes/<name>/` with its schema marker and, if given, `prompt.md` and `depends-on.yaml`, then stages that
+ * `openspec/changes/<name>/` with its schema marker and, if given, `prompt.md`, `depends-on.yaml` and `issue.yaml`, then stages that
  * directory. Refused
  * for any reason means nothing was written and no git was run; the create itself is atomic (exclusive-create), so
  * two concurrent requests cannot both succeed. A staging failure is reported (`staged: false`), never a failure.
@@ -612,9 +615,9 @@ async function postCreateChange(state: AppState, req: Request, repoId: string): 
   const prompt = body.prompt;
   if (typeof name !== "string") return json({ error: "name must be a string" }, 400);
   if (prompt !== undefined && prompt !== null && typeof prompt !== "string") return json({ error: "prompt must be a string" }, 400);
-  const result = await createChange(repo.path, name, typeof prompt === "string" ? prompt : undefined, body.dependsOn);
+  const result = await createChange(repo.path, name, typeof prompt === "string" ? prompt : undefined, body.dependsOn, body.issue);
   if (!result.ok) {
-    const status = result.reason === "invalid-name" || result.reason === "invalid-prompt" || result.reason === "invalid-dependencies" ? 400 : result.reason === "no-openspec-dir" || result.reason === "duplicate-active" || result.reason === "duplicate-archived" ? 409 : 500;
+    const status = result.reason === "invalid-name" || result.reason === "invalid-prompt" || result.reason === "invalid-dependencies" || result.reason === "invalid-issue" ? 400 : result.reason === "not-on-github" || result.reason === "no-openspec-dir" || result.reason === "duplicate-active" || result.reason === "duplicate-archived" ? 409 : 500;
     return json({ error: result.message }, status);
   }
   state.scanner.trigger();
@@ -837,6 +840,18 @@ async function postPullRequestsRefresh(state: AppState, req: Request): Promise<R
 }
 
 /**
+ * Lists a repository's open issues for the Import from issues dialog — the issue query of the issue-import spec. A POST
+ * because it starts `gh`, which reaches GitHub; it is under the same-origin guard like every other POST, writes
+ * nothing, keeps nothing and triggers no scan.
+ */
+async function postIssues(state: AppState, repoId: string): Promise<Response> {
+  const target = pullRequestTargets(state).find((t) => t.id === repoId);
+  if (!target) return json({ error: "unknown or disabled repository" }, 404);
+  state.issues ??= new Issues();
+  return json(await state.issues.list(target));
+}
+
+/**
  * A completed query is what ends a session whose auto-merge pull request merged (auto-merge-cleanup D2): handed to the
  * session manager after `gh` has finished, never waited for, and never a reason to query. Only lists that are good
  * right now count — a failed one is the last good list, which says nothing new.
@@ -967,6 +982,8 @@ export function createFetchHandler({ state, indexHtml }: AppOptions): (req: Requ
       if (dismissMatch && req.method === "POST") return postDismiss(state, req, decodeURIComponent(dismissMatch[1]), decodeURIComponent(dismissMatch[2]));
       const projectConsoleMatch = /^\/api\/repos\/([^/]+)\/console$/.exec(pathname);
       if (req.method === "POST" && projectConsoleMatch) return projectConsoleRoute(state, decodeURIComponent(projectConsoleMatch[1]));
+      const issuesMatch = /^\/api\/repos\/([^/]+)\/issues$/.exec(pathname);
+      if (req.method === "POST" && issuesMatch) return postIssues(state, decodeURIComponent(issuesMatch[1]));
       const createChangeMatch = /^\/api\/repos\/([^/]+)\/changes$/.exec(pathname);
       if (req.method === "POST" && createChangeMatch) return postCreateChange(state, req, decodeURIComponent(createChangeMatch[1]));
       if (req.method === "POST" && pathname === "/api/scan") {
