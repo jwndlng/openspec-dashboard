@@ -46,5 +46,5 @@
 
 - [x] 4.1 Add a What's new entry at the top of `src/ui/changelog.ts` covering the tidier projects table, the clearer
   "isn't on GitHub" note and the home link (see "What's new" in CONTRIBUTING.md); verify its test passes
-- [ ] 4.2 Run `bun run check` and verify lint, typecheck and tests all pass; run `openspec validate
+- [x] 4.2 Run `bun run check` and verify lint, typecheck and tests all pass; run `openspec validate
   polish-overview-and-header --strict` and verify it reports the change valid
