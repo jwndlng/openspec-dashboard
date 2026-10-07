@@ -15,6 +15,13 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    id: "2026-10-07-section-navigation",
+    date: "2026-10-07",
+    title: "Help has the side navigation Settings has",
+    summary:
+      "**Help** now lists its sections in a navigation beside them that moves along as you read, like **Settings**, instead of a row of links at the top. On Settings the navigation no longer jumps to the bottom when you scroll to the end of the page.",
+  },
+  {
     id: "2026-10-07-spec-control-home",
     date: "2026-10-07",
     title: "Your settings moved to ~/.spec-control",
