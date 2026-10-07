@@ -5,7 +5,7 @@
 import { integrateUnavailable, type Config, type IntegrationSession } from "../shared/types.ts";
 import { availableName } from "../shared/nameHints.ts";
 import { newRepoConfig, updateConfig } from "./config.ts";
-import { discoverRepos, isOpenSpecRepo } from "./discover.ts";
+import { discoverRepos, isSpecProject } from "./discover.ts";
 import { canonicalPath } from "./paths.ts";
 import { SessionError, type SessionManager } from "./sessions/manager.ts";
 
@@ -47,7 +47,7 @@ const NOT_INTEGRATABLE = "this folder is not a repository waiting to be set up f
  */
 export async function confirmIntegration(state: IntegrationState, folder: string): Promise<boolean> {
   const path = canonicalPath(folder);
-  if (!(await isOpenSpecRepo(path))) return false;
+  if (!(await isSpecProject(path))) return false;
   // Checked again inside the write: a concurrent Enable or an earlier confirmation may have added it meanwhile.
   const { previous, saved } = await updateConfig(state, (current) => {
     if (current.repos.some((r) => canonicalPath(r.path) === path)) return undefined;

@@ -1,15 +1,16 @@
-import { mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { stringify as stringifyYaml } from "yaml";
-import { CHANGE_NAME } from "./source.ts";
+import type { SpecFramework } from "./frameworks/framework.ts";
+import { openSpec } from "./frameworks/openspec/index.ts";
+import { writablePaths } from "./frameworks/registry.ts";
+import { CHANGE_NAME, LocalRepoSource } from "./source.ts";
 
 export type CreateChangeResult =
   | { ok: true; name: string; dir: string; wrotePrompt: boolean; staged: boolean }
-  | { ok: false; reason: "invalid-name" | "invalid-prompt" | "invalid-dependencies" | "no-openspec-dir" | "duplicate-active" | "duplicate-archived"; message: string };
+  | { ok: false; reason: "invalid-name" | "invalid-prompt" | "invalid-dependencies" | "not-writable" | "no-openspec-dir" | "duplicate-active" | "duplicate-archived"; message: string };
 
-const SCHEMA_LINE = /^schema:\s*["']?([A-Za-z0-9._-]+)/m;
 const ARCHIVE_PREFIX = /^(\d{4}-\d{2}-\d{2})-(.+)$/;
-const DEFAULT_SCHEMA = "spec-driven";
 const GIT_TIMEOUT_MS = 10_000;
 /** More than a handful of dependencies is not an order any more; the cap keeps the file and the form honest. */
 export const MAX_DEPENDENCIES = 32;
@@ -61,9 +62,10 @@ async function git(cwd: string, args: string[], timeoutMs = GIT_TIMEOUT_MS): Pro
  * goes after `--` and is the directory, not `.` or `-A`: whatever else the user has modified or left untracked stays
  * out of the index. Best-effort: `false` means the change is on disk but untracked.
  */
-export async function stageChangeDir(repoPath: string, name: string, timeoutMs = GIT_TIMEOUT_MS): Promise<boolean> {
-  if (!CHANGE_NAME.test(name)) return false;
-  return git(repoPath, ["add", "--", `openspec/changes/${name}/`], timeoutMs);
+export async function stageChangeDir(repoPath: string, name: string, timeoutMs = GIT_TIMEOUT_MS, framework: SpecFramework = openSpec): Promise<boolean> {
+  const layout = writablePaths(framework);
+  if (!layout || !CHANGE_NAME.test(name)) return false;
+  return git(repoPath, ["add", "--", `${layout.changesDir}/${name}/`], timeoutMs);
 }
 
 /** Today in the server's local time zone as `YYYY-MM-DD`; matches what `openspec new change` records. */
@@ -74,18 +76,10 @@ function today(now: Date = new Date()): string {
   return `${y}-${m}-${d}`;
 }
 
-async function readSchema(repoPath: string): Promise<string> {
+async function archivedNames(repoPath: string, archiveDir: string | undefined): Promise<Set<string>> {
+  if (archiveDir === undefined) return new Set();
   try {
-    const text = await readFile(join(repoPath, "openspec", "config.yaml"), "utf8");
-    return SCHEMA_LINE.exec(text)?.[1] ?? DEFAULT_SCHEMA;
-  } catch {
-    return DEFAULT_SCHEMA;
-  }
-}
-
-async function archivedNames(repoPath: string): Promise<Set<string>> {
-  try {
-    const entries = await readdir(join(repoPath, "openspec", "changes", "archive"), { withFileTypes: true });
+    const entries = await readdir(join(repoPath, archiveDir), { withFileTypes: true });
     const names = new Set<string>();
     for (const entry of entries) {
       if (!entry.isDirectory()) continue;
@@ -107,15 +101,16 @@ async function isDirectory(path: string): Promise<boolean> {
 }
 
 /**
- * Creates `openspec/changes/<name>/` in the repository, atomically (exclusive-create so two callers cannot both
- * succeed), and writes `.openspec.yaml` (and `prompt.md` when a non-whitespace prompt is given, and `depends-on.yaml`
- * when dependencies are given — validated before anything is created).
+ * Creates `<changesDir>/<name>/` in the repository (`openspec/changes/<name>/`; the only framework whose write paths
+ * are enumerated), atomically (exclusive-create so two callers cannot both succeed), and writes the framework's
+ * scaffold — `.openspec.yaml` — (and `prompt.md` when a non-whitespace prompt is given, and `depends-on.yaml` when
+ * dependencies are given — validated before anything is created).
  *
  * Writes only inside that new directory and never invokes the `openspec` CLI. A failed write after `mkdir` removes
  * the just-created directory so a half-empty change never remains. Once both writes have succeeded, and only then,
  * the directory is staged with one `git add` (see `stageChangeDir`); a refused create runs no git at all.
  */
-export async function createChange(repoPath: string, name: string, prompt?: string, dependsOn?: unknown): Promise<CreateChangeResult> {
+export async function createChange(repoPath: string, name: string, prompt?: string, dependsOn?: unknown, framework: SpecFramework = openSpec): Promise<CreateChangeResult> {
   if (typeof name !== "string" || !CHANGE_NAME.test(name)) {
     return { ok: false, reason: "invalid-name", message: "change name must match ^[A-Za-z0-9._-]+$" };
   }
@@ -124,14 +119,18 @@ export async function createChange(repoPath: string, name: string, prompt?: stri
   }
   const deps = validateDependsOn(name, dependsOn);
   if (!deps.ok) return { ok: false, reason: "invalid-dependencies", message: deps.message };
-  if (!(await isDirectory(join(repoPath, "openspec", "changes")))) {
-    return { ok: false, reason: "no-openspec-dir", message: "repository has no openspec/changes directory" };
+  const layout = writablePaths(framework);
+  if (!layout) {
+    return { ok: false, reason: "not-writable", message: `the dashboard does not create ${framework.label} changes` };
   }
-  if (await archivedNames(repoPath).then((names) => names.has(name))) {
+  if (!(await isDirectory(join(repoPath, layout.changesDir)))) {
+    return { ok: false, reason: "no-openspec-dir", message: `repository has no ${layout.changesDir} directory` };
+  }
+  if (await archivedNames(repoPath, layout.archiveDir).then((names) => names.has(name))) {
     return { ok: false, reason: "duplicate-archived", message: `a change named "${name}" is already archived` };
   }
 
-  const dir = join(repoPath, "openspec", "changes", name);
+  const dir = join(repoPath, layout.changesDir, name);
   try {
     await mkdir(dir, { recursive: false });
   } catch (err) {
@@ -142,8 +141,8 @@ export async function createChange(repoPath: string, name: string, prompt?: stri
 
   let wrotePrompt = false;
   try {
-    const schema = await readSchema(repoPath);
-    await writeFile(join(dir, ".openspec.yaml"), `schema: ${schema}\ncreated: ${today()}\n`, "utf8");
+    const project = await framework.readProject(new LocalRepoSource(repoPath));
+    for (const [file, content] of Object.entries(framework.scaffold({ project, today: today() }))) await writeFile(join(dir, file), content, "utf8");
     const trimmed = typeof prompt === "string" ? prompt.trim() : "";
     if (trimmed) {
       await writeFile(join(dir, "prompt.md"), `# Prompt\n\n${trimmed}\n`, "utf8");
@@ -157,6 +156,6 @@ export async function createChange(repoPath: string, name: string, prompt?: stri
     throw err;
   }
   // The files exist and are the user's now: whatever git does, the create has succeeded.
-  const staged = await stageChangeDir(repoPath, name);
+  const staged = await stageChangeDir(repoPath, name, GIT_TIMEOUT_MS, framework);
   return { ok: true, name, dir, wrotePrompt, staged };
 }

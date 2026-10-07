@@ -2,8 +2,8 @@
 // them. A request only ever contributes a change name and a relative path; the directory comes from `listChanges()`.
 import { isAbsolute, join, normalize, relative, sep } from "node:path";
 import type { ArtifactFileContent, ChangeArtifactEntry, ChangeArtifactFile, ChangeArtifacts } from "../shared/types.ts";
-import { readChangeArtifacts } from "./openspecAdapter.ts";
-import { parseMarker } from "./scanner.ts";
+import type { SpecFramework } from "./frameworks/framework.ts";
+import { openSpec } from "./frameworks/openspec/index.ts";
 import { CHANGE_NAME, type ChangeDirEntry, type RepoSource } from "./source.ts";
 
 export const MAX_ARTIFACT_BYTES = 1024 * 1024;
@@ -11,9 +11,9 @@ export const MAX_ARTIFACT_BYTES = 1024 * 1024;
 export type ChangeDirResult = { ok: true; entry: ChangeDirEntry } | { ok: false; reason: "invalid-name" | "unknown-change" };
 
 /** Active changes win over archived ones of the same name; among archives the most recent. */
-export async function changeDirFor(source: RepoSource, changeName: string): Promise<ChangeDirResult> {
+export async function changeDirFor(source: RepoSource, changeName: string, framework: SpecFramework = openSpec): Promise<ChangeDirResult> {
   if (!CHANGE_NAME.test(changeName)) return { ok: false, reason: "invalid-name" };
-  const { active, archived } = await source.listChanges();
+  const { active, archived } = await framework.listChanges(source);
   const entry = active.find((c) => c.name === changeName) ?? archived.find((c) => c.name === changeName);
   return entry ? { ok: true, entry } : { ok: false, reason: "unknown-change" };
 }
@@ -22,17 +22,10 @@ function inside(dir: string, candidate: string): boolean {
   return candidate.startsWith(dir.endsWith(sep) ? dir : dir + sep);
 }
 
-export async function listArtifactFiles(source: RepoSource, repoId: string, entry: ChangeDirEntry): Promise<ChangeArtifacts> {
-  const marker = parseMarker(await source.readText(join(entry.dir, ".openspec.yaml")));
-  const projectSchema = parseMarker(await source.readText(join(source.path, "openspec", "config.yaml"))).schema;
+export async function listArtifactFiles(source: RepoSource, repoId: string, entry: ChangeDirEntry, framework: SpecFramework = openSpec): Promise<ChangeArtifacts> {
   const change = { repoId, name: entry.name, dir: entry.dir, archived: Boolean(entry.archived) };
-  let info: ReturnType<typeof readChangeArtifacts>;
-  try {
-    info = readChangeArtifacts(source.path, entry.name, { changeDir: entry.dir, schemaName: marker.schema ?? projectSchema, skipSpecs: marker.skipSpecs });
-  } catch {
-    // An unknown schema: the snapshot already carries the warning, and there is no artifact list to offer.
-    return { change: { ...change, schema: marker.schema ?? projectSchema ?? "unknown" }, artifacts: [] };
-  }
+  // A change that could not be read (an unknown schema) has no artifacts: the snapshot already carries the warning.
+  const info = await framework.readChangeOutputs(source, await framework.readProject(source), entry);
 
   // Glob outputs come back with symbolic links resolved (on macOS a temp dir is one), so paths are made relative
   // between real paths; that also leaves out a link that points out of the change directory.

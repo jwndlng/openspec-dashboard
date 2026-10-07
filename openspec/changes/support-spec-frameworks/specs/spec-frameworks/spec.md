@@ -90,7 +90,7 @@ bundled `spec-driven` schema, and the bundled schema SHALL still work in the com
 
 #### Scenario: Fixture snapshots unchanged
 - **WHEN** the existing scanner, discovery, artifact, create-change, dismissal and pull tests run against the unchanged fixtures
-- **THEN** they pass without changing their expectations, apart from asserting `framework: "openspec"` where a whole repository snapshot is compared
+- **THEN** they pass without changing their expectations, apart from asserting `framework: "openspec"` where a whole repository snapshot or discovery result is compared, and static checks of source text that name a path the module now supplies
 
 #### Scenario: Compiled binary reads a change
 - **WHEN** `dist/spec-control` scans an OpenSpec repository whose changes use the bundled `spec-driven` schema

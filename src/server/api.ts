@@ -19,6 +19,7 @@ import type { Scanner } from "./scanner.ts";
 import { applyTo, EMPTY_SHARED_CONFIG, loadSharedConfig, previewFor, SharedConfigValidationError, saveSharedConfig } from "./sharedConfig.ts";
 import { SessionError, type SessionManager } from "./sessions/manager.ts";
 import { LocalRepoSource } from "./source.ts";
+import { frameworkById } from "./frameworks/registry.ts";
 
 export interface AppState {
   config: Config;
@@ -508,8 +509,10 @@ async function putSharedConfig(state: AppState, req: Request): Promise<Response>
 
 interface Selection {
   repoId: string;
-  /** Undefined when the id is not an enabled repository of the dashboard config. */
+  /** Undefined when the id is not an enabled repository of the dashboard config, or its framework has no shared config. */
   repo?: RepoConfig;
+  /** Why the repository is refused when `repo` is undefined. */
+  refusal: string;
   profileIds: string[];
 }
 
@@ -530,18 +533,25 @@ async function selection(state: AppState, req: Request): Promise<Selection[] | R
   if (!Array.isArray(assignments) || !assignments.every(valid)) return json({ error: "assignments must be a list of { repoId, profileIds }" }, 400);
   const enabled = new Map(state.config.repos.filter((r) => r.enabled).map((r) => [r.id, r]));
   const byRepo = new Map(assignments.map((a) => [a.repoId, a])); // last one wins for a repeated repository
-  return [...byRepo.values()].map((a) => ({ repoId: a.repoId, repo: enabled.get(a.repoId), profileIds: a.profileIds }));
+  // Shared profiles live in a framework's own config file; a repository whose framework has none is not offered them.
+  const framework = new Map(state.scanner.snapshot.repos.map((r) => [r.id, frameworkById(r.framework)]));
+  return [...byRepo.values()].map((a) => {
+    const repo = enabled.get(a.repoId);
+    if (repo && framework.has(a.repoId) && !framework.get(a.repoId)?.sharedConfigFile) return { repoId: a.repoId, repo: undefined, profileIds: a.profileIds, refusal: NO_SHARED_CONFIG };
+    return { repoId: a.repoId, repo, profileIds: a.profileIds, refusal: NOT_TRACKED };
+  });
 }
 
 const NOT_TRACKED = "not an enabled repository in the dashboard config";
+const NO_SHARED_CONFIG = "this repository's spec framework has no config file for shared profiles";
 
 async function postSharedConfigPreview(state: AppState, req: Request): Promise<Response> {
   const selected = await selection(state, req);
   if (selected instanceof Response) return selected;
   const shared = (await loadSharedConfig()) ?? EMPTY_SHARED_CONFIG;
   const previews: SharedConfigPreview[] = [];
-  for (const { repoId, repo, profileIds } of selected) {
-    previews.push(repo ? await previewFor(repo, shared, profileIds) : { repoId, current: { unreadable: true, applied: [] }, before: "", after: "", refusal: NOT_TRACKED });
+  for (const { repoId, repo, profileIds, refusal } of selected) {
+    previews.push(repo ? await previewFor(repo, shared, profileIds) : { repoId, current: { unreadable: true, applied: [] }, before: "", after: "", refusal });
   }
   return json({ previews });
 }
@@ -552,8 +562,8 @@ async function postSharedConfigApply(state: AppState, req: Request): Promise<Res
   if (selected instanceof Response) return selected;
   const shared = (await loadSharedConfig()) ?? EMPTY_SHARED_CONFIG;
   const results: SharedConfigApplyResult[] = [];
-  for (const { repoId, repo, profileIds } of selected) {
-    results.push(repo ? await applyTo(repo, shared, profileIds) : { repoId, result: "refused", reason: NOT_TRACKED });
+  for (const { repoId, repo, profileIds, refusal } of selected) {
+    results.push(repo ? await applyTo(repo, shared, profileIds) : { repoId, result: "refused", reason: refusal });
   }
   state.scanner.trigger();
   return json({ results });
@@ -579,11 +589,15 @@ async function artifactRoutes(state: AppState, url: URL, match: RegExpExecArray)
   if (!repo) return json({ error: NOT_TRACKED }, 404);
   // The board shows a change's leading copy, which may live in a linked worktree: read where the scanner read. The
   // checkout path is the scanner's (from `git worktree list`), never the request's.
-  const checkout = state.scanner.snapshot.repos.find((r) => r.id === repo.id)?.changes.find((c) => c.name === changeName)?.checkout;
+  const scanned = state.scanner.snapshot.repos.find((r) => r.id === repo.id);
+  const checkout = scanned?.changes.find((c) => c.name === changeName)?.checkout;
   const source = new LocalRepoSource(checkout && !checkout.isMain ? checkout.path : repo.path);
-  const found = await changeDirFor(source, changeName);
+  // The module the scan read the repository with; one that is no longer registered has no changes to offer.
+  const framework = frameworkById(scanned?.framework);
+  if (!framework) return json({ error: "unknown change" }, 404);
+  const found = await changeDirFor(source, changeName, framework);
   if (!found.ok) return found.reason === "invalid-name" ? json({ error: "invalid change name" }, 400) : json({ error: "unknown change" }, 404);
-  if (match[3] === "artifacts") return json(await listArtifactFiles(source, repo.id, found.entry));
+  if (match[3] === "artifacts") return json(await listArtifactFiles(source, repo.id, found.entry, framework));
   const result = await readArtifactFile(source, found.entry.dir, url.searchParams.get("path"));
   return result.ok ? json(result.file) : json({ error: result.message }, FILE_ERROR_STATUS[result.reason]);
 }
@@ -612,9 +626,11 @@ async function postCreateChange(state: AppState, req: Request, repoId: string): 
   const prompt = body.prompt;
   if (typeof name !== "string") return json({ error: "name must be a string" }, 400);
   if (prompt !== undefined && prompt !== null && typeof prompt !== "string") return json({ error: "prompt must be a string" }, 400);
-  const result = await createChange(repo.path, name, typeof prompt === "string" ? prompt : undefined, body.dependsOn);
+  const framework = frameworkById(scanned.framework);
+  if (!framework) return json({ error: "repository has not been successfully scanned" }, 409);
+  const result = await createChange(repo.path, name, typeof prompt === "string" ? prompt : undefined, body.dependsOn, framework);
   if (!result.ok) {
-    const status = result.reason === "invalid-name" || result.reason === "invalid-prompt" || result.reason === "invalid-dependencies" ? 400 : result.reason === "no-openspec-dir" || result.reason === "duplicate-active" || result.reason === "duplicate-archived" ? 409 : 500;
+    const status = result.reason === "invalid-name" || result.reason === "invalid-prompt" || result.reason === "invalid-dependencies" ? 400 : result.reason === "not-writable" || result.reason === "no-openspec-dir" || result.reason === "duplicate-active" || result.reason === "duplicate-archived" ? 409 : 500;
     return json({ error: result.message }, status);
   }
   state.scanner.trigger();

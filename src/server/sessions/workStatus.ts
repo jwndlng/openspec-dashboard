@@ -3,6 +3,7 @@
 import { mkdir, readdir, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { CONFLICTABLE_WORK, type ChangeSession, type RepoConfig, type SessionAction, type SessionWorktree, type WorkConflicts, type WorkStatus } from "../../shared/types.ts";
+import { OPENSPEC_PATHS } from "../frameworks/registry.ts";
 import { mergeScratchDir, worktreesDir } from "../paths.ts";
 
 const ENV = { GIT_TERMINAL_PROMPT: "0", GIT_OPTIONAL_LOCKS: "0" };
@@ -74,7 +75,7 @@ export async function contentIsInBase(cwd: string, base: string, ref = "HEAD"): 
 }
 
 /** Where OpenSpec keeps its documents, as git prints repository-relative paths. Compared as written, no normalisation. */
-const OPENSPEC_DIR = "openspec/";
+const OPENSPEC_DIR = `${OPENSPEC_PATHS.root}/`;
 
 /**
  * Whether Ship would hand over nothing but OpenSpec documents (auto-merge-docs design D3): every path the branch changed

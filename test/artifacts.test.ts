@@ -2,7 +2,7 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import { mkdir, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { changeDirFor, listArtifactFiles, MAX_ARTIFACT_BYTES, readArtifactFile } from "../src/server/artifacts.ts";
-import { readChangeArtifacts } from "../src/server/openspecAdapter.ts";
+import { readChangeArtifacts } from "../src/server/frameworks/openspec/adapter.ts";
 import { LocalRepoSource } from "../src/server/source.ts";
 import { FIXTURES, tempDir } from "./helpers.ts";
 

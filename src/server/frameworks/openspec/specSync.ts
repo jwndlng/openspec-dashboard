@@ -1,8 +1,9 @@
 // Whether a change's delta specs are already reflected in the main specs. Nothing on disk records a sync, so it is
 // derived by checking each delta against `openspec/specs/<capability>/spec.md`. Read-only.
 import { join } from "node:path";
-import { extractRequirementsSection, normalizeRequirementName, parseDeltaSpec } from "./openspecAdapter.ts";
-import { CHANGE_NAME, type RepoSource } from "./source.ts";
+import { CHANGE_NAME, type RepoSource } from "../../source.ts";
+import type { SpecSyncResult } from "../framework.ts";
+import { extractRequirementsSection, normalizeRequirementName, parseDeltaSpec } from "./adapter.ts";
 
 /** Trim, strip trailing spaces, collapse blank-line runs: differences a sync or an editor may introduce. */
 function normalizeBlock(raw: string): string {
@@ -36,11 +37,6 @@ export function isDeltaSynced(deltaText: string, mainText: string | undefined): 
   if (plan.removed.some((name) => has(name))) return false;
   if (!plan.renamed.every((r) => has(r.to) && !has(r.from))) return false;
   return true;
-}
-
-export interface SpecSyncResult {
-  synced: boolean;
-  warnings: string[];
 }
 
 /** A change with no delta spec files has nothing to sync. Any read or parse problem counts as not synced. */

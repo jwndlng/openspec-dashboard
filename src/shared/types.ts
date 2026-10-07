@@ -158,10 +158,34 @@ export interface ChangeCheckout {
   isMain: boolean;
 }
 
+/**
+ * A spec-driven framework module that reads repositories (spec-frameworks spec). A lowercase kebab-case identifier;
+ * `openspec` is the only module today.
+ */
+export type FrameworkId = string;
+
+/** The framework a repository is read by when nothing says otherwise: snapshots cached before `framework` existed. */
+export const DEFAULT_FRAMEWORK: FrameworkId = "openspec";
+
+/**
+ * What both sides know about each registered framework module: its display name and where its changes live, relative
+ * to the project folder. The server modules take their label and layout from here, so the UI needs no server code.
+ */
+export const FRAMEWORK_INFO: Readonly<Record<FrameworkId, { label: string; changesDir: string }>> = {
+  openspec: { label: "OpenSpec", changesDir: "openspec/changes" },
+};
+
+/** The display facts of a repository's framework; an unknown or absent id reads as the default framework. */
+export function frameworkInfo(id: FrameworkId | undefined): { label: string; changesDir: string } {
+  return FRAMEWORK_INFO[id ?? DEFAULT_FRAMEWORK] ?? FRAMEWORK_INFO[DEFAULT_FRAMEWORK];
+}
+
 export interface RepoSnapshot {
   id: string;
   name: string;
   path: string;
+  /** The framework module that read this repository. Absent in snapshots cached by older versions: read as `openspec`. */
+  framework?: FrameworkId;
   ok: boolean;
   error?: string;
   warnings?: string[];
@@ -637,8 +661,11 @@ export interface SameRemoteRepo {
   tracked: boolean;
 }
 
-/** A discovery candidate. `sameRemoteAs` is information for the user and is dropped when the candidate is enabled. */
-export type DiscoveredRepo = RepoConfig & { sameRemoteAs?: SameRemoteRepo[] };
+/**
+ * A discovery candidate. `sameRemoteAs` and `framework` (the module whose project marker it has) are information for the
+ * user and are dropped when the candidate is enabled.
+ */
+export type DiscoveredRepo = RepoConfig & { sameRemoteAs?: SameRemoteRepo[]; framework?: FrameworkId };
 
 /**
  * A git repository under the roots that does not use OpenSpec yet: no `openspec/config.yaml`, not a linked worktree,

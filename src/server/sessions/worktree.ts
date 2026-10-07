@@ -2,6 +2,7 @@
 // creating a session's worktree, and removing it after read-only checks proved it holds nothing that exists nowhere else.
 // The one more is `repairMovedWorktree`, run by the home migration once the user started a binary that moved the home.
 import { cp, mkdir, realpath, stat } from "node:fs/promises";
+import { OPENSPEC_PATHS } from "../frameworks/registry.ts";
 import { parseWorktrees } from "../git.ts";
 import { dirname, join } from "node:path";
 
@@ -126,8 +127,9 @@ export async function ensureWorktree(repoPath: string, worktreePath: string, bra
 /** A change that exists only uncommitted in the main checkout is copied into the worktree, so the agent can see it. */
 /** `fromCheckout` is the checkout the change lives in: the main one, or a linked worktree. */
 export async function copyChangeIfMissing(fromCheckout: string, worktreePath: string, change: string): Promise<boolean> {
-  const source = join(fromCheckout, "openspec", "changes", change);
-  const target = join(worktreePath, "openspec", "changes", change);
+  // Pinned to OpenSpec's changes directory, whose copy the agent-sessions spec describes; nothing else is ever copied.
+  const source = join(fromCheckout, OPENSPEC_PATHS.changesDir, change);
+  const target = join(worktreePath, OPENSPEC_PATHS.changesDir, change);
   if ((await isDirectory(target)) || !(await isDirectory(source))) return false;
   await cp(source, target, { recursive: true });
   return true;

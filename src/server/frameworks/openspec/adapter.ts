@@ -1,4 +1,5 @@
-// The only module that touches @fission-ai/openspec internals (design.md D1).
+// The only module that touches @fission-ai/openspec internals (kanban-dashboard-mvp design D1); part of the OpenSpec
+// framework module (support-spec-frameworks design D4).
 //
 // The package's `exports` map exposes just its root, which does not re-export
 // the artifact graph, so we reach `dist/core` through the `@openspec-core/*`
@@ -18,10 +19,10 @@ import {
 import { isSpecsArtifactPath } from "@openspec-core/artifact-graph/outputs.js";
 // Pure string parsers (no file or module-path access), so they are safe inside the compiled binary.
 export { extractRequirementsSection, normalizeRequirementName, parseDeltaSpec } from "@openspec-core/parsers/requirement-blocks.js";
-import specDrivenYaml from "../../node_modules/@fission-ai/openspec/schemas/spec-driven/schema.yaml" with { type: "text" };
+import specDrivenYaml from "../../../../node_modules/@fission-ai/openspec/schemas/spec-driven/schema.yaml" with { type: "text" };
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import type { ArtifactStatus } from "../shared/types.ts";
+import type { ArtifactStatus } from "../../../shared/types.ts";
 
 export const DEFAULT_SCHEMA = "spec-driven";
 

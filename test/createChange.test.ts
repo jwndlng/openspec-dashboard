@@ -4,6 +4,8 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { mkdir, writeFile } from "node:fs/promises";
 import { createChange, stageChangeDir } from "../src/server/createChange.ts";
+import { openSpec } from "../src/server/frameworks/openspec/index.ts";
+import { writablePaths } from "../src/server/frameworks/registry.ts";
 import { parseDependsOn } from "../src/server/scanner.ts";
 import { tempDir } from "./helpers.ts";
 import { git, tempGitRepo } from "./sessionHelpers.ts";
@@ -158,7 +160,9 @@ test("createChange's only subprocess is one `git add -- <dir>` (static check)", 
   }
   expect(src.match(/Bun\.spawn\(/g)?.length).toBe(1);
   expect(src.match(/git\(repoPath, \[/g)?.length).toBe(1);
-  expect(src).toMatch(/\["add", "--", `openspec\/changes\/\$\{name\}\/`\]/);
+  // The directory comes from the writable layout, which for OpenSpec — the only framework offered writes — is `openspec/changes`.
+  expect(src).toMatch(/\["add", "--", `\$\{layout\.changesDir\}\/\$\{name\}\/`\]/);
+  expect(writablePaths(openSpec)?.changesDir).toBe("openspec/changes");
   for (const forbidden of ['"commit"', '"push"', '"stash"', '"reset"', '"checkout"', '"switch"', '"-A"', '"--all"', '"-p"', "-u"]) {
     expect([forbidden, src.includes(forbidden)]).toEqual([forbidden, false]);
   }

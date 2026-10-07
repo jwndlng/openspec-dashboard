@@ -6,6 +6,7 @@ import { MAX_ARTIFACT_BYTES } from "../src/server/artifacts.ts";
 import { defaultConfig, newRepoConfig } from "../src/server/config.ts";
 import { Scanner } from "../src/server/scanner.ts";
 import { LocalRepoSource } from "../src/server/source.ts";
+import { openSpec } from "../src/server/frameworks/openspec/index.ts";
 import type { ChangeArtifacts } from "../src/shared/types.ts";
 import { FIXTURES, tempDir, treeFingerprint, useTempHome } from "./helpers.ts";
 
@@ -128,7 +129,7 @@ test("reading every artifact of every fixture change leaves the repositories unt
   const before = await Promise.all([demoOps, betaSoc].map((r) => treeFingerprint(r.path)));
   let reads = 0;
   for (const repo of [demoOps, betaSoc]) {
-    const { active, archived } = await new LocalRepoSource(repo.path).listChanges();
+    const { active, archived } = await openSpec.listChanges(new LocalRepoSource(repo.path));
     for (const change of [...active, ...archived]) {
       const res = await get(repo.id, change.name, "artifacts");
       expect([change.name, res.status]).toEqual([change.name, 200]);

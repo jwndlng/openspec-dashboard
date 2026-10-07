@@ -212,8 +212,8 @@ test("a failed scan keeps the previous lastUpdatedAt", async () => {
   const config = { ...defaultConfig(), repos: [repo] };
   let fail = false;
   class Flaky extends LocalRepoSource {
-    override exists(): Promise<boolean> {
-      return fail ? Promise.reject(new Error("boom")) : super.exists();
+    override exists(relDir: string): Promise<boolean> {
+      return fail ? Promise.reject(new Error("boom")) : super.exists(relDir);
     }
   }
   const scanner = new Scanner(() => config, { persist: false, sourceFor: (r) => new Flaky(r.path) });

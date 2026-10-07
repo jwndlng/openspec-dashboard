@@ -63,8 +63,9 @@ export interface FrameworkChange {   // what `scanChange` used to assemble from 
 
 export abstract class SpecFramework {
   abstract readonly id: FrameworkId;
-  abstract readonly label: string;
+  get label(): string;                          // from FRAMEWORK_INFO (D6)
   abstract readonly layout: FrameworkLayout;
+  readonly sharedConfigFile?: string;           // OpenSpec: "openspec/config.yaml"; absent = no shared profiles
 
   /** Discovery: the folder is a project of this framework (stricter). */
   abstract isProject(dir: string): Promise<boolean>;
@@ -73,18 +74,18 @@ export abstract class SpecFramework {
   /** Text of the scan error when nothing claims the folder. */
   missingMessage(): string;
 
-  /** Active and archived change directories. Default: directories of changesDir/archiveDir, archive-date prefix. */
+  /** Active and archived change directories: `source.listChanges(this.layout, options)` (D3). */
   listChanges(source: RepoSource, options?): Promise<ChangeListing>;
-  /** Project-wide settings read once per checkout (OpenSpec: the schema from config.yaml). */
-  readProject(source: RepoSource, root: string): Promise<FrameworkProject>;
+  /** Settings read once per checkout (OpenSpec: the schema from config.yaml); a worktree inherits the main checkout's. */
+  readProject(source: RepoSource, inherited?: FrameworkProject): Promise<FrameworkProject>;
   /** Artifacts, tasks path, schema, created date of one change. Never throws: problems become warnings. */
   abstract readChange(source: RepoSource, project: FrameworkProject, entry: ChangeDirEntry): Promise<FrameworkChange>;
-  /** Absolute files each artifact resolves to, for the detail view. */
-  abstract artifactOutputs(source, project, entry): Promise<{ change: FrameworkChange; outputs: Record<string, string[]> }>;
+  /** `readChange` plus the absolute files each artifact resolves to, for the detail view. */
+  abstract readChangeOutputs(source, project, entry): Promise<FrameworkChangeOutputs>;
   /** Task progress of the tasks file's text. Default: the shared checkbox counter (`[x]`, `[~]`, `[ ]`). */
   parseTasks(text: string): TaskProgress;
-  /** Optional: whether a finished change's spec deltas are reflected in the main specs. Default: undefined. */
-  specsSynced?(source: RepoSource, entry: ChangeDirEntry): Promise<{ synced: boolean; warnings: string[] }>;
+  /** Whether a finished change's spec deltas are reflected in the main specs. Default: undefined (cannot tell). */
+  specsSynced(source: RepoSource, entry: ChangeDirEntry): Promise<SpecSyncResult | undefined>;
   /** Files a new change starts with, as relative path → content. The writer decides how and whether to write them. */
   abstract scaffold(input: { project: FrameworkProject; today: string }): Record<string, string>;
 }
@@ -106,18 +107,21 @@ from the change directory for every framework, as does the task counter's `[~]`.
 `frameworkById(id)`, `detectFramework(dir)` (first `isProject`, for discovery and integration confirmation) and
 `claimFramework(source)` (first `claims`, for the scanner). The scanner resolves the module once per repository and
 passes it into the per-checkout context; linked worktrees use the same module as the main checkout (a branch does not
-switch frameworks mid-repository). Writers resolve it with `frameworkById(snapshot.framework ?? "openspec")` from the
-repository's last snapshot, falling back to `claimFramework` when there is none.
+switch frameworks mid-repository). The create, dismiss, artifact and shared-config routes resolve it with
+`frameworkById(snapshot.framework)` from the repository's last snapshot (an absent id is `openspec`); all of them
+already require a successful scan. `scanRepo` takes the registry as an optional argument, the seam the tests use to
+register a stub module.
 
 Alternative: store the framework in `RepoConfig`. Rejected for now: it needs a config migration and validation for a
 choice there is only one answer to; detection is cheap and keeps the repository the source of truth (invariant 5).
 
 ### D3. `RepoSource` stays git and file access; layout moves out
 
-`LocalRepoSource.listChanges`, `exists` and `dirtyFiles` stop hard-coding paths. `listChanges` moves to the framework's
-default implementation, built on `source.listDirs`/`newestMtime`; `exists()` becomes the module's `claims()`;
-`dirtyFiles(under)` takes the layout root. `RepoSource` remains the seam for tests and for a future remote source,
-and gains no framework knowledge.
+`LocalRepoSource.listChanges`, `exists` and `dirtyFiles` stop hard-coding paths: `listChanges(layout, options)` takes a
+`ChangesLayout` (changes and archive directory), `exists(relDir)` a directory and `dirtyFiles(relRoot)` the layout root.
+The listing stays on the source rather than moving into the module, because the tests use `listChanges` and `exists` as
+their failure seams; the module's default `listChanges`/`claims` just pass its layout. `RepoSource` remains the seam
+for tests and for a future remote source, and gains no framework knowledge.
 
 ### D4. The OpenSpec module
 
@@ -135,17 +139,19 @@ and gains no framework knowledge.
 
 ### D5. Writers keep their place, take paths from the layout
 
-`createChange.ts` asks the module for `layout.changesDir`, `layout.archiveDir` (duplicate-archived check) and
-`scaffold()`, then writes with exclusive-create and runs the same `git add -- <changesDir>/<name>/` as today.
-`dismissChange.ts`, `pull.ts` (`CHANGES_PREFIX`), `sessions/worktree.ts` (change copy) and `sessions/workStatus.ts`
-(docs prefix) replace their literals with the OpenSpec layout. A writer that receives a module other than OpenSpec
-refuses (the spec's "not enumerated, not offered" rule) — enforced by a single guard,
-`writablePaths(framework)` in `registry.ts`, which returns the layout only for modules whose paths the
-`dashboard-api` spec enumerates (today: `openspec`). That keeps invariant 1 true by construction when a read-only
-second module is registered before its write paths are specified.
+`createChange.ts` and `dismissChange.ts` take their paths from `writablePaths(framework)` in `registry.ts`, which
+returns the layout only for modules whose paths the `dashboard-api` spec enumerates (today: `openspec`) and refuses
+every other module (`not-writable` / `409`) — the spec's "not enumerated, not offered" rule, true by construction when
+a read-only second module is registered before its write paths are specified. Create then writes the module's
+`scaffold()` with the same exclusive-create and runs the same `git add -- <changesDir>/<name>/` as today.
 
-Shared config (`sharedConfig.ts`) stays OpenSpec-only and is offered only for repositories with `framework === "openspec"`
-— a one-line filter, no contract method.
+`pull.ts` (`CHANGES_PREFIX`), `sessions/worktree.ts` (change copy) and `sessions/workStatus.ts` (docs prefix) are not
+called per framework and their spec text names `openspec/` literally, so they are pinned to `OPENSPEC_PATHS` (the
+OpenSpec layout exported by the registry) instead of resolving a module: another framework's files never match the
+prefix, so they are never a leftover, never copied and never count as "docs only".
+
+Shared config stays OpenSpec-only through the contract's `sharedConfigFile`: the scanner reads profiles only from that
+file, and the shared-config routes refuse a repository whose module has none.
 
 ### D6. `framework` on the wire
 
@@ -161,7 +167,9 @@ for both sides. The demo data sets `framework`.
 The existing suite is the oracle: no expectation changes except adding `framework: "openspec"` where a whole
 `RepoSnapshot` is compared with `toEqual`. New `test/frameworks.test.ts` covers the registry (order, first match,
 unclaimed folder → `ok: false` with the old message), a stub read-only module registered in a test-only registry
-(changes land in the right columns through `deriveStage`; no `specsSynced`), and `writablePaths` refusing the stub. The
+(changes land in the right columns through `deriveStage`; no `specsSynced`), and `writablePaths`, create and dismiss
+refusing the stub. Besides that field, one static check changes: `test/createChange.test.ts` matched the literal
+`openspec/changes/${name}/` in the source and now matches the layout expression plus `writablePaths(openSpec)`. The
 compiled-binary check (`bun run build` then scanning `test/fixtures/demo-ops`) stays a manual task, as for the adapter
 today.
 
