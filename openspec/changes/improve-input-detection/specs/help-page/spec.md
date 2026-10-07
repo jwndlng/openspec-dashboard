@@ -2,7 +2,7 @@
 
 ### Requirement: Help covers the dashboard's main topics in sections
 The Help view SHALL present its guidance as an ordered list of sections, each with a stable identifier and a heading,
-and a list of the sections at its start whose entries are real links to them. It SHALL cover at least: getting
+and a section navigation whose entries are real links to them. It SHALL cover at least: getting
 started (adding a workspace root, enabling discovered projects, integrating a repository without OpenSpec, creating a
 change), the board (each column and what moves a change into it, filters, the change detail view), agent sessions
 (starting, the console, the worktree a session works in, Ship and Resolve conflicts, ending a session — and that the
@@ -15,7 +15,7 @@ app.
 
 #### Scenario: Section list
 - **WHEN** the Help view is shown
-- **THEN** a list of every section is at its start and activating an entry brings that section to the top
+- **THEN** a navigation lists every section and activating an entry brings that section to the top
 
 #### Scenario: Link into the app
 - **WHEN** the user activates the link to the Environment section in the troubleshooting section
