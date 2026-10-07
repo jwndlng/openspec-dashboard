@@ -4,16 +4,16 @@ import { join } from "node:path";
 
 export const FIXTURES = join(import.meta.dir, "fixtures");
 
-/** Points OPENSPEC_DASHBOARD_HOME at a fresh temp dir for the duration of a test file. */
+/** Points SPEC_CONTROL_HOME at a fresh temp dir for the duration of a test file. */
 export async function useTempHome(): Promise<{ home: string; cleanup: () => Promise<void> }> {
   const home = await mkdtemp(join(tmpdir(), "osd-home-"));
-  const previous = process.env.OPENSPEC_DASHBOARD_HOME;
-  process.env.OPENSPEC_DASHBOARD_HOME = home;
+  const previous = process.env.SPEC_CONTROL_HOME;
+  process.env.SPEC_CONTROL_HOME = home;
   return {
     home,
     cleanup: async () => {
-      if (previous === undefined) delete process.env.OPENSPEC_DASHBOARD_HOME;
-      else process.env.OPENSPEC_DASHBOARD_HOME = previous;
+      if (previous === undefined) delete process.env.SPEC_CONTROL_HOME;
+      else process.env.SPEC_CONTROL_HOME = previous;
       await rm(home, { recursive: true, force: true });
     },
   };

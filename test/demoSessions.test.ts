@@ -150,7 +150,7 @@ test("starting a session: validated like the dashboard, one per change, in memor
   expect(validating).toMatchObject({ state: "running", action: "validate", change: "verify-rate-limit-headers", agentName: "Demo Agent" });
 
   const started = await api.openSession("a71c02e9", "migrate-to-postgres-16", "implement");
-  expect(started).toMatchObject({ state: "running", branch: "feat/migrate-to-postgres-16", agentName: "Demo Agent", worktreePath: "/home/demo/.openspec-dashboard/worktrees/a71c02e9/migrate-to-postgres-16" });
+  expect(started).toMatchObject({ state: "running", branch: "feat/migrate-to-postgres-16", agentName: "Demo Agent", worktreePath: "/home/demo/.spec-control/worktrees/a71c02e9/migrate-to-postgres-16" });
   expect((await api.openSession("a71c02e9", "migrate-to-postgres-16", "implement")).id).toBe(started.id);
   expect((await api.state()).repos.find((r) => r.id === "a71c02e9")?.worktrees.some((w) => w.path === started.worktreePath)).toBe(true);
   expect((await demo().api.sessions()).sessions.some((s) => s.change === "migrate-to-postgres-16")).toBe(false); // a reload starts over
@@ -231,7 +231,7 @@ test("switching sessions off hides them; nothing else breaks; callers cannot rea
   await api.saveConfig({ ...config, agentSessions: { ...config.agentSessions, enabled: false } });
   expect(await api.sessions()).toMatchObject({ sessions: [], worktrees: [] });
   expect(await refusal(api.openSession("a71c02e9", "migrate-to-postgres-16", "implement"))).toBe("403: agent sessions are disabled");
-  expect((await api.state()).repos.flatMap((r) => r.worktrees).some((w) => w.path.includes(".openspec-dashboard"))).toBe(false);
+  expect((await api.state()).repos.flatMap((r) => r.worktrees).some((w) => w.path.includes(".spec-control"))).toBe(false);
 
   const fresh = demo().api;
   const list = await fresh.sessions();
@@ -245,7 +245,7 @@ test("the main console in the demo: one at a time, a recording in the demo's con
   const { api, advance, terminal } = demo();
   const before = await api.sessions();
   const session = await api.openConsole();
-  expect(session).toMatchObject({ console: true, state: "running", worktreePath: "/home/demo/.openspec-dashboard/console" });
+  expect(session).toMatchObject({ console: true, state: "running", worktreePath: "/home/demo/.spec-control/console" });
   expect((await api.openConsole()).id).toBe(session.id);
 
   const after = await api.sessions();

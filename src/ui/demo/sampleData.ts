@@ -12,7 +12,7 @@ import type { ActivityEvent, AgentProfile, ArtifactStatus, ChangeSnapshot, Check
 import { summarizeWorkInProgress } from "../../shared/workInProgress.ts";
 
 /** Appears in the demo bundle only; test/demoBundle.test.ts uses it to tell the two bundles apart. */
-export const DEMO_MARKER = "openspec-dashboard-demo-build";
+export const DEMO_MARKER = "spec-control-demo-build";
 export const DEMO_ROOT = "/home/demo/work";
 /** The fictional user's home the sample paths sit under; test/demoData.test.ts allows /home/demo and nothing else. */
 export const DEMO_HOME = "/home/demo";
@@ -485,7 +485,7 @@ export function demoEnvironment(config: Config, now: number): EnvironmentReport 
   const off = "not needed while agent sessions are off";
   const needed = (check: EnvironmentCheck): EnvironmentCheck => (sessions ? check : { id: check.id, label: check.label, status: "not-needed", found: off });
   const checks: EnvironmentCheck[] = [
-    { id: "dashboard-home", label: "Dashboard home", status: "ok", found: `writable: ${DEMO_HOME}/.openspec-dashboard` },
+    { id: "dashboard-home", label: "Dashboard home", status: "ok", found: `writable: ${DEMO_HOME}/.spec-control` },
     { id: "git", label: "git", status: "ok", found: DEMO_TOOL_PATHS.git },
     needed({ id: "git-identity", label: "Git committer identity", status: "ok", found: "Demo User, configured for this user" }),
     { id: "openspec-cli", label: "OpenSpec CLI", status: "ok", found: DEMO_TOOL_PATHS.openspec },

@@ -95,7 +95,7 @@ test("a staged, identical marker and a differing prompt: confirmed, replaced, th
   // the copy holds the local bytes, under the dashboard's home and nowhere else
   const copy = resolved.resolved?.[1].copy as string;
   expect(await readFile(copy, "utf8")).toBe("the prompt as it was typed here\n");
-  expect(copy.startsWith(`${process.env.OPENSPEC_DASHBOARD_HOME}/`)).toBe(true);
+  expect(copy.startsWith(`${process.env.SPEC_CONTROL_HOME}/`)).toBe(true);
   expect(await backups(f)).toEqual([copy]);
 });
 

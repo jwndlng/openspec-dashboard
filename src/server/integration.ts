@@ -1,7 +1,7 @@
 // Setting a repository up for OpenSpec (repo-integration spec). The dashboard writes nothing in the repository: the
 // user's agent runs `openspec init` under its own permission prompts, which invariant 1 already covers ("starting the
 // user's agent … is not a write by the dashboard"). All this module decides is *when that worked* — `openspec/config.yaml`
-// on disk, never anything the agent printed — and it then tracks the repository, a write to `~/.openspec-dashboard/` only.
+// on disk, never anything the agent printed — and it then tracks the repository, a write to `~/.spec-control/` only.
 import { integrateUnavailable, type Config, type IntegrationSession } from "../shared/types.ts";
 import { availableName } from "../shared/nameHints.ts";
 import { newRepoConfig, updateConfig } from "./config.ts";

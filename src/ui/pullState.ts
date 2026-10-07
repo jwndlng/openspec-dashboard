@@ -63,7 +63,7 @@ export function blockingNote(file: PullBlockingFile): string {
 /** The one line above the Resolve and pull button: what confirming does, counted. */
 export function resolveSummary(files: PullBlockingFile[]): string {
   const differing = files.filter((f) => f.differs).length;
-  const copies = differing === 0 ? "Nothing differs, so no copy is needed." : `${count(differing, "file")} ${differing === 1 ? "differs" : "differ"}; a copy of each is saved under ~/.openspec-dashboard/ first.`;
+  const copies = differing === 0 ? "Nothing differs, so no copy is needed." : `${count(differing, "file")} ${differing === 1 ? "differs" : "differ"}; a copy of each is saved under ~/.spec-control/ first.`;
   return `Replaces ${count(files.length, "file")} with the version the incoming commits bring, then fast-forwards. ${copies}`;
 }
 

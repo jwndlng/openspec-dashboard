@@ -39,7 +39,7 @@ const BLOCKED_FILES: PullBlockingFile[] = [
 ];
 const BLOCKED_HINT =
   "These files are left over from changes created here that the incoming commits already contain. Resolve and pull replaces them with the incoming version and keeps a copy of anything that differs.";
-const BLOCKED_COPY = `/home/demo/.openspec-dashboard/pull-backups/${BLOCKED_REPO}/2026-02-14T09-41-08-317Z/openspec/changes/${BLOCKED_CHANGE}/prompt.md`;
+const BLOCKED_COPY = `/home/demo/.spec-control/pull-backups/${BLOCKED_REPO}/2026-02-14T09-41-08-317Z/openspec/changes/${BLOCKED_CHANGE}/prompt.md`;
 
 export interface DemoApiOptions {
   now?: () => number;
@@ -106,9 +106,9 @@ export function createDemoApi({ now = Date.now, latencyMs = 150, clock }: DemoAp
     }),
   });
 
-  const MARK = "openspec-dashboard:shared";
+  const MARK = "spec-control:shared";
   const renderConfig = (applied: SharedProfile[]): string => {
-    const blocks = applied.filter((p) => p.context.trim()).map((p) => [`<!-- ${MARK}:begin ${p.id} — managed by openspec-dashboard, edits here are overwritten -->`, ...p.context.trim().split("\n"), `<!-- ${MARK}:end ${p.id} -->`, ""]);
+    const blocks = applied.filter((p) => p.context.trim()).map((p) => [`<!-- ${MARK}:begin ${p.id} — managed by spec-control, edits here are overwritten -->`, ...p.context.trim().split("\n"), `<!-- ${MARK}:end ${p.id} -->`, ""]);
     const context = [...blocks.flat(), "Sample project context (the project's own — never touched)."];
     const artifacts = [...new Set(applied.flatMap((p) => Object.keys(p.rules)))];
     const rules = artifacts.flatMap((artifact) => [`  ${artifact}:`, ...applied.flatMap((p) => (p.rules[artifact] ?? []).map((rule) => `    - ${rule} # ${MARK}:${p.id}`))]);

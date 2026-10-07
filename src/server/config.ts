@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
-import { basename, dirname, isAbsolute } from "node:path";
+import { basename, dirname, isAbsolute, join } from "node:path";
 import { z } from "zod";
 import { AGENT_PRESETS, defaultAgentSessions } from "../shared/agentDefaults.ts";
 import { MAX_LABEL_COLORS, MAX_LABEL_LENGTH, MAX_LABELS } from "../shared/labels.ts";
@@ -389,6 +389,20 @@ export function updateConfig(state: { config: Config }, change: (current: Config
   });
   pendingWrite = run.catch(() => undefined);
   return run;
+}
+
+/**
+ * The port in `<home>/config.json`, read without writing or validating anything else, so the server can bind before
+ * the home migration runs (the port is what keeps a second instance from moving a home in use). Anything unreadable
+ * means the default, which is also what `loadConfig` falls back to.
+ */
+export async function configuredPort(home: string): Promise<number> {
+  try {
+    const port = (JSON.parse(await readFile(join(home, "config.json"), "utf8")) as { port?: unknown }).port;
+    return typeof port === "number" && Number.isInteger(port) && port >= 1024 && port <= 65535 ? port : DEFAULT_PORT;
+  } catch {
+    return DEFAULT_PORT;
+  }
 }
 
 /**

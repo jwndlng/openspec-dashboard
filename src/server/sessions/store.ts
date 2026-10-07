@@ -1,4 +1,4 @@
-// Session records live under ~/.openspec-dashboard/sessions/<id>/: `meta.json` (written atomically) and, once a
+// Session records live under ~/.spec-control/sessions/<id>/: `meta.json` (written atomically) and, once a
 // session has ended, `output.bin` with the tail of its terminal output. User-only files: a terminal shows whatever
 // the agent printed.
 import { chmod, mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";

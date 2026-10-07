@@ -1,8 +1,9 @@
 // What's new: which changelog entries this browser has seen, and the dialog's month grouping. Free of DOM access at
 // import time; the storage helpers tolerate a browser that refuses localStorage (no count, the dialog still works).
 import type { ChangelogEntry } from "./changelog.ts";
+import { storageKey } from "./storage.ts";
 
-export const WHATS_NEW_SEEN_KEY = "openspec-dashboard.whats-new.seen";
+export const WHATS_NEW_SEEN_KEY = storageKey("whats-new.seen");
 
 type KeyValueStore = Pick<Storage, "getItem" | "setItem">;
 

@@ -1,11 +1,11 @@
 // Compiles the server (with the UI built beforehand into dist/ui/index.html) into the single binary
-// dist/spec-control. The version it reports comes from OPENSPEC_DASHBOARD_VERSION, set by the release workflow;
-// every other build is `dev` (src/server/version.ts).
+// dist/spec-control. The version it reports comes from SPEC_CONTROL_VERSION, set by the release workflow (or, for one
+// release, the former OPENSPEC_DASHBOARD_VERSION); every other build is `dev` (src/server/version.ts).
 import { rm } from "node:fs/promises";
 import { join } from "node:path";
 
 const root = join(import.meta.dir, "..");
-const version = process.env.OPENSPEC_DASHBOARD_VERSION || "dev";
+const version = process.env.SPEC_CONTROL_VERSION || process.env.OPENSPEC_DASHBOARD_VERSION || "dev";
 
 const build = Bun.spawn(
   [
@@ -16,7 +16,7 @@ const build = Bun.spawn(
     "--outfile",
     "dist/spec-control",
     "--define",
-    `OPENSPEC_DASHBOARD_BUILD_VERSION=${JSON.stringify(version)}`,
+    `SPEC_CONTROL_BUILD_VERSION=${JSON.stringify(version)}`,
   ],
   { cwd: root, stdout: "inherit", stderr: "inherit" },
 );

@@ -258,8 +258,13 @@ test("writes depends-on.yaml with the dependencies in order, which the scanner r
   const result = await createChange(root, "add-billing-ui", undefined, ["add-billing-schema", "add-billing-api"]);
   expect(result.ok).toBe(true);
   const text = await readFile(join(root, "openspec", "changes", "add-billing-ui", "depends-on.yaml"), "utf8");
-  expect(text.startsWith("# ")).toBe(true);
+  expect(text.split("\n")[0]).toBe("# Changes that must be implemented and merged before this one is implemented (spec-control).");
   expect(parseDependsOn(text)).toEqual({ names: ["add-billing-schema", "add-billing-api"], unreadable: false, warnings: [] });
+});
+
+test("a depends-on.yaml with the pre-rename header reads the same", () => {
+  const text = "# Changes that must be implemented and merged before this one is implemented (openspec-dashboard).\ndepends_on:\n  - add-billing-schema\n";
+  expect(parseDependsOn(text)).toEqual({ names: ["add-billing-schema"], unreadable: false, warnings: [] });
 });
 
 test("no dependencies, no depends-on.yaml", async () => {

@@ -56,7 +56,7 @@ async function runChrome(args: string[], profile: string): Promise<string> {
 }
 
 await mkdir(outDir, { recursive: true });
-const profiles = await mkdtemp(join(tmpdir(), "openspec-dashboard-shots-"));
+const profiles = await mkdtemp(join(tmpdir(), "spec-control-shots-"));
 try {
   for (const theme of THEMES) {
     const scheme = `--blink-settings=preferredColorScheme=${theme.blink}`;

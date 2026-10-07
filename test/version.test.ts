@@ -24,7 +24,7 @@ afterAll(async () => {
 async function cli(...args: string[]): Promise<{ code: number; stdout: string }> {
   const proc = Bun.spawn(["bun", "run", join(root, "src", "server", "index.ts"), ...args], {
     cwd: root,
-    env: { ...process.env, OPENSPEC_DASHBOARD_HOME: home },
+    env: { ...process.env, SPEC_CONTROL_HOME: home },
     stdout: "pipe",
     stderr: "inherit",
   });

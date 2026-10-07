@@ -3,6 +3,7 @@ import { chmod, mkdir, readdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { defaultConfig } from "../src/server/config.ts";
 import { environmentReport, resetEnvironmentCache } from "../src/server/environment.ts";
+import { type MigrationOutcome, recordMigrationOutcome } from "../src/server/homeMigration.ts";
 import type { Config, EnvironmentCheck, EnvironmentReport, RepoSnapshot, Snapshot } from "../src/shared/types.ts";
 import { tempDir, useTempHome } from "./helpers.ts";
 
@@ -134,6 +135,45 @@ test("the dashboard home is ok and the probe leaves nothing behind", async () =>
   expect((await readdir(home.home)).filter((n) => n.startsWith(".env-check-"))).toEqual([]);
 });
 
+// The home migration's leftovers, reported on the same check (the spec allows no other checks).
+async function homeCheckWith(outcome: MigrationOutcome): Promise<EnvironmentCheck> {
+  const { bin } = await machine();
+  const home = await useTempHome();
+  cleanups.push(home.cleanup);
+  recordMigrationOutcome(outcome);
+  cleanups.push(async () => recordMigrationOutcome({ kind: "nothing" }));
+  process.env.PATH = bin;
+  resetEnvironmentCache();
+  return byId(await environmentReport(defaultConfig(), { generatedAt: "2026-09-30T10:00:00.000Z", repos: [] }), "dashboard-home");
+}
+
+test("a finished migration says nothing about the former home", async () => {
+  const check = await homeCheckWith({ kind: "migrated", from: "/w/u/.openspec-dashboard", to: "/w/u/.spec-control", pending: [] });
+  expect(check.status).toBe("ok");
+  expect(check.found).not.toContain("openspec-dashboard");
+});
+
+test("a pending migration step is a warning naming the worktree and the reason", async () => {
+  const check = await homeCheckWith({ kind: "retried", pending: [{ kind: "repair", worktree: "/w/u/.spec-control/worktrees/3d84480c2b4d/feat-x", error: "its repository could not be found" }] });
+  expect(check.status).toBe("warning");
+  expect(check.found).toContain("/w/u/.spec-control/worktrees/3d84480c2b4d/feat-x");
+  expect(check.found).toContain("its repository could not be found");
+  expect(check.remedy).toContain("next start");
+});
+
+test("a refused move is a warning saying the former home is in use", async () => {
+  const check = await homeCheckWith({ kind: "refused", reason: "EBUSY: resource busy" });
+  expect(check.status).toBe("warning");
+  expect(check.found).toContain("EBUSY");
+});
+
+test("a former home left next to the new one is a warning naming it", async () => {
+  const check = await homeCheckWith({ kind: "both", old: "/w/u/.openspec-dashboard" });
+  expect(check.status).toBe("warning");
+  expect(check.found).toContain("/w/u/.openspec-dashboard");
+  expect(check.found).toContain("no longer used");
+});
+
 test("a home that cannot be written is a problem naming the directory", async () => {
   const { bin } = await machine();
   const parent = await tempDir("osd-ro-");
@@ -141,11 +181,11 @@ test("a home that cannot be written is a problem naming the directory", async ()
   await mkdir(home);
   await chmod(home, 0o500);
   cleanups.push(() => chmod(home, 0o700));
-  const previous = process.env.OPENSPEC_DASHBOARD_HOME;
-  process.env.OPENSPEC_DASHBOARD_HOME = home;
+  const previous = process.env.SPEC_CONTROL_HOME;
+  process.env.SPEC_CONTROL_HOME = home;
   cleanups.push(() => {
-    if (previous === undefined) delete process.env.OPENSPEC_DASHBOARD_HOME;
-    else process.env.OPENSPEC_DASHBOARD_HOME = previous;
+    if (previous === undefined) delete process.env.SPEC_CONTROL_HOME;
+    else process.env.SPEC_CONTROL_HOME = previous;
   });
   process.env.PATH = bin;
   resetEnvironmentCache();
@@ -153,7 +193,7 @@ test("a home that cannot be written is a problem naming the directory", async ()
   const check = byId(result, "dashboard-home");
   expect(check.status).toBe("problem");
   expect(check.found).toContain(home);
-  expect(check.remedy).toBeDefined();
+  expect(check.remedy).toContain("SPEC_CONTROL_HOME");
   expect(result.status).toBe("problem");
 });
 

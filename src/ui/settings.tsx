@@ -209,7 +209,7 @@ export function Settings({ config, snapshot, onSaved, onRescan, environment, onR
               <input class="input num" type="number" min={10} value={draft.pollIntervalSeconds} onInput={(e) => update({ pollIntervalSeconds: Number(e.currentTarget.value) })} />
               seconds
             </label>
-            <span class="hint">· port {draft.port} (change in <code>~/.openspec-dashboard/config.json</code>, restart to apply)</span>
+            <span class="hint">· port {draft.port} (change in <code>~/.spec-control/config.json</code>, restart to apply)</span>
           </div>
         </section>
       ),

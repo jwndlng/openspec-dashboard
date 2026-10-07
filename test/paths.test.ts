@@ -3,7 +3,7 @@ import { existsSync, realpathSync } from "node:fs";
 import { mkdir, rm, symlink } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { canonicalPath, consoleDir, mergeScratchDir } from "../src/server/paths.ts";
+import { canonicalPath, consoleDir, dashboardHome, explicitHome, mergeScratchDir, useFallbackHome } from "../src/server/paths.ts";
 import { tempDir } from "./helpers.ts";
 
 let root: string;
@@ -49,25 +49,67 @@ test("a path that does not exist is returned normalised", () => {
   expect(canonicalPath("src")).toBe("src"); // exists below the working directory, still not resolved
 });
 
-test("the console's default folder lives in the dashboard home and follows OPENSPEC_DASHBOARD_HOME", () => {
-  const previous = process.env.OPENSPEC_DASHBOARD_HOME;
-  process.env.OPENSPEC_DASHBOARD_HOME = "/w/acme/.dash";
-  try {
-    expect(consoleDir()).toBe("/w/acme/.dash/console");
-  } finally {
-    if (previous === undefined) delete process.env.OPENSPEC_DASHBOARD_HOME;
-    else process.env.OPENSPEC_DASHBOARD_HOME = previous;
+/** Runs `fn` with exactly these home variables set (undefined unsets), restoring both afterwards. */
+function withHomeEnv(env: { SPEC_CONTROL_HOME?: string; OPENSPEC_DASHBOARD_HOME?: string }, fn: () => void): void {
+  const names = ["SPEC_CONTROL_HOME", "OPENSPEC_DASHBOARD_HOME"] as const;
+  const previous = names.map((n) => process.env[n]);
+  for (const n of names) {
+    if (env[n] === undefined) delete process.env[n];
+    else process.env[n] = env[n];
   }
+  try {
+    fn();
+  } finally {
+    names.forEach((n, i) => {
+      if (previous[i] === undefined) delete process.env[n];
+      else process.env[n] = previous[i];
+    });
+    useFallbackHome(undefined);
+  }
+}
+
+test("the console's default folder lives in the dashboard home and follows SPEC_CONTROL_HOME", () => {
+  withHomeEnv({ SPEC_CONTROL_HOME: "/w/acme/.dash" }, () => expect(consoleDir()).toBe("/w/acme/.dash/console"));
 });
 
-test("the merge scratch store lives in the dashboard home and follows OPENSPEC_DASHBOARD_HOME", () => {
-  const previous = process.env.OPENSPEC_DASHBOARD_HOME;
-  process.env.OPENSPEC_DASHBOARD_HOME = "/w/acme/.dash";
-  try {
-    // Never inside a repository: the conflict check would otherwise write into the tree it is meant to only read.
-    expect(mergeScratchDir()).toBe("/w/acme/.dash/merge-scratch");
-  } finally {
-    if (previous === undefined) delete process.env.OPENSPEC_DASHBOARD_HOME;
-    else process.env.OPENSPEC_DASHBOARD_HOME = previous;
-  }
+test("the merge scratch store lives in the dashboard home and follows SPEC_CONTROL_HOME", () => {
+  // Never inside a repository: the conflict check would otherwise write into the tree it is meant to only read.
+  withHomeEnv({ SPEC_CONTROL_HOME: "/w/acme/.dash" }, () => expect(mergeScratchDir()).toBe("/w/acme/.dash/merge-scratch"));
+});
+
+test("the home defaults to ~/.spec-control", () => {
+  withHomeEnv({}, () => {
+    expect(dashboardHome()).toBe(join(homedir(), ".spec-control"));
+    expect(explicitHome()).toBeUndefined();
+  });
+});
+
+test("SPEC_CONTROL_HOME wins over the deprecated OPENSPEC_DASHBOARD_HOME", () => {
+  withHomeEnv({ SPEC_CONTROL_HOME: "/w/state/a", OPENSPEC_DASHBOARD_HOME: "/w/state/b" }, () => {
+    expect(dashboardHome()).toBe("/w/state/a");
+    expect(explicitHome()?.variable).toBe("SPEC_CONTROL_HOME");
+  });
+});
+
+test("OPENSPEC_DASHBOARD_HOME still works on its own", () => {
+  withHomeEnv({ OPENSPEC_DASHBOARD_HOME: "/w/state/b" }, () => {
+    expect(dashboardHome()).toBe("/w/state/b");
+    expect(explicitHome()?.variable).toBe("OPENSPEC_DASHBOARD_HOME");
+  });
+});
+
+test("an empty variable counts as unset", () => {
+  withHomeEnv({ SPEC_CONTROL_HOME: "", OPENSPEC_DASHBOARD_HOME: "/w/state/b" }, () => expect(dashboardHome()).toBe("/w/state/b"));
+  withHomeEnv({ SPEC_CONTROL_HOME: "", OPENSPEC_DASHBOARD_HOME: "" }, () => expect(dashboardHome()).toBe(join(homedir(), ".spec-control")));
+});
+
+test("a failed migration's fallback is used only without an explicit home", () => {
+  withHomeEnv({}, () => {
+    useFallbackHome("/w/old-home");
+    expect(dashboardHome()).toBe("/w/old-home");
+  });
+  withHomeEnv({ SPEC_CONTROL_HOME: "/w/state/a" }, () => {
+    useFallbackHome("/w/old-home");
+    expect(dashboardHome()).toBe("/w/state/a");
+  });
 });

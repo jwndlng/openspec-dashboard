@@ -12,17 +12,21 @@ import { isMap, isScalar, isSeq, parseDocument, Scalar, YAMLSeq } from "yaml";
 import type { AppliedProfile, RepoConfig, RepoSharedConfig, SharedConfig, SharedConfigApplyResult, SharedConfigPreview, SharedProfile } from "../shared/types.ts";
 import { sharedConfigPath } from "./paths.ts";
 
-export const MARKER = "openspec-dashboard:shared";
+export const MARKER = "spec-control:shared";
+/** Written by versions before the rename. Still read as a managed section; never written. */
+export const FORMER_MARKER = "openspec-dashboard:shared";
+const MARKERS = [MARKER, FORMER_MARKER];
 /** OpenSpec ignores `context` entirely above this many UTF-8 bytes. */
 export const MAX_CONTEXT_BYTES = 50 * 1024;
 
 const PROFILE_ID = /^[a-z0-9][a-z0-9-]{0,62}$/;
 const ARTIFACT_ID = /^[A-Za-z0-9._-]+$/;
-const BEGIN_LINE = new RegExp(`^<!-- ${MARKER}:begin ([a-z0-9-]+)\\b.*-->$`);
-const END_LINE = new RegExp(`^<!-- ${MARKER}:end ([a-z0-9-]+) -->$`);
-const RULE_COMMENT = new RegExp(`^${MARKER}:([a-z0-9-]+)$`);
+const PREFIX = `(${MARKERS.join("|")})`;
+const BEGIN_LINE = new RegExp(`^<!-- ${PREFIX}:begin ([a-z0-9-]+)\\b.*-->$`);
+const END_LINE = new RegExp(`^<!-- ${PREFIX}:end ([a-z0-9-]+) -->$`);
+const RULE_COMMENT = new RegExp(`^${PREFIX}:([a-z0-9-]+)$`);
 
-export const contextBegin = (id: string) => `<!-- ${MARKER}:begin ${id} — managed by openspec-dashboard, edits here are overwritten -->`;
+export const contextBegin = (id: string) => `<!-- ${MARKER}:begin ${id} — managed by spec-control, edits here are overwritten -->`;
 export const contextEnd = (id: string) => `<!-- ${MARKER}:end ${id} -->`;
 export const ruleComment = (id: string) => `${MARKER}:${id}`;
 
@@ -49,7 +53,7 @@ export function validateSharedConfig(body: unknown): SharedConfig {
     if (typeof input.name !== "string" || input.name.trim() === "") issues.push(`${at}.name: must be a non-empty string`);
     if (typeof input.context !== "string") issues.push(`${at}.context: must be a string`);
     // A marker line inside shared text would be read back as a section boundary.
-    else if (input.context.includes(MARKER)) issues.push(`${at}.context: must not contain ${JSON.stringify(MARKER)}`);
+    else for (const marker of MARKERS) if (input.context.includes(marker)) issues.push(`${at}.context: must not contain ${JSON.stringify(marker)}`);
     const rules: Record<string, string[]> = {};
     if (typeof input.rules !== "object" || input.rules === null || Array.isArray(input.rules)) {
       issues.push(`${at}.rules: must be an object of artifact id → list of rules`);
@@ -106,35 +110,41 @@ interface Managed {
   profiles: Map<string, ManagedProfile>;
   /** The project's own context: everything outside the managed blocks. */
   localContext: string;
+  /** Some section still carries `FORMER_MARKER`; an apply then rewrites the file even when its content is current. */
+  former: boolean;
 }
 
 /** Splits a context string into managed blocks and local text. Throws on unbalanced, nested or repeated blocks. */
-function splitContext(context: string, into: Map<string, ManagedProfile>): string {
+function splitContext(context: string, into: Map<string, ManagedProfile>): { local: string; former: boolean } {
   const local: string[] = [];
-  let open: { id: string; lines: string[] } | undefined;
+  let former = false;
+  let open: { prefix: string; id: string; lines: string[] } | undefined;
   for (const line of context.replace(/\r\n?/g, "\n").split("\n")) {
     const begin = BEGIN_LINE.exec(line.trim());
     const end = END_LINE.exec(line.trim());
     if (begin) {
-      if (open || into.get(begin[1])?.context !== undefined) throw new Error("malformed shared-config markers in context");
-      open = { id: begin[1], lines: [] };
+      if (open || into.get(begin[2])?.context !== undefined) throw new Error("malformed shared-config markers in context");
+      open = { prefix: begin[1], id: begin[2], lines: [] };
+      former ||= begin[1] === FORMER_MARKER;
     } else if (end) {
-      if (!open || open.id !== end[1]) throw new Error("malformed shared-config markers in context");
+      // A block opened with one prefix and closed with the other is as mismatched as two different ids.
+      if (!open || open.id !== end[2] || open.prefix !== end[1]) throw new Error("malformed shared-config markers in context");
       into.set(open.id, { ...(into.get(open.id) ?? { rules: {} }), context: open.lines.join("\n") });
       open = undefined;
-    } else if (line.includes(`${MARKER}:begin`) || line.includes(`${MARKER}:end`)) {
+    } else if (MARKERS.some((m) => line.includes(`${m}:begin`) || line.includes(`${m}:end`))) {
       throw new Error("malformed shared-config markers in context");
     } else {
       (open ? open.lines : local).push(line);
     }
   }
   if (open) throw new Error("malformed shared-config markers in context");
-  return local.join("\n");
+  return { local: local.join("\n"), former };
 }
 
 type Doc = ReturnType<typeof parseDocument>;
 
-const profileOfRule = (item: unknown): string | undefined => (isScalar(item) ? RULE_COMMENT.exec(item.comment?.trim() ?? "")?.[1] : undefined);
+const ruleMarker = (item: unknown) => (isScalar(item) ? RULE_COMMENT.exec(item.comment?.trim() ?? "") : null);
+const profileOfRule = (item: unknown): string | undefined => ruleMarker(item)?.[2];
 
 /** Parses a config and extracts the managed sections. Throws when the file is not something apply may touch. */
 function readManaged(text: string): { doc: Doc; managed: Managed } {
@@ -146,7 +156,8 @@ function readManaged(text: string): { doc: Doc; managed: Managed } {
   if (context !== undefined && context !== null && typeof context !== "string") throw new Error("`context` is not a string");
 
   const profiles = new Map<string, ManagedProfile>();
-  const localContext = splitContext(typeof context === "string" ? context : "", profiles);
+  const split = splitContext(typeof context === "string" ? context : "", profiles);
+  let former = split.former;
 
   const rules = doc.get("rules", true);
   if (rules !== undefined && !(isScalar(rules) && rules.value === null)) {
@@ -156,15 +167,17 @@ function readManaged(text: string): { doc: Doc; managed: Managed } {
       if (pair.value === null || (isScalar(pair.value) && pair.value.value === null)) continue;
       if (!isSeq(pair.value)) throw new Error(`\`rules.${artifact}\` is not a list`);
       for (const item of pair.value.items) {
-        const id = profileOfRule(item);
-        if (id === undefined) continue;
+        const marker = ruleMarker(item);
+        if (!marker) continue;
+        const id = marker[2];
+        former ||= marker[1] === FORMER_MARKER;
         const entry = profiles.get(id) ?? { rules: {} };
         entry.rules[artifact] = [...(entry.rules[artifact] ?? []), String((item as Scalar).value)];
         profiles.set(id, entry);
       }
     }
   }
-  return { doc, managed: { profiles, localContext } };
+  return { doc, managed: { profiles, localContext: split.local, former } };
 }
 
 function sameRules(a: Record<string, string[]>, b: Record<string, string[]>): boolean {
@@ -204,7 +217,7 @@ export function applyShared(text: string, desired: SharedProfile[]): string {
   const effective = desired.filter((p) => p.context.trim() !== "" || Object.keys(p.rules).length > 0);
   const current = [...managed.profiles];
   const upToDate = current.length === effective.length && effective.every((p, i) => current[i][0] === p.id && matches(current[i][1], p));
-  if (upToDate) return text; // never reserialise a file that needs no change
+  if (upToDate && !managed.former) return text; // never reserialise a file that needs no change
 
   // context: one block per profile, then the project's own text
   const local = managed.localContext.replace(/^\n+/, "").replace(/\s+$/, "");

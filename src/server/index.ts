@@ -4,7 +4,9 @@ import { createFetchHandler, createWebSocketHandlers, type AppState, type Termin
 import { diffSnapshots, sessionEvent } from "./activity/events.ts";
 import { ActivityLog } from "./activity/log.ts";
 import { readSnapshot } from "./cache.ts";
-import { loadConfig } from "./config.ts";
+import { configuredPort, loadConfig } from "./config.ts";
+import { describeOutcome, startHomeMigration } from "./homeMigration.ts";
+import { explicitHome, newDefaultHome, oldDefaultHome } from "./paths.ts";
 import { Scanner } from "./scanner.ts";
 import { confirmIntegration } from "./integration.ts";
 import { SessionManager } from "./sessions/manager.ts";
@@ -53,8 +55,28 @@ function openBrowser(url: string): void {
   }
 }
 
+/** Where the port is read before the migration ran: the explicit home, else whichever default home exists, new first. */
+async function homeBeforeMigration(): Promise<string> {
+  const explicit = explicitHome();
+  if (explicit) return explicit.path;
+  return Bun.file(`${newDefaultHome()}/config.json`).exists().then((yes) => (yes ? newDefaultHome() : oldDefaultHome()));
+}
+
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
+  if (explicitHome()?.variable === "OPENSPEC_DASHBOARD_HOME") {
+    console.warn("warning: OPENSPEC_DASHBOARD_HOME is deprecated and will stop working in a later release; set SPEC_CONTROL_HOME instead");
+  }
+  // The port first: it is what proves no other instance is serving from the home the migration is about to move. A
+  // busy port throws here, before anything is touched.
+  const server = Bun.serve<TerminalSocketData>({
+    hostname: "127.0.0.1",
+    port: args.port ?? (await configuredPort(await homeBeforeMigration())),
+    fetch: () => new Response("Spec Control is starting", { status: 503, headers: { "retry-after": "1" } }),
+    websocket: { message() {} },
+  });
+  for (const line of describeOutcome(await startHomeMigration())) console.log(line);
+
   const { config, warning } = await loadConfig();
   if (warning) console.warn(`warning: ${warning}`);
   // Merges of previous runs; they are a scratch store, never state.
@@ -82,9 +104,7 @@ async function main(): Promise<void> {
   await state.sessions.init();
   state.scanner.start();
 
-  const server = Bun.serve({
-    hostname: "127.0.0.1",
-    port: args.port ?? config.port,
+  server.reload({
     fetch: createFetchHandler({ state, indexHtml }),
     websocket: createWebSocketHandlers(state) as unknown as Bun.WebSocketHandler<TerminalSocketData>,
   });

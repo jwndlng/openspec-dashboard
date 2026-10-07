@@ -13,7 +13,7 @@ test("path mode reads the route from the pathname and produces today's URLs", ()
 });
 
 test("hash mode reads the route from the fragment, wherever the page is served from", () => {
-  const at = (hash: string) => pathFromLocation({ pathname: "/openspec-dashboard/index.html", hash }, "hash");
+  const at = (hash: string) => pathFromLocation({ pathname: "/spec-control/index.html", hash }, "hash");
   expect(at("#/board")).toBe("/board");
   expect(routeFromPath(at("#/repo/a%2Fb"))).toEqual({ view: "repo", repoId: "a/b" });
   expect(routeFromPath(at("#/settings"))).toEqual({ view: "settings" });
@@ -22,7 +22,7 @@ test("hash mode reads the route from the fragment, wherever the page is served f
 });
 
 test("hash mode navigates within the current document and links open the same view in a new tab", () => {
-  expect(navigateUrl({ pathname: "/openspec-dashboard/" }, "/board", "hash")).toBe("/openspec-dashboard/#/board");
+  expect(navigateUrl({ pathname: "/spec-control/" }, "/board", "hash")).toBe("/spec-control/#/board");
   expect(navigateUrl({ pathname: "/tmp/demo/index.html" }, "/", "hash")).toBe("/tmp/demo/index.html#/");
   expect(href("/board", "hash")).toBe("#/board");
 });

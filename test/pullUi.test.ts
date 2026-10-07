@@ -79,7 +79,7 @@ test("each blocking file says what it is, and the confirmation says what it will
   expect(resolveSummary([leftover(yaml)])).toBe("Replaces 1 file with the version the incoming commits bring, then fast-forwards. Nothing differs, so no copy is needed.");
   const two = resolveSummary([leftover(yaml), leftover(prompt, true)]);
   expect(two).toContain("Replaces 2 files with the version the incoming commits bring");
-  expect(two).toContain("1 file differs; a copy of each is saved under ~/.openspec-dashboard/ first.");
+  expect(two).toContain("1 file differs; a copy of each is saved under ~/.spec-control/ first.");
   expect(resolveSummary([leftover(yaml, true), leftover(prompt, true)])).toContain("2 files differ;");
 });
 
@@ -118,7 +118,7 @@ test("local work among the blocking files is shown but never offered, and a runn
 });
 
 test("once resolved the same list becomes the outcome: what was replaced, and where the copies are", () => {
-  const copy = "/home/demo/.openspec-dashboard/pull-backups/r/2026-02-14T09-41-08-317Z/openspec/changes/add-login/prompt.md";
+  const copy = "/home/demo/.spec-control/pull-backups/r/2026-02-14T09-41-08-317Z/openspec/changes/add-login/prompt.md";
   const done = PullBlockedList({ result: result({ fetched: false, update: "fast-forwarded", commits: 2, resolved: [{ path: yaml }, { path: prompt, copy }] }), running: false, onResolve: () => {} });
   const text = textOf(done);
   expect(text).toContain("2 leftover files were replaced with the incoming version");

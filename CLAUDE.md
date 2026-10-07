@@ -11,7 +11,7 @@ See `README.md` for what it does and `CONTRIBUTING.md` for the branch, commit an
 bun install
 bun run dev        # build the UI, serve http://127.0.0.1:4711 from source
 bun run check      # lint + typecheck + tests — run before every push; CI runs exactly this
-bun run build      # dist/spec-control (UI and fonts embedded); --version prints dev, or $OPENSPEC_DASHBOARD_VERSION
+bun run build      # dist/spec-control (UI and fonts embedded); --version prints dev, or $SPEC_CONTROL_VERSION
 bun test test/scanner.test.ts   # a single test file
 ```
 
@@ -23,20 +23,21 @@ bun test test/scanner.test.ts   # a single test file
   their structure: change them together with the tests, and never reformat or lint them.
 - `openspec/` — this project's own specs (`openspec/specs/`) and changes. Requirements live there; read the relevant
   spec before changing behaviour.
-- **The old name stays on purpose in local identifiers.** The home directory `~/.openspec-dashboard/`, the
-  `OPENSPEC_DASHBOARD_HOME` and `OPENSPEC_DASHBOARD_VERSION` variables, the browser storage keys `openspec-dashboard.*`,
-  the `openspec-dashboard:shared` markers in repositories' `openspec/config.yaml` and the `depends-on.yaml` header keep
-  the pre-rename name. Renaming them needs a migration (registered worktree paths, rewritten config files) and is a
-  separate follow-up change; do not rename them piecemeal.
+- **The old name survives only where it is read for compatibility.** The home `~/.spec-control/` is moved from
+  `~/.openspec-dashboard/` on first start (`src/server/homeMigration.ts`, which leaves a link at the old path);
+  `OPENSPEC_DASHBOARD_HOME` and `OPENSPEC_DASHBOARD_VERSION` are still read after their `SPEC_CONTROL_*` successors;
+  browser keys `openspec-dashboard.*` are copied once to `spec-control.*` (`src/ui/storage.ts`); and
+  `openspec-dashboard:shared` markers are still recognised, though only `spec-control:shared` is written
+  (`src/server/sharedConfig.ts`). Do not add new uses of the old name.
 
 ## Invariants — do not break these
 
 1. **Read-only towards tracked repositories, with enumerated exceptions.** The dashboard writes to a tracked
    repository only in response to an explicit user action, only to the paths enumerated in the "never writes"
    requirement of `openspec/specs/dashboard-api/spec.md`, deletes nothing there beyond the worktrees, branches, change directories and confirmed change leftovers enumerated below, and runs a git
-   command that writes only where enumerated below. Today that list has seven entries: the managed sections of `openspec/config.yaml` (applying shared config profiles,
+   command that writes only where enumerated below. Today that list has eight entries: the managed sections of `openspec/config.yaml` (applying shared config profiles,
    `src/server/sharedConfig.ts`); for agent sessions, off by default, a session's git worktree, created with
-   `git worktree add` (directory under `~/.openspec-dashboard/worktrees/`, never inside the repository's working tree)
+   `git worktree add` (directory under `~/.spec-control/worktrees/`, never inside the repository's working tree)
    and removed with a non-forcing `git worktree remove` after the user confirmed and read-only checks proved nothing
    would be lost (`src/server/sessions/worktree.ts`) — or, with no dialog, when a pull-request query that already ran
    shows merged the pull request of a session whose agent the dashboard asked to enable auto-merge, in a project that
@@ -49,7 +50,7 @@ bun test test/scanner.test.ts   # a single test file
    leftover** (inside `openspec/changes/<name>/`, not in the current commit, only added locally, an ordinary file, and
    present in the incoming commit) and only after the user confirmed **Resolve and pull** and the whole classification
    was re-proved without fetching again, copying every leftover that differs under
-   `~/.openspec-dashboard/pull-backups/`, removing exactly those files from the working tree and, for the staged ones,
+   `~/.spec-control/pull-backups/`, removing exactly those files from the working tree and, for the staged ones,
    from the index with `git rm --cached` (never `-f`), then retrying the fast-forward and, if it is still refused,
    writing them back and re-staging them with `git add -- <those paths>` (`src/server/pull.ts`, the only place that
    contacts a remote or changes a main checkout); and the **create-change action** — a new `openspec/changes/<name>/` directory
@@ -71,7 +72,12 @@ bun test test/scanner.test.ts   # a single test file
    showed and that no agent session for the change runs, then staging that removal with a single
    `git add --all -- openspec/changes/<name>/`, best-effort and never followed by a commit
    (`src/server/dismissChange.ts`, `POST /api/repos/<id>/changes/<name>/dismiss`, the only place that deletes a change
-   directory). Those six modules are the only places that write to a tracked repository. Apart from the pull action and
+   directory); and the **home migration** — once, when the user starts a binary that finds only the pre-rename home,
+   `git worktree repair` of each session worktree the dashboard created, with its new path under
+   `~/.spec-control/worktrees/`, which rewrites only that worktree's record in the repository and its `.git` file and is
+   retried on later starts until it succeeds (`src/server/homeMigration.ts` through `repairMovedWorktree` in
+   `src/server/sessions/worktree.ts`). Those six modules and the home migration are the only places that write to a
+   tracked repository. Apart from the pull action and
    those two `git add`s, the main checkout's index and files are never touched and no remote is ever contacted; the main
    checkout's branch is never changed by anything; and the pull action runs only on the user's explicit request — never
    on a timer, during a scan, on page load or as a side effect (`test/pull.test.ts` proves scans leave a recording
@@ -81,7 +87,7 @@ bun test test/scanner.test.ts   # a single test file
    above: it starts the default agent in a git repository that is not tracked yet so the agent can run `openspec init`
    there, while the dashboard runs no git command and writes no file in that repository and adds it to its own config
    only once `openspec/config.yaml` is on disk. The same holds for the **main console** (`openConsole`, `src/server/sessions/consoleFolder.ts`):
-   the default agent in the console folder — `~/.openspec-dashboard/console/` or a folder the user configured, which is
+   the default agent in the console folder — `~/.spec-control/console/` or a folder the user configured, which is
    refused when it is, or lies inside, a tracked repository — with no worktree, no branch and no git command. And for a
    **project console** (`openProjectConsole`, `src/server/sessions/manager.ts`, `POST /api/repos/<id>/console`): the
    project's agent, without a prompt, in place in a tracked repository's own folder — for a git repository its main
@@ -94,14 +100,14 @@ bun test test/scanner.test.ts   # a single test file
    folder is then handed to an integration session, so `openspec init` is the agent's, exactly as for **Integrate**. With agent sessions disabled no process that can modify a repository is ever started. Scanning, polling, discovery, previews and saving settings
    write nothing to a repository. In particular `tasks.md` is never written: the dashboard reads the three checkbox
    states (`[x]`, `[~]` — finished, awaiting the user's confirmation — and `[ ]`) and shows them; only the agent, in its
-   own session under its own permission prompts, ticks a box or writes a `- [~]`. All other writes stay under `~/.openspec-dashboard/` (or `OPENSPEC_DASHBOARD_HOME`
-   in tests), apart from that new project folder. Apart from the worktree commands, the pull action's `fetch`, `merge --ff-only`, leftover `rm --cached`
+   own session under its own permission prompts, ticks a box or writes a `- [~]`. All other writes stay under `~/.spec-control/` (or `SPEC_CONTROL_HOME`
+   in tests), apart from that new project folder. Apart from the worktree commands (the home migration's `worktree repair` among them), the pull action's `fetch`, `merge --ff-only`, leftover `rm --cached`
    and restoring `add`, the create-change and dismissal `add`, the cleanup's `branch -D` and the new project's `git init`, git is invoked only with
    the read-only subcommands listed in that spec — among them `ls-tree`, `cat-file` and `hash-object` without `-w`,
    which is how a leftover is told from the user's own work, and `merge-tree --write-tree`, which answers whether a
    session's branch still merges into its base. That last one is the only read-only subcommand that writes anything at
    all: it puts the tree it merges into an object database, so it is always invoked with `GIT_OBJECT_DIRECTORY` pointed
-   at a scratch store under `~/.openspec-dashboard/` and the repository's own objects offered only as
+   at a scratch store under `~/.spec-control/` and the repository's own objects offered only as
    `GIT_ALTERNATE_OBJECT_DIRECTORIES` — it reads everything and writes nothing into the repository, and it is never
    given a working tree, an index or a ref. The **pull-request query** (`src/server/pullRequests.ts`) is the one other
    thing that leaves this machine, and it is not a write: it runs the GitHub CLI's read-only `gh pr list` and
@@ -135,7 +141,7 @@ bun test test/scanner.test.ts   # a single test file
    nothing else changes.
 5. **The repository is the source of truth.** The dashboard indexes; everything it shows about the *current state* of a
    change is derived from the repositories. The one thing it keeps that cannot be re-derived is history: the activity
-   log (`~/.openspec-dashboard/activity.jsonl`, `src/server/activity/`) records what the dashboard observed and when.
+   log (`~/.spec-control/activity.jsonl`, `src/server/activity/`) records what the dashboard observed and when.
    It is never an input to scanning, columns, counts or actions, and deleting it loses history only.
 6. **Change names reaching git or the file system are validated** (`CHANGE_NAME` in `src/server/source.ts`).
 7. **Nothing from a real repository goes into this one.** No copied `openspec/` trees, repo names, paths, hostnames or

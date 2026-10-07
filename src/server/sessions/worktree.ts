@@ -1,6 +1,7 @@
 // The git *writes* the dashboard performs for agent sessions (design.md D17), both on an explicit user action:
 // creating a session's worktree, and removing it after read-only checks proved it holds nothing that exists nowhere else.
-import { cp, mkdir, stat } from "node:fs/promises";
+// The one more is `repairMovedWorktree`, run by the home migration once the user started a binary that moved the home.
+import { cp, mkdir, realpath, stat } from "node:fs/promises";
 import { parseWorktrees } from "../git.ts";
 import { dirname, join } from "node:path";
 
@@ -130,4 +131,28 @@ export async function copyChangeIfMissing(fromCheckout: string, worktreePath: st
   if ((await isDirectory(target)) || !(await isDirectory(source))) return false;
   await cp(source, target, { recursive: true });
   return true;
+}
+
+/**
+ * After the home migration moved a session worktree, tells its repository where it is now: `git worktree repair` with
+ * the new path, run against the repository's common git directory, which the moved worktree still names (its `.git`
+ * file points at an administrative directory that did not move). Rewrites only that record and the worktree's `.git`
+ * file. Resolves with the reason when it cannot; `undefined` means repaired.
+ */
+export async function repairMovedWorktree(worktreePath: string): Promise<string | undefined> {
+  try {
+    if (!(await stat(join(worktreePath, ".git"))).isFile()) return "not a linked worktree";
+  } catch {
+    return "not a linked worktree";
+  }
+  const common = await git(worktreePath, ["rev-parse", "--path-format=absolute", "--git-common-dir"]);
+  if (!common.ok || !common.out) return `its repository could not be found${common.err ? `: ${common.err.split("\n").pop()}` : ""}`;
+  const repaired = await git(worktreePath, [`--git-dir=${common.out}`, "worktree", "repair", worktreePath]);
+  if (!repaired.ok) return `git worktree repair failed: ${repaired.err.split("\n").pop() || "no reason given"}`;
+  // git reports some problems on stderr and still exits 0, so the record itself decides.
+  const listed = await git(worktreePath, [`--git-dir=${common.out}`, "worktree", "list", "--porcelain"]);
+  const real = await realpath(worktreePath).catch(() => worktreePath);
+  const paths = parseWorktrees(`${listed.out}\n`).map((w) => w.path);
+  if (!listed.ok || !(paths.includes(worktreePath) || paths.includes(real))) return `git worktree repair did not update the record: ${repaired.err.split("\n").pop() || "no reason given"}`;
+  return undefined;
 }

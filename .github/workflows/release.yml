@@ -46,7 +46,7 @@ jobs:
         run: bun install --frozen-lockfile
 
       - name: Build single binary
-        run: OPENSPEC_DASHBOARD_VERSION="$TAG" bun run build
+        run: SPEC_CONTROL_VERSION="$TAG" bun run build
 
       # Every binary is executed before anything is attached; the version must be exactly the tag.
       - name: Smoke test binary

@@ -5,6 +5,7 @@ import { mkdir, rm, stat, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { join, sep } from "node:path";
 import { ENVIRONMENT_STATUS_ORDER, type Config, type EnvironmentCheck, type EnvironmentReport, type EnvironmentStatus, type Snapshot } from "../shared/types.ts";
+import { describeStep, migrationOutcome } from "./homeMigration.ts";
 import { dashboardHome, whichOnPath } from "./paths.ts";
 import { availability } from "./sessions/agents.ts";
 
@@ -74,6 +75,39 @@ function identityCwd(config: Config): string {
   return insideAnyRepo(home, config) ? tmpdir() : home;
 }
 
+/** What the home migration left unfinished, as a warning on an otherwise writable home; nothing once it is done. */
+function migrationWarning(id: string, label: string, dir: string): EnvironmentCheck | undefined {
+  const outcome = migrationOutcome();
+  if (outcome.kind === "refused") {
+    return {
+      id,
+      label,
+      status: "warning",
+      found: `writable: ${dir}, the former home — it could not be moved to its new name: ${outcome.reason}`,
+      remedy: "Nothing is lost; Spec Control tries to move it again on the next start. Restart it once nothing else uses that folder.",
+    };
+  }
+  if (outcome.kind === "both") {
+    return {
+      id,
+      label,
+      status: "warning",
+      found: `writable: ${dir}; the former home ${outcome.old} is still there and no longer used`,
+      remedy: `Move anything you still need out of ${outcome.old}, then delete it.`,
+    };
+  }
+  if ((outcome.kind === "migrated" || outcome.kind === "retried") && outcome.pending.length > 0) {
+    return {
+      id,
+      label,
+      status: "warning",
+      found: `writable: ${dir}; moving the home left ${outcome.pending.length === 1 ? "one step" : `${outcome.pending.length} steps`} to finish: ${outcome.pending.map(describeStep).join("; ")}`,
+      remedy: "Spec Control retries these on the next start; the link at the former home keeps everything usable meanwhile.",
+    };
+  }
+  return undefined;
+}
+
 async function checkDashboardHome(): Promise<EnvironmentCheck> {
   const id = "dashboard-home";
   const label = "Dashboard home";
@@ -83,14 +117,14 @@ async function checkDashboardHome(): Promise<EnvironmentCheck> {
   try {
     await mkdir(dir, { recursive: true });
     await writeFile(probe, "");
-    return { id, label, status: "ok", found: `writable: ${dir}` };
+    return migrationWarning(id, label, dir) ?? { id, label, status: "ok", found: `writable: ${dir}` };
   } catch (err) {
     return {
       id,
       label,
       status: "problem",
       found: `${dir} cannot be written: ${reason(err)}`,
-      remedy: "Make that directory writable, or point OPENSPEC_DASHBOARD_HOME at one that is.",
+      remedy: "Make that directory writable, or point SPEC_CONTROL_HOME at one that is.",
     };
   } finally {
     await rm(probe, { force: true }).catch(() => {});

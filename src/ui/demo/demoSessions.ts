@@ -16,9 +16,9 @@ const DAY = 24 * HOUR;
 
 /** Same names the dashboard uses for a session's worktree and branch. */
 const worktreeName = (action: SessionAction, change: string) => (action === "archive" ? `archive-${change}` : change);
-export const sessionWorktreePath = (repoId: string, name: string) => `${DEMO_ROOT.replace(/\/[^/]+$/, "")}/.openspec-dashboard/worktrees/${repoId}/${name}`;
+export const sessionWorktreePath = (repoId: string, name: string) => `${DEMO_ROOT.replace(/\/[^/]+$/, "")}/.spec-control/worktrees/${repoId}/${name}`;
 /** The main console's default folder, as the dashboard would place it under the demo's home. */
-export const DEMO_CONSOLE_DIR = `${DEMO_ROOT.replace(/\/[^/]+$/, "")}/.openspec-dashboard/console`;
+export const DEMO_CONSOLE_DIR = `${DEMO_ROOT.replace(/\/[^/]+$/, "")}/.spec-control/console`;
 const NOT_A_CHANGE = "this is the main console, which belongs to no change";
 const NOT_A_CHANGE_INTEGRATING = "this session is setting a repository up for OpenSpec, so it belongs to no change";
 const NOT_A_CHANGE_PROJECT = "this is the project's console, which belongs to no change";

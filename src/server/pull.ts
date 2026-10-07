@@ -8,7 +8,7 @@
 // The one thing it removes: when a fast-forward is refused because uncommitted files would be overwritten, it lists
 // them, and when every one of them is a **change leftover** — a file the dashboard's own create-change wrote and staged
 // that the incoming commits already contain — it offers Resolve and pull. Only then, only after the user confirms and
-// only after re-proving the whole classification, does it copy what differs into `~/.openspec-dashboard/`, remove
+// only after re-proving the whole classification, does it copy what differs into `~/.spec-control/`, remove
 // exactly those files and run the fast-forward again, putting them back if that is still refused.
 import { constants } from "node:fs";
 import { access, chmod, copyFile, lstat, mkdir, readFile, rm, writeFile } from "node:fs/promises";
