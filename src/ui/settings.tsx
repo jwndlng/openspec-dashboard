@@ -4,9 +4,20 @@ import { AgentSettings } from "./agentSettings.tsx";
 import { api, ApiError } from "./api.ts";
 import { EnvironmentPanel } from "./environment.tsx";
 import { environmentAttention, environmentCount, type EnvironmentState } from "./environmentState.ts";
-import { SettingsNav, type SettingsSection, SettingsSections, useSectionNav } from "./settingsNav.tsx";
+import { type NavSection, SectionList, SectionNav, type SectionPage, useSectionNav } from "./sectionNav.tsx";
+import { SECTION_IDS } from "./settingsSections.ts";
 import { SharedConfigPanel } from "./sharedConfig.tsx";
 import { followInApp, href } from "./url.ts";
+
+export const SETTINGS_PAGE: SectionPage = {
+  prefix: "settings",
+  known: SECTION_IDS,
+  layout: ".settings-layout",
+  scroller: ".settings-scroll",
+  label: "Settings sections",
+  path: "/settings",
+  keepQuery: false,
+};
 
 interface Props {
   config: Config | null;
@@ -78,7 +89,7 @@ export function Settings({ config, snapshot, onSaved, onRescan, environment, onR
   // Hooks first: the ids are all the hook needs, and they are known before the draft is.
   const scroller = useRef<HTMLDivElement>(null);
   const sectionIds = draft ? ["roots", "scanning", "agents", ...(config ? ["shared-config"] : []), "environment"] : [];
-  const nav = useSectionNav(scroller, sectionIds);
+  const nav = useSectionNav(scroller, sectionIds, SETTINGS_PAGE);
 
   if (!draft) return <div class="settings">Loading…</div>;
 
@@ -137,7 +148,7 @@ export function Settings({ config, snapshot, onSaved, onRescan, environment, onR
   const untrackedIntegratable = integratable.filter((r) => !trackedIds.has(r.id)).length;
 
   // One list drives both the navigation and the page, so a panel cannot exist without its navigation entry.
-  const sections: SettingsSection[] = [
+  const sections: NavSection[] = [
     {
       id: "roots",
       label: "Workspace roots",
@@ -234,9 +245,9 @@ export function Settings({ config, snapshot, onSaved, onRescan, environment, onR
       {/* One scroll area for the whole page: the navigation moves with the sections, and the wheel works anywhere. */}
       <div class="settings-scroll" ref={scroller}>
         <div class="settings-layout">
-          <SettingsNav sections={sections} current={nav.current} onJump={nav.jump} />
+          <SectionNav page={SETTINGS_PAGE} sections={sections} current={nav.current} anchor={nav.anchor} onJump={nav.jump} />
           <div class="settings">
-            <SettingsSections sections={sections} />
+            <SectionList page={SETTINGS_PAGE} sections={sections} sectionClass="settings-section" />
           </div>
         </div>
       </div>
