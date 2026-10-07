@@ -1,6 +1,7 @@
 // The Activity view's pure parts: filters ↔ URL, grouping by day, wording, and what counts as unseen.
 // Free of DOM access at import time; the storage helpers tolerate a browser that refuses localStorage.
 import { ACTIVITY_GROUPS, type ActivityEvent, type ActivityKind } from "../shared/types.ts";
+import { storageKey } from "./storage.ts";
 
 export type ActivityGroup = keyof typeof ACTIVITY_GROUPS;
 export const GROUP_LABELS: Record<ActivityGroup, string> = { changes: "Changes", tasks: "Tasks", sessions: "Sessions", repositories: "Repositories" };
@@ -112,7 +113,7 @@ export function tone(event: ActivityEvent): "danger" | "ok" | "quiet" | "normal"
 
 // ---- unseen ----
 
-export const ACTIVITY_SEEN_KEY = "openspec-dashboard.activity.seen";
+export const ACTIVITY_SEEN_KEY = storageKey("activity.seen");
 
 export function loadSeen(): string | undefined {
   try {

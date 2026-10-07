@@ -128,7 +128,7 @@ export const HELP_SECTIONS: readonly HelpSection[] = [
           <li>
             A card offers the next step for its column — <strong>Draft artifacts</strong>, <strong>Implement</strong>,{" "}
             <strong>Validate</strong> or <strong>Archive</strong>. It starts your agent in a git worktree of its own, on its
-            own branch, under <code>~/.openspec-dashboard/worktrees/</code>; your main checkout is not touched.
+            own branch, under <code>~/.spec-control/worktrees/</code>; your main checkout is not touched.
           </li>
           <li>
             The agent's terminal is the <strong>Console</strong> tab of the change's detail view. What it changes is decided by
@@ -211,7 +211,7 @@ export const HELP_SECTIONS: readonly HelpSection[] = [
           <li>creating and removing an agent session's worktree.</li>
         </ul>
         <p>
-          Its own state — configuration, activity history, session records — lives in <code>~/.openspec-dashboard/</code>. It
+          Its own state — configuration, activity history, session records — lives in <code>~/.spec-control/</code>. It
           listens on <code>127.0.0.1</code> only. Theme, auto-refresh and whether you saw the tour are kept in this browser.
         </p>
       </>

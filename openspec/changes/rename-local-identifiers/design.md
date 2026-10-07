@@ -94,8 +94,9 @@ worktree is repaired independently; one failure does not stop the others. Direct
 The migration writes `~/.spec-control/migration.json` (atomically): when it ran, from where, and the steps still
 pending with their last error — a session record or config rewrite, a worktree to repair, the link to create. On every
 start without an explicit home, pending steps are retried and dropped once they succeed or their worktree directory is
-gone. The environment check gains a `home-migration` item that is shown only while something is pending or both homes
-exist as real directories, and it names what is left and why. This is outcome reporting, not history, so it stays out of
+gone. The environment check reports it through its existing `dashboard-home` check, since its spec allows no other
+checks: while something is pending, the rename was refused, or both homes exist as real directories, a writable home is
+a `warning` naming what is left and why. This is outcome reporting, not history, so it stays out of
 `activity.jsonl`.
 
 ### Markers: read both, write one

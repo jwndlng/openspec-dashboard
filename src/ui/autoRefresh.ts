@@ -2,7 +2,9 @@
 // localStorage effects (same shape as theme.ts), and a scheduler that owns the chain without knowing about Preact,
 // the API or the DOM. The interval is a per-browser preference: it is never written to the dashboard's config and
 // never changes the server's `pollIntervalSeconds`.
-export const AUTO_REFRESH_STORAGE_KEY = "openspec-dashboard.autoRefresh";
+import { storageKey } from "./storage.ts";
+
+export const AUTO_REFRESH_STORAGE_KEY = storageKey("autoRefresh");
 
 /** `"off"` and the three cadences offered; nothing else is a valid choice. */
 export type AutoRefreshInterval = "off" | "2s" | "5s" | "10s";

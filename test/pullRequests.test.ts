@@ -50,7 +50,7 @@ const newStore = (patch: { now?: () => number; timeoutMs?: number } = {}) => new
 // ---- the fake gh itself (1.2) ----
 
 const run = async (...args: string[]) => {
-  const proc = Bun.spawn(["gh", ...args], { cwd: process.env.OPENSPEC_DASHBOARD_HOME, stdout: "pipe", stderr: "pipe", stdin: "ignore", env: process.env });
+  const proc = Bun.spawn(["gh", ...args], { cwd: process.env.SPEC_CONTROL_HOME, stdout: "pipe", stderr: "pipe", stdin: "ignore", env: process.env });
   const [out, err, code] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text(), proc.exited]);
   return { out, err, code };
 };
@@ -71,7 +71,7 @@ test("the fake gh answers pr list and api user from the scenario, and records ho
     ["pr", "list"],
     ["api", "user"],
   ]);
-  expect(calls[0].cwd).toBe(await realpath(process.env.OPENSPEC_DASHBOARD_HOME as string));
+  expect(calls[0].cwd).toBe(await realpath(process.env.SPEC_CONTROL_HOME as string));
 });
 
 test("the fake gh can play not signed in, a non-zero exit and an unknown repository", async () => {

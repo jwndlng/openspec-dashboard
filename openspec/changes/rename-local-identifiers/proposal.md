@@ -35,6 +35,7 @@ they move, the codebase carries two names, and new contributors and agents keep 
 - `shared-config`: markers are written as `spec-control:shared`, and old markers are still recognised.
 - `kanban-board`: storage keys and their one-time copy.
 - `release-publishing`: `SPEC_CONTROL_VERSION`, and `--version` moves nothing.
+- `environment-check`: the `dashboard-home` check reports a migration that is not finished.
 - Path only (`~/.openspec-dashboard/` becomes `~/.spec-control/`, behaviour unchanged): `activity-feed`,
   `agent-sessions`, `change-scanner`, `main-console`, `project-console`, `project-labels`, `pull-requests`,
   `repo-discovery`, `repo-hygiene`, `repo-integration`, `repository-cleanup`, `repository-pull`.

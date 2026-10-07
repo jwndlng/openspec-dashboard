@@ -108,9 +108,9 @@ test("shared config in the demo: per-repository profiles, outdated after an edit
 
   const assignments = [{ repoId: first.id, profileIds: ["base", "security"] }, { repoId: second.id, profileIds: ["base"] }, { repoId: "nope", profileIds: ["base"] }, { repoId: second.id.concat("x"), profileIds: [] }];
   const { previews } = await api.previewSharedConfig(assignments.slice(0, 3));
-  expect(previews[0].after).toContain("openspec-dashboard:shared:begin security");
-  expect(previews[0].after).toContain("- Always include Non-goals # openspec-dashboard:shared:base");
-  expect(previews[0].before).not.toContain("openspec-dashboard:shared");
+  expect(previews[0].after).toContain("spec-control:shared:begin security");
+  expect(previews[0].after).toContain("- Always include Non-goals # spec-control:shared:base");
+  expect(previews[0].before).not.toContain("spec-control:shared");
   expect(previews[2].refusal).toContain("not an enabled repository");
   expect((await api.state()).repos[0].sharedConfig?.applied).toEqual([]); // a preview changes nothing
 
@@ -175,7 +175,7 @@ test("a blocked pull in the demo: the leftovers are listed, then Resolve and pul
   expect(resolved).toMatchObject({ fetched: false, update: "fast-forwarded" });
   expect(resolved.resolved).toEqual([
     { path: "openspec/changes/add-import-redirects/.openspec.yaml" },
-    { path: "openspec/changes/add-import-redirects/prompt.md", copy: expect.stringContaining("/home/demo/.openspec-dashboard/pull-backups/") },
+    { path: "openspec/changes/add-import-redirects/prompt.md", copy: expect.stringContaining("/home/demo/.spec-control/pull-backups/") },
   ]);
   expect((await api.pullRepo(blocked.id)).update).toBe("up-to-date"); // it stays resolved until a reload
   await expect(api.resolvePull("nope", refused.resolvable!)).rejects.toThrow("not a tracked");

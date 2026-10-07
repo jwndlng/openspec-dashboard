@@ -2,9 +2,33 @@ import { realpathSync } from "node:fs";
 import { homedir } from "node:os";
 import { isAbsolute, join, normalize, parse } from "node:path";
 
+/** The home before the rename; only the home migration and its fallback look at it. */
+export function oldDefaultHome(): string {
+  return join(homedir(), ".openspec-dashboard");
+}
+
+export function newDefaultHome(): string {
+  return join(homedir(), ".spec-control");
+}
+
+/** The variable that chose the home, if one did. `OPENSPEC_DASHBOARD_HOME` is deprecated and read only after `SPEC_CONTROL_HOME`. */
+export function explicitHome(): { path: string; variable: "SPEC_CONTROL_HOME" | "OPENSPEC_DASHBOARD_HOME" } | undefined {
+  if (process.env.SPEC_CONTROL_HOME) return { path: process.env.SPEC_CONTROL_HOME, variable: "SPEC_CONTROL_HOME" };
+  if (process.env.OPENSPEC_DASHBOARD_HOME) return { path: process.env.OPENSPEC_DASHBOARD_HOME, variable: "OPENSPEC_DASHBOARD_HOME" };
+  return undefined;
+}
+
+// Set for one run by a home migration that could not rename the old home, so nothing is lost. Never an environment
+// variable: agents started by the dashboard must not inherit it.
+let fallbackHome: string | undefined;
+
+export function useFallbackHome(path: string | undefined): void {
+  fallbackHome = path;
+}
+
 /** Base directory for config and cache; overridable for tests. */
 export function dashboardHome(): string {
-  return process.env.OPENSPEC_DASHBOARD_HOME ?? join(homedir(), ".openspec-dashboard");
+  return explicitHome()?.path ?? fallbackHome ?? newDefaultHome();
 }
 
 export function configPath(): string {

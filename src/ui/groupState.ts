@@ -1,6 +1,8 @@
 // Minimized repository groups: pure resolution logic plus thin localStorage effects (same shape as theme.ts).
 // Only deviations from the default are stored, so new repositories and columns pick up the defaults.
-export const GROUP_STATE_STORAGE_KEY = "openspec-dashboard.groups.v1";
+import { storageKey } from "./storage.ts";
+
+export const GROUP_STATE_STORAGE_KEY = storageKey("groups.v1");
 
 /** `"<repoId>|<column>"` → minimized?, present only where the user chose something other than the default. */
 export type GroupOverrides = Record<string, boolean>;

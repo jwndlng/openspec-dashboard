@@ -338,7 +338,7 @@ export function AgentSettings({ draft, update }: Props) {
       <p class="hint">
         Start an agent CLI for a change straight from its card; it opens in a terminal here in the dashboard — the same program you would run in your own terminal, with its own
         login, settings and permission prompts. <strong>Turning this on lets the dashboard start that program on this machine, and the agent can change files and run commands as
-        you allow it to.</strong> Each session works in its own git worktree under <code>~/.openspec-dashboard/worktrees/</code>, never in a repository's main checkout — except an{" "}
+        you allow it to.</strong> Each session works in its own git worktree under <code>~/.spec-control/worktrees/</code>, never in a repository's main checkout — except an{" "}
         <strong>Integrate</strong> session, which runs in the repository folder itself to set it up for OpenSpec. It applies to <strong>every tracked repository</strong>; switch
         individual ones off on Projects.
       </p>
@@ -382,13 +382,13 @@ export function AgentSettings({ draft, update }: Props) {
         <label class="agent-tools">
           <span class="hint">
             The console button in the top bar opens your default agent in this folder, outside every change and without a prompt. Empty uses{" "}
-            <code>~/.openspec-dashboard/console/</code>. A folder above your repositories lets it reach them; a folder inside a tracked repository is refused, so it never runs in
+            <code>~/.spec-control/console/</code>. A folder above your repositories lets it reach them; a folder inside a tracked repository is refused, so it never runs in
             a main checkout. What the agent does there is up to its own permission prompts.
           </span>
           <input
             class="input mono"
             aria-label="Console folder"
-            placeholder="~/.openspec-dashboard/console"
+            placeholder="~/.spec-control/console"
             value={settings.consoleDir ?? ""}
             onInput={(e) => set({ consoleDir: e.currentTarget.value.trim() || undefined })}
           />

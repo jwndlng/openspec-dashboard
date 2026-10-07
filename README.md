@@ -66,7 +66,7 @@ dashboard; both are built in and work offline.
   `ansible` (`ansible.cfg`). Detection only lists file names — it opens no file and runs no git. Hide a wrong guess per
   repository in the same dialog. Labels show on rows, tiles and a repository's header; activate one to filter Projects by it
   (`?label=terraform&label=client` lists repositories carrying both). Your labels live in
-  `~/.openspec-dashboard/config.json`, never in the repository. ([project-labels](openspec/specs/project-labels/spec.md))
+  `~/.spec-control/config.json`, never in the repository. ([project-labels](openspec/specs/project-labels/spec.md))
 - **Boards**: one board per repository, plus one across all of them. Columns follow the lifecycle: Backlog → Drafts
   (with a bar of written artifacts) → Ready → Implementing → Done → Archived. Changes in git worktrees are included, so work shows
   up before it is merged. ([kanban-board](openspec/specs/kanban-board/spec.md),
@@ -162,7 +162,7 @@ dashboard; both are built in and work offline.
   ([project-creation](openspec/specs/project-creation/spec.md))
 - **Console**: the terminal button next to the theme control opens your default agent outside every change, with no
   prompt — for drafting a new change, looking across repositories or any chore. It runs in a console folder
-  (`~/.openspec-dashboard/console/` unless you pick another one in Settings, never inside a tracked repository), one at
+  (`~/.spec-control/console/` unless you pick another one in Settings, never inside a tracked repository), one at
   a time, and keeps running when you close it. ([main-console](openspec/specs/main-console/spec.md))
 - **Project console**: each managed project has its own console button — on its overview row and tile and on its
   board — that opens the project's agent with no prompt, for anything about the project that is not a change. It runs
@@ -183,13 +183,17 @@ dashboard; both are built in and work offline.
   cards' pull requests is not ready (at most once a minute, only for those repositories). Neither ever sees, stores or asks for a credential, and the
   pull-request query runs `gh` outside every repository, writes nothing and changes nothing on GitHub.
 - It writes to a repository only when you click something: **Pull** (using git's own credentials) and, when you confirm **Resolve and pull**, removing the change files it created here that the incoming
-  commits already contain — a copy of anything that differs is kept under `~/.openspec-dashboard/` first; **New
+  commits already contain — a copy of anything that differs is kept under `~/.spec-control/` first; **New
   change** (the change's directory, with `depends-on.yaml` when you picked dependencies), **Dismiss change** (deleting that change's directory), **applying shared config**, creating or removing an
   **agent session's worktree**, and **Clean up** (removing worktrees and deleting merged local branches you selected).
+  The one exception is the first start after upgrading from `~/.openspec-dashboard/`: moving its folder runs
+  `git worktree repair` for the session worktrees it created, so each repository knows where they are now.
   The full list is in the [dashboard-api spec](openspec/specs/dashboard-api/spec.md).
 - Outside repositories, it creates a folder only for **New project**: one empty folder directly inside a workspace root
   you picked, never inside a tracked repository, with `git init` run in it.
-- Its own state lives in `~/.openspec-dashboard/`.
+- Its own state lives in `~/.spec-control/` (or `$SPEC_CONTROL_HOME`). Upgrading from a release that kept it in
+  `~/.openspec-dashboard/` needs nothing: the first start moves it there, worktrees included, and leaves a link at the
+  old path. `OPENSPEC_DASHBOARD_HOME` is still read when `SPEC_CONTROL_HOME` is unset, for one more release.
 
 ## Contributing
 

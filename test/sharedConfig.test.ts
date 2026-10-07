@@ -9,6 +9,7 @@ import {
   applyTo,
   contextBegin,
   contextEnd,
+  FORMER_MARKER,
   loadSharedConfig,
   MARKER,
   MAX_CONTEXT_BYTES,
@@ -104,6 +105,51 @@ test("apply is idempotent and removing everything restores the original bytes", 
     if (name === "QUOTED") expect(readBack(removed).context?.trim()).toBe("One line of local context.");
     else expect([name, removed]).toEqual([name, original]);
   }
+});
+
+// Sections written before the rename carry the former prefix in every marker; the pre-rename notice text named it too.
+const toFormer = (text: string) => text.replaceAll(MARKER, FORMER_MARKER).replaceAll("managed by spec-control", "managed by openspec-dashboard");
+
+test("markers are written with the spec-control prefix", () => {
+  const applied = applyShared(WITH_LOCAL, [BASE]);
+  expect(MARKER).toBe("spec-control:shared");
+  expect(applied).toContain("<!-- spec-control:shared:begin base — managed by spec-control, edits here are overwritten -->");
+  expect(applied).toContain("<!-- spec-control:shared:end base -->");
+  expect(applied).toContain("# spec-control:shared:base");
+  expect(applied).not.toContain("openspec-dashboard");
+});
+
+test("former markers are still recognised: in sync, outdated and orphaned as before", () => {
+  const former = toFormer(applyShared(WITH_LOCAL, [BASE, SECURITY]));
+  expect(former).toContain(`${FORMER_MARKER}:begin base`);
+  expect(former).not.toContain(MARKER);
+  expect(states(former)).toEqual({ unreadable: false, applied: [{ id: "base", state: "in-sync" }, { id: "security", state: "in-sync" }] });
+  expect(states(former, { profiles: [{ ...BASE, context: "changed" }] })).toEqual({ unreadable: false, applied: [{ id: "base", state: "outdated" }, { id: "security", state: "orphaned" }] });
+});
+
+test("applying again moves every kept section to the new prefix and changes nothing else", () => {
+  const current = applyShared(WITH_LOCAL, [BASE, SECURITY]);
+  const former = toFormer(current);
+  // In sync, but not `unchanged`: the marker lines are the difference the preview shows.
+  expect(applyShared(former, [BASE, SECURITY])).toBe(current);
+  expect(applyShared(applyShared(former, [BASE, SECURITY]), [BASE, SECURITY])).toBe(current);
+  // Detaching from a former-prefix file removes its sections just the same.
+  expect(applyShared(former, [])).toBe(WITH_LOCAL);
+});
+
+test("a block opened with one prefix and closed with the other is malformed", () => {
+  const current = applyShared(WITH_LOCAL, [BASE]);
+  const mixed = current.replace(`${MARKER}:end base`, `${FORMER_MARKER}:end base`);
+  expect(states(mixed).unreadable).toBe(true);
+  expect(() => applyShared(mixed, [BASE])).toThrow();
+  // A rule marked with the former prefix next to a current block is fine: each marker is whole on its own.
+  const rulesFormer = current.replace(`# ${MARKER}:base`, `# ${FORMER_MARKER}:base`);
+  expect(states(rulesFormer)).toEqual({ unreadable: false, applied: [{ id: "base", state: "in-sync" }] });
+});
+
+test("a profile context may contain neither marker", () => {
+  const ok = { id: "base", name: "Base", context: "", rules: {} };
+  for (const marker of [MARKER, FORMER_MARKER]) expect(() => validateSharedConfig({ profiles: [{ ...ok, context: `see ${marker}` }] })).toThrow(SharedConfigValidationError);
 });
 
 test("stacked profiles: one block each in dashboard order, then the project's own content with its comments", () => {

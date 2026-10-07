@@ -10,7 +10,7 @@ const ago = (hours: number) => new Date(NOW - hours * 3_600_000).toISOString();
 const wt = (name: string, work: WorkStatus, hours = 1, patch: Partial<SessionWorktree> = {}): SessionWorktree => ({
   repoId: "r",
   name,
-  path: `/home/demo/.openspec-dashboard/worktrees/r/${name}`,
+  path: `/home/demo/.spec-control/worktrees/r/${name}`,
   change: name.replace(/^archive-/, ""),
   action: name.startsWith("archive-") ? "archive" : "implement",
   branch: `feat/${name}`,

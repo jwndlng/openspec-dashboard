@@ -1,5 +1,6 @@
 // The first-visit tour's pure parts: its steps, which of them are shown, where the step card goes, and the per-browser
 // "seen" record. Free of DOM access at import time; the storage helpers tolerate a browser that refuses localStorage.
+import { storageKey } from "./storage.ts";
 
 /** The `data-tour` value of each control a step points at. The app shell and the console button carry these. */
 export const TOUR_ANCHOR = {
@@ -122,7 +123,7 @@ export function cardPlacement(anchor: Rect | undefined, card: { width: number; h
   return { top: clampTop(viewport.height - g - card.height), left, width };
 }
 
-export const TOUR_STORAGE_KEY = "openspec-dashboard.tour";
+export const TOUR_STORAGE_KEY = storageKey("tour");
 const SEEN = "seen";
 
 type KeyValueStore = Pick<Storage, "getItem" | "setItem">;

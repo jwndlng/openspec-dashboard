@@ -1,6 +1,8 @@
 // Theme preference: pure resolution logic plus thin localStorage/DOM effects.
 // The storage key is also used by the pre-paint script in scripts/build-ui.ts.
-export const THEME_STORAGE_KEY = "openspec-dashboard.theme";
+import { storageKey } from "./storage.ts";
+
+export const THEME_STORAGE_KEY = storageKey("theme");
 
 export type Theme = "light" | "dark";
 export type ThemePreference = "system" | Theme;

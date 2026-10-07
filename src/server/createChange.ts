@@ -13,7 +13,7 @@ const DEFAULT_SCHEMA = "spec-driven";
 const GIT_TIMEOUT_MS = 10_000;
 /** More than a handful of dependencies is not an order any more; the cap keeps the file and the form honest. */
 export const MAX_DEPENDENCIES = 32;
-const DEPENDS_ON_HEADER = "# Changes that must be implemented and merged before this one is implemented (openspec-dashboard).\n";
+const DEPENDS_ON_HEADER = "# Changes that must be implemented and merged before this one is implemented (spec-control).\n";
 
 /** The validated `dependsOn` of a create request, or the reason it is refused. Absent and `null` mean none. */
 export function validateDependsOn(name: string, dependsOn: unknown): { ok: true; names: string[] } | { ok: false; message: string } {

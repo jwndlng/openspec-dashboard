@@ -5,6 +5,7 @@
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { DEMO_MARKER } from "../src/ui/demo/sampleData.ts";
+import { FORMER_STORAGE_PREFIX, STORAGE_MIGRATED_KEY } from "../src/ui/storage.ts";
 import { THEME_STORAGE_KEY } from "../src/ui/theme.ts";
 import { faviconSvg } from "../src/ui/logoMark.ts";
 
@@ -73,7 +74,8 @@ const css = [xtermCss, await Bun.file(join(ui, "styles.css")).text(), target.ext
 
 // Runs before first paint so the stored/system theme never flashes the other one.
 // Mirrors parsePreference + resolveTheme in src/ui/theme.ts.
-const themeScript = `(function(){var t;try{t=localStorage.getItem(${JSON.stringify(THEME_STORAGE_KEY)})}catch(e){}if(t!=="light"&&t!=="dark"){try{t=matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light"}catch(e){t="dark"}}document.documentElement.dataset.theme=t})()`;
+// Runs before the bundle, so before `migrateStorage`: until that copy has run once, the pre-rename key is read too.
+const themeScript = `(function(){var t;try{t=localStorage.getItem(${JSON.stringify(THEME_STORAGE_KEY)});if(t===null&&localStorage.getItem(${JSON.stringify(STORAGE_MIGRATED_KEY)})===null)t=localStorage.getItem(${JSON.stringify(`${FORMER_STORAGE_PREFIX}theme`)})}catch(e){}if(t!=="light"&&t!=="dark"){try{t=matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light"}catch(e){t="dark"}}document.documentElement.dataset.theme=t})()`;
 
 const html = `<!doctype html>
 ${target.marker ? `<!-- ${target.marker} -->\n` : ""}<html lang="en">

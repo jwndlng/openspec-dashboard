@@ -91,7 +91,7 @@ Releases are drafted from pull request titles; publishing the draft is the only 
   that its `--version` is the tag, and only if all four pass attaches them as `spec-control-<tag>-<platform>`
   with `SHA256SUMS`, build-provenance attestations and a Download section appended to the notes. If a platform fails,
   nothing is attached: fix it and re-run the workflow.
-- A local `bun run build` reports `dev`; set `OPENSPEC_DASHBOARD_VERSION=v1.2.3` to build as a given version.
+- A local `bun run build` reports `dev`; set `SPEC_CONTROL_VERSION=v1.2.3` to build as a given version.
 
 **What's new.** The dashboard carries its own, shorter changelog for the people running it: the **What's new** dialog,
 read from `src/ui/changelog.ts` and compiled into the UI, so it needs no network. Every `feat` pull request whose change

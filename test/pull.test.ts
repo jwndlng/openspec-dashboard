@@ -362,7 +362,7 @@ test("an offer writes nothing: a refused pull with a Resolve and pull offer chan
   expect(Buffer.compare(before.index, await readFile(join(f.repo, ".git", "index")))).toBe(0);
   expect(await fingerprint(join(f.repo, "openspec"))).toEqual(before.files);
   // …and nothing was written under the dashboard's home either: copies happen only on confirmation
-  expect(existsSync(join(process.env.OPENSPEC_DASHBOARD_HOME as string, "pull-backups"))).toBe(false);
+  expect(existsSync(join(process.env.SPEC_CONTROL_HOME as string, "pull-backups"))).toBe(false);
 });
 
 test("a diverged refusal says where to reconcile and never mentions forcing", async () => {

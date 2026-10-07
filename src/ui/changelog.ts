@@ -15,6 +15,13 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    id: "2026-10-07-spec-control-home",
+    date: "2026-10-07",
+    title: "Your settings moved to ~/.spec-control",
+    summary:
+      "On its first start Spec Control moves its folder from `~/.openspec-dashboard/` to `~/.spec-control/`, worktrees included, and leaves a link at the old path so nothing that points there breaks. Set `SPEC_CONTROL_HOME` instead of `OPENSPEC_DASHBOARD_HOME`. Sessions that ended before the move may resume without their earlier conversation, for agents that remember conversations by folder.",
+  },
+  {
     id: "2026-10-07-spec-control",
     date: "2026-10-07",
     title: "OpenSpec Dashboard is now Spec Control",

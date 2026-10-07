@@ -277,7 +277,7 @@ export interface AgentSessionsConfig {
   enabled: boolean;
   agents: AgentProfile[];
   defaultAgent: string;
-  /** Where the main console's agent runs; absent means `~/.openspec-dashboard/console/`. Never inside a tracked repository. */
+  /** Where the main console's agent runs; absent means `~/.spec-control/console/`. Never inside a tracked repository. */
   consoleDir?: string;
   /** The console's shortcuts, in the order they are offered. Empty means no shortcuts are offered at all. */
   shortcuts: Shortcut[];
@@ -913,7 +913,7 @@ export interface CleanupWorktree {
   branch?: string;
   work: WorkStatus;
   lastCommitAt?: string;
-  /** The dashboard created it (it lives under `~/.openspec-dashboard/worktrees/`). */
+  /** The dashboard created it (it lives under `~/.spec-control/worktrees/`). */
   managed: boolean;
   locked?: boolean;
   removable: boolean;
