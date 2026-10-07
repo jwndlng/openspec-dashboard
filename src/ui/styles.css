@@ -894,12 +894,14 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: 
 .new-change .new-change-targets label { display: inline; flex: 0 1 auto; font-size: 13px; color: var(--fg-body); cursor: pointer; }
 .new-change-targets li.skipped label { color: var(--fg-subtle); cursor: default; }
 .new-change-targets .hint { margin-left: auto; color: var(--fg-subtle); }
-/* Depends on: the target repository's active changes as a checklist, like the label targets. */
+/* Depends on: the target repository's active changes as a checklist, like the label targets. One row per change —
+   checkbox, name, column — so the label overrides the form-wide column direction, not just the display. */
 .new-change-depends { display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 0; margin: 0; padding: 0; border: 0; }
 .new-change-depends legend { padding: 0; margin-bottom: 4px; font-size: 12px; font-weight: 600; color: var(--fg-body); }
 .new-change-depends ul { display: flex; flex-direction: column; gap: 2px; margin: 0; padding: 6px 0; list-style: none; max-height: 180px; overflow-y: auto; border: 1px solid var(--border-light); border-radius: var(--radius); background: var(--bg-section); }
-.new-change-depends li { display: flex; align-items: center; gap: 8px; padding: 3px 10px; font-size: 13px; }
-.new-change .new-change-depends label { display: flex; flex: 1 1 auto; gap: 8px; align-items: baseline; min-width: 0; font-size: 13px; color: var(--fg-body); cursor: pointer; }
+.new-change-depends li { display: flex; align-items: baseline; gap: 8px; padding: 3px 10px; font-size: 13px; }
+.new-change-depends li input { flex: none; margin: 0; }
+.new-change .new-change-depends label { display: flex; flex-direction: row; flex: 1 1 auto; gap: 8px; align-items: baseline; min-width: 0; font-size: 13px; color: var(--fg-body); cursor: pointer; }
 .new-change .new-change-depends label span { font-weight: 400; }
 .new-change-depends label .mono { overflow-wrap: anywhere; }
 .new-change-depends label .hint { margin-left: auto; color: var(--fg-subtle); }
