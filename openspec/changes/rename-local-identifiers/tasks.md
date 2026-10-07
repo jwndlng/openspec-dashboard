@@ -43,6 +43,6 @@
 
 ## 8. Verification
 
-- [ ] 8.1 `bun run check` passes; `openspec validate rename-local-identifiers --strict` passes
+- [x] 8.1 `bun run check` passes; `openspec validate rename-local-identifiers --strict` passes
 - [x] 8.2 `test/pull.test.ts` and `test/pullRequestsApi.test.ts` still prove scans leave fixture repositories byte-for-byte unchanged, and a new test proves a start with nothing to migrate runs no `git worktree repair`
 - [x] 8.3 Note in the PR that `rename-to-spec-control` must be archived before this change, since this change's `dashboard-api` and `release-publishing` deltas build on its versions of those requirements
