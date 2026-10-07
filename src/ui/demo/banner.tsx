@@ -1,4 +1,4 @@
-const REPOSITORY_URL = "https://github.com/jwndlng/openspec-dashboard";
+const REPOSITORY_URL = "https://github.com/jwndlng/spec-control";
 
 export function DemoBanner() {
   return (

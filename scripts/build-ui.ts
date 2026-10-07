@@ -22,11 +22,11 @@ interface Target {
 }
 
 const TARGETS: Record<string, Target> = {
-  ui: { entry: join(ui, "main.tsx"), outDir: join(root, "dist", "ui"), title: "OpenSpec Dashboard" },
+  ui: { entry: join(ui, "main.tsx"), outDir: join(root, "dist", "ui"), title: "Spec Control" },
   demo: {
     entry: join(ui, "demo", "main.tsx"),
     outDir: join(root, "dist", "demo"),
-    title: "OpenSpec Dashboard — Demo",
+    title: "Spec Control — Demo",
     extraCss: join(ui, "demo", "demo.css"),
     marker: DEMO_MARKER,
   },

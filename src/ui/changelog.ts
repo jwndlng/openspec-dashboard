@@ -15,6 +15,13 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    id: "2026-10-07-spec-control",
+    date: "2026-10-07",
+    title: "OpenSpec Dashboard is now Spec Control",
+    summary:
+      "The dashboard has a new name: **Spec Control**, mission control for every agent change across your repositories. The binary and the release downloads are now called `spec-control`; your settings, sessions and worktrees carry over untouched.",
+  },
+  {
     id: "2026-10-06-project-overview-tiles",
     date: "2026-10-06",
     title: "Tidier project tiles",

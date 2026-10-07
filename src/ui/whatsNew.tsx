@@ -9,7 +9,7 @@ import { Modal } from "./modal.tsx";
 import { unseenLabel } from "./activityState.ts";
 import { formatEntryDate, groupByMonth, loadSeenIds, saveSeenIds, unseenIds } from "./whatsNewState.ts";
 
-export const RELEASES_URL = "https://github.com/jwndlng/openspec-dashboard/releases";
+export const RELEASES_URL = "https://github.com/jwndlng/spec-control/releases";
 
 const allIds = () => new Set(CHANGELOG.map((e) => e.id));
 

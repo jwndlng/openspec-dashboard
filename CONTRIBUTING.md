@@ -56,7 +56,7 @@ WebSockets must work inside the single executable.
 
 ## Demo site and screenshots
 
-The [live demo](https://blog.wndlng.ch/openspec-dashboard/) is the real UI built with `bun run build:demo`: the
+The [live demo](https://blog.wndlng.ch/spec-control/) is the real UI built with `bun run build:demo`: the
 entry point `src/ui/demo/main.tsx` swaps the HTTP API for an in-memory one and switches to hash routing. It is
 published from `main` by `.github/workflows/pages.yml`; nothing generated is committed.
 
@@ -87,8 +87,8 @@ Releases are drafted from pull request titles; publishing the draft is the only 
   anything else the patch version. For a breaking change add the `major` label to its pull request by hand. Tags are
   `v<major>.<minor>.<patch>`; `package.json`'s `version` is not updated.
 - **Publishing builds the binaries.** Review and tidy the draft, then publish it. `.github/workflows/release.yml` builds
-  `openspec-dashboard` from the new tag on macOS (arm64, x64) and Linux (x64, arm64), checks that each binary runs and
-  that its `--version` is the tag, and only if all four pass attaches them as `openspec-dashboard-<tag>-<platform>`
+  `spec-control` from the new tag on macOS (arm64, x64) and Linux (x64, arm64), checks that each binary runs and
+  that its `--version` is the tag, and only if all four pass attaches them as `spec-control-<tag>-<platform>`
   with `SHA256SUMS`, build-provenance attestations and a Download section appended to the notes. If a platform fails,
   nothing is attached: fix it and re-run the workflow.
 - A local `bun run build` reports `dev`; set `OPENSPEC_DASHBOARD_VERSION=v1.2.3` to build as a given version.
