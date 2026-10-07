@@ -456,7 +456,10 @@ async function sessionRoutes(state: AppState, req: Request, url: URL, server?: S
   const [, , , id, sub] = url.pathname.split("/"); // /api/sessions/<id>/<sub>
   try {
     if (!id) {
-      if (req.method === "GET") return json({ sessions: sessions.list(), agents: sessions.agents(), presets: sessions.presets(), worktrees: await sessions.worktrees() });
+      if (req.method === "GET") {
+        await sessions.readReports(); // what the agents reported, as fresh as this request
+        return json({ sessions: sessions.list(), agents: sessions.agents(), presets: sessions.presets(), worktrees: await sessions.worktrees() });
+      }
       if (req.method === "POST") return json(await sessions.open(await readJson(req)), 201);
     } else if (!sub) {
       if (req.method === "GET") return json(sessions.get(id));

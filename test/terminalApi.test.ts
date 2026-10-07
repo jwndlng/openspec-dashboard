@@ -298,3 +298,31 @@ test("resolve conflicts on an ended session whose agent is gone answers 503 and 
   expect(refused.status).toBe(503);
   expect(h.manager.get(session.id).state).toBe("exited");
 });
+
+test("the sessions list carries an agent's current waiting report; opening a console keeps it, typing ends it", async () => {
+  const h = await harness();
+  const { http, ws } = await serve(h);
+  const session = (await (await post(`${http}/api/sessions`, { repoId: h.repoId, change: "upgrade-runtime", action: "implement" })).json()) as Session;
+  const reported = async () => ((await (await fetch(`${http}/api/sessions`)).json()) as { sessions: Session[] }).sessions.find((s) => s.id === session.id)?.waitingReportedAt;
+  const client = connect(`${ws}/api/sessions/${session.id}/terminal`, http);
+  expect(await client.opened).toBe(true);
+  await waitFor(() => client.text().includes("fake-agent ready"), "banner over the socket");
+  expect(await reported()).toBeUndefined();
+
+  // The agent's own hook writes the file; here the fake agent does, asked through the terminal.
+  client.send({ type: "input", data: "report waiting\r" });
+  await waitFor(async () => (await reported()) !== undefined, "the report reaches the list");
+
+  // A console opening: its size and a focus report.
+  const second = connect(`${ws}/api/sessions/${session.id}/terminal`, http);
+  expect(await second.opened).toBe(true);
+  second.send({ type: "resize", cols: 88, rows: 22 });
+  second.send({ type: "input", data: "\x1b[I" });
+  await waitFor(() => second.text().includes("redrawn at 88 columns"), "the agent redraws for the new viewer");
+  expect(await reported()).toBeTruthy();
+
+  second.send({ type: "input", data: "y" });
+  await waitFor(async () => (await reported()) === undefined, "typing ends the report");
+  client.close();
+  second.close();
+});

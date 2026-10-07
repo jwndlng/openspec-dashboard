@@ -27,6 +27,6 @@
 ## 5. Docs and release notes
 
 - [~] 5.1 Extend the agent-sessions section of `src/ui/helpContent.tsx`: what the badge can and cannot know, `SPEC_CONTROL_STATE_FILE`, the two words, the example `echo waiting > "$SPEC_CONTROL_STATE_FILE"` for a hook that runs when the agent ends a turn or asks for permission and `echo working > …` when a prompt is submitted, and that the hook must be able to write under `~/.spec-control/` — verify the help test still passes and the section reads correctly in `bun run dev`
-- [x] 5.2 Mention `SPEC_CONTROL_STATE_FILE` in the agent-sessions part of `README.md` and in `CLAUDE.md`'s agent-sessions notes (the echo window and the state file are the two inputs to the badge) — verify by reading the diff
+- [x] 5.2 Mention `SPEC_CONTROL_STATE_FILE` in `CLAUDE.md`'s agent-sessions notes (the README now leaves such details to Help) (the echo window and the state file are the two inputs to the badge) — verify by reading the diff
 - [x] 5.3 Add a What's new entry at the top of `src/ui/changelog.ts`: opening a console no longer wakes the badge, and agents can report that they wait for you — verify the changelog test passes
 - [x] 5.4 Run `bun run check` and `bun run build`, then start `dist/spec-control` with a fake agent and confirm the variable is set and a report shows on the board

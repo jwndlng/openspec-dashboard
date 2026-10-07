@@ -165,6 +165,17 @@ export const HELP_SECTIONS: readonly HelpSection[] = [
           undo. So it does in a git repository with no commit yet, such as a new project: there is nothing to branch from,
           so the agent works in the checkout. Once the repository has a commit, new sessions get their own worktree.
         </p>
+        <p>
+          A running session's badge is a guess from its terminal: <strong>working</strong> while it prints,{" "}
+          <strong>may need you</strong> once it has been silent for 20 seconds. Opening, resizing or focusing a console
+          does not count as the agent printing. For a badge that knows, let your agent report its state: every session
+          gets the variable <code>SPEC_CONTROL_STATE_FILE</code>, naming a file the dashboard reads. Write{" "}
+          <code>waiting</code> or <code>working</code> into it from your agent's own hooks — for example{" "}
+          <code>echo waiting &gt; "$SPEC_CONTROL_STATE_FILE"</code> when it finishes a turn or asks for permission, and{" "}
+          <code>echo working &gt; "$SPEC_CONTROL_STATE_FILE"</code> when you submit a prompt. While the report says{" "}
+          <code>waiting</code>, the badge reads <strong>waiting for you</strong> until you type into the session. The file
+          is under <code>~/.spec-control/sessions/</code>, so the hook has to be allowed to write there.
+        </p>
       </>
     ),
   },

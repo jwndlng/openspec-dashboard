@@ -337,7 +337,7 @@ const STARTER_HINT: Record<SessionAction, string> = {
 
 /**
  * A change's session state and its next step, in one place so the two can never disagree: the session badge (working,
- * may need you, failed) and the starters. Rendered in a card's footer, and in the Console tab of a change no agent has
+ * may need you, waiting for you, failed) and the starters. Rendered in a card's footer, and in the Console tab of a change no agent has
  * worked on yet. Shows nothing at all unless the feature is on and the repository has not been switched off.
  *
  * While any of the change's sessions runs, the badge stands in for the starters and nothing else is offered: the badge

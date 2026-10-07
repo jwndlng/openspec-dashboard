@@ -544,3 +544,22 @@ test("an invalid change name never reaches a resolve-conflicts prompt", () => {
     expect(() => resolveConflictsPrompt(plain, bad)).toThrow("invalid change name");
   }
 });
+
+test("an agent's waiting report comes first, worded as the agent's report", () => {
+  const now = Date.parse("2026-01-01T01:00:00Z");
+  const reported = "2026-01-01T00:57:00Z";
+  // Even while the terminal prints (a console redraw, a status line), the report is what the badge says.
+  for (const lastOutputAt of ["2026-01-01T00:59:59Z", "2026-01-01T00:50:00Z"]) {
+    expect(sessionBadge(session({ lastOutputAt, waitingReportedAt: reported }), now)).toMatchObject({ icon: "◆", label: "waiting for you · 3m", tone: "warning", title: "Fake Agent reported 3m ago that it is waiting for you" });
+  }
+  expect(sessionBadge(session({ waitingReportedAt: "2026-01-01T00:59:30Z" }), now).label).toBe("waiting for you · 30s");
+  expect(sessionBadge(session({ waitingReportedAt: reported }), now).live).toBeUndefined();
+  // Its words differ from both silence-based states.
+  const words = new Set([sessionBadge(session({ waitingReportedAt: reported }), now), sessionBadge(session({ lastOutputAt: "2026-01-01T00:59:59Z" }), now), sessionBadge(session({ lastOutputAt: "2026-01-01T00:50:00Z" }), now)].map((b) => b.label.split(/[ ·]+\d/)[0]));
+  expect(words.size).toBe(3);
+  // An ended or failed session is shown as ended or failed, whatever the agent reported last.
+  expect(sessionBadge(session({ state: "exited", exitCode: 0, waitingReportedAt: reported }), now).label).toBe("ended");
+  expect(sessionBadge(session({ state: "failed", error: "no such file", waitingReportedAt: reported }), now).tone).toBe("danger");
+  // Nothing unparseable claims anything.
+  expect(sessionBadge(session({ lastOutputAt: "2026-01-01T00:50:00Z", waitingReportedAt: "nonsense" }), now).label).toBe("may need you 10m");
+});

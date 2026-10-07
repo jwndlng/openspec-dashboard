@@ -33,6 +33,8 @@ interface Seed {
   startedAgo: number;
   /** For sessions that ended: how long ago, and what the worktree looks like now. Absent = still running. */
   ended?: { ago: number; work: WorkStatus; failed?: string };
+  /** The agent's hooks report through its state file: while it sits at a question, the badge shows its waiting report. */
+  reports?: boolean;
 }
 
 // One of everything the UI distinguishes, spread over the sample's repositories.
@@ -40,6 +42,8 @@ const SEEDS: Seed[] = [
   // started a minute and a half ago, with several minutes of recording still ahead of it
   { repo: "atlas-api", change: "add-rate-limiting", action: "implement", transcript: "implement", startedAgo: 1.5 * MINUTE },
   { repo: "harbor-web", change: "keyboard-shortcuts", action: "implement", transcript: "implementAsking", startedAgo: 12 * MINUTE },
+  // the same question, from an agent whose hooks report it: its badge shows the agent's waiting report
+  { repo: "lantern-infra", change: "centralize-log-shipping", action: "implement", transcript: "implementAsking", startedAgo: 30 * MINUTE, reports: true },
   { repo: "lantern-infra", change: "pin-terraform-providers", action: "implement", transcript: "implement", startedAgo: 4 * HOUR, ended: { ago: 3 * HOUR, work: { state: "uncommitted", count: 3 } } },
   { repo: "harbor-web", change: "dark-mode-tokens", action: "implement", transcript: "implement", startedAgo: 2 * DAY + 2 * HOUR, ended: { ago: 2 * DAY, work: { state: "unpushed", count: 2, base: "origin/main" } } },
   // Pushed, and the default branch has moved under it since: the conflict badge and Resolve conflicts on first load.
@@ -71,6 +75,7 @@ interface DemoSession {
   workFrom: number;
   lastActivityMs: number;
   removed?: boolean;
+  reports?: boolean;
 }
 
 export interface DemoSessionsOptions {
@@ -120,6 +125,7 @@ export function createDemoSessions({ now, getConfig, getSnapshot, integratable, 
       work: seed.ended?.work ?? { state: "clean", base: "origin/main" },
       workFrom: seed.ended ? steps.length : 0,
       lastActivityMs: endedAt ?? quietSince,
+      reports: seed.reports,
       session: {
         id: `demo-${++counter}`,
         repoId: repo.id,
@@ -238,7 +244,12 @@ export function createDemoSessions({ now, getConfig, getSnapshot, integratable, 
 
   /** Seeded transcripts play on in the background while nobody watches them: unless one sits at a question, it printed just now. */
   const printing = (s: DemoSession) => s.session.state === "running" && !s.position && !positionOf(s).waiting;
-  const listed = (s: DemoSession): Session => (printing(s) ? { ...s.session, lastOutputAt: iso(now() - 5_000) } : s.session);
+  /** An agent that reports, sitting at a question: its report was written when the question appeared. */
+  const reportsWaiting = (s: DemoSession) => s.reports === true && s.session.state === "running" && positionOf(s).waiting;
+  const listed = (s: DemoSession): Session => {
+    if (printing(s)) return { ...s.session, lastOutputAt: iso(now() - 5_000) };
+    return reportsWaiting(s) ? { ...s.session, waitingReportedAt: iso(s.lastActivityMs) } : s.session;
+  };
 
   const worktrees = (): SessionWorktree[] => [
     ...sessions

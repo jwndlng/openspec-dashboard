@@ -42,8 +42,8 @@ agent has *finished* its turn and waits for more input rather than thinking quie
   the file, telling terminal replies from typing), `src/server/api.ts` (reports read before sessions are listed),
   `src/server/sessions/store.ts` (state-file path, removed with the record), `src/shared/types.ts` (`Session` gains the
   reported state and its time), `src/ui/sessionState.ts` (`sessionBadge`), `src/ui/demo/demoSessions.ts`,
-  `src/ui/helpContent.tsx`, `src/ui/changelog.ts`, `src/ui/sessions.tsx` (a comment); `README.md` and `CLAUDE.md`
-  (the two inputs to the badge).
+  `src/ui/helpContent.tsx`, `src/ui/changelog.ts`, `src/ui/sessions.tsx` (a comment); `CLAUDE.md` (the two
+  inputs to the badge).
 - Tests: a new `test/reportedState.test.ts` (resize/input echo does not count, reports are read and expire on input),
   `test/terminalApi.test.ts` (the sessions route), `test/fixtures/fake-agent.ts` (redraw on resize, writing a report),
   badge tests in `test/agents.test.ts`, `test/demoSessions.test.ts`.

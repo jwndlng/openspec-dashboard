@@ -171,6 +171,13 @@ bun test test/scanner.test.ts   # a single test file
   the text never appears, nothing is sent and the user is told it was typed but not confirmed. That echo check is the
   one thing the dashboard may read out of an agent's output, and only to decide about Enter. One running session per
   worktree; archiving has its own.
+- A running session's badge has exactly two inputs, neither of them the agent's output: the time of its last output
+  that counts as activity — output within `ECHO_WINDOW_MS` after a resize or input the dashboard passed on is relayed but
+  not stamped, so opening a console does not wake the badge — and the agent's own report, one word (`waiting` or
+  `working`) in the file `SPEC_CONTROL_STATE_FILE` names under `~/.spec-control/sessions/<id>/`
+  (`src/server/sessions/reportedState.ts`). The dashboard only reads that file, removes it before each start, and never
+  configures an agent to write it; a `waiting` report is current until the user's next input (terminal replies such as
+  focus reports do not count).
 - **Integrate** (`src/server/integration.ts`, `POST /api/integrations`) is the second in-place case, and the first one
   in a git repository: the agent runs in the repository's **main checkout**, with no worktree and no branch, because
   `openspec init` has to leave `openspec/config.yaml` where discovery looks for it — on a branch in a worktree the

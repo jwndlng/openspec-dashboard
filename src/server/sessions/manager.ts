@@ -2,6 +2,7 @@
 // worktree. The manager creates the worktree, starts the process, keeps a scrollback for late or returning viewers,
 // fans output out to attached terminals and takes their input. It does not interpret what the agent prints.
 import { randomUUID } from "node:crypto";
+import { rmSync } from "node:fs";
 import { realpath, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { blockedReason } from "../../shared/dependencies.ts";
@@ -14,6 +15,7 @@ import { CHANGE_NAME } from "../source.ts";
 import { agentEnv, agentFor, availability, defaultAgentOf, presetAvailability, integratePrompt, launchCommand, launchWithoutPrompt, openingPrompt, resolveConflictsPrompt, shipPrompt } from "./agents.ts";
 import { consoleFolderProblem, prepareConsoleFolder } from "./consoleFolder.ts";
 import type { SessionActivity } from "../activity/events.ts";
+import { readReport, STATE_FILE_ENV, terminalRepliesOnly, type Report } from "./reportedState.ts";
 import { SessionStore } from "./store.ts";
 import { submitText, validSubmission, type SubmitOptions } from "./submit.ts";
 import { spawnTerminal, type TerminalProcess } from "./terminal.ts";
@@ -23,6 +25,11 @@ import { checkWorktreeRemovable, copyChangeIfMissing, ensureWorktree, linkedWork
 export const SCROLLBACK_BYTES = 1024 * 1024;
 const TYPE_PROMPT_DELAY_MS = 1500;
 const OUTPUT_STAMP_MS = 5000;
+/**
+ * How long output after a resize or after input the dashboard passed on is taken for the agent answering it — a redraw,
+ * an echo — rather than for work: relayed and kept, but not stamped as the last output (agent-sessions spec, at most 3 s).
+ */
+export const ECHO_WINDOW_MS = 2000;
 const WORKTREES_TTL_MS = 15_000;
 
 export class SessionError extends Error {
@@ -79,6 +86,14 @@ interface Live {
   scrollback: Scrollback;
   viewers: Set<Viewer>;
   lastStamp: number;
+  /** When the process was started: a report written before that belongs to an earlier run. */
+  startedAt: number;
+  /** Until when output is the echo of a resize or of input, not activity (`ECHO_WINDOW_MS`). */
+  echoUntil: number;
+  /** When the user last gave the session input — not counting the replies a browser terminal sends by itself. */
+  lastUserInputAt: number;
+  /** The report read last from the state file, kept so an unchanged file is not read again. */
+  report?: Report & { size: number };
   /** Tail of the submissions to this terminal: they run one after another so text and Enter never interleave. */
   submitting?: Promise<unknown>;
 }
@@ -89,6 +104,8 @@ export interface ManagerDeps {
   store?: SessionStore;
   /** Test seam; the real delay gives an agent time to draw its prompt before text is typed into it. */
   typePromptDelayMs?: number;
+  /** Test seam for `ECHO_WINDOW_MS`. */
+  echoWindowMs?: number;
   /** Test seam for how long a submission waits for its echo and before Enter. */
   submitTimings?: SubmitOptions;
   /** Told when a session starts, ends or ships, for the activity feed. Never consulted for any decision. */
@@ -656,7 +673,13 @@ export class SessionManager {
   }
 
   private start(session: Session, argv: string[], env: Record<string, string>, typed?: string): void {
-    const live: Live = { scrollback: this.live.get(session.id)?.scrollback ?? new Scrollback(), viewers: this.live.get(session.id)?.viewers ?? new Set(), lastStamp: 0 };
+    const live: Live = { scrollback: this.live.get(session.id)?.scrollback ?? new Scrollback(), viewers: this.live.get(session.id)?.viewers ?? new Set(), lastStamp: 0, startedAt: 0, echoUntil: 0, lastUserInputAt: 0 };
+    // A report never outlives the process that wrote it: whatever an earlier run left is gone before this one starts.
+    const stateFile = this.store.statePath(session.id);
+    rmSync(stateFile, { force: true });
+    delete session.waitingReportedAt;
+    env = { ...env, [STATE_FILE_ENV]: stateFile };
+    live.startedAt = Date.now();
     this.live.set(session.id, live);
     let proc: TerminalProcess;
     try {
@@ -689,6 +712,7 @@ export class SessionManager {
     live.scrollback.push(chunk);
     for (const viewer of live.viewers) viewer(chunk);
     const now = Date.now();
+    if (now < live.echoUntil) return; // the agent answering a resize or input: shown, but not activity
     session.lastOutputAt = new Date(now).toISOString();
     if (now - live.lastStamp > OUTPUT_STAMP_MS) {
       live.lastStamp = now;
@@ -696,8 +720,38 @@ export class SessionManager {
     }
   }
 
+  /** Output for the next moment is the agent answering what the dashboard just passed on (see `ECHO_WINDOW_MS`). */
+  private expectEcho(live: Live, userInput: boolean): void {
+    const now = Date.now();
+    live.echoUntil = now + (this.deps.echoWindowMs ?? ECHO_WINDOW_MS);
+    if (userInput) live.lastUserInputAt = now;
+  }
+
+  /**
+   * Reads every running session's state file and sets `waitingReportedAt` while its report is a current `waiting` —
+   * written after the process started and after the user's latest input. Run before the sessions are listed, so the
+   * list is as fresh as its poll; nothing reads the files while nobody looks.
+   */
+  async readReports(): Promise<void> {
+    await Promise.all(
+      [...this.sessions.values()].map(async (session) => {
+        const live = this.live.get(session.id);
+        if (session.state !== "running" || !live?.proc) {
+          delete session.waitingReportedAt;
+          return;
+        }
+        const report = await readReport(this.store.statePath(session.id), live.report);
+        live.report = report;
+        const current = report && report.mtimeMs > live.startedAt && report.mtimeMs > live.lastUserInputAt ? report : undefined;
+        if (current?.state === "waiting") session.waitingReportedAt = new Date(current.mtimeMs).toISOString();
+        else delete session.waitingReportedAt;
+      }),
+    );
+  }
+
   private async end(session: Session, exitCode: number | null, error?: string): Promise<void> {
     session.state = "exited";
+    delete session.waitingReportedAt;
     session.exitCode = exitCode;
     if (error) session.error = error;
     this.forgetWorktrees();
@@ -737,8 +791,12 @@ export class SessionManager {
     return { scrollback: live.scrollback.bytes(), detach: () => live.viewers.delete(viewer) };
   }
 
+  /** Keystrokes from a viewer. Input that is only the terminal's own replies (focus, cursor reports) is not the user's. */
   write(id: string, data: string): void {
-    this.live.get(id)?.proc?.write(data);
+    const live = this.live.get(id);
+    if (!live?.proc) return;
+    this.expectEcho(live, !terminalRepliesOnly(data));
+    live.proc.write(data);
   }
 
   /**
@@ -755,7 +813,11 @@ export class SessionManager {
       if (live.proc !== proc) return { submitted: false };
       return submitText(
         {
-          write: (data) => live.proc === proc && proc.write(data),
+          write: (data) => {
+            if (live.proc !== proc) return;
+            this.expectEcho(live, true);
+            proc.write(data);
+          },
           onOutput: (listener) => {
             live.viewers.add(listener);
             return () => live.viewers.delete(listener);
@@ -770,8 +832,12 @@ export class SessionManager {
     return result;
   }
 
+  /** Follows a viewer's size. The redraw it provokes is not activity, and a resize is never the user answering. */
   resize(id: string, cols: number, rows: number): void {
-    this.live.get(id)?.proc?.resize(cols, rows);
+    const live = this.live.get(id);
+    if (!live?.proc) return;
+    this.expectEcho(live, false);
+    live.proc.resize(cols, rows);
   }
 
   /** Ends the agent (as closing its terminal window would) and optionally removes the worktree when that is safe. */

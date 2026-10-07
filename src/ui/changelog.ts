@@ -15,6 +15,13 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    id: "2026-10-07-agent-reports-waiting",
+    date: "2026-10-07",
+    title: "Know when your agent waits for you",
+    summary:
+      "Opening an agent's console no longer turns **may need you** back into **working**. And an agent can now say it is waiting: have its own hooks write `waiting` or `working` into the file named by `SPEC_CONTROL_STATE_FILE`, and its badge reads **waiting for you** until you answer. See **Help › Agent sessions**.",
+  },
+  {
     id: "2026-10-07-overview-polish",
     date: "2026-10-07",
     title: "A tidier projects table, and a way home",
