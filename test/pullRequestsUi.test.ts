@@ -3,8 +3,8 @@
 import { expect, test } from "bun:test";
 import { type ComponentChildren, h } from "preact";
 import type { PullRequest } from "../src/shared/types.ts";
-import { CardPullRequest, DetailPullRequest, PullRequestList } from "../src/ui/pullRequests.tsx";
-import type { PrEntry, PrGroups } from "../src/ui/pullRequestsState.ts";
+import { CardPullRequest, DetailPullRequest, Notices, PullRequestList } from "../src/ui/pullRequests.tsx";
+import type { PrEntry, PrGroups, PrNotice } from "../src/ui/pullRequestsState.ts";
 import { byTag, elements, textOf } from "./vnode.ts";
 
 const pr = (patch: Partial<PullRequest> & { number: number }): PullRequest => ({
@@ -135,3 +135,44 @@ test("the header shows a ready pull request as ready, in the card's words and ro
 function classed(tree: ComponentChildren) {
   return elements(tree).filter((el) => String(el.props.class ?? "") === "visually-hidden");
 }
+
+const notice = (patch: Partial<PrNotice> & Pick<PrNotice, "repoId" | "kind">): PrNotice => ({
+  repoName: patch.repoId,
+  status: patch.kind === "failed" ? "failed" : "unavailable",
+  hasList: false,
+  ...patch,
+});
+
+test("a repository that is not on GitHub is a note, not a failure", () => {
+  const tree = h(Notices, { notices: [notice({ repoId: "quill-docs", kind: "not-on-github", reason: "not on GitHub" })] });
+  const details = byTag(tree, "details");
+  expect(details).toHaveLength(1);
+  expect(String(details[0].props.class)).not.toContain("warn");
+  expect(textOf(details[0])).toContain("1 repository isn't on GitHub");
+  expect(textOf(details[0])).toContain("quill-docs");
+  expect(textOf(tree)).not.toContain("could not be listed");
+  expect(textOf(tree)).not.toContain("failed");
+});
+
+test("not on GitHub and failed repositories get one summary each, listing only their own", () => {
+  const tree = h(Notices, {
+    notices: [
+      notice({ repoId: "plain-notes", kind: "not-on-github", reason: "not a git repository" }),
+      notice({ repoId: "quill-docs", kind: "not-on-github", reason: "not on GitHub" }),
+      notice({ repoId: "alpha-infra", kind: "failed", reason: "gh timed out", hasList: true }),
+    ],
+  });
+  const [info, failed] = byTag(tree, "details");
+  expect(textOf(byTag(info, "summary")[0])).toBe("2 repositories aren't on GitHub");
+  expect(textOf(info)).toContain("not a git repository");
+  expect(textOf(info)).not.toContain("alpha-infra");
+  expect(String(failed.props.class)).toContain("warn");
+  expect(textOf(byTag(failed, "summary")[0])).toBe("⚠ 1 repository could not be listed");
+  expect(textOf(failed)).toContain("gh timed out");
+  expect(textOf(failed)).toContain("showing the last list that was fetched");
+  expect(textOf(failed)).not.toContain("quill-docs");
+});
+
+test("no notices, no summary", () => {
+  expect(byTag(h(Notices, { notices: [] }), "details")).toHaveLength(0);
+});

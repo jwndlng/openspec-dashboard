@@ -212,6 +212,11 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: 
     -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; color: transparent;
   }
 }
+/* Mark and title lead home (heroHome.tsx); the title keeps its look, with an accent on hover and the brand focus ring. */
+.hero-home-mark { display: block; border-radius: var(--radius); }
+.hero-home { color: inherit; text-decoration: none; border-radius: var(--radius-sm); }
+.hero-home:hover, .hero-home-mark:hover + .hero-copy .hero-home { color: var(--brand-fg); }
+.hero-home:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--brand-ring); }
 .hero-tagline { margin: 0; font-size: 15px; line-height: 1.5; color: var(--fg-subtle); }
 .hero-brand .topbar-end { align-self: start; }
 /* The navigation: large tabs on a glassy track, the active one filled with the accent's soft tint. */
@@ -1042,13 +1047,15 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: 
    the Command, Change starters and Action prompts groups. */
 .agent-card { border: 1px solid var(--border-light); border-radius: var(--radius); min-width: 0; }
 .agent-card-head { display: flex; align-items: center; gap: var(--gap-1); flex-wrap: wrap; padding: 4px 8px 4px 4px; }
-.agent-toggle {
+/* Scoped to the card: the overview's project toggles share the class name (.control.agent-toggle) and must not pick
+   this up. */
+.agent-card-head .agent-toggle {
   flex: 1; min-width: 0; display: flex; align-items: center; gap: var(--gap-1); flex-wrap: wrap; text-align: left;
   padding: 4px 6px; border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--fg-body); cursor: pointer;
 }
-.agent-toggle:hover { background: var(--bg-surface); }
-.agent-toggle:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--brand-ring); }
-.agent-toggle strong { color: var(--fg-heading); }
+.agent-card-head .agent-toggle:hover { background: var(--bg-surface); }
+.agent-card-head .agent-toggle:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--brand-ring); }
+.agent-card-head .agent-toggle strong { color: var(--fg-heading); }
 .agent-chevron { width: 1em; color: var(--fg-subtle); }
 .agent-card-actions { display: flex; gap: 4px; flex-wrap: wrap; }
 .agent-card-body { display: flex; flex-direction: column; gap: var(--gap-2); padding: var(--gap-1) 12px 12px; border-top: 1px solid var(--border-light); }
@@ -1342,6 +1349,7 @@ body:has(.detail-overlay) { overflow: hidden; }
 .pr-empty { max-width: 560px; padding: var(--gap-3) 0; }
 .pr-notices { font-size: 12px; }
 .pr-notices > summary { cursor: pointer; color: var(--fg-subtle); padding: 4px 0; }
+.pr-notices.warn > summary { color: var(--warning); }
 .pr-notices ul { list-style: none; margin: 4px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
 .pr-notices li { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 
@@ -1428,6 +1436,10 @@ body:has(.detail-overlay) { overflow: hidden; }
    an icon and a dashed edge; the tooltip names the marker. An active filter chip adds the brand border and a check. */
 .label-chips { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px; min-width: 0; }
 .repo-name .label-chips { margin-left: 6px; vertical-align: middle; }
+/* A table row shows at most three chips and +N: one line, so the table's auto layout reserves their whole width instead
+   of letting them paint over the next column. */
+.projects .repo-name .label-chips { flex-wrap: nowrap; }
+.projects .repo-name .label-chips > * { flex: none; }
 .label-chip {
   display: inline-flex; align-items: center; gap: 3px;
   padding: 0 6px; border-radius: 999px;

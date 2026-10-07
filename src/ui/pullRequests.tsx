@@ -25,6 +25,7 @@ import {
   type PrEntry,
   type PrFilters,
   type PrGroups,
+  type PrNotice,
   type PrRepo,
   prAgeAt,
   pullRequestEntries,
@@ -360,24 +361,47 @@ export function PullRequestList({ groups, hues, showRepo }: { groups: PrGroups; 
 }
 
 /** What could not be listed, folded away: reasons belong in the view, not in the middle of the list. */
-function Notices({ notices }: { notices: { repoId: string; repoName: string; status: string; reason?: string; hasList: boolean }[] }) {
-  if (notices.length === 0) return null;
+/**
+ * Repositories with nothing listed, in up to two collapsed notes: those that are not on GitHub, which is information,
+ * and those whose query failed, marked as a warning.
+ */
+export function Notices({ notices }: { notices: PrNotice[] }) {
+  const offGitHub = notices.filter((n) => n.kind === "not-on-github");
+  const failed = notices.filter((n) => n.kind === "failed");
   return (
-    <details class="pr-notices">
-      <summary>
-        {notices.length} {notices.length === 1 ? "repository" : "repositories"} could not be listed
-      </summary>
-      <ul>
-        {notices.map((n) => (
-          <li key={n.repoId}>
-            <strong>{n.repoName}</strong>
-            <span class={`badge ${n.status === "failed" ? "warning" : ""}`}>{n.status === "failed" ? "failed" : "unavailable"}</span>
-            <span class="hint">{n.reason ?? "no reason given"}</span>
-            {n.hasList && <span class="hint">showing the last list that was fetched</span>}
-          </li>
-        ))}
-      </ul>
-    </details>
+    <>
+      {offGitHub.length > 0 && (
+        <details class="pr-notices">
+          <summary>
+            {offGitHub.length} {offGitHub.length === 1 ? "repository isn't" : "repositories aren't"} on GitHub
+          </summary>
+          <NoticeList notices={offGitHub} />
+        </details>
+      )}
+      {failed.length > 0 && (
+        <details class="pr-notices warn">
+          <summary>
+            ⚠ {failed.length} {failed.length === 1 ? "repository" : "repositories"} could not be listed
+          </summary>
+          <NoticeList notices={failed} />
+        </details>
+      )}
+    </>
+  );
+}
+
+function NoticeList({ notices }: { notices: PrNotice[] }) {
+  return (
+    <ul>
+      {notices.map((n) => (
+        <li key={n.repoId}>
+          <strong>{n.repoName}</strong>
+          {n.kind === "failed" && <span class="badge warning">failed</span>}
+          <span class="hint">{n.reason ?? "no reason given"}</span>
+          {n.hasList && <span class="hint">showing the last list that was fetched</span>}
+        </li>
+      ))}
+    </ul>
   );
 }
 
