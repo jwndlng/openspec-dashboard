@@ -5,6 +5,7 @@ import { AppLink, COLUMN_HELP, HELP_SECTION_IDS, HELP_SECTIONS } from "../src/ui
 import { routeFromPath } from "../src/ui/routes.ts";
 import { parseSection, SECTION_IDS } from "../src/ui/settingsSections.ts";
 import { looksLikeRealHome } from "./helpers.ts";
+import { byTag } from "./vnode.ts";
 
 interface Walked {
   text: string;
@@ -70,4 +71,21 @@ test("/help is the Help view", () => {
   expect(routeFromPath("/help/")).toEqual({ view: "help" });
   expect(routeFromPath("/helpful")).toEqual({ view: "overview" });
   expect(routeFromPath("/settings")).toEqual({ view: "settings" });
+});
+
+test("Help navigates its sections with the section navigation Settings has, not a chip list", async () => {
+  const { HELP_PAGE, helpNavSections } = await import("../src/ui/help.tsx");
+  const { SectionList, sectionHref } = await import("../src/ui/sectionNav.tsx");
+  const sections = helpNavSections();
+  expect(sections.map((s) => [s.id, s.label])).toEqual(HELP_SECTIONS.map((s) => [s.id, s.title]));
+  // One section element per entry, with the id ?section= and the navigation refer to.
+  const rendered = byTag(SectionList({ page: HELP_PAGE, sections, sectionClass: "help-section" }), "section");
+  expect(rendered.map((s) => s.props.id)).toEqual(HELP_SECTION_IDS.map((id) => `help-${id}`));
+  // Real links to /help with that section, keeping the other parameters; the first section is the default.
+  expect(sectionHref(HELP_PAGE, "board", HELP_SECTION_IDS[0], "?q=x&section=detail")).toBe("/help?q=x&section=board");
+  expect(sectionHref(HELP_PAGE, HELP_SECTION_IDS[0], HELP_SECTION_IDS[0], "?q=x")).toBe("/help?q=x");
+  const source = await Bun.file(new URL("../src/ui/help.tsx", import.meta.url)).text();
+  const css = await Bun.file(new URL("../src/ui/styles.css", import.meta.url)).text();
+  expect(source).toContain("<SectionNav");
+  expect(source + css).not.toContain("help-toc");
 });

@@ -22,6 +22,13 @@ export const CHANGELOG: readonly ChangelogEntry[] = [
       "Label chips and the **Agent sessions** and **Docs auto-merge** toggles in the projects table stay in their own row at any zoom. **Pull requests** now says a repository simply *isn't on GitHub* instead of reporting it as one that could not be listed, and the **Spec Control** title and mark take you back to **Projects**.",
   },
   {
+    id: "2026-10-07-section-navigation",
+    date: "2026-10-07",
+    title: "Help has the side navigation Settings has",
+    summary:
+      "**Help** now lists its sections in a navigation beside them that moves along as you read, like **Settings**, instead of a row of links at the top. On Settings the navigation no longer jumps to the bottom when you scroll to the end of the page.",
+  },
+  {
     id: "2026-10-07-spec-control-home",
     date: "2026-10-07",
     title: "Your settings moved to ~/.spec-control",
