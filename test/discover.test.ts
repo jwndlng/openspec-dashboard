@@ -3,7 +3,7 @@ import { existsSync, realpathSync } from "node:fs";
 import { mkdir, rm, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { newRepoConfig } from "../src/server/config.ts";
-import { DEFAULT_MAX_DEPTH, discoverRepos, findOpenSpecRepos, toCandidates, toIntegratable } from "../src/server/discover.ts";
+import { DEFAULT_MAX_DEPTH, discoverRepos, findSpecProjects, toCandidates, toIntegratable } from "../src/server/discover.ts";
 import { normalizeRemote } from "../src/server/git.ts";
 import { tempDir } from "./helpers.ts";
 import { git } from "./sessionHelpers.ts";
@@ -57,13 +57,13 @@ async function clone(origin: string | undefined, ...segments: string[]): Promise
 afterAll(() => rm(root, { recursive: true, force: true }));
 
 test("finds repos under multiple roots, skipping ignored dirs, nested repos, worktrees and depth limit", async () => {
-  const { paths, errors } = await findOpenSpecRepos([join(root, "prvt"), join(root, "acme"), join(root, "deep")]);
+  const { paths, errors } = await findSpecProjects([join(root, "prvt"), join(root, "acme"), join(root, "deep")]);
   expect(errors).toEqual([]);
   expect(paths).toEqual([join(root, "acme", "beta"), join(root, "prvt", "alpha")]);
 });
 
 test("missing root is reported but other roots still scan", async () => {
-  const { paths, errors } = await findOpenSpecRepos([join(root, "nope"), join(root, "prvt")]);
+  const { paths, errors } = await findSpecProjects([join(root, "nope"), join(root, "prvt")]);
   expect(errors).toEqual([{ root: join(root, "nope"), message: "does not exist" }]);
   expect(paths).toEqual([join(root, "prvt", "alpha")]);
 });
@@ -77,36 +77,36 @@ test("candidates exclude configured repos (enabled or not) and are untracked, so
 });
 
 test("overlapping roots and a trailing slash return each repo once", async () => {
-  const { paths, errors } = await findOpenSpecRepos([root, join(root, "prvt"), `${join(root, "prvt")}/`, join(root, "prvt", ".", "alpha")]);
+  const { paths, errors } = await findSpecProjects([root, join(root, "prvt"), `${join(root, "prvt")}/`, join(root, "prvt", ".", "alpha")]);
   expect(errors).toEqual([]);
   expect(paths.filter((p) => p.endsWith("/alpha") && p.includes("/prvt"))).toEqual([join(root, "prvt", "alpha")]);
   expect(new Set(paths).size).toBe(paths.length);
 });
 
 test("a symlinked root reports the real path once", async () => {
-  const { paths } = await findOpenSpecRepos([join(root, "prvt-link"), join(root, "prvt")]);
+  const { paths } = await findSpecProjects([join(root, "prvt-link"), join(root, "prvt")]);
   expect(paths).toEqual([join(root, "prvt", "alpha")]);
 });
 
 test("a differently cased root reports the on-disk path once", async () => {
   if (!existsSync(join(root, "PRVT"))) return; // case-sensitive volume
-  const { paths } = await findOpenSpecRepos([join(root, "PRVT"), join(root, "prvt")]);
+  const { paths } = await findSpecProjects([join(root, "PRVT"), join(root, "prvt")]);
   expect(paths).toEqual([join(root, "prvt", "alpha")]);
 });
 
 test("ignore paths are skipped, by whole segments, however they are spelled", async () => {
   const roots = [join(root, "mirror"), join(root, "prvt")];
   const all = [join(root, "mirror", "repos-extra", "app"), join(root, "mirror", "repos", "alpha"), join(root, "prvt", "alpha")]; // "-" sorts before "/"
-  expect((await findOpenSpecRepos(roots)).paths).toEqual(all);
-  const ignored = await findOpenSpecRepos(roots, DEFAULT_MAX_DEPTH, [`${join(root, "mirror", "repos")}/`]);
+  expect((await findSpecProjects(roots)).paths).toEqual(all);
+  const ignored = await findSpecProjects(roots, DEFAULT_MAX_DEPTH, [`${join(root, "mirror", "repos")}/`]);
   expect(ignored.paths).toEqual([join(root, "mirror", "repos-extra", "app"), join(root, "prvt", "alpha")]);
   // the repository itself, and a symlinked spelling of its parent
-  expect((await findOpenSpecRepos(roots, DEFAULT_MAX_DEPTH, [join(root, "prvt-link", "alpha")])).paths).toEqual(all.slice(0, 2));
-  expect((await findOpenSpecRepos(roots, DEFAULT_MAX_DEPTH, [join(root, "mirror", "repos")])).paths).toContain(join(root, "mirror", "repos-extra", "app"));
+  expect((await findSpecProjects(roots, DEFAULT_MAX_DEPTH, [join(root, "prvt-link", "alpha")])).paths).toEqual(all.slice(0, 2));
+  expect((await findSpecProjects(roots, DEFAULT_MAX_DEPTH, [join(root, "mirror", "repos")])).paths).toContain(join(root, "mirror", "repos-extra", "app"));
 });
 
 test("an ignored root yields no results and no error", async () => {
-  expect(await findOpenSpecRepos([join(root, "mirror")], DEFAULT_MAX_DEPTH, [join(root, "mirror")])).toEqual({ paths: [], integratable: [], errors: [] });
+  expect(await findSpecProjects([join(root, "mirror")], DEFAULT_MAX_DEPTH, [join(root, "mirror")])).toEqual({ paths: [], frameworks: new Map(), integratable: [], errors: [] });
 });
 
 test("a tracked repo is not offered again under a symlinked spelling", async () => {
@@ -160,7 +160,7 @@ test("remote lookup leaves the repositories' git config untouched", async () => 
 });
 
 test("git repositories without OpenSpec are reported separately, containers and worktrees are not", async () => {
-  const { paths, integratable, errors } = await findOpenSpecRepos([join(root, "plain")]);
+  const { paths, integratable, errors } = await findSpecProjects([join(root, "plain")]);
   expect(errors).toEqual([]);
   // the walk still descends into a plain git repository, so the package inside the monorepo is found as before
   expect(paths).toEqual([join(root, "plain", "mono", "packages", "tools")]);
@@ -170,13 +170,13 @@ test("git repositories without OpenSpec are reported separately, containers and 
 
 test("reporting integratable repositories leaves the candidates untouched", async () => {
   const roots = [join(root, "prvt"), join(root, "acme"), join(root, "deep"), join(root, "plain")];
-  const { paths, integratable } = await findOpenSpecRepos(roots);
+  const { paths, integratable } = await findSpecProjects(roots);
   expect(paths).toEqual([join(root, "acme", "beta"), join(root, "plain", "mono", "packages", "tools"), join(root, "prvt", "alpha")]);
   expect(integratable).toEqual([join(root, "plain", "beta-soc")]);
 });
 
 test("ignore paths and ignored directory names apply to integratable repositories too", async () => {
-  const ignored = await findOpenSpecRepos([join(root, "plain")], DEFAULT_MAX_DEPTH, [join(root, "plain", "beta-soc")]);
+  const ignored = await findSpecProjects([join(root, "plain")], DEFAULT_MAX_DEPTH, [join(root, "plain", "beta-soc")]);
   expect(ignored.integratable).toEqual([]);
   expect(ignored.paths).toEqual([join(root, "plain", "mono", "packages", "tools")]); // the rest is unaffected
 });

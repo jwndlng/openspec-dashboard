@@ -148,8 +148,8 @@ test("missing repo path yields ok:false without throwing", async () => {
 
 test("unexpected change directory names are skipped with a warning", async () => {
   class Weird extends LocalRepoSource {
-    override async listChanges() {
-      const listing = await super.listChanges();
+    override async listChanges(...args: Parameters<LocalRepoSource["listChanges"]>) {
+      const listing = await super.listChanges(...args);
       return { ...listing, warnings: [...listing.warnings, 'skipped change directory with unexpected name: "foo;rm -rf"'] };
     }
   }
@@ -356,8 +356,8 @@ test("checkouts: a failed scan keeps the previous checkouts and summary", async 
   const config = { ...defaultConfig(), repos: [newRepoConfig(wt.repo, true)] };
   let fail = false;
   class Flaky extends LocalRepoSource {
-    override listChanges() {
-      return fail ? Promise.reject(new Error("boom")) : super.listChanges();
+    override listChanges(...args: Parameters<LocalRepoSource["listChanges"]>) {
+      return fail ? Promise.reject(new Error("boom")) : super.listChanges(...args);
     }
   }
   const scanner = new Scanner(() => config, { persist: false, sourceFor: (r) => new Flaky(r.path) });

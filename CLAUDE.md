@@ -17,8 +17,13 @@ bun test test/scanner.test.ts   # a single test file
 
 ## Layout
 
-- `src/server/` — config, discovery, scanner, HTTP API, CLI entry. `src/shared/` — types and column derivation used by
-  both sides. `src/ui/` — Preact SPA built into one self-contained `dist/ui/index.html` by `scripts/build-ui.ts`.
+- `src/server/` — config, discovery, scanner, HTTP API, CLI entry. `src/server/frameworks/` — the spec framework
+  modules: the contract (`framework.ts`, an abstract `SpecFramework`), the registry that picks a repository's module
+  (`registry.ts`), and one directory per framework — today only `openspec/`. Everything specific to a framework (its
+  layout, markers, how a change's artifacts and tasks are read, its scaffold) lives in its module; the scanner,
+  discovery, API and UI stay framework-neutral, and the Kanban derives every column from the module's neutral shape
+  (`openspec/specs/spec-frameworks/spec.md`). `src/shared/` — types and column derivation used by both sides.
+  `src/ui/` — Preact SPA built into one self-contained `dist/ui/index.html` by `scripts/build-ui.ts`.
 - `test/fixtures/` — synthetic `openspec/` trees written for the tests (see `test/fixtures/README.md`). Tests assert on
   their structure: change them together with the tests, and never reformat or lint them.
 - `openspec/` — this project's own specs (`openspec/specs/`) and changes. Requirements live there; read the relevant
@@ -129,8 +134,10 @@ bun test test/scanner.test.ts   # a single test file
 2a. **Mutating API routes are same-origin only.** Every non-GET `/api/` request passes `crossSiteRefusal` in
    `src/server/api.ts` (JSON content type, loopback host, own origin); the terminal WebSocket has `webSocketRefusal`. Loopback binding alone does not stop a web page
    in the same browser; do not add a mutating route that bypasses the guard.
-3. **`@fission-ai/openspec` internals only through `src/server/openspecAdapter.ts`.** Do not call the library's
-   `resolveSchema`/`loadChangeContext`: they locate files via `import.meta.url`, which does not exist inside the
+3. **Framework code only in its module; `@fission-ai/openspec` internals only through
+   `src/server/frameworks/openspec/adapter.ts`.** A module only reads: where a write depends on a framework, the module
+   supplies paths and contents and the writers of invariant 1 write, and only for a module `writablePaths` allows.
+   Do not call the library's `resolveSchema`/`loadChangeContext`: they locate files via `import.meta.url`, which does not exist inside the
    compiled binary. The adapter embeds the schema at build time. Anything that works under `bun run` but reads files
    relative to a module path must also be verified in `dist/spec-control`.
 4. **No network at runtime, except the pull action and the pull-request and issue queries.** The UI is one HTML file with inlined

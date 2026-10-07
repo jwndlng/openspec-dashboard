@@ -434,6 +434,7 @@ export function buildSample(now: number): Sample {
       id: r.id,
       name: r.name,
       path: repoPath(r.name),
+      framework: "openspec",
       ok: r.error === undefined,
       error: r.error,
       warnings: r.warnings,

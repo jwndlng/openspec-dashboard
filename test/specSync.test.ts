@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { newRepoConfig } from "../src/server/config.ts";
 import { scanRepo } from "../src/server/scanner.ts";
 import { LocalRepoSource } from "../src/server/source.ts";
-import { isDeltaSynced } from "../src/server/specSync.ts";
+import { isDeltaSynced } from "../src/server/frameworks/openspec/specSync.ts";
 import { tempDir, useTempHome } from "./helpers.ts";
 
 const req = (name: string, body: string, scenario = "works") => `### Requirement: ${name}\n${body}\n\n#### Scenario: ${scenario}\n- **WHEN** something happens\n- **THEN** it ${scenario}\n`;

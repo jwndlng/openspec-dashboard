@@ -102,7 +102,7 @@ test("discover uses saved roots, returns only unconfigured repos and persists no
   const result = await (await discover()).json();
   expect(result.errors).toEqual([]);
   // demo-ops was configured by the previous test, so only the other fixture is a candidate
-  expect(result.candidates).toEqual([newRepoConfig(join(FIXTURES, "beta-soc"), false)]);
+  expect(result.candidates).toEqual([{ ...newRepoConfig(join(FIXTURES, "beta-soc"), false), framework: "openspec" }]);
   expect(state.config).toEqual(before);
   const config = await (await fetch(`${base}/api/config`)).json();
   expect(config.repos.length).toBe(1);

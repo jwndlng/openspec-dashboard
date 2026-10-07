@@ -3,11 +3,13 @@
 //
 // This is the ONLY place in the dashboard that deletes a change directory. The preview is read-only; dismissing
 // recomputes it and refuses unless it is exactly what the user was shown. Nothing here touches a linked worktree, a
-// branch, a ref or anything outside `openspec/changes/<name>/`, and nothing here commits.
+// branch, a ref or anything outside `openspec/changes/<name>/` (the changes directory of the only framework whose write
+// paths are enumerated, `writablePaths`), and nothing here commits.
 import { createHash } from "node:crypto";
 import { lstat, readdir, realpath, rm } from "node:fs/promises";
 import { join } from "node:path";
 import type { DismissFile, DismissPreview, DismissResult, RepoConfig, RepoSnapshot } from "../shared/types.ts";
+import { frameworkById, writablePaths } from "./frameworks/registry.ts";
 import { knownStatusPaths, subdirectory } from "./git.ts";
 import { CHANGE_NAME } from "./source.ts";
 
@@ -28,6 +30,14 @@ export function isDismissableName(name: unknown): name is string {
 }
 
 const running = new Set<string>();
+
+/** The changes directory of the repository's framework (`openspec/changes`); refused for one with no enumerated paths. */
+function changesDir(scanned: RepoSnapshot): string {
+  const framework = frameworkById(scanned.framework);
+  const layout = writablePaths(framework);
+  if (!layout) throw new DismissError(409, `the dashboard does not dismiss ${framework?.label ?? "these"} changes`);
+  return layout.changesDir;
+}
 const key = (repoId: string, name: string) => `${repoId}\0${name}`;
 
 /** While true, no session may start for the change: an agent could write into the directory being deleted. */
@@ -73,19 +83,20 @@ function notInMain(scanned: RepoSnapshot, name: string): DismissError {
 }
 
 /**
- * The change's directory in the main checkout: a real directory (not a symbolic link) directly inside
- * `openspec/changes/`. Throws the reason otherwise.
+ * The change's directory in the main checkout: a real directory (not a symbolic link) directly inside the framework's
+ * changes directory (`openspec/changes/`). Throws the reason otherwise.
  */
 async function activeDir(repo: RepoConfig, scanned: RepoSnapshot, name: string): Promise<string> {
   if (!isDismissableName(name)) throw new DismissError(400, "invalid change name");
-  const parent = join(repo.path, "openspec", "changes");
+  const changes = changesDir(scanned);
+  const parent = join(repo.path, changes);
   const dir = join(parent, name);
   const info = await lstat(dir).catch(() => undefined);
   if (!info) throw notInMain(scanned, name);
-  if (info.isSymbolicLink()) throw new DismissError(409, `openspec/changes/${name} is a symbolic link; only a real change directory can be dismissed`);
+  if (info.isSymbolicLink()) throw new DismissError(409, `${changes}/${name} is a symbolic link; only a real change directory can be dismissed`);
   if (!info.isDirectory()) throw notInMain(scanned, name);
   const [realDir, realParent] = await Promise.all([realpath(dir), realpath(parent)]);
-  if (realDir !== join(realParent, name)) throw new DismissError(409, `openspec/changes/${name} does not resolve inside openspec/changes`);
+  if (realDir !== join(realParent, name)) throw new DismissError(409, `${changes}/${name} does not resolve inside ${changes}`);
   return dir;
 }
 
@@ -120,7 +131,7 @@ async function worktreeCopies(repo: RepoConfig, scanned: RepoSnapshot, name: str
   const linked = scanned.worktrees.filter((w) => !w.isMain && !w.bare && !w.prunable);
   if (linked.length === 0) return [];
   const sub = await subdirectory(repo.path);
-  const held = await Promise.all(linked.map((w) => lstat(join(w.path, sub, "openspec", "changes", name)).then((i) => i.isDirectory(), () => false)));
+  const held = await Promise.all(linked.map((w) => lstat(join(w.path, sub, changesDir(scanned), name)).then((i) => i.isDirectory(), () => false)));
   return linked.filter((_, i) => held[i]).map((w) => ({ path: w.path, branch: w.branch }));
 }
 
@@ -131,7 +142,7 @@ async function inspect(repo: RepoConfig, scanned: RepoSnapshot, name: string): P
 
   // Anything git lists — untracked, ignored, modified, added — is not in HEAD as it is on disk. When git cannot say,
   // every file counts as lost: a failure must never read as "restorable".
-  const listed = isGit ? await knownStatusPaths(repo.path, `openspec/changes/${name}`, { ignored: true }) : undefined;
+  const listed = isGit ? await knownStatusPaths(repo.path, `${changesDir(scanned)}/${name}`, { ignored: true }) : undefined;
   const differing = new Set(listed?.filter((p) => !p.deleted).map((p) => p.path));
   const restorable = (abs: string) => listed !== undefined && !differing.has(abs);
   const files: (DismissFile & { size?: number; mtimeMs?: number })[] = entries.map((e) => ({ path: e.rel, state: restorable(e.abs) ? "restorable" : "lost", size: e.size, mtimeMs: e.mtimeMs }));
@@ -172,7 +183,7 @@ export async function dismissChange(repo: RepoConfig, scanned: RepoSnapshot, nam
     if (preview.fingerprint !== fingerprint) throw new DismissError(409, `"${name}" changed since it was shown; look at it again before dismissing`);
     await rm(dir, { recursive: true });
     // The files are gone; whatever git does, the dismissal has succeeded.
-    const staged = scanned.isGit ? await gitWrite(repo.path, ["add", "--all", "--", `openspec/changes/${name}/`]) : false;
+    const staged = scanned.isGit ? await gitWrite(repo.path, ["add", "--all", "--", `${changesDir(scanned)}/${name}/`]) : false;
     return { name, staged };
   } finally {
     running.delete(k);

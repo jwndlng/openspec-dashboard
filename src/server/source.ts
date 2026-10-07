@@ -1,5 +1,6 @@
-// Where a repository's OpenSpec data comes from (design.md D3). v0 ships a
-// local filesystem source; a remote source would implement the same interface.
+// Where a repository's files and git facts come from (design.md D3). v0 ships a local filesystem source; a remote
+// source would implement the same interface. It knows no framework: where changes live is the caller's `ChangesLayout`,
+// supplied by the repository's framework module (`frameworks/`).
 import type { Dirent } from "node:fs";
 import { readdir, readFile, realpath, stat } from "node:fs/promises";
 import { dirname, join, relative } from "node:path";
@@ -9,9 +10,14 @@ import { checkoutStatus, currentBranch, defaultBranch, hasCommitToBranchFrom, ha
 
 export const CHANGE_NAME = CHANGE_NAME_PATTERN;
 const ARCHIVE_PREFIX = /^(\d{4}-\d{2}-\d{2})-(.+)$/;
-const CHANGES_DIR = "openspec/changes";
-const ARCHIVE_DIR = "openspec/changes/archive";
-const OPENSPEC_DIR = "openspec";
+
+/** Where a framework keeps its change directories, relative to the project folder. */
+export interface ChangesLayout {
+  /** One directory per active change, e.g. `openspec/changes`. */
+  changesDir: string;
+  /** One `YYYY-MM-DD-<name>` directory per archived change; absent when the framework has no archive. */
+  archiveDir?: string;
+}
 
 export interface ChangeDirEntry {
   name: string;
@@ -44,9 +50,10 @@ export interface ChangeListing {
 
 export interface RepoSource {
   readonly path: string;
-  exists(): Promise<boolean>;
-  /** `archived: false` skips the archive, which is only ever read from a repository's main checkout. */
-  listChanges(options?: { archived?: boolean }): Promise<ChangeListing>;
+  /** Whether `relDir`, relative to the project folder, is a directory: how a framework module claims a tracked folder. */
+  exists(relDir: string): Promise<boolean>;
+  /** The change directories of `layout`. `archived: false` skips the archive, which is only ever read from a main checkout. */
+  listChanges(layout: ChangesLayout, options?: { archived?: boolean }): Promise<ChangeListing>;
   /** The same kind of source for another checkout of this repository (a linked worktree). */
   forCheckout(path: string): RepoSource;
   /** Modification time of one directory entry itself (not its contents), in ms; undefined when it does not exist. */
@@ -76,8 +83,8 @@ export interface RepoSource {
   subdirectory(): Promise<string>;
   /** Committer date of the last commit touching `absPath` inside the repo. */
   lastActivity(absPath: string): Promise<string | undefined>;
-  /** Modified and untracked files under `openspec/`, per git. Empty for non-git repositories or on failure. */
-  dirtyFiles(): Promise<DirtyFile[]>;
+  /** Modified and untracked files under `relRoot` (a framework's root, e.g. `openspec`), per git. Empty for non-git repositories or on failure. */
+  dirtyFiles(relRoot: string): Promise<DirtyFile[]>;
 }
 
 async function listDirs(dir: string): Promise<string[]> {
@@ -92,9 +99,9 @@ async function listDirs(dir: string): Promise<string[]> {
 export class LocalRepoSource implements RepoSource {
   constructor(readonly path: string) {}
 
-  async exists(): Promise<boolean> {
+  async exists(relDir: string): Promise<boolean> {
     try {
-      return (await stat(join(this.path, "openspec"))).isDirectory();
+      return (await stat(join(this.path, relDir))).isDirectory();
     } catch {
       return false;
     }
@@ -112,15 +119,15 @@ export class LocalRepoSource implements RepoSource {
     }
   }
 
-  async listChanges({ archived: withArchive = true }: { archived?: boolean } = {}): Promise<ChangeListing> {
+  async listChanges(layout: ChangesLayout, { archived: withArchive = true }: { archived?: boolean } = {}): Promise<ChangeListing> {
     const active: ChangeDirEntry[] = [];
     const archived: ChangeDirEntry[] = [];
     const warnings: string[] = [];
-    const changesRoot = join(this.path, CHANGES_DIR);
-    const archiveRoot = join(this.path, ARCHIVE_DIR);
+    const changesRoot = join(this.path, layout.changesDir);
+    const archiveRoot = layout.archiveDir === undefined ? undefined : join(this.path, layout.archiveDir);
 
     for (const name of await listDirs(changesRoot)) {
-      if (name === "archive") continue;
+      if (join(changesRoot, name) === archiveRoot) continue;
       if (!CHANGE_NAME.test(name)) {
         warnings.push(`skipped change directory with unexpected name: ${JSON.stringify(name)}`);
         continue;
@@ -128,8 +135,8 @@ export class LocalRepoSource implements RepoSource {
       active.push({ name, dir: join(changesRoot, name) });
     }
 
-    for (const dirName of withArchive ? await listDirs(archiveRoot) : []) {
-      const dir = join(archiveRoot, dirName);
+    for (const dirName of withArchive && archiveRoot ? await listDirs(archiveRoot) : []) {
+      const dir = join(archiveRoot as string, dirName);
       const match = ARCHIVE_PREFIX.exec(dirName);
       const name = match ? match[2] : dirName;
       if (!CHANGE_NAME.test(name)) {
@@ -241,10 +248,10 @@ export class LocalRepoSource implements RepoSource {
     return lastCommitDate(this.path, relative(this.path, absPath));
   }
 
-  async dirtyFiles(): Promise<DirtyFile[]> {
-    const root = join(this.path, OPENSPEC_DIR);
+  async dirtyFiles(relRoot: string): Promise<DirtyFile[]> {
+    const root = join(this.path, relRoot);
     const result: DirtyFile[] = [];
-    for (const entry of await statusPaths(this.path, OPENSPEC_DIR)) {
+    for (const entry of await statusPaths(this.path, relRoot)) {
       // A deletion shows up as the mtime of the nearest directory that still exists.
       let p = entry.deleted ? dirname(entry.path) : entry.path;
       while (p.startsWith(root)) {

@@ -7,12 +7,11 @@ import { detectLabels } from "../shared/labels.ts";
 import type { ChangeSnapshot, Config, DetectedLabel, RepoConfig, RepoSnapshot, SharedConfig, Snapshot, Worktree } from "../shared/types.ts";
 import { summarizeWorkInProgress } from "../shared/workInProgress.ts";
 import { emptySnapshot, writeSnapshot } from "./cache.ts";
+import type { FrameworkProject, SpecFramework } from "./frameworks/framework.ts";
+import { claimFramework, FRAMEWORKS, unclaimedMessage } from "./frameworks/registry.ts";
 import { type ChangeCopy, foldLeftovers, mergeChanges } from "./mergeChanges.ts";
-import { readChangeArtifacts } from "./openspecAdapter.ts";
 import { loadSharedConfig, repoSharedConfig } from "./sharedConfig.ts";
-import { changeSpecsSynced } from "./specSync.ts";
 import { CHANGE_NAME, LocalRepoSource, type ChangeDirEntry, type DirtyFile, type RepoSource } from "./source.ts";
-import { parseTaskProgress } from "./tasksParser.ts";
 
 export const DEFAULT_CONCURRENCY = 4;
 export const DEFAULT_REPO_TIMEOUT_MS = 30_000;
@@ -26,11 +25,6 @@ export const PROMPT_LIMIT_BYTES = 8 * 1024;
 /** A dependency list is a handful of names; anything larger is not one. */
 export const DEPENDS_ON_LIMIT_BYTES = 16 * 1024;
 export const DEPENDS_ON_FILE = "depends-on.yaml";
-
-// `.openspec.yaml` and `openspec/config.yaml` are flat enough to read without a YAML parser.
-const SCHEMA_LINE = /^schema:\s*["']?([A-Za-z0-9._-]+)/m;
-const CREATED_LINE = /^created:\s*["']?(\d{4}-\d{2}-\d{2})/m;
-const SKIP_SPECS_LINE = /^skip_specs:\s*true\b/m;
 
 /**
  * The `depends_on` list of a change's `depends-on.yaml`: valid, de-duplicated names in file order. `unreadable` when the
@@ -68,17 +62,6 @@ export function parseIssueFile(text: string): ChangeSnapshot["sourceIssue"] {
   } catch {
     return undefined;
   }
-}
-
-interface Marker {
-  schema?: string;
-  created?: string;
-  skipSpecs: boolean;
-}
-
-export function parseMarker(text: string | undefined): Marker {
-  if (!text) return { skipSpecs: false };
-  return { schema: SCHEMA_LINE.exec(text)?.[1], created: CREATED_LINE.exec(text)?.[1], skipSpecs: SKIP_SPECS_LINE.test(text) };
 }
 
 function findBranchMatch(name: string, branch: string | undefined, worktrees: Worktree[]): string | undefined {
@@ -159,33 +142,19 @@ interface RepoContext {
   /** The branch checked out here. */
   branch?: string;
   worktrees: Worktree[];
-  /** Files under `openspec/` that differ from HEAD, with their mtimes. */
+  /** Files under the framework's root that differ from HEAD, with their mtimes. */
   dirty: DirtyFile[];
-  /** Schema from `openspec/config.yaml`, used when a change's marker has none. */
-  projectSchema?: string;
+  /** The module that reads this repository; every checkout of it is read by the same one. */
+  framework: SpecFramework;
+  /** This checkout's framework settings (for OpenSpec, the schema from `openspec/config.yaml`). */
+  project: FrameworkProject;
 }
 
 async function scanChange(ctx: RepoContext, entry: ChangeDirEntry, withGit: boolean): Promise<ChangeSnapshot> {
-  const warnings: string[] = [];
-  const marker = parseMarker(await ctx.source.readText(join(entry.dir, ".openspec.yaml")));
-  let schema = marker.schema ?? ctx.projectSchema ?? "unknown";
-  let artifacts: ChangeSnapshot["artifacts"] = [];
-  let tasksPath: string | undefined;
-  try {
-    const info = readChangeArtifacts(ctx.root, entry.name, {
-      changeDir: entry.dir,
-      schemaName: marker.schema ?? ctx.projectSchema,
-      skipSpecs: marker.skipSpecs,
-    });
-    schema = info.schema;
-    artifacts = info.artifacts;
-    tasksPath = info.tasksPath;
-  } catch (err) {
-    warnings.push(`could not read artifacts: ${err instanceof Error ? err.message : String(err)}`);
-  }
+  const { schema, artifacts, tasksPath, created, warnings } = await ctx.framework.readChange(ctx.source, ctx.project, entry);
 
   const tasksMd = tasksPath ? await ctx.source.readText(tasksPath) : undefined;
-  const tasks = tasksMd === undefined ? null : parseTaskProgress(tasksMd);
+  const tasks = tasksMd === undefined ? null : ctx.framework.parseTasks(tasksMd);
 
   // `prompt.md` is a free-text hint, not an artifact: read it when it exists, do not fail the change on a bad read.
   const promptPath = join(entry.dir, "prompt.md");
@@ -247,9 +216,9 @@ async function scanChange(ctx: RepoContext, entry: ChangeDirEntry, withGit: bool
   // Sync state is only reported for a finished, unarchived change, so only then is it worth reading its delta specs.
   let specsSynced: boolean | undefined;
   if (!entry.archived && tasks && tasks.total > 0 && tasks.done === tasks.total) {
-    const sync = await changeSpecsSynced(ctx.source, entry.dir);
-    specsSynced = sync.synced;
-    warnings.push(...sync.warnings);
+    const sync = await ctx.framework.specsSynced(ctx.source, entry);
+    specsSynced = sync?.synced;
+    warnings.push(...(sync?.warnings ?? []));
   }
 
   const { stage, column, subState } = deriveStage({ archived: Boolean(entry.archived), artifacts, tasks });
@@ -259,7 +228,7 @@ async function scanChange(ctx: RepoContext, entry: ChangeDirEntry, withGit: bool
     schema,
     artifacts,
     tasks,
-    created: marker.created,
+    created,
     archived: entry.archived,
     lastActivityAt,
     specsSynced,
@@ -276,11 +245,15 @@ async function scanChange(ctx: RepoContext, entry: ChangeDirEntry, withGit: bool
   };
 }
 
-/** `shared` is the dashboard's shared OpenSpec config, when one exists; it only adds the read-only sync state. */
-export async function scanRepo(repo: RepoConfig, source: RepoSource = new LocalRepoSource(repo.path), shared?: SharedConfig): Promise<RepoSnapshot> {
+/**
+ * `shared` is the dashboard's shared OpenSpec config, when one exists; it only adds the read-only sync state.
+ * `frameworks` is the registry to claim the folder from (a test seam; the registered modules by default).
+ */
+export async function scanRepo(repo: RepoConfig, source: RepoSource = new LocalRepoSource(repo.path), shared?: SharedConfig, frameworks: readonly SpecFramework[] = FRAMEWORKS): Promise<RepoSnapshot> {
   const base = { id: repo.id, name: repo.name, path: repo.path, scannedAt: new Date().toISOString() };
-  if (!(await source.exists())) {
-    return { ...base, ok: false, error: "repository path or its openspec/ directory does not exist", isGit: false, worktrees: [], changes: [] };
+  const framework = await claimFramework(source, frameworks);
+  if (!framework) {
+    return { ...base, ok: false, error: unclaimedMessage(frameworks), isGit: false, worktrees: [], changes: [] };
   }
   const isGit = await source.isGit();
   const [branch, listed] = isGit ? await Promise.all([source.branch(), source.worktrees()]) : [undefined, []];
@@ -291,18 +264,20 @@ export async function scanRepo(repo: RepoConfig, source: RepoSource = new LocalR
   const onDefaultBranch = mainBranch === undefined ? undefined : branch === mainBranch;
   // Nothing to branch a session from: its change sessions run in place (agent-sessions spec).
   const noCommit = isGit && (await source.hasCommitToBranchFrom().catch(() => undefined)) === false;
-  const configYaml = await source.readText(join(repo.path, "openspec", "config.yaml"));
-  const projectSchema = parseMarker(configYaml).schema;
-  const sharedConfig = shared && shared.profiles.length > 0 ? repoSharedConfig(configYaml, shared) : undefined;
-  const openspecDir = join(repo.path, "openspec");
-  const dirty = isGit ? await source.dirtyFiles().catch(() => []) : [];
+  const project = await framework.readProject(source);
+  // Shared config profiles are merged into a framework's own config file; a framework without one is not offered them.
+  const sharedConfigFile = framework.sharedConfigFile;
+  const sharedConfig =
+    sharedConfigFile && shared && shared.profiles.length > 0 ? repoSharedConfig(await source.readText(join(repo.path, sharedConfigFile)), shared) : undefined;
+  const frameworkDir = join(repo.path, framework.layout.root);
+  const dirty = isGit ? await source.dirtyFiles(framework.layout.root).catch(() => []) : [];
   const lastUpdatedAt = isGit
-    ? latestIso(await source.lastActivity(openspecDir), newestDirty(dirty, openspecDir))
-    : await source.newestMtime(openspecDir);
-  const ctx: RepoContext = { repo, source, root: repo.path, isMain: true, isGit, branch, worktrees, dirty, projectSchema };
+    ? latestIso(await source.lastActivity(frameworkDir), newestDirty(dirty, frameworkDir))
+    : await source.newestMtime(frameworkDir);
+  const ctx: RepoContext = { repo, source, root: repo.path, isMain: true, isGit, branch, worktrees, dirty, framework, project };
   const detectedLabels = await scanLabels(source, repo.path);
 
-  const listing = await source.listChanges();
+  const listing = await framework.listChanges(source);
   const warnings = [...listing.warnings];
   const mainCheckout = { path: repo.path, branch, isMain: true };
   const mainCopies: ChangeCopy[] = [];
@@ -326,6 +301,7 @@ export async function scanRepo(repo: RepoConfig, source: RepoSource = new LocalR
 
   return {
     ...base,
+    framework: framework.id,
     ok: true,
     warnings: warnings.length ? warnings : undefined,
     isGit,
@@ -382,7 +358,7 @@ async function scanWorktrees(main: RepoContext, archivedOnMain: Map<string, stri
     const worktree = subdir ? { ...listed, path: join(listed.path, subdir) } : listed;
     if (worktree.path === main.root) continue;
     const source = main.source.forCheckout(worktree.path);
-    const mtime = await source.mtimeMs(join(worktree.path, "openspec", "changes")).catch(() => undefined);
+    const mtime = await source.mtimeMs(join(worktree.path, main.framework.layout.changesDir)).catch(() => undefined);
     if (mtime !== undefined) candidates.push({ worktree, source, mtime });
   }
   candidates.sort((a, b) => b.mtime - a.mtime || a.worktree.path.localeCompare(b.worktree.path));
@@ -407,14 +383,14 @@ async function scanWorktrees(main: RepoContext, archivedOnMain: Map<string, stri
 }
 
 async function scanWorktree(main: RepoContext, worktree: Worktree, source: RepoSource, archivedOnMain: Map<string, string>): Promise<WorktreeCopies> {
-  const listing = await source.listChanges();
+  const listing = await main.framework.listChanges(source);
   // Every branch carries main's archives along; only what main lacks (by name, as of that date) is news worth reading.
   const pendingEntries = listing.archived.filter((entry) => !((archivedOnMain.get(entry.name) ?? "") >= (entry.archived ?? "")));
   if (listing.active.length === 0 && pendingEntries.length === 0) return { copies: [], pending: [] };
   // A branch may carry its own config; it is that checkout's changes it applies to.
-  const projectSchema = parseMarker(await source.readText(join(worktree.path, "openspec", "config.yaml"))).schema ?? main.projectSchema;
-  const dirty = await source.dirtyFiles().catch(() => []);
-  const ctx: RepoContext = { ...main, source, root: worktree.path, isMain: false, branch: worktree.branch, dirty, projectSchema };
+  const project = await main.framework.readProject(source, main.project);
+  const dirty = await source.dirtyFiles(main.framework.layout.root).catch(() => []);
+  const ctx: RepoContext = { ...main, source, root: worktree.path, isMain: false, branch: worktree.branch, dirty, project };
   const checkout = { path: worktree.path, branch: worktree.branch, isMain: false };
   const copies: ChangeCopy[] = [];
   for (const entry of listing.active) copies.push({ change: await scanChange(ctx, entry, true), checkout });
@@ -505,6 +481,7 @@ export class Scanner {
             id: repo.id,
             name: repo.name,
             path: repo.path,
+            ...(prev?.framework ? { framework: prev.framework } : {}),
             ok: false,
             error: err instanceof Error ? err.message : String(err),
             scannedAt: new Date().toISOString(),

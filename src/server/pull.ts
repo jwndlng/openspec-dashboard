@@ -16,6 +16,7 @@ import { dirname, join } from "node:path";
 import type { PullBlockingFile, PullResolve, PullResult, RepoConfig } from "../shared/types.ts";
 import { defaultBranch } from "./git.ts";
 import { dashboardHome } from "./paths.ts";
+import { OPENSPEC_PATHS } from "./frameworks/registry.ts";
 import { CHANGE_NAME } from "./source.ts";
 
 export const FETCH_TIMEOUT_MS = 60_000;
@@ -125,7 +126,8 @@ async function hasPostMergeHook(repoPath: string): Promise<boolean> {
 const LEFTOVER_STATES = new Set(["A ", "AM", "??"]);
 /** A leftover is an ordinary file. A symlink, a gitlink or a submodule is never removed, whatever its path. */
 const REGULAR_MODES = new Set(["100644", "100755"]);
-const CHANGES_PREFIX = "openspec/changes/";
+/** Pinned to OpenSpec's changes directory: another framework's files never match it, so they are never a leftover. */
+const CHANGES_PREFIX = `${OPENSPEC_PATHS.changesDir}/`;
 
 /** Beyond this many blocking files something larger is going on than a change leftover: list them, offer nothing. */
 export const MAX_BLOCKING_FILES = 500;

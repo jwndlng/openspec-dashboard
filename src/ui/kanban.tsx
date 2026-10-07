@@ -4,7 +4,7 @@ import { LabelChips } from "./labels.tsx";
 import { boardColumns, isComplete } from "../shared/columns.ts";
 import { waitingNote } from "../shared/dependencies.ts";
 import { linkedPullRequest } from "../shared/pullRequestLink.ts";
-import type { ChangeSnapshot, Config, PullRequest, PullRequestsResponse, RepoSnapshot, Snapshot } from "../shared/types.ts";
+import { frameworkInfo, type ChangeSnapshot, type Config, type PullRequest, type PullRequestsResponse, type RepoSnapshot, type Snapshot } from "../shared/types.ts";
 import { NoRepos } from "./empty.tsx";
 import { parseFilters, resolveLayout, serializeFilters, STACK_BELOW_PX, type Filters } from "./filters.ts";
 import { FilterBar } from "./boardFilters.tsx";
@@ -62,6 +62,12 @@ export function boardCards(repos: RepoSnapshot[], hues: Map<string, number>, pul
 }
 
 /** Sets --repo-hue for the `repo-tint` class. */
+/** Where the boards' changes live, once per framework: `openspec/changes` while OpenSpec is the only one. */
+export function changesDirs(repos: RepoSnapshot[]): string {
+  const dirs = new Set(repos.map((r) => frameworkInfo(r.framework).changesDir));
+  return dirs.size ? [...dirs].join(" · ") : frameworkInfo(undefined).changesDir;
+}
+
 function repoHue(hue: number) {
   return { "--repo-hue": hue };
 }
@@ -550,7 +556,7 @@ export function Kanban({ snapshot, config, repoId, query, onReload }: { snapshot
               <h1>
                 All changes
                 <span class="band-sub">
-                  {repos.length} {repos.length === 1 ? "repository" : "repositories"} · openspec/changes
+                  {repos.length} {repos.length === 1 ? "repository" : "repositories"} · {changesDirs(repos)}
                 </span>
               </h1>
               <span class="divider" aria-hidden="true" />

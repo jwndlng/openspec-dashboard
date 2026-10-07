@@ -1,8 +1,9 @@
 import type { Dirent } from "node:fs";
 import { readdir, stat } from "node:fs/promises";
 import { join, sep } from "node:path";
-import type { DiscoveredRepo, DiscoverResult, IntegratableRepo, RepoConfig } from "../shared/types.ts";
+import type { DiscoveredRepo, DiscoverResult, FrameworkId, IntegratableRepo, RepoConfig } from "../shared/types.ts";
 import { newRepoConfig, repoId, repoNameFromPath } from "./config.ts";
+import { detectFramework, skippedDirs } from "./frameworks/registry.ts";
 import { normalizeRemote, originUrl } from "./git.ts";
 import { canonicalPath } from "./paths.ts";
 
@@ -10,18 +11,9 @@ export const DEFAULT_MAX_DEPTH = 4;
 const REMOTE_LOOKUPS = 8;
 export const IGNORED_DIRS = new Set(["node_modules", ".git", ".venv", "target", "dist"]);
 
-const MARKERS = ["openspec/config.yaml", "openspec/config.yml"];
-
-/** The marker that makes a directory an OpenSpec project — and, once it appears, an integration that worked. */
-export async function isOpenSpecRepo(dir: string): Promise<boolean> {
-  for (const marker of MARKERS) {
-    try {
-      if ((await stat(join(dir, marker))).isFile()) return true;
-    } catch {
-      // not present
-    }
-  }
-  return false;
+/** Whether some registered framework's project marker is in `dir` — and, once it appears, an integration that worked. */
+export async function isSpecProject(dir: string): Promise<boolean> {
+  return (await detectFramework(dir)) !== undefined;
 }
 
 /** A linked git worktree has a `.git` *file* (pointing at the main repo) instead of a directory. */
@@ -47,18 +39,29 @@ async function hasOwnGitDir(dir: string): Promise<boolean> {
   }
 }
 
-async function walk(dir: string, depth: number, maxDepth: number, found: Set<string>, integratable: Set<string>, ignorePaths: string[]): Promise<void> {
-  if (isIgnored(dir, ignorePaths)) return;
-  if (await isOpenSpecRepo(dir)) {
+interface Walk {
+  maxDepth: number;
+  /** Project folder → the framework whose marker it has. */
+  found: Map<string, FrameworkId>;
+  integratable: Set<string>;
+  ignorePaths: string[];
+  /** Every framework's own tree: never a place to look for projects. */
+  skipDirs: Set<string>;
+}
+
+async function walk(dir: string, depth: number, w: Walk): Promise<void> {
+  if (isIgnored(dir, w.ignorePaths)) return;
+  const framework = await detectFramework(dir);
+  if (framework) {
     // Worktrees mirror their main repo's changes; listing them would show every change twice.
-    if (!(await isLinkedWorktree(dir))) found.add(dir);
+    if (!(await isLinkedWorktree(dir))) w.found.set(dir, framework.id);
     // Anything nested inside a repo (fixtures, vendored copies, in-repo worktrees) is not a project of its own.
     return;
   }
   // A git repository without the marker: a candidate for integration. The walk deliberately keeps descending — stopping
-  // here would change which OpenSpec projects are reported. Containers are dropped afterwards, once the projects are known.
-  if ((await hasOwnGitDir(dir)) && !(await isLinkedWorktree(dir))) integratable.add(dir);
-  if (depth >= maxDepth) return;
+  // here would change which projects are reported. Containers are dropped afterwards, once the projects are known.
+  if ((await hasOwnGitDir(dir)) && !(await isLinkedWorktree(dir))) w.integratable.add(dir);
+  if (depth >= w.maxDepth) return;
   let entries: Dirent[];
   try {
     entries = await readdir(dir, { withFileTypes: true });
@@ -66,25 +69,24 @@ async function walk(dir: string, depth: number, maxDepth: number, found: Set<str
     return; // unreadable directory: skip silently, the root itself was checked by the caller
   }
   for (const entry of entries) {
-    if (!entry.isDirectory() || IGNORED_DIRS.has(entry.name) || entry.name === "openspec") continue;
-    await walk(join(dir, entry.name), depth + 1, maxDepth, found, integratable, ignorePaths);
+    if (!entry.isDirectory() || IGNORED_DIRS.has(entry.name) || w.skipDirs.has(entry.name)) continue;
+    await walk(join(dir, entry.name), depth + 1, w);
   }
 }
 
 /**
- * Finds directories containing `openspec/config.yaml` under each root, up to `maxDepth` levels down. Roots are
- * canonicalised first and the walk never follows symlinks, so every reported path is canonical and a directory is
- * reported once however the roots were spelled. Errors name the root as the user typed it.
+ * Finds directories carrying a registered framework's project marker (for OpenSpec `openspec/config.yaml`) under each
+ * root, up to `maxDepth` levels down. Roots are canonicalised first and the walk never follows symlinks, so every
+ * reported path is canonical and a directory is reported once however the roots were spelled. Errors name the root as
+ * the user typed it. `frameworks` maps each reported path to the framework whose marker it has.
  */
-export async function findOpenSpecRepos(
+export async function findSpecProjects(
   roots: string[],
   maxDepth = DEFAULT_MAX_DEPTH,
   ignorePaths: string[] = [],
-): Promise<{ paths: string[]; integratable: string[]; errors: DiscoverResult["errors"] }> {
-  const found = new Set<string>();
-  const integratable = new Set<string>();
+): Promise<{ paths: string[]; frameworks: Map<string, FrameworkId>; integratable: string[]; errors: DiscoverResult["errors"] }> {
+  const w: Walk = { maxDepth, found: new Map(), integratable: new Set(), ignorePaths: ignorePaths.map(canonicalPath), skipDirs: skippedDirs() };
   const errors: DiscoverResult["errors"] = [];
-  const ignored = ignorePaths.map(canonicalPath);
   for (const root of roots) {
     const abs = canonicalPath(root);
     try {
@@ -96,13 +98,14 @@ export async function findOpenSpecRepos(
       errors.push({ root, message: "does not exist" });
       continue;
     }
-    await walk(abs, 0, maxDepth, found, integratable, ignored);
+    await walk(abs, 0, w);
   }
-  return { paths: [...found].sort(), integratable: withoutContainers(integratable, found), errors };
+  const projects = new Set(w.found.keys());
+  return { paths: [...projects].sort(), frameworks: w.found, integratable: withoutContainers(w.integratable, projects), errors };
 }
 
 /**
- * A directory that holds an OpenSpec project below it is a container, not a project waiting to be set up: a monorepo
+ * A directory that holds a spec project below it is a container, not a project waiting to be set up: a monorepo
  * with one OpenSpec package offers the package, not the monorepo.
  */
 function withoutContainers(integratable: Set<string>, projects: Set<string>): string[] {
@@ -130,11 +133,14 @@ export function toIntegratable(known: RepoConfig[], paths: string[]): Integratab
  * Found paths that are not configured yet, as untracked repos. Known repos
  * (enabled or not) are never candidates, so user choices survive re-discovery.
  */
-export function toCandidates(known: RepoConfig[], paths: string[]): RepoConfig[] {
+export function toCandidates(known: RepoConfig[], paths: string[], frameworks?: Map<string, FrameworkId>): DiscoveredRepo[] {
   const knownPaths = new Set(known.map((r) => canonicalPath(r.path)));
   return paths
     .filter((path) => !knownPaths.has(path))
-    .map((path) => newRepoConfig(path, false))
+    .map((path) => {
+      const framework = frameworks?.get(path);
+      return framework ? { ...newRepoConfig(path, false), framework } : newRepoConfig(path, false);
+    })
     .sort((a, b) => a.path.localeCompare(b.path));
 }
 
@@ -156,7 +162,7 @@ async function remotesOf(paths: string[]): Promise<Map<string, string>> {
 }
 
 /** Marks candidates that share their `origin` with another known repository, tracked or candidate. Informational only. */
-export async function withSameRemote(known: RepoConfig[], candidates: RepoConfig[]): Promise<DiscoveredRepo[]> {
+export async function withSameRemote(known: RepoConfig[], candidates: DiscoveredRepo[]): Promise<DiscoveredRepo[]> {
   const all = [...known.map((repo) => ({ repo, tracked: true })), ...candidates.map((repo) => ({ repo, tracked: false }))];
   const remotes = await remotesOf(all.map((e) => e.repo.path));
   return candidates.map((candidate) => {
@@ -168,6 +174,6 @@ export async function withSameRemote(known: RepoConfig[], candidates: RepoConfig
 }
 
 export async function discoverRepos(known: RepoConfig[], roots: string[], ignorePaths: string[] = []): Promise<DiscoverResult> {
-  const { paths, integratable, errors } = await findOpenSpecRepos(roots, DEFAULT_MAX_DEPTH, ignorePaths);
-  return { candidates: await withSameRemote(known, toCandidates(known, paths)), integratable: toIntegratable(known, integratable), errors };
+  const { paths, frameworks, integratable, errors } = await findSpecProjects(roots, DEFAULT_MAX_DEPTH, ignorePaths);
+  return { candidates: await withSameRemote(known, toCandidates(known, paths, frameworks)), integratable: toIntegratable(known, integratable), errors };
 }
