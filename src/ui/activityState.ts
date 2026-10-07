@@ -1,6 +1,7 @@
 // The Activity view's pure parts: filters ↔ URL, grouping by day, wording, and what counts as unseen.
 // Free of DOM access at import time; the storage helpers tolerate a browser that refuses localStorage.
-import { ACTIVITY_GROUPS, type ActivityEvent, type ActivityKind } from "../shared/types.ts";
+import { needsAttention } from "../shared/activity.ts";
+import { ACTIVITY_GROUPS, type ActivityEvent, type ActivityKind, type ActivitySummary } from "../shared/types.ts";
 import { storageKey } from "./storage.ts";
 
 export type ActivityGroup = keyof typeof ACTIVITY_GROUPS;
@@ -105,11 +106,51 @@ export function describe(event: ActivityEvent): string {
 
 /** Visual weight of an entry: what needs a second look stands out, routine progress recedes. */
 export function tone(event: ActivityEvent): "danger" | "ok" | "quiet" | "normal" {
-  if (event.kind === "repo-failing" || (event.kind === "session-ended" && (event.error !== undefined || (event.exitCode ?? 0) !== 0))) return "danger";
+  if (needsAttention(event)) return "danger";
   if (event.kind === "change-archived" || event.kind === "repo-recovered") return "ok";
   if (event.kind === "tasks-progress" || event.kind === "repo-tracked" || event.kind === "repo-untracked") return "quiet";
   return "normal";
 }
+
+// ---- summary strip (activity-summary) ----
+
+export interface Figure {
+  key: keyof ActivitySummary;
+  label: string;
+  /** The kinds of event it counts: hidden when the kind filter excludes all of them. */
+  kinds: readonly ActivityKind[];
+}
+
+/** In display order. Labels say what happened, not what is, so they are not read as the state of the board. */
+export const FIGURES: readonly Figure[] = [
+  { key: "created", label: "changes created", kinds: ["change-created"] },
+  { key: "moved", label: "changes moved", kinds: ["change-moved"] },
+  { key: "archived", label: "changes archived", kinds: ["change-archived"] },
+  { key: "tasksCompleted", label: "tasks completed", kinds: ["tasks-progress"] },
+  { key: "sessions", label: "sessions run", kinds: ["session-started"] },
+  { key: "attention", label: "need attention", kinds: ["repo-failing", "session-ended"] },
+];
+
+export function visibleFigures(groups: readonly ActivityGroup[]): Figure[] {
+  if (groups.length === 0) return [...FIGURES];
+  const shown = new Set(kindsFor(groups));
+  return FIGURES.filter((f) => f.kinds.some((k) => shown.has(k)));
+}
+
+// ---- busy days (activity-summary) ----
+
+/** A day with more loaded entries than this is collapsed… */
+export const DAY_COLLAPSE_ABOVE = 30;
+/** …to this many, its newest; the gap means the view never offers "Show 3 more". */
+export const DAY_SHOWN = 20;
+
+export function collapseDay(day: ActivityDay, expanded: boolean): { shown: ActivityEvent[]; hidden: number } {
+  if (expanded || day.events.length <= DAY_COLLAPSE_ABOVE) return { shown: day.events, hidden: 0 };
+  return { shown: day.events.slice(0, DAY_SHOWN), hidden: day.events.length - DAY_SHOWN };
+}
+
+/** Whether a day offers Show more / Show fewer at all. */
+export const isBusyDay = (day: ActivityDay) => day.events.length > DAY_COLLAPSE_ABOVE;
 
 // ---- unseen ----
 

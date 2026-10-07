@@ -543,6 +543,29 @@ export function buildActivity(snapshot: Snapshot, now: number): ActivityEvent[] 
       }
     }
   }
+  // A busy day two days ago, so the feed collapses it and every summary figure is non-zero: every change that was
+  // already implementing by then had an agent session started and resumed through the day; one crashed, and one
+  // repository's scan failed for a while. No task is ticked, so each change's progress above stays as it is.
+  const busy = new Date(now - 2 * DAY);
+  busy.setHours(8, 0, 0, 0);
+  const morning = busy.getTime();
+  const implementing = snapshot.repos.flatMap((repo) =>
+    repo.changes
+      .filter((c) => c.column === "Implementing" && !c.archived && c.lastActivityAt && Date.parse(c.lastActivityAt) - 2 * HOUR < morning)
+      .map((change) => ({ repo, change })),
+  );
+  implementing.forEach(({ repo, change }, i) => {
+    for (let round = 0; round < 4; round++) {
+      const at = morning + round * 2 * HOUR + i * 20 * 60_000;
+      drafts.push({ at, repo, rest: { kind: "session-started", change: change.name, action: "implement", agentName: "Claude Code", ...(round > 0 ? { resumed: true } : {}) } });
+      drafts.push({ at: at + 45 * 60_000, repo, rest: { kind: "session-ended", change: change.name, exitCode: i === 1 && round === 0 ? 1 : 0 } });
+    }
+  });
+  const flaky = snapshot.repos.find((r) => r.ok) ?? snapshot.repos[0];
+  if (flaky) {
+    drafts.push({ at: morning + 3 * HOUR, repo: flaky, rest: { kind: "repo-failing", error: "git status timed out" } });
+    drafts.push({ at: morning + 4 * HOUR, repo: flaky, rest: { kind: "repo-recovered" } });
+  }
   return drafts
     .filter((d) => d.at <= now)
     .sort((a, b) => a.at - b.at)

@@ -879,6 +879,21 @@ export interface ActivityPage {
   newestId?: string;
   /** Only when the request named `since`: how many recorded events are newer than that one, whatever the filters. */
   newerThanSince?: number;
+  /** Only on the first page (no `before`): figures over every retained event matching the filters. */
+  summary?: ActivitySummary;
+}
+
+/** The Activity view's summary strip: counts of recorded events (not feed entries) within the retention window. */
+export interface ActivitySummary {
+  created: number;
+  moved: number;
+  archived: number;
+  /** The sum of each task progress event's rise in finished tasks; a fall subtracts nothing. */
+  tasksCompleted: number;
+  /** Sessions started, resumed ones included. */
+  sessions: number;
+  /** Events the feed shows in its danger tone (`needsAttention`). */
+  attention: number;
 }
 
 /**

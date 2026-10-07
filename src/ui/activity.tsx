@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { RETENTION_DAYS } from "../shared/activity.ts";
-import type { ActivityEvent, Snapshot } from "../shared/types.ts";
-import { describe, EMPTY_ACTIVITY_FILTERS, GROUP_LABELS, GROUP_ORDER, groupByDay, kindsFor, parseActivityFilters, serializeActivityFilters, timeOfDay, tone, type ActivityFilters } from "./activityState.ts";
+import type { ActivityEvent, ActivitySummary, Snapshot } from "../shared/types.ts";
+import { collapseDay, describe, EMPTY_ACTIVITY_FILTERS, GROUP_LABELS, GROUP_ORDER, groupByDay, isBusyDay, kindsFor, parseActivityFilters, serializeActivityFilters, timeOfDay, tone, visibleFigures, type ActivityFilters } from "./activityState.ts";
 import { api } from "./api.ts";
 import { assignRepoHues } from "./repoGroups.ts";
 import { FilterTagList, RepoMenu } from "./boardFilters.tsx";
@@ -26,12 +26,17 @@ export function Activity({ snapshot, onSeen }: { snapshot: Snapshot | null; onSe
   const [nextBefore, setNextBefore] = useState<string>();
   const [error, setError] = useState<string>();
   const [loadingOlder, setLoadingOlder] = useState(false);
+  // From the first page only: older pages do not repeat it, and it covers far more than what is loaded.
+  const [summary, setSummary] = useState<ActivitySummary>();
+  // Busy days the user expanded, by day key; kept across reloads and Load older, reset with the filters.
+  const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set());
   // How many entries the user has asked for so far, so a refresh keeps what "Load older" brought in.
   const wanted = useRef(PAGE);
 
   const setFilters = (patch: Partial<ActivityFilters>) => {
     const next = { ...filters, ...patch };
     wanted.current = PAGE;
+    setExpanded(new Set());
     setFiltersState(next);
     replaceQuery(serializeActivityFilters(next));
   };
@@ -43,6 +48,7 @@ export function Activity({ snapshot, onSeen }: { snapshot: Snapshot | null; onSe
       const page = await api.activity({ ...query, limit: Math.min(500, wanted.current) });
       setEvents(page.events);
       setNextBefore(page.nextBefore);
+      setSummary(page.summary);
       setError(undefined);
       onSeen(page.newestId);
     } catch (err) {
@@ -120,48 +126,64 @@ export function Activity({ snapshot, onSeen }: { snapshot: Snapshot | null; onSe
             </p>
           </div>
         )}
-        {days.map((day) => (
-          <section key={day.key} class="activity-day" aria-label={day.label}>
-            <h2>{day.label}</h2>
-            <ol>
-              {day.events.map((event) => (
-                // A repository that is no longer tracked has no colour of its own any more: its entries stay neutral.
-                <li key={event.id} class={`activity-entry ${tracked.has(event.repoId) ? "repo-tint" : "untracked"} tone-${tone(event)}`} style={tracked.has(event.repoId) ? repoHue(hues.get(event.repoId) ?? 0) : undefined}>
-                  <time dateTime={event.at} title={new Date(event.at).toLocaleString()}>
-                    {timeOfDay(event.at)}
-                  </time>
-                  <span class="repo">
-                    <span class="swatch" />
-                    {event.repoName}
-                  </span>
-                  <span class="what">
-                    {"change" in event &&
-                      (tracked.has(event.repoId) ? (
-                        <a
-                          class="change"
-                          href={href(repoPath(event.repoId))}
-                          onClick={(e) => {
-                            e.preventDefault();
-                            navigate(repoPath(event.repoId));
-                          }}
-                        >
-                          {event.change}
-                        </a>
-                      ) : (
-                        <span class="change">{event.change}</span>
-                      ))}
-                    <span class="words">{describe(event)}</span>
-                    {event.catchUp && (
-                      <span class="badge" title={`Noticed ${new Date(event.detectedAt).toLocaleString()}, on the first scan after the dashboard had not been running`}>
-                        while the dashboard was not running
-                      </span>
-                    )}
-                  </span>
-                </li>
-              ))}
-            </ol>
-          </section>
-        ))}
+        {!!events?.length && summary && <SummaryStrip summary={summary} filters={filters} />}
+        {days.map((day) => {
+          const open = expanded.has(day.key);
+          const { shown, hidden } = collapseDay(day, open);
+          const toggle = () => {
+            const next = new Set(expanded);
+            if (open) next.delete(day.key);
+            else next.add(day.key);
+            setExpanded(next);
+          };
+          return (
+            <section key={day.key} class="activity-day" aria-label={day.label}>
+              <h2>{day.label}</h2>
+              <ol>
+                {shown.map((event) => (
+                  // A repository that is no longer tracked has no colour of its own any more: its entries stay neutral.
+                  <li key={event.id} class={`activity-entry ${tracked.has(event.repoId) ? "repo-tint" : "untracked"} tone-${tone(event)}`} style={tracked.has(event.repoId) ? repoHue(hues.get(event.repoId) ?? 0) : undefined}>
+                    <time dateTime={event.at} title={new Date(event.at).toLocaleString()}>
+                      {timeOfDay(event.at)}
+                    </time>
+                    <span class="repo">
+                      <span class="swatch" />
+                      {event.repoName}
+                    </span>
+                    <span class="what">
+                      {"change" in event &&
+                        (tracked.has(event.repoId) ? (
+                          <a
+                            class="change"
+                            href={href(repoPath(event.repoId))}
+                            onClick={(e) => {
+                              e.preventDefault();
+                              navigate(repoPath(event.repoId));
+                            }}
+                          >
+                            {event.change}
+                          </a>
+                        ) : (
+                          <span class="change">{event.change}</span>
+                        ))}
+                      <span class="words">{describe(event)}</span>
+                      {event.catchUp && (
+                        <span class="badge" title={`Noticed ${new Date(event.detectedAt).toLocaleString()}, on the first scan after the dashboard had not been running`}>
+                          while the dashboard was not running
+                        </span>
+                      )}
+                    </span>
+                  </li>
+                ))}
+              </ol>
+              {isBusyDay(day) && (
+                <button type="button" class="btn sm ghost activity-more" aria-expanded={open} onClick={toggle}>
+                  {open ? "Show fewer" : `Show ${hidden} more`}
+                </button>
+              )}
+            </section>
+          );
+        })}
         {nextBefore && (
           <button type="button" class="btn" onClick={loadOlder} disabled={loadingOlder}>
             {loadingOlder ? "Loading…" : "Load older"}
@@ -170,5 +192,20 @@ export function Activity({ snapshot, onSeen }: { snapshot: Snapshot | null; onSe
         {!nextBefore && !!events?.length && <p class="hint activity-end">{KEPT_FOR}</p>}
       </div>
     </>
+  );
+}
+
+/** What the retained log holds, over everything matching the filters — not just the loaded page. Describes the feed only. */
+function SummaryStrip({ summary, filters }: { summary: ActivitySummary; filters: ActivityFilters }) {
+  return (
+    <section class="activity-summary" aria-label={`Last ${RETENTION_DAYS} days`}>
+      <span class="activity-summary-span">Last {RETENTION_DAYS} days</span>
+      {visibleFigures(filters.groups).map((f) => (
+        <div key={f.key} class={`activity-figure${f.key === "attention" && summary[f.key] > 0 ? " danger" : ""}`}>
+          <strong>{summary[f.key]}</strong>
+          <span>{f.label}</span>
+        </div>
+      ))}
+    </section>
   );
 }

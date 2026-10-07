@@ -37,11 +37,12 @@ afterAll(async () => {
 
 const page = async (query = "") => (await (await fetch(`${base}/api/activity${query}`)).json()) as ActivityPage;
 const kinds = (p: ActivityPage) => p.events.map((e) => e.kind);
+const NO_FIGURES = { created: 0, moved: 0, archived: 0, tasksCompleted: 0, sessions: 0, attention: 0 };
 
 test("nothing recorded: an empty feed; without a log at all the endpoint still answers", async () => {
-  expect(await page()).toEqual({ events: [] });
+  expect(await page()).toEqual({ events: [], summary: NO_FIGURES });
   const bare = createFetchHandler({ state: { config: state.config, scanner: state.scanner }, indexHtml: "" });
-  expect(await (await bare(new Request(`${base}/api/activity`))).json()).toEqual({ events: [] });
+  expect(await (await bare(new Request(`${base}/api/activity`))).json()).toEqual({ events: [], summary: NO_FIGURES });
 });
 
 test("scans feed the log: baseline on first sight, then real changes; the log lives in the dashboard home and holds no paths", async () => {
@@ -84,11 +85,16 @@ test("paging, filters and validation", async () => {
   const second = await page(`?limit=2&before=${first.nextBefore}`);
   expect(second.events).toHaveLength(1);
   expect(second.nextBefore).toBeUndefined();
+  // The figures count everything matching on the first page, whatever the limit, and older pages do not repeat them.
+  expect(first.summary).toEqual({ ...NO_FIGURES, created: 1, tasksCompleted: 1 });
+  expect(second.summary).toBeUndefined();
   expect(new Set([...first.events, ...second.events].map((e) => e.id)).size).toBe(3);
 
   const repoId = state.config.repos[0].id;
   const onlyTasks = await page(`?kinds=tasks-progress&repos=${repoId}`);
   expect(kinds(onlyTasks)).toEqual(["tasks-progress"]);
+  expect(onlyTasks.summary).toEqual({ ...NO_FIGURES, tasksCompleted: 1 });
+  expect((await page("?repos=unknown")).summary).toEqual(NO_FIGURES);
   expect(onlyTasks.newestId).toBe((await page()).newestId);
   expect((await page("?repos=unknown")).events).toEqual([]);
   expect((await page(`?limit=1&since=${second.events[0].id}`)).newerThanSince).toBe(2);
