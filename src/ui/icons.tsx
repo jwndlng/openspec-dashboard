@@ -31,6 +31,14 @@ export const IconSearch = ({ size }: { size?: number }) => (
   </Icon>
 );
 
+/** An issue: a dot in a ring (lucide `circle-dot`). */
+export const IconCircleDot = ({ size }: { size?: number }) => (
+  <Icon size={size}>
+    <circle cx="12" cy="12" r="10" />
+    <circle cx="12" cy="12" r="1" />
+  </Icon>
+);
+
 export const IconGitPullRequest = ({ size }: { size?: number }) => (
   <Icon size={size}>
     <circle cx="18" cy="18" r="3" />

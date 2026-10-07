@@ -626,3 +626,39 @@ test("a folder without git carries no noCommit", async () => {
   expect("noCommit" in snapshot).toBe(false);
   await rm(base, { recursive: true, force: true });
 });
+
+// --- Source issues: `issue.yaml`, generated into a temporary repository. ---
+
+test("issue.yaml: read for active and archived changes, malformed or linked files ignored, never an artifact", async () => {
+  const root = await tempDir();
+  const changeRoot = join(root, "openspec", "changes");
+  await mkdir(join(changeRoot, "archive"), { recursive: true });
+  await writeFile(join(root, "openspec", "config.yaml"), "schema: spec-driven\n");
+  const valid = "# The GitHub issue this change was imported from (spec-control).\ngithub: acme/alpha-infra\nnumber: 42\ntitle: Retry webhook delivery\n";
+  await writeChange(changeRoot, "retry-webhooks", undefined, { "issue.yaml": valid, "prompt.md": "# Prompt\n\nRetry\n" });
+  await writeChange(changeRoot, "archive/2026-09-30-old-import", undefined, { "issue.yaml": "github: acme/alpha-infra\nnumber: 7\n" });
+  await writeChange(changeRoot, "negative", undefined, { "issue.yaml": "github: acme/alpha-infra\nnumber: -3\n" });
+  await writeChange(changeRoot, "not-yaml", undefined, { "issue.yaml": "github: [unclosed\n" });
+  await writeChange(changeRoot, "bad-repo", undefined, { "issue.yaml": "github: ../../etc\nnumber: 1\n" });
+  await writeChange(changeRoot, "url-ignored", undefined, { "issue.yaml": "github: acme/alpha-infra\nnumber: 5\nurl: https://evil.example.test/\n" });
+  await writeChange(changeRoot, "oversized", undefined, { "issue.yaml": `github: acme/alpha-infra\nnumber: 1\ntitle: ${"x".repeat(17_000)}\n` });
+  await writeChange(changeRoot, "linked");
+  await writeFile(join(root, "elsewhere.yaml"), valid);
+  await symlink(join(root, "elsewhere.yaml"), join(changeRoot, "linked", "issue.yaml"));
+  await writeChange(changeRoot, "plain", undefined, { "prompt.md": "# Prompt\n\nRetry\n" });
+  const before = await treeFingerprint(root);
+
+  const snap = await scanRepo(newRepoConfig(root, true));
+  expect(snap.ok).toBe(true);
+  const get = (name: string) => snap.changes.find((c) => c.name === name)!;
+  expect(get("retry-webhooks").sourceIssue).toEqual({ github: "acme/alpha-infra", number: 42, title: "Retry webhook delivery" });
+  expect(get("old-import").archived).toBeDefined();
+  expect(get("old-import").sourceIssue).toEqual({ github: "acme/alpha-infra", number: 7 });
+  expect(get("url-ignored").sourceIssue).toEqual({ github: "acme/alpha-infra", number: 5 });
+  for (const name of ["negative", "not-yaml", "bad-repo", "oversized", "linked", "plain"]) expect([name, get(name).sourceIssue]).toEqual([name, undefined]);
+  expect(get("negative").warnings?.some((w) => w.includes("issue.yaml"))).toBe(true);
+  // Not an artifact: same column and artifacts as the same change without the file.
+  expect(get("retry-webhooks").column).toBe(get("plain").column);
+  expect(get("retry-webhooks").artifacts).toEqual(get("plain").artifacts);
+  expect(await treeFingerprint(root)).toEqual(before);
+});

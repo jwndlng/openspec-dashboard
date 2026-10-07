@@ -14,6 +14,7 @@ import { useSessionUi, WorkStatus } from "./sessions.tsx";
 import { isComplete } from "../shared/columns.ts";
 import { promptBody } from "./boardMarks.ts";
 import { BranchBadge } from "./checkout.tsx";
+import { SourceIssueLink } from "./importIssues.tsx";
 import { type DetailPr, DetailPullRequest, detailPullRequest, usePullRequests } from "./pullRequests.tsx";
 import { DismissDialog } from "./dismissChange.tsx";
 import { dismissedNotice, dismissOffer } from "./dismissState.ts";
@@ -273,6 +274,7 @@ function ChangeFacts({ change, pullRequest, now = Date.now() }: { change: Change
           </span>
         )}
         {change.branchMatch && <BranchBadge branch={change.branchMatch} hint={checkoutHint(change)} />}
+        {change.sourceIssue && <SourceIssueLink issue={change.sourceIssue} place="detail" />}
         {pullRequest && <DetailPullRequest info={pullRequest} />}
         <WorkStatus repoId={change.repoId} name={change.name} />
       </div>

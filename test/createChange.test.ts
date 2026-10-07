@@ -6,7 +6,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { createChange, stageChangeDir } from "../src/server/createChange.ts";
 import { openSpec } from "../src/server/frameworks/openspec/index.ts";
 import { writablePaths } from "../src/server/frameworks/registry.ts";
-import { parseDependsOn } from "../src/server/scanner.ts";
+import { parseDependsOn, parseIssueFile } from "../src/server/scanner.ts";
 import { tempDir } from "./helpers.ts";
 import { git, tempGitRepo } from "./sessionHelpers.ts";
 
@@ -296,4 +296,41 @@ test("dependencies are staged with the change by the single git add", async () =
     "A  openspec/changes/add-billing-ui/.openspec.yaml",
     "A  openspec/changes/add-billing-ui/depends-on.yaml",
   ]);
+});
+
+// --- Importing from a GitHub issue: `issue.yaml` ---
+
+test("an issue is written to issue.yaml with the repository taken from origin, staged with the change", async () => {
+  const repo = await tempGitRepo();
+  git(repo, "remote", "add", "origin", "git@github.com:acme/alpha-infra.git");
+  const result = await createChange(repo, "retry-webhooks", "Retry", undefined, { number: 42, title: "Retry webhook delivery", github: "evil/elsewhere" });
+  expect(result).toMatchObject({ ok: true, staged: true });
+  const text = await readFile(join(repo, "openspec", "changes", "retry-webhooks", "issue.yaml"), "utf8");
+  expect(text).toBe("# The GitHub issue this change was imported from (spec-control).\ngithub: acme/alpha-infra\nnumber: 42\ntitle: Retry webhook delivery\n");
+  expect(parseIssueFile(text)).toEqual({ github: "acme/alpha-infra", number: 42, title: "Retry webhook delivery" });
+  expect(porcelain(repo)).toEqual([
+    "A  openspec/changes/retry-webhooks/.openspec.yaml",
+    "A  openspec/changes/retry-webhooks/issue.yaml",
+    "A  openspec/changes/retry-webhooks/prompt.md",
+  ]);
+});
+
+test("an issue without a title records only the repository and number", async () => {
+  const repo = await tempGitRepo();
+  git(repo, "remote", "add", "origin", "https://github.com/acme/alpha-infra.git");
+  expect((await createChange(repo, "issue-7", undefined, undefined, { number: 7 })).ok).toBe(true);
+  expect(parseIssueFile(await readFile(join(repo, "openspec", "changes", "issue-7", "issue.yaml"), "utf8"))).toEqual({ github: "acme/alpha-infra", number: 7 });
+});
+
+test("an invalid issue, or one for a repository off GitHub, is refused and nothing is written", async () => {
+  const repo = await tempGitRepo();
+  const index = readFileSync(join(repo, ".git", "index"));
+  for (const issue of [{ number: 0 }, { number: -1 }, { number: "42" }, { number: 2.5 }, { number: 1, title: 5 }, { number: 1, title: "x".repeat(257) }, "42", [42]]) {
+    expect(await createChange(repo, "from-issue", undefined, undefined, issue)).toMatchObject({ ok: false, reason: "invalid-issue" });
+  }
+  expect(await createChange(repo, "from-issue", undefined, undefined, { number: 1 })).toMatchObject({ ok: false, reason: "not-on-github" });
+  git(repo, "remote", "add", "origin", "git@gitlab.example.test:acme/offline.git");
+  expect(await createChange(repo, "from-issue", undefined, undefined, { number: 1 })).toMatchObject({ ok: false, reason: "not-on-github" });
+  expect(readFileSync(join(repo, ".git", "index")).equals(index)).toBe(true);
+  expect(porcelain(repo)).toEqual([]);
 });

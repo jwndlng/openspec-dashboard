@@ -14,6 +14,7 @@ import { CardPullRequest, RepoPullRequestsButton, usePullRequests } from "./pull
 import { armWatch, watchPlan } from "./pullRequestsState.ts";
 import { hasCheckoutInfo } from "./checkoutMarkers.ts";
 import { CleanupButton } from "./cleanup.tsx";
+import { ImportIssuesDialog, SourceIssueLink } from "./importIssues.tsx";
 import { NewChangeDialog } from "./newChangeForm.tsx";
 import { PullButton } from "./pull.tsx";
 import { branchNotice } from "./pullState.ts";
@@ -21,7 +22,7 @@ import { cdCommand, daysSince, relTime } from "./format.ts";
 import { isMinimized, loadGroupState, saveGroupState, toggleGroup, type GroupOverrides } from "./groupState.ts";
 import { assignRepoHues, dependencyChoices, groupByRepo, newChangeTargets, recentArchived } from "./repoGroups.ts";
 import { columnKind } from "./boardMarks.ts";
-import { IconChevronRight, IconPlus, IconTerminal } from "./icons.tsx";
+import { IconChevronRight, IconCircleDot, IconPlus, IconTerminal } from "./icons.tsx";
 import { SessionControls, useSessionUi } from "./sessions.tsx";
 import { archivedShown, cardSessionControls, cardWorkingState, type CardWorkingState, consoleTabAvailable, projectConsoleUnavailable } from "./sessionState.ts";
 import { boardFrom, changePath, CONSOLE_TAB, repoPath, serializeDetailQuery } from "./routes.ts";
@@ -172,6 +173,7 @@ export function ChangeCard({ card, now, from, working, running = false }: { card
             ⚠ error
           </span>
         ))}
+        {card.sourceIssue && <SourceIssueLink issue={card.sourceIssue} place="card" />}
         {card.pullRequest && <CardPullRequest pr={card.pullRequest} repoName={card.repoName} fetchedAt={card.pullRequestFetchedAt} now={now} />}
         <SessionControls card={card} place="card" />
         {waiting && (
@@ -342,6 +344,7 @@ function RepoHeader({ repo, config, now, stats, onCreated }: { repo: RepoSnapsho
   const updated = repo.lastUpdatedAt ? relTime(repo.lastUpdatedAt, now) : undefined;
   const notice = branchNotice(repo);
   const [creating, setCreating] = useState(false);
+  const [importing, setImporting] = useState(false);
   const canGit = repo.isGit && repo.ok;
   // The same check the console control renders on, so the action area never shows up empty; it needs no good scan.
   const ui = useSessionUi();
@@ -401,6 +404,13 @@ function RepoHeader({ repo, config, now, stats, onCreated }: { repo: RepoSnapsho
           <ProjectConsoleButton repoId={repo.id} variant="board" />
           {canGit && <PullButton repoId={repo.id} repoName={repo.name} />}
           {canGit && <CleanupButton repoId={repo.id} repoName={repo.name} onDone={onCreated} />}
+          {/* Every eligible git repository: whether it is on GitHub is the dialog's to say, after asking. */}
+          {canGit && (
+            <button type="button" class="btn" onClick={() => setImporting(true)} title="Pick open GitHub issues and import them as changes">
+              <IconCircleDot size={15} />
+              Import from issues
+            </button>
+          )}
           {repo.ok && (
             <button type="button" class="btn primary" onClick={() => setCreating(true)}>
               <IconPlus size={15} />
@@ -420,6 +430,7 @@ function RepoHeader({ repo, config, now, stats, onCreated }: { repo: RepoSnapsho
           {w}
         </div>
       ))}
+      {importing && <ImportIssuesDialog target={{ repoId: repo.id, repoName: repo.name, changes: repo.changes }} onClose={() => setImporting(false)} onImported={onCreated} />}
       {creating && <NewChangeDialog target={{ repoId: repo.id, repoName: repo.name, changes: dependencyChoices(repo.changes) }} onClose={() => setCreating(false)} onCreated={() => { setCreating(false); onCreated(); }} />}
     </div>
   );

@@ -59,8 +59,10 @@ bun test test/scanner.test.ts   # a single test file
    from the index with `git rm --cached` (never `-f`), then retrying the fast-forward and, if it is still refused,
    writing them back and re-staging them with `git add -- <those paths>` (`src/server/pull.ts`, the only place that
    contacts a remote or changes a main checkout); and the **create-change action** — a new `openspec/changes/<name>/` directory
-   with the schema marker `.openspec.yaml`, when the user typed one, `prompt.md`, and, when the user picked any
-   dependencies, `depends-on.yaml` (a `depends_on:` list of validated change names), written directly with an
+   with the schema marker `.openspec.yaml`, when the user typed one, `prompt.md`, when the user picked any
+   dependencies, `depends-on.yaml` (a `depends_on:` list of validated change names), and, for a change imported from a
+   GitHub issue, `issue.yaml` (the `owner/name` read from the repository's own `origin`, never from the request, the
+   issue number and its title — `src/shared/issues.ts`), written directly with an
    exclusive-create so two concurrent requests cannot both succeed, and never through git or the `openspec` CLI
    (`src/server/createChange.ts`, `POST /api/repos/<id>/changes`); and, once those files are written, **staging that
    new directory** — a single `git add -- openspec/changes/<name>/`, the directory just created and nothing else,
@@ -114,15 +116,19 @@ bun test test/scanner.test.ts   # a single test file
    all: it puts the tree it merges into an object database, so it is always invoked with `GIT_OBJECT_DIRECTORY` pointed
    at a scratch store under `~/.spec-control/` and the repository's own objects offered only as
    `GIT_ALTERNATE_OBJECT_DIRECTORIES` — it reads everything and writes nothing into the repository, and it is never
-   given a working tree, an index or a ref. The **pull-request query** (`src/server/pullRequests.ts`) is the one other
-   thing that leaves this machine, and it is not a write: it runs the GitHub CLI's read-only `gh pr list` and
-   `gh api user` and no other subcommand, without a shell, with its working directory in the dashboard home and the
+   given a working tree, an index or a ref. The **pull-request query** (`src/server/pullRequests.ts`) and the **issue query**
+   (`src/server/issues.ts`) are the other things that leave this machine, and neither is a write: they run the GitHub
+   CLI's read-only `gh pr list`, `gh api user` and `gh issue list` and no other subcommand, all through `runGh` in
+   `src/server/gh.ts`, without a shell, with their working directory in the dashboard home and the
    repository named with `--repo owner/name`, so no `gh` process ever runs inside a tracked repository, runs no git and
-   changes nothing on GitHub. It runs only when the user opens or refreshes a view that shows pull requests, or as an open
+   changes nothing on GitHub. The pull-request query runs only when the user opens or refreshes a view that shows pull requests, or as an open
    board's **pull-request watch** (while the board is open in a visible tab and one of its cards links an open pull
    request that is not ready: only those repositories, at most once a minute, `src/ui/pullRequestsState.ts`
-   `watchPlan`) — never on any other timer, during a scan or from the projects overview (`test/pullRequestsApi.test.ts` proves a scan, discovery and both
-   endpoints' reads start no `gh`, and that a full refresh leaves every fixture repository byte-for-byte unchanged).
+   `watchPlan`); the issue query runs only when the user opens a board's **Import from issues** dialog or presses its
+   Refresh, for that one repository, and keeps nothing — never on any other timer, during a scan or from the projects
+   overview (`test/pullRequestsApi.test.ts` and `test/issuesApi.test.ts` prove a scan, discovery and the
+   endpoints' reads start no `gh`, and that a full refresh or an issue listing leaves every fixture repository
+   byte-for-byte unchanged).
    Adding a path or a subcommand means changing that spec first.
 2. **Loopback only.** The server binds `127.0.0.1`; there is no auth because nothing else can reach it.
 2a. **Mutating API routes are same-origin only.** Every non-GET `/api/` request passes `crossSiteRefusal` in
@@ -134,11 +140,12 @@ bun test test/scanner.test.ts   # a single test file
    Do not call the library's `resolveSchema`/`loadChangeContext`: they locate files via `import.meta.url`, which does not exist inside the
    compiled binary. The adapter embeds the schema at build time. Anything that works under `bun run` but reads files
    relative to a module path must also be verified in `dist/spec-control`.
-4. **No network at runtime, except the pull action and the pull-request query.** The UI is one HTML file with inlined
+4. **No network at runtime, except the pull action and the pull-request and issue queries.** The UI is one HTML file with inlined
    JS, CSS and fonts; do not add CDN links, remote fonts or fetches to other hosts — the links to github.com in the
-   Pull requests view, on cards and in the detail header are links the user follows, not requests the page makes. The server reaches a network in exactly
+   Pull requests view, the Import from issues dialog, on cards and in the detail header are links the user follows, not requests the page makes. The server reaches a network in exactly
    two places, both on the user's own action: when git does, inside the pull action of invariant 1, and when `gh` does,
-   inside the pull-request query of invariant 1 (`src/server/pullRequests.ts`) — the user activated Refresh, or opened
+   inside the pull-request or issue query of invariant 1 (`src/server/pullRequests.ts`, `src/server/issues.ts`) — for
+   issues, the user opened Import from issues or pressed its Refresh; for pull requests, the user activated Refresh, or opened
    the Pull requests view, a repository's pull-request dialog or a Kanban board (whose cards link to their change's pull
    request) with a list older than five minutes, or an open, visible board watches its cards' pull requests that are not
    ready yet (every minute while checks run or mergeability is unknown, every five minutes otherwise, only those

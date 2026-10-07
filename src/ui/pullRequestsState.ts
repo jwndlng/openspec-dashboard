@@ -116,6 +116,8 @@ export interface PrNotice {
   repoId: string;
   repoName: string;
   status: RepoPullRequests["status"];
+  /** `not-on-github`: cannot be queried at all, which is information, not a failure. `failed`: this query did not work. */
+  kind: "not-on-github" | "failed";
   reason?: string;
   fetchedAt?: string;
   /** A list is still shown for this repository, from an earlier fetch. */
@@ -129,7 +131,15 @@ export interface PrNotice {
 export function pullRequestNotices(response: PullRequestsResponse, repos: PrRepo[], filters: PrFilters = DEFAULT_PR_FILTERS): PrNotice[] {
   return shown(response, repos, filters)
     .filter(({ list }) => (list.status === "unavailable" || list.status === "failed") && !list.setup)
-    .map(({ repo, list }) => ({ repoId: repo.id, repoName: repo.name, status: list.status, reason: list.reason, fetchedAt: list.fetchedAt, hasList: list.pullRequests.length > 0 }));
+    .map(({ repo, list }) => ({
+      repoId: repo.id,
+      repoName: repo.name,
+      status: list.status,
+      // Decided from the status, never the reason text: per repository, only "not on GitHub" and "not a git repository"
+      // are unavailable without a machine-wide `setup` problem.
+      kind: list.status === "failed" ? ("failed" as const) : ("not-on-github" as const),
+      reason: list.reason, fetchedAt: list.fetchedAt, hasList: list.pullRequests.length > 0,
+    }));
 }
 
 export interface GhSetup {

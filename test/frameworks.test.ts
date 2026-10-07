@@ -179,7 +179,7 @@ test("writes are offered only to modules whose paths are enumerated", async () =
 
   const dir = await stubProject("stub-writes", { kept: { "plan.md": "x" } });
   const before = await treeFingerprint(dir);
-  const created = await createChange(dir, "fresh", "a prompt", undefined, stub);
+  const created = await createChange(dir, "fresh", "a prompt", undefined, undefined, stub);
   expect(created).toMatchObject({ ok: false, reason: "not-writable" });
 
   const scanned: RepoSnapshot = { id: "r", name: "stub-writes", path: dir, framework: "stub", ok: true, scannedAt: "", isGit: false, worktrees: [], changes: [] };

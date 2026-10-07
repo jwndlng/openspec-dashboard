@@ -212,6 +212,11 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: 
     -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; color: transparent;
   }
 }
+/* Mark and title lead home (heroHome.tsx); the title keeps its look, with an accent on hover and the brand focus ring. */
+.hero-home-mark { display: block; border-radius: var(--radius); }
+.hero-home { color: inherit; text-decoration: none; border-radius: var(--radius-sm); }
+.hero-home:hover, .hero-home-mark:hover + .hero-copy .hero-home { color: var(--brand-fg); }
+.hero-home:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--brand-ring); }
 .hero-tagline { margin: 0; font-size: 15px; line-height: 1.5; color: var(--fg-subtle); }
 .hero-brand .topbar-end { align-self: start; }
 /* The navigation: large tabs on a glassy track, the active one filled with the accent's soft tint. */
@@ -576,6 +581,11 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: 
 /* Whether an open pull request is ready, in its status role — never info, which is a running agent's. The word says it;
    the colour only repeats it. The role colours keep 4.5:1 on the working card's tint in both themes. */
 .card .card-pr-ready { font-family: var(--font-sans); }
+.card .card-issue { display: inline-flex; align-items: center; gap: 3px; padding: 2px 7px; font-size: 11px; font-family: var(--font-mono); color: var(--fg-subtle); border: 1px solid var(--border-light); border-radius: var(--radius-sm); text-decoration: none; white-space: nowrap; }
+.card .card-issue:hover { color: var(--brand-fg); border-color: var(--brand-soft); background: var(--brand-softer); }
+.card .card-issue:focus-visible { outline: 2px solid var(--brand); outline-offset: 1px; }
+.detail-issue { display: inline-flex; align-items: center; gap: 4px; font-family: var(--font-mono); text-decoration: none; }
+.detail-issue:hover { color: var(--brand-fg); }
 .card .card-pr-ready.success { color: var(--success); }
 .card .card-pr-ready.danger { color: var(--danger); }
 .card .card-pr-ready.warning { color: var(--warning); }
@@ -894,17 +904,39 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: 
 .new-change .new-change-targets label { display: inline; flex: 0 1 auto; font-size: 13px; color: var(--fg-body); cursor: pointer; }
 .new-change-targets li.skipped label { color: var(--fg-subtle); cursor: default; }
 .new-change-targets .hint { margin-left: auto; color: var(--fg-subtle); }
-/* Depends on: the target repository's active changes as a checklist, like the label targets. */
+/* Depends on: the target repository's active changes as a checklist, like the label targets. One row per change —
+   checkbox, name, column — so the label overrides the form-wide column direction, not just the display. */
 .new-change-depends { display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 0; margin: 0; padding: 0; border: 0; }
 .new-change-depends legend { padding: 0; margin-bottom: 4px; font-size: 12px; font-weight: 600; color: var(--fg-body); }
 .new-change-depends ul { display: flex; flex-direction: column; gap: 2px; margin: 0; padding: 6px 0; list-style: none; max-height: 180px; overflow-y: auto; border: 1px solid var(--border-light); border-radius: var(--radius); background: var(--bg-section); }
-.new-change-depends li { display: flex; align-items: center; gap: 8px; padding: 3px 10px; font-size: 13px; }
-.new-change .new-change-depends label { display: flex; flex: 1 1 auto; gap: 8px; align-items: baseline; min-width: 0; font-size: 13px; color: var(--fg-body); cursor: pointer; }
+.new-change-depends li { display: flex; align-items: baseline; gap: 8px; padding: 3px 10px; font-size: 13px; }
+.new-change-depends li input { flex: none; margin: 0; }
+.new-change .new-change-depends label { display: flex; flex-direction: row; flex: 1 1 auto; gap: 8px; align-items: baseline; min-width: 0; font-size: 13px; color: var(--fg-body); cursor: pointer; }
 .new-change .new-change-depends label span { font-weight: 400; }
 .new-change-depends label .mono { overflow-wrap: anywhere; }
 .new-change-depends label .hint { margin-left: auto; color: var(--fg-subtle); }
 .new-change-depends > .hint { margin: 0; }
 .new-change-summary { margin: 0; font-size: 13px; color: var(--fg-body); }
+.issue-import-bar { align-items: center; }
+.issue-import-bar input.input { flex: 1; font-family: inherit; }
+.issue-import-bar .btn { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.issue-import .issue-import-status { margin: -8px 0 0; color: var(--fg-subtle); }
+.issue-import-list { display: flex; flex-direction: column; gap: 2px; margin: 0; padding: 6px 0; list-style: none; max-height: min(52vh, 460px); overflow-y: auto; border: 1px solid var(--border-light); border-radius: var(--radius); background: var(--bg-section); }
+.issue-import-list > li { display: flex; flex-direction: column; gap: 6px; padding: 6px 10px; font-size: 13px; border-bottom: 1px solid var(--border-light); }
+.issue-import-list > li:last-child { border-bottom: 0; }
+.issue-import-list > li.empty { color: var(--fg-subtle); border-bottom: 0; }
+.issue-import-list > li.imported .issue-title { color: var(--fg-subtle); }
+.issue-import-list > li.working { background: var(--brand-softer); }
+.issue-import-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 8px; min-width: 0; }
+.issue-import-row input[type="checkbox"] { align-self: center; margin: 0; }
+.issue-import-row .issue-number { color: var(--fg-subtle); font-size: 12px; }
+.issue-import-row .issue-title { flex: 1 1 14em; min-width: 0; color: var(--fg-heading); text-decoration: none; overflow-wrap: anywhere; }
+.issue-import-row .issue-title:hover { color: var(--brand-fg); text-decoration: underline; }
+.issue-import-row .issue-meta { margin-left: auto; color: var(--fg-subtle); white-space: nowrap; }
+.issue-import .issue-imported { margin: 0 0 0 26px; color: var(--fg-subtle); }
+.new-change .issue-import-name { margin-left: 26px; flex-direction: column; }
+.new-change .issue-import-name input.input { padding: 6px 9px; }
+.new-change-results li .mono { overflow-wrap: anywhere; }
 .new-change-results li { display: flex; gap: 10px; align-items: baseline; padding: 3px 10px; font-size: 13px; }
 .new-change-results .repo { font-weight: 600; color: var(--fg-heading); min-width: 0; }
 .new-change-results .outcome { margin-left: auto; text-align: right; font-size: 12px; }
@@ -938,30 +970,39 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: 
 .notice.warn { color: var(--warning); border-color: var(--warning-border); }
 .notice.ok { color: var(--success); border-color: var(--success-border); }
 
+/* ---- Section navigation (Settings, Help) ---- */
+/* The navigation is part of the page and scrolls with it, in the page's one scroll area; on wide screens it is moved
+   along beside the section at the top of the view (--nav-offset, set by sectionNav.tsx, never transitioned so it keeps
+   exact pace) and glides there with a transform animation when that section changes. */
+/* Positioned for --nav-offset, and so it is its entries' offsetParent (rowScrollLeft measures in the row's own coordinates). */
+.section-nav { padding: var(--gap-2) 0 var(--gap-2) var(--gap-2); position: relative; top: var(--nav-offset, 0px); }
+.section-nav ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.section-link {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--gap-1);
+  padding: 5px 8px; border-radius: var(--radius-sm); color: var(--fg-body);
+  border-left: 2px solid transparent;
+}
+.section-link:hover { color: var(--fg-heading); background: var(--bg-section); }
+.section-link[aria-current="true"] { color: var(--fg-heading); font-weight: 600; background: var(--bg-raised); border-left-color: var(--brand); }
+.section-nav .label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.section-nav .count { flex: none; font-family: var(--font-mono); font-size: 11px; font-weight: 400; color: var(--fg-subtle); }
+.section-link.attention .count { color: var(--brand-fg); background: var(--brand-softer); border: 1px solid var(--brand-soft); border-radius: var(--radius-sm); padding: 0 5px; }
+@media (max-width: 720px) {
+  /* The row sits above the sections and scrolls away with them; moving it along would cover them. */
+  .section-nav { overflow-x: auto; padding: var(--gap-2) var(--gap-2) var(--gap-1); border-bottom: 1px solid var(--border-light); top: 0; }
+  .section-nav ul { flex-direction: row; gap: 4px; }
+  .section-nav li { flex: none; }
+  .section-link { border-left: 0; border-bottom: 2px solid transparent; }
+  .section-link[aria-current="true"] { border-bottom-color: var(--brand); }
+}
+
 /* ---- Settings ---- */
-/* One scroll area for the whole page, full width so the scrollbar is at the window edge and the margins scroll too.
-   The navigation is part of the page and scrolls with it; on wide screens it is moved along beside the current section
-   (--nav-offset, set by settingsNav.tsx) and glides there when the current section changes. */
+/* One scroll area for the whole page, full width so the scrollbar is at the window edge and the margins scroll too. */
 .settings-scroll { flex: 1; min-height: 0; overflow: auto; }
 .settings-layout {
   width: 100%; max-width: 1320px; margin: 0 auto;
   display: grid; grid-template-columns: minmax(168px, 200px) minmax(0, 1fr); align-items: start;
 }
-/* Positioned for --nav-offset, and so it is its entries' offsetParent (rowScrollLeft measures in the row's own coordinates). */
-.settings-nav { padding: var(--gap-2) 0 var(--gap-2) var(--gap-2); position: relative; top: var(--nav-offset, 0px); }
-.settings-nav[data-glide] { transition: top 220ms ease; }
-@media (prefers-reduced-motion: reduce) { .settings-nav[data-glide] { transition: none; } }
-.settings-nav ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
-.settings-link {
-  display: flex; align-items: center; justify-content: space-between; gap: var(--gap-1);
-  padding: 5px 8px; border-radius: var(--radius-sm); color: var(--fg-body);
-  border-left: 2px solid transparent;
-}
-.settings-link:hover { color: var(--fg-heading); background: var(--bg-section); }
-.settings-link[aria-current="true"] { color: var(--fg-heading); font-weight: 600; background: var(--bg-raised); border-left-color: var(--brand); }
-.settings-nav .label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.settings-nav .count { flex: none; font-family: var(--font-mono); font-size: 11px; font-weight: 400; color: var(--fg-subtle); }
-.settings-link.attention .count { color: var(--brand-fg); background: var(--brand-softer); border: 1px solid var(--brand-soft); border-radius: var(--radius-sm); padding: 0 5px; }
 .settings { padding: var(--gap-2); max-width: 1100px; width: 100%; margin: 0 auto; display: grid; gap: var(--gap-2); align-content: start; }
 .settings-section { display: grid; min-width: 0; border-radius: var(--radius); scroll-margin-top: var(--gap-2); }
 .settings-section:focus { outline: none; }
@@ -1001,14 +1042,7 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: 
 .savebar { position: sticky; bottom: 0; display: flex; gap: var(--gap-1); align-items: center; padding: var(--gap-1) var(--gap-2); background: var(--bg-section); border-top: 1px solid var(--border-light); }
 
 @media (max-width: 720px) {
-  /* The row sits above the sections and scrolls away with them; moving it along would cover them. */
   .settings-layout { grid-template-columns: minmax(0, 1fr); }
-  .settings-nav { overflow-x: auto; padding: var(--gap-2) var(--gap-2) var(--gap-1); border-bottom: 1px solid var(--border-light); top: 0; }
-  .settings-nav[data-glide] { transition: none; }
-  .settings-nav ul { flex-direction: row; gap: 4px; }
-  .settings-nav li { flex: none; }
-  .settings-link { border-left: 0; border-bottom: 2px solid transparent; }
-  .settings-link[aria-current="true"] { border-bottom-color: var(--brand); }
   .shared-config .profiles { grid-template-columns: 1fr; }
   .list .item { grid-template-columns: auto 1fr; }
   .list .item .path { grid-column: 1 / -1; }
@@ -1042,13 +1076,15 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: 
    the Command, Change starters and Action prompts groups. */
 .agent-card { border: 1px solid var(--border-light); border-radius: var(--radius); min-width: 0; }
 .agent-card-head { display: flex; align-items: center; gap: var(--gap-1); flex-wrap: wrap; padding: 4px 8px 4px 4px; }
-.agent-toggle {
+/* Scoped to the card: the overview's project toggles share the class name (.control.agent-toggle) and must not pick
+   this up. */
+.agent-card-head .agent-toggle {
   flex: 1; min-width: 0; display: flex; align-items: center; gap: var(--gap-1); flex-wrap: wrap; text-align: left;
   padding: 4px 6px; border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--fg-body); cursor: pointer;
 }
-.agent-toggle:hover { background: var(--bg-surface); }
-.agent-toggle:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--brand-ring); }
-.agent-toggle strong { color: var(--fg-heading); }
+.agent-card-head .agent-toggle:hover { background: var(--bg-surface); }
+.agent-card-head .agent-toggle:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--brand-ring); }
+.agent-card-head .agent-toggle strong { color: var(--fg-heading); }
 .agent-chevron { width: 1em; color: var(--fg-subtle); }
 .agent-card-actions { display: flex; gap: 4px; flex-wrap: wrap; }
 .agent-card-body { display: flex; flex-direction: column; gap: var(--gap-2); padding: var(--gap-1) 12px 12px; border-top: 1px solid var(--border-light); }
@@ -1342,6 +1378,7 @@ body:has(.detail-overlay) { overflow: hidden; }
 .pr-empty { max-width: 560px; padding: var(--gap-3) 0; }
 .pr-notices { font-size: 12px; }
 .pr-notices > summary { cursor: pointer; color: var(--fg-subtle); padding: 4px 0; }
+.pr-notices.warn > summary { color: var(--warning); }
 .pr-notices ul { list-style: none; margin: 4px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
 .pr-notices li { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 
@@ -1428,6 +1465,10 @@ body:has(.detail-overlay) { overflow: hidden; }
    an icon and a dashed edge; the tooltip names the marker. An active filter chip adds the brand border and a check. */
 .label-chips { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px; min-width: 0; }
 .repo-name .label-chips { margin-left: 6px; vertical-align: middle; }
+/* A table row shows at most three chips and +N: one line, so the table's auto layout reserves their whole width instead
+   of letting them paint over the next column. */
+.projects .repo-name .label-chips { flex-wrap: nowrap; }
+.projects .repo-name .label-chips > * { flex: none; }
 .label-chip {
   display: inline-flex; align-items: center; gap: 3px;
   padding: 0 6px; border-radius: 999px;
@@ -1477,17 +1518,24 @@ button.label-chip:focus-visible { outline: 2px solid var(--brand-ring); outline-
 /* ---- Help ---- */
 /* One scroll area, like Settings; text kept to a readable line length. */
 .help-scroll { flex: 1; min-height: 0; overflow: auto; }
-.help-layout { width: 100%; max-width: 820px; margin: 0 auto; padding: var(--gap-2); display: grid; gap: var(--gap-2); align-content: start; }
+/* The same two columns as Settings: the section navigation beside the sections, the intro across both above them. */
+.help-layout {
+  width: 100%; max-width: 1060px; margin: 0 auto; padding: var(--gap-2);
+  display: grid; grid-template-columns: minmax(168px, 200px) minmax(0, 1fr); gap: var(--gap-2); align-items: start; align-content: start;
+}
+.help-intro { grid-column: 1 / -1; }
+/* The layout's padding already holds the navigation off the edge, and its entries start level with the first section. */
+.help-layout > .section-nav { padding: 0; }
+.help-sections { display: grid; gap: var(--gap-2); min-width: 0; }
+@media (max-width: 720px) {
+  .help-layout { grid-template-columns: minmax(0, 1fr); }
+  .help-layout > .section-nav { padding: 0 0 var(--gap-1); }
+}
 .help-intro { display: flex; align-items: center; gap: var(--gap-2); flex-wrap: wrap; padding: var(--gap-2); background: var(--bg-section); border: 1px solid var(--border-light); border-radius: var(--radius-lg); }
 .help-icon { flex: none; display: grid; place-items: center; width: 40px; height: 40px; border-radius: var(--radius); color: var(--brand-fg); background: var(--brand-softer); border: 1px solid var(--brand-soft); }
 .help-intro-text { flex: 1; min-width: 200px; }
 .help-intro-text h1 { font-size: 18px; }
 .help-intro-text p { margin: 2px 0 0; color: var(--fg-subtle); }
-.help-toc ol { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 4px; }
-.help-toc a { display: inline-block; padding: 4px 10px; border-radius: var(--radius-sm); border: 1px solid var(--border-light); background: var(--bg-raised); color: var(--fg-body); font-size: 12px; }
-.help-toc a:hover { color: var(--fg-heading); border-color: var(--border-strong); }
-.help-toc a:focus-visible { outline: 2px solid var(--brand); outline-offset: 1px; }
-.help-toc a[aria-current="true"] { color: var(--fg-heading); font-weight: 600; background: var(--brand-softer); border-color: var(--brand-soft); }
 .help-section { min-width: 0; padding: var(--gap-2); background: var(--bg-section); border: 1px solid var(--border-light); border-radius: var(--radius-lg); scroll-margin-top: var(--gap-2); font-size: 14px; line-height: 1.6; overflow-wrap: anywhere; }
 .help-section:focus { outline: none; }
 .help-section:focus-visible { outline: 1px solid var(--border-strong); outline-offset: 2px; }

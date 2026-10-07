@@ -44,6 +44,14 @@ test("at the end of the scroll range the last section is current, however short 
   expect(currentSection(rects(-1500, -1300, -400, 300, 420), true)).toBe("environment");
 });
 
+test("reaching the end does not move the navigation: the last entry is marked, the section at the top places it", () => {
+  // Shared OpenSpec config fills the top of the view; the short Environment section is below it, at the end.
+  const atTheEnd = rects(-1500, -1300, -400, -40, 420);
+  expect(currentSection(atTheEnd, true)).toBe("environment");
+  // What useSectionNav reports as the anchor the wide navigation is placed by.
+  expect(currentSection(atTheEnd, false)).toBe("shared-config");
+});
+
 test("one section is always current; none is when there are no sections", () => {
   expect(currentSection(rects(400), false)).toBe("roots");
   expect(currentSection([], false)).toBeUndefined();
@@ -88,7 +96,7 @@ test("rowScrollLeft aligns an entry wider than the row to its start", () => {
 test("the navigation never scrolls the page to reveal itself", async () => {
   // scrollIntoView on a navigation element would scroll the page whenever the current section changes; the only
   // legitimate use is scrolling a section to the top on a jump.
-  const source = await Bun.file(new URL("../src/ui/settingsNav.tsx", import.meta.url)).text();
+  const source = await Bun.file(new URL("../src/ui/sectionNav.tsx", import.meta.url)).text();
   const calls = source.match(/^.*\.scrollIntoView\(.*$/gm) ?? [];
   expect(calls).toHaveLength(1);
   expect(calls[0]).toContain("target?.scrollIntoView");
@@ -116,13 +124,16 @@ test("navOffset keeps the navigation level with the current section, in view whi
 
 test("the navigation moves with the content and is never pinned", async () => {
   const css = await Bun.file(new URL("../src/ui/styles.css", import.meta.url)).text();
-  const navRules = css.match(/^\s*\.settings-nav \{[^}]*\}/gm) ?? [];
+  const navRules = css.match(/^\s*\.section-nav \{[^}]*\}/gm) ?? [];
   expect(navRules.length).toBeGreaterThan(0);
   // Neither pinned (sticky/fixed) nor a scroll area of its own that the page would scroll past.
   for (const rule of navRules) expect(rule).not.toMatch(/position: (sticky|fixed)|overflow-y/);
   // Wide: level with the current section; narrow: the row stays above the sections.
   expect(navRules[0]).toContain("top: var(--nav-offset, 0px)");
   expect(navRules.at(-1)).toContain("top: 0");
+  // The glide is a transform animation: a transition on `top` would restart on every scroll frame and lag behind.
+  for (const rule of css.match(/^\s*\.section-nav[^{]*\{[^}]*\}/gm) ?? []) expect(rule).not.toContain("transition");
+  expect(css).not.toContain("data-glide");
   // Only the one scroll area: sections with their own overflow would leave the navigation standing still.
   expect(css).not.toMatch(/^\.settings \{[^}]*overflow/m);
 });
