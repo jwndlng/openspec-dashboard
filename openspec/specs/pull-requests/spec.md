@@ -8,7 +8,7 @@ and check status, read from GitHub through the user's own GitHub CLI and only wh
 ## Requirements
 
 ### Requirement: Pull requests are read through the GitHub CLI, read-only
-The dashboard SHALL obtain pull requests by running the GitHub CLI (`gh`) without a shell, using only `gh pr list` with JSON output and `gh api user` to learn the signed-in login. A tracked repository SHALL be queried only when it is a git repository whose `origin` remote points to `github.com`, in any of its URL forms; the repository SHALL be addressed by its `owner/name` and the `gh` process SHALL run with its working directory outside every tracked repository, so that no tracked repository is read or written by it. `gh` SHALL run with prompts disabled, no standard input and a timeout after which it is stopped and reported as failed. The dashboard SHALL rely on `gh`'s own sign-in and MUST NOT read, store, request, log or forward credentials or tokens, and any text it passes to the browser SHALL have credentials embedded in URLs masked. The dashboard MUST NOT run any other `gh` subcommand and MUST NOT change anything on GitHub. Enabled repositories that share one GitHub repository SHALL cause one query, whose result applies to each of them.
+The dashboard SHALL obtain pull requests by running the GitHub CLI (`gh`) without a shell, using only `gh pr list` with JSON output and `gh api user` to learn the signed-in login. A tracked repository SHALL be queried only when it is a git repository whose `origin` remote points to `github.com`, in any of its URL forms; the repository SHALL be addressed by its `owner/name` and the `gh` process SHALL run with its working directory outside every tracked repository, so that no tracked repository is read or written by it. `gh` SHALL run with prompts disabled, no standard input and a timeout after which it is stopped and reported as failed. The dashboard SHALL rely on `gh`'s own sign-in and MUST NOT read, store, request, log or forward credentials or tokens, and any text it passes to the browser SHALL have credentials embedded in URLs masked. The dashboard MUST NOT run any other `gh` subcommand, except `gh issue list` as the `issue-import` capability specifies, and MUST NOT change anything on GitHub. Enabled repositories that share one GitHub repository SHALL cause one query, whose result applies to each of them.
 
 #### Scenario: HTTPS and SSH remotes
 - **WHEN** one tracked repository's `origin` is `https://github.com/acme/alpha-infra.git` and another's is `git@github.com:acme/beta-soc.git`
@@ -21,6 +21,10 @@ The dashboard SHALL obtain pull requests by running the GitHub CLI (`gh`) withou
 #### Scenario: Remote needs a login gh does not have
 - **WHEN** `gh` would ask for authentication
 - **THEN** nothing prompts, the query fails within the timeout or at once, and the reason is reported
+
+#### Scenario: Refreshing pull requests lists no issues
+- **WHEN** the user refreshes pull requests
+- **THEN** only `gh pr list` and `gh api user` processes are started, and no `gh issue list`
 
 ### Requirement: GitHub is contacted only when the user asks
 The pull-request query SHALL run only when the user activates a **Refresh** control on the Pull requests view or in a repository's pull-request dialog, when the user opens one of the three views that show pull requests — the Pull requests view, a repository's pull-request dialog, or a Kanban board — and the shown repositories' cached lists are older than five minutes or were never fetched, or as the **pull-request watch** of an open Kanban board ("The board watches pull requests that are not ready"). It MUST NOT run on any other timer, during or after a scan, on page load of a view that shows no pull request, on the projects overview, or as a side effect of another operation. While a refresh runs, the control SHALL show that it is running and SHALL NOT start a second one.
