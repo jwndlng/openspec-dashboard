@@ -1,0 +1,11 @@
+# Prompt
+
+Polish from user feedback: four small UI fixes.
+
+1. Projects table, label chips: when zooming, a row's label chips collide with each other and spill into the "open" column. Cause: `.projects th, td` are `white-space: nowrap` (styles.css ~660), but `.label-chips` is an inline-flex box with `flex-wrap: wrap` (~1429). The auto table layout counts only the widest chip as min-content, so the name column is too narrow and the chips paint over `td.num.total`. Fix: `.projects .repo-name .label-chips { flex-wrap: nowrap }` (at most three chips plus "+N" per the project-labels spec), and guard the name cell so nothing can paint into the next column. Add a table-mode scenario to project-overview: row content never overlaps adjacent cells or rows at any zoom level.
+
+2. Projects table, "Docs auto-merge: Off" overlaps the row below by a few pixels. Cause: the global `.agent-toggle` rule (styles.css ~1045, meant for the agent profile card header in agentSettings.tsx) also matches the overview's `control switch-control agent-toggle` buttons. It gives them `display:flex; flex-wrap:wrap; border:0`, so the text wraps under the switch inside a fixed 24px height. "Agent sessions: On/Off" is exposed the same way. Fix: scope that rule (and its :hover/:focus-visible/strong variants) to the profile card, and check visually that the toggles' borders, including the dashed off-globally one, come back.
+
+3. Pull requests notice wording: a repository that is merely not on GitHub (status `unavailable`, reason "not on GitHub" / "not a git repository") is summarised as "N repository could not be listed", which reads like a failure. The demo shows it for `quill-docs` on purpose. Keep the demo data. Show such repositories as an informational note (e.g. "1 repository isn't on GitHub"), and keep "could not be listed" for real failures (`failed`, gh errors). See `Notices` in src/ui/pullRequests.tsx and `pullRequestNotices` in src/ui/pullRequestsState.ts. Update the pull-requests spec.
+
+4. Home link: the product mark and the "Spec Control" title in the hero header (src/ui/app.tsx ~290) become a link to the Projects overview `/`. Use `href()` and `followInApp` (src/ui/url.ts) so a modifier-click still opens a new tab and the demo's hash routing works. Add it to the hero header requirement in the kanban-board spec.
