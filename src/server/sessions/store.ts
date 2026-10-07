@@ -1,6 +1,6 @@
-// Session records live under ~/.spec-control/sessions/<id>/: `meta.json` (written atomically) and, once a
-// session has ended, `output.bin` with the tail of its terminal output. User-only files: a terminal shows whatever
-// the agent printed.
+// Session records live under ~/.spec-control/sessions/<id>/: `meta.json` (written atomically), once a session has
+// ended `output.bin` with the tail of its terminal output, and `agent-state` when the agent reported its state there
+// (reportedState.ts). User-only files: a terminal shows whatever the agent printed.
 import { chmod, mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { OPEN_SESSION_STATES, type Session } from "../../shared/types.ts";
@@ -8,6 +8,7 @@ import { sessionsDir } from "../paths.ts";
 
 export const KEEP_ENDED_SESSIONS = 50;
 const SESSION_ID = /^[a-f0-9-]{36}$/;
+const STATE_FILE = "agent-state";
 
 export class SessionStore {
   private writes = new Map<string, Promise<unknown>>();
@@ -40,8 +41,15 @@ export class SessionStore {
     await chmod(path, 0o600);
   }
 
+  /** Where the agent may report its state: in the record folder, so it goes wherever the record goes. */
+  statePath(id: string): string {
+    return join(this.dir(id), STATE_FILE);
+  }
+
   saveMeta(session: Session): Promise<void> {
-    const body = JSON.stringify(session, null, 2); // snapshot now; the object keeps changing
+    // Snapshot now; the object keeps changing. A waiting report is only true of a running process, so it is not kept.
+    const { waitingReportedAt: _, ...stored } = session;
+    const body = JSON.stringify(stored, null, 2);
     return this.serial(session.id, () => this.writeAtomic(session.id, "meta.json", body));
   }
 

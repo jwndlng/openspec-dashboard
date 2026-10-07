@@ -458,8 +458,16 @@ interface SessionBase {
   branch?: string;
   createdAt: string;
   updatedAt: string;
-  /** When the terminal last printed something; the only input to whether a running session may need the user. */
+  /**
+   * When the terminal last printed something that counts as activity: output within the echo window after the
+   * dashboard resized the terminal or passed input to it does not. Decides whether a running session may need the user.
+   */
   lastOutputAt?: string;
+  /**
+   * When the running agent reported, through its state file, that it is waiting for the user — set only while that
+   * report is current (written after the process started and after the user's latest input). Never stored.
+   */
+  waitingReportedAt?: string;
   /** True once the agent has a conversation that `resumeCommand` can continue. */
   resumable: boolean;
 }

@@ -50,13 +50,16 @@ test("first load: sessions are on, the agent is available, and every state and w
   const { sessions, agents, worktrees } = await api.sessions();
   expect(agents).toEqual([{ id: "demo-agent", name: "Demo Agent", available: true, path: "/home/demo/bin/demo-agent" }]);
   expect(new Set(sessions.map((s) => s.state))).toEqual(new Set(["running", "exited", "failed"]));
-  expect(openWork([], sessions).running).toBe(2); // the Open work control shows a count at first sight
+  expect(openWork([], sessions).running).toBe(3); // the Open work control shows a count at first sight
   expect(new Set(worktrees.map((w) => w.work.state))).toEqual(new Set(["clean", "uncommitted", "unpushed", "pushed", "merged"]));
   expect(worktrees.some((w) => w.sessionId === undefined)).toBe(true); // a worktree whose session record is gone
   expect(sessions.find((s) => s.state === "failed")?.error).toContain("could not create the worktree");
   // one running session printed seconds ago, the other has been silent for minutes: it waits at a question
   const silent = sessions.filter((s) => s.state === "running").map((s) => Date.parse("2026-06-01T12:00:00.000Z") - Date.parse(s.lastOutputAt ?? ""));
   expect(silent.some((ms) => ms < NEEDS_YOU_AFTER_MS) && silent.some((ms) => ms > 10 * 60_000)).toBe(true);
+  // and one waits at the same question with an agent that reports it, so all three running badges are there
+  const labels = sessions.filter((s) => s.state === "running").map((s) => sessionBadge(s, Date.parse("2026-06-01T12:00:00.000Z")).label);
+  expect(labels.some((l) => l === "working") && labels.some((l) => l.startsWith("may need you")) && labels.some((l) => l.startsWith("waiting for you"))).toBe(true);
   // shared-config profiles are carried from the start, one of them outdated
   const carried = (await api.state()).repos.flatMap((r) => r.sharedConfig?.applied ?? []);
   expect(carried.filter((p) => p.state === "in-sync").length).toBeGreaterThanOrEqual(4);
@@ -70,6 +73,20 @@ test("an unwatched demo session keeps working while the one at a question keeps 
   const labels = running.map((s) => sessionBadge(s, Date.parse("2026-06-01T12:05:00.000Z")).label);
   expect(labels).toContain("working");
   expect(labels.some((l) => l.startsWith("may need you"))).toBe(true);
+  expect(labels.some((l) => l.startsWith("waiting for you"))).toBe(true);
+});
+
+test("a reporting demo agent's waiting report ends when the user answers", async () => {
+  const { api, advance, terminal } = demo();
+  const session = await byChange(api, "centralize-log-shipping");
+  expect((await byChange(api, "centralize-log-shipping")).waitingReportedAt).toBeTruthy();
+  const view = terminal(session.id);
+  advance(0);
+  expect((await byChange(api, "centralize-log-shipping")).waitingReportedAt).toBeTruthy(); // viewing keeps it
+  view.connection.send({ type: "input", data: "\r" });
+  advance(3_000);
+  expect((await byChange(api, "centralize-log-shipping")).waitingReportedAt).toBeUndefined();
+  view.connection.close();
 });
 
 test("everything a session names exists on the board, under the fictional root", async () => {

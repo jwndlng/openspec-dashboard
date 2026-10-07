@@ -238,12 +238,19 @@ export function silenceDuration(ms: number): string {
 }
 
 /**
- * A terminal is a byte stream, so the dashboard cannot know that an agent works or waits for you. It can say whether
- * the terminal is printing or has fallen silent — decided by the time of its last output alone — and, when silent,
- * that the session may need you. Status is always words plus colour, so the two running states differ in their words.
+ * A terminal is a byte stream, so the dashboard cannot know that an agent works or waits for you. An agent can say so
+ * itself, through its state file: a current `waiting` report is shown first, as the agent's report. Otherwise the badge
+ * says whether the terminal is printing or has fallen silent — decided by the time of its last output that counts as
+ * activity — and, when silent, that the session may need you. Status is always words plus colour, so the running
+ * states differ in their words.
  */
 export function sessionBadge(session: Session, now = Date.now()): SessionBadge {
   if (session.state === "running") {
+    const reported = session.waitingReportedAt ? Date.parse(session.waitingReportedAt) : Number.NaN;
+    if (!Number.isNaN(reported)) {
+      const ago = silenceDuration(Math.max(0, now - reported));
+      return { icon: "◆", label: `waiting for you · ${ago}`, tone: "warning", title: `${session.agentName} reported ${ago} ago that it is waiting for you` };
+    }
     const last = session.lastOutputAt ? Date.parse(session.lastOutputAt) : Number.NaN;
     const silent = Number.isNaN(last) ? 0 : now - last;
     if (silent > NEEDS_YOU_AFTER_MS) {
