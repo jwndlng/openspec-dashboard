@@ -1,9 +1,9 @@
 // Settings section for agent sessions. Off by default; turning it on lets you start an agent CLI in a terminal for a
 // change, so the section says plainly what that means. An agent is just a command line and its opening prompts.
-import { Fragment } from "preact";
+import type { ComponentChildren } from "preact";
 import { useEffect, useState } from "preact/hooks";
 import { AGENT_PRESETS } from "../shared/agentDefaults.ts";
-import { DEFAULT_INTEGRATE_PROMPT, DEFAULT_RESOLVE_CONFLICTS_PROMPT, DEFAULT_SHIP_PROMPT, SESSION_ACTIONS, type AgentAvailability, type AgentProfile, type AgentSessionsConfig, type Config, type PromptKey, type Session, type SessionAction, type Shortcut } from "../shared/types.ts";
+import { DEFAULT_INTEGRATE_PROMPT, DEFAULT_RESOLVE_CONFLICTS_PROMPT, DEFAULT_SHIP_PROMPT, SESSION_ACTIONS, type AgentAvailability, type AgentProfile, type AgentSessionsConfig, type Config, type PromptKey, type SessionAction, type Shortcut } from "../shared/types.ts";
 import { api } from "./api.ts";
 import { addShortcut, moveShortcut, removeShortcut, restoredShortcuts } from "./quickReplies.ts";
 import { parseArgLines, slugId } from "./sessionState.ts";
@@ -16,8 +16,97 @@ interface Props {
 
 const ACTION_LABEL: Record<SessionAction, string> = { draft: "Draft artifacts", implement: "Implement", validate: "Validate", archive: "Archive" };
 
-/** Exported for the tests: one profile's fields, hook-free so they can be rendered without a DOM. */
-export function AgentEditor({ agent, found, isDefault, canRemove, onChange, onRemove, onDefault }: { agent: AgentProfile; found?: AgentAvailability; isDefault: boolean; canRemove: boolean; onChange: (patch: Partial<AgentProfile>) => void; onRemove: () => void; onDefault: () => void }) {
+/** One prompt of a profile and how it is edited; the action prompts are textareas showing their default. */
+interface PromptSpec {
+  key: PromptKey;
+  label: string;
+  multiline: boolean;
+  placeholder: string;
+  note?: ComponentChildren;
+}
+
+const STARTER_PROMPTS: PromptSpec[] = SESSION_ACTIONS.map((action) => ({ key: action, label: ACTION_LABEL[action], multiline: false, placeholder: "no prompt — this starter is not offered" }));
+
+const ACTION_PROMPTS: PromptSpec[] = [
+  { key: "ship", label: "Ship", multiline: true, placeholder: DEFAULT_SHIP_PROMPT },
+  { key: "resolveConflicts", label: "Resolve conflicts", multiline: true, placeholder: DEFAULT_RESOLVE_CONFLICTS_PROMPT },
+  {
+    key: "integrate",
+    label: "Integrate",
+    multiline: true,
+    placeholder: DEFAULT_INTEGRATE_PROMPT,
+    note: (
+      <>
+        Runs in the folder of a repository that does not use OpenSpec yet, so this prompt and its additional instructions take <strong>no placeholder at all</strong>.
+      </>
+    ),
+  },
+];
+
+/** A prompt with its additional instructions directly beneath it: they are appended to this prompt and to no other. */
+function PromptField({ spec, agent, onPrompt, onSuffix }: { spec: PromptSpec; agent: AgentProfile; onPrompt: (value: string) => void; onSuffix: (value: string) => void }) {
+  const promptId = `agent-${agent.id}-prompt-${spec.key}`;
+  const suffixId = `agent-${agent.id}-suffix-${spec.key}`;
+  const prompt = agent.prompts[spec.key] ?? "";
+  const suffix = agent.promptSuffixes?.[spec.key] ?? "";
+  return (
+    <div class="agent-prompt">
+      <label class="agent-prompt-label" for={promptId}>
+        {spec.label}
+      </label>
+      {spec.note && <span class="hint">{spec.note}</span>}
+      {spec.multiline ? (
+        <textarea id={promptId} class="input mono" rows={3} placeholder={spec.placeholder} value={prompt} onInput={(e) => onPrompt(e.currentTarget.value)} />
+      ) : (
+        <input id={promptId} class="input mono" placeholder={spec.placeholder} value={prompt} onInput={(e) => onPrompt(e.currentTarget.value)} />
+      )}
+      <div class="agent-tools agent-suffix">
+        <label class="hint" for={suffixId}>
+          + Additional {spec.label} instructions, appended to this prompt as one line
+        </label>
+        {spec.multiline ? (
+          <textarea id={suffixId} class="input mono" rows={2} placeholder="nothing is appended" value={suffix} onInput={(e) => onSuffix(e.currentTarget.value)} />
+        ) : (
+          <input id={suffixId} class="input mono" placeholder="nothing is appended" value={suffix} onInput={(e) => onSuffix(e.currentTarget.value)} />
+        )}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Exported for the tests: one profile, hook-free so it can be rendered without a DOM. The header works collapsed — it
+ * carries the badges and Make default / Remove agent — and the body is grouped into Command, Change starters and Action
+ * prompts. Whether it is expanded is the caller's state (`open`, `onToggle`).
+ */
+export function AgentEditor({
+  agent,
+  found,
+  isDefault,
+  canRemove,
+  open,
+  onToggle,
+  onChange,
+  onRemove,
+  onDefault,
+}: {
+  agent: AgentProfile;
+  found?: AgentAvailability;
+  isDefault: boolean;
+  canRemove: boolean;
+  open: boolean;
+  onToggle: () => void;
+  onChange: (patch: Partial<AgentProfile>) => void;
+  onRemove: () => void;
+  onDefault: () => void;
+}) {
+  /** An empty prompt is stored as absent: a starter without one is not offered, an action prompt falls back to its default. */
+  const setPrompt = (key: PromptKey, value: string) => {
+    const prompts = { ...agent.prompts };
+    if (value.trim()) prompts[key] = value;
+    else delete prompts[key];
+    onChange({ prompts });
+  };
   /** Additional instructions for one prompt; an empty field is stored as absent, as a removed prompt is. */
   const setSuffix = (key: PromptKey, value: string) => {
     const promptSuffixes = { ...agent.promptSuffixes };
@@ -25,146 +114,20 @@ export function AgentEditor({ agent, found, isDefault, canRemove, onChange, onRe
     else delete promptSuffixes[key];
     onChange({ promptSuffixes: Object.keys(promptSuffixes).length ? promptSuffixes : undefined });
   };
+  const field = (spec: PromptSpec) => <PromptField key={spec.key} spec={spec} agent={agent} onPrompt={(v) => setPrompt(spec.key, v)} onSuffix={(v) => setSuffix(spec.key, v)} />;
+  const bodyId = `agent-${agent.id}-fields`;
   return (
-    <details class="agent-card" open={isDefault}>
-      <summary>
-        <strong>{agent.name}</strong> <code>{agent.command[0]}</code>
-        {isDefault && <span class="badge">default</span>}
-        {found && (found.available ? <span class="badge success" title={found.path}>✓ found</span> : <span class="badge danger">⚠ not found on this machine</span>)}
-      </summary>
-      <div class="agent-fields">
-        <label class="check grow">
-          Name
-          <input class="input grow" value={agent.name} onInput={(e) => onChange({ name: e.currentTarget.value })} />
-        </label>
-        <label class="agent-tools">
-          <span class="hint">
-            Command, <strong>one argument per line</strong> (no shell). <code>{"{prompt}"}</code> becomes the opening prompt as one argument; without it the prompt is typed into
-            the terminal after start.
+    <div class={`agent-card ${open ? "open" : ""}`}>
+      <div class="agent-card-head">
+        <button type="button" class="agent-toggle" aria-expanded={open} aria-controls={bodyId} onClick={onToggle}>
+          <span class="agent-chevron" aria-hidden="true">
+            {open ? "▾" : "▸"}
           </span>
-          <textarea class="input mono" rows={Math.max(2, agent.command.length)} value={agent.command.join("\n")} onInput={(e) => onChange({ command: parseArgLines(e.currentTarget.value) })} />
-        </label>
-        {SESSION_ACTIONS.map((action) => (
-          <Fragment key={action}>
-            <label class="check grow">
-              {ACTION_LABEL[action]}
-              <input
-                class="input mono grow"
-                placeholder="no prompt — this starter is not offered"
-                value={agent.prompts[action] ?? ""}
-                onInput={(e) => {
-                  const prompts = { ...agent.prompts };
-                  const value = e.currentTarget.value;
-                  if (value.trim()) prompts[action] = value;
-                  else delete prompts[action];
-                  onChange({ prompts });
-                }}
-              />
-            </label>
-            <label class="agent-tools">
-              <span class="hint">
-                Additional {ACTION_LABEL[action]} instructions (optional): appended to that prompt as one line, and only when it is set — this text alone does not offer the
-                starter. <code>{"{change}"}</code> may be used.
-              </span>
-              <input class="input mono" placeholder="nothing is appended" value={agent.promptSuffixes?.[action] ?? ""} onInput={(e) => setSuffix(action, e.currentTarget.value)} />
-            </label>
-          </Fragment>
-        ))}
-        <label class="agent-tools">
-          <span class="hint">
-            Ship prompt (optional): what the <strong>Ship</strong> button asks this agent, to get a session's work committed, pushed and into a pull request. Empty uses the default
-            shown; <code>{"{change}"}</code> may be used.
-          </span>
-          <textarea
-            class="input mono"
-            rows={3}
-            placeholder={DEFAULT_SHIP_PROMPT}
-            value={agent.prompts.ship ?? ""}
-            onInput={(e) => {
-              const prompts = { ...agent.prompts };
-              const value = e.currentTarget.value;
-              if (value.trim()) prompts.ship = value;
-              else delete prompts.ship;
-              onChange({ prompts });
-            }}
-          />
-        </label>
-        <label class="agent-tools">
-          <span class="hint">
-            Additional <strong>Ship</strong> instructions (optional): appended as one line to the Ship prompt above — or to the default shown there, so a standing instruction
-            about pull requests needs no prompt of its own. <code>{"{change}"}</code> may be used.
-          </span>
-          <textarea class="input mono" rows={2} placeholder="nothing is appended" value={agent.promptSuffixes?.ship ?? ""} onInput={(e) => setSuffix("ship", e.currentTarget.value)} />
-        </label>
-        <label class="agent-tools">
-          <span class="hint">
-            Resolve conflicts prompt (optional): what <strong>Resolve conflicts</strong> asks this agent when a session's branch no longer merges into the default branch. Empty
-            uses the default shown; <code>{"{change}"}</code> may be used. The dashboard merges nothing itself — it only asks.
-          </span>
-          <textarea
-            class="input mono"
-            rows={3}
-            placeholder={DEFAULT_RESOLVE_CONFLICTS_PROMPT}
-            value={agent.prompts.resolveConflicts ?? ""}
-            onInput={(e) => {
-              const prompts = { ...agent.prompts };
-              const value = e.currentTarget.value;
-              if (value.trim()) prompts.resolveConflicts = value;
-              else delete prompts.resolveConflicts;
-              onChange({ prompts });
-            }}
-          />
-        </label>
-        <label class="agent-tools">
-          <span class="hint">
-            Additional <strong>Resolve conflicts</strong> instructions (optional): appended as one line to the prompt above — or to the default shown there, so a standing
-            instruction about how this project reconciles a branch needs no prompt of its own. <code>{"{change}"}</code> may be used.
-          </span>
-          <textarea
-            class="input mono"
-            rows={2}
-            placeholder="nothing is appended"
-            value={agent.promptSuffixes?.resolveConflicts ?? ""}
-            onInput={(e) => setSuffix("resolveConflicts", e.currentTarget.value)}
-          />
-        </label>
-        <label class="agent-tools">
-          <span class="hint">
-            Integrate prompt (optional): what <strong>Integrate</strong> asks this agent in a repository that does not use OpenSpec yet. It runs in that repository's folder, so
-            it takes <strong>no placeholder at all</strong> — nothing from this page becomes part of the command line. Empty uses the default shown.
-          </span>
-          <textarea
-            class="input mono"
-            rows={3}
-            placeholder={DEFAULT_INTEGRATE_PROMPT}
-            value={agent.prompts.integrate ?? ""}
-            onInput={(e) => {
-              const prompts = { ...agent.prompts };
-              const value = e.currentTarget.value;
-              if (value.trim()) prompts.integrate = value;
-              else delete prompts.integrate;
-              onChange({ prompts });
-            }}
-          />
-        </label>
-        <label class="agent-tools">
-          <span class="hint">
-            Additional <strong>Integrate</strong> instructions (optional): appended as one line to the Integrate prompt above — or to the default shown there. Like that prompt they take{" "}
-            <strong>no placeholder at all</strong>.
-          </span>
-          <textarea
-            class="input mono"
-            rows={2}
-            placeholder="nothing is appended"
-            value={agent.promptSuffixes?.integrate ?? ""}
-            onInput={(e) => setSuffix("integrate", e.currentTarget.value)}
-          />
-        </label>
-        <label class="agent-tools">
-          <span class="hint">Resume command (optional, one argument per line): continues the agent's latest conversation in the same worktree.</span>
-          <textarea class="input mono" rows={2} value={(agent.resumeCommand ?? []).join("\n")} onInput={(e) => onChange({ resumeCommand: parseArgLines(e.currentTarget.value).length ? parseArgLines(e.currentTarget.value) : undefined })} />
-        </label>
-        <div class="row">
+          <strong>{agent.name}</strong> <code>{agent.command[0]}</code>
+          {isDefault && <span class="badge">default</span>}
+          {found && (found.available ? <span class="badge success" title={found.path}>✓ found</span> : <span class="badge danger">⚠ not found on this machine</span>)}
+        </button>
+        <span class="agent-card-actions">
           {!isDefault && (
             <button type="button" class="btn sm" onClick={onDefault}>
               Make default
@@ -175,9 +138,55 @@ export function AgentEditor({ agent, found, isDefault, canRemove, onChange, onRe
               Remove agent
             </button>
           )}
-        </div>
+        </span>
       </div>
-    </details>
+      {open && (
+        <div class="agent-card-body" id={bodyId}>
+          <div class="agent-group">
+            <h4>Command</h4>
+            <label class="agent-tools">
+              <span class="agent-prompt-label">Name</span>
+              <input class="input" value={agent.name} onInput={(e) => onChange({ name: e.currentTarget.value })} />
+            </label>
+            <label class="agent-tools">
+              <span class="agent-prompt-label">Command</span>
+              <span class="hint">
+                <strong>One argument per line</strong>, no shell. <code>{"{prompt}"}</code> becomes the opening prompt as one argument; without it the prompt is typed into the
+                terminal after start.
+              </span>
+              <textarea class="input mono" rows={Math.max(2, agent.command.length)} value={agent.command.join("\n")} onInput={(e) => onChange({ command: parseArgLines(e.currentTarget.value) })} />
+            </label>
+            <label class="agent-tools">
+              <span class="agent-prompt-label">Resume command</span>
+              <span class="hint">Optional, one argument per line: continues the agent's latest conversation in the same worktree.</span>
+              <textarea
+                class="input mono"
+                rows={2}
+                value={(agent.resumeCommand ?? []).join("\n")}
+                onInput={(e) => onChange({ resumeCommand: parseArgLines(e.currentTarget.value).length ? parseArgLines(e.currentTarget.value) : undefined })}
+              />
+            </label>
+          </div>
+          <div class="agent-group">
+            <h4>Change starters</h4>
+            <p class="hint">
+              What each starter on a card asks this agent. An empty prompt means the starter is not offered; additional instructions are appended only when the prompt is set — this
+              text alone does not offer the starter. <code>{"{change}"}</code> may be used.
+            </p>
+            {STARTER_PROMPTS.map(field)}
+          </div>
+          <div class="agent-group">
+            <h4>Action prompts</h4>
+            <p class="hint">
+              What <strong>Ship</strong>, <strong>Resolve conflicts</strong> and <strong>Integrate</strong> ask this agent. Empty uses the default shown; additional instructions
+              are appended to the prompt — or to the default shown there, so a standing instruction needs no prompt of its own. <code>{"{change}"}</code> may be used in Ship and
+              Resolve conflicts. The dashboard commits, merges and pushes nothing itself — it only asks.
+            </p>
+            {ACTION_PROMPTS.map(field)}
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -212,12 +221,12 @@ export function PresetPicker({ agents, presets, onAdd }: { agents: readonly Agen
  * independent, so a one-word control can carry several sentences; the prompt is sent exactly as written, which is why it
  * is one line and takes no placeholder.
  */
-function ShortcutEditor({ shortcuts, onChange }: { shortcuts: Shortcut[]; onChange: (shortcuts: Shortcut[]) => void }) {
+export function ShortcutEditor({ shortcuts, onChange }: { shortcuts: Shortcut[]; onChange: (shortcuts: Shortcut[]) => void }) {
   const patch = (id: string, fields: Partial<Shortcut>) => onChange(shortcuts.map((s) => (s.id === id ? { ...s, ...fields } : s)));
   const add = () => onChange(addShortcut(shortcuts));
   return (
     <>
-      <h2>Shortcuts</h2>
+      <h3>Shortcuts</h3>
       <p class="hint">
         The controls beside a session's terminal. The <strong>title</strong> is what the control reads; the{" "}
         <strong>prompt</strong> is what the agent receives, typed exactly as written — <strong>one line, no placeholder</strong>, because a shortcut is offered in every session,
@@ -272,7 +281,7 @@ function ShortcutEditor({ shortcuts, onChange }: { shortcuts: Shortcut[]; onChan
 export function PerProjectNote() {
   return (
     <>
-      <h2>Projects</h2>
+      <h3>Projects</h3>
       <p class="hint per-project">
         Each project has its own <strong>Agent sessions</strong> switch, Enabled unless you turn it off, and — with more than one agent here — its own agent:{" "}
         <a href={href("/")} onClick={(e) => followInApp(e, "/")}>
@@ -287,32 +296,41 @@ export function PerProjectNote() {
 export function AgentSettings({ draft, update }: Props) {
   const [found, setFound] = useState<AgentAvailability[]>([]);
   const [presets, setPresets] = useState<AgentAvailability[] | undefined>(undefined);
-  const [sessions, setSessions] = useState<Session[]>([]);
+  // Availability only: session worktrees are listed, with their work status, in Open work.
   useEffect(() => {
     api
       .sessions()
       .then((r) => {
         setFound(r.agents);
         setPresets(r.presets);
-        setSessions(r.sessions);
       })
       .catch(() => undefined);
   }, []);
 
   const settings = draft.agentSessions;
+  // The default profile starts expanded; the others stay collapsed until the user opens them.
+  const [expanded, setExpanded] = useState<Set<string>>(() => new Set([settings.defaultAgent]));
+  const toggle = (id: string) =>
+    setExpanded((was) => {
+      const next = new Set(was);
+      if (!next.delete(id)) next.add(id);
+      return next;
+    });
   const set = (patch: Partial<AgentSessionsConfig>) => update({ agentSessions: { ...settings, ...patch } });
   const setAgent = (id: string, patch: Partial<AgentProfile>) => set({ agents: settings.agents.map((a) => (a.id === id ? { ...a, ...patch } : a)) });
+  const addProfile = (profile: AgentProfile) => {
+    set({ agents: [...settings.agents, profile] });
+    setExpanded((was) => new Set([...was, profile.id]));
+  };
   const addAgent = () => {
     const id = slugId("agent", settings.agents.map((a) => a.id));
-    set({ agents: [...settings.agents, { id, name: "New agent", command: ["my-agent-cli", "{prompt}"], prompts: { implement: "Implement the OpenSpec change {change}: run `openspec instructions apply --change {change}` and follow it." } }] });
+    addProfile({ id, name: "New agent", command: ["my-agent-cli", "{prompt}"], prompts: { implement: "Implement the OpenSpec change {change}: run `openspec instructions apply --change {change}` and follow it." } });
   };
   const removeAgent = (id: string) => {
     const agents = settings.agents.filter((a) => a.id !== id);
     // Repositories that chose it go back to the default agent when Settings saves (`withLatestRepos`).
     set({ agents, defaultAgent: settings.defaultAgent === id ? agents[0].id : settings.defaultAgent });
   };
-  // The main console runs in its folder, not in a worktree.
-  const worktrees = sessions.filter((s) => !s.console && s.worktreePath);
 
   return (
     <section class="panel">
@@ -332,11 +350,10 @@ export function AgentSettings({ draft, update }: Props) {
       </div>
 
       <fieldset class="agent-fields" disabled={!settings.enabled}>
-        <h2>Agents</h2>
+        <h3>Agents</h3>
         <p class="hint">
-          Any CLI that runs interactively in a terminal works. Claude Code is preconfigured; Codex and Antigravity are one click away as presets, marked with whether they were
-          found on this machine. Each preset's prompts expect the OpenSpec commands or skills that <code>{"openspec init --tools <tool>"}</code> installs for that agent. Add
-          any other agent with its own command and prompts.
+          Any CLI that runs interactively in a terminal works. Claude Code is preconfigured; Codex and Antigravity are presets, marked with whether they were found on this
+          machine. A preset's prompts expect what <code>{"openspec init --tools <tool>"}</code> installs for that agent.
         </p>
         {settings.agents.map((agent) => (
           <AgentEditor
@@ -345,6 +362,8 @@ export function AgentSettings({ draft, update }: Props) {
             found={found.find((f) => f.id === agent.id)}
             isDefault={agent.id === settings.defaultAgent}
             canRemove={settings.agents.length > 1}
+            open={expanded.has(agent.id)}
+            onToggle={() => toggle(agent.id)}
             onChange={(patch) => setAgent(agent.id, patch)}
             onRemove={() => removeAgent(agent.id)}
             onDefault={() => set({ defaultAgent: agent.id })}
@@ -354,20 +373,21 @@ export function AgentSettings({ draft, update }: Props) {
           <button type="button" class="btn sm" onClick={addAgent}>
             + Add agent
           </button>
-          <PresetPicker agents={settings.agents} presets={presets} onAdd={(profile) => set({ agents: [...settings.agents, profile] })} />
+          <PresetPicker agents={settings.agents} presets={presets} onAdd={addProfile} />
         </div>
 
         <ShortcutEditor shortcuts={settings.shortcuts} onChange={(shortcuts) => set({ shortcuts })} />
 
-        <h2>Console</h2>
+        <h3>Console</h3>
         <label class="agent-tools">
           <span class="hint">
-            Console folder (optional): the console button in the top bar opens your default agent here, outside every change and without a prompt. Empty uses{" "}
-            <code>~/.openspec-dashboard/console/</code>. A folder above your repositories lets it reach them; a folder inside a tracked repository is refused, so it never runs
-            in a main checkout. What the agent does there is up to its own permission prompts.
+            The console button in the top bar opens your default agent in this folder, outside every change and without a prompt. Empty uses{" "}
+            <code>~/.openspec-dashboard/console/</code>. A folder above your repositories lets it reach them; a folder inside a tracked repository is refused, so it never runs in
+            a main checkout. What the agent does there is up to its own permission prompts.
           </span>
           <input
             class="input mono"
+            aria-label="Console folder"
             placeholder="~/.openspec-dashboard/console"
             value={settings.consoleDir ?? ""}
             onInput={(e) => set({ consoleDir: e.currentTarget.value.trim() || undefined })}
@@ -376,20 +396,6 @@ export function AgentSettings({ draft, update }: Props) {
 
         <PerProjectNote />
       </fieldset>
-
-      {worktrees.length > 0 && (
-        <>
-          <h2>Session worktrees</h2>
-          <div class="list">
-            {worktrees.map((s) => (
-              <div class="row" key={s.id}>
-                <span class="badge">{s.state}</span>
-                <code class="grow">{s.worktreePath}</code>
-              </div>
-            ))}
-          </div>
-        </>
-      )}
     </section>
   );
 }

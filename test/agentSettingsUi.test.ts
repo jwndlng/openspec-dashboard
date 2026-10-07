@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { AGENT_PRESETS, ANTIGRAVITY_PROFILE, CLAUDE_PROFILE } from "../src/shared/agentDefaults.ts";
 import type { AgentAvailability, AgentProfile, PromptKey } from "../src/shared/types.ts";
-import { AgentEditor, PresetPicker } from "../src/ui/agentSettings.tsx";
+import { AgentEditor, PerProjectNote, PresetPicker, ShortcutEditor } from "../src/ui/agentSettings.tsx";
 import { byTag, elements, textOf } from "./vnode.ts";
 
 const profile = (patch: Partial<AgentProfile> = {}): AgentProfile => ({ id: "fake", name: "Fake Agent", command: ["fake", "{prompt}"], prompts: { implement: "implement {change}" }, ...patch });
@@ -9,7 +9,7 @@ const profile = (patch: Partial<AgentProfile> = {}): AgentProfile => ({ id: "fak
 /** Every additional-instructions control, in the order the editor lays them out. */
 function suffixFields(agent: AgentProfile) {
   let patch: Partial<AgentProfile> | undefined;
-  const tree = AgentEditor({ agent, isDefault: true, canRemove: false, onChange: (p) => (patch = p), onRemove: () => {}, onDefault: () => {} });
+  const tree = AgentEditor({ agent, isDefault: true, canRemove: false, open: true, onToggle: () => {}, onChange: (p) => (patch = p), onRemove: () => {}, onDefault: () => {} });
   const fields = elements(tree).filter((el) => (el.type === "input" || el.type === "textarea") && el.props.placeholder === "nothing is appended");
   const type = (index: number, value: string) => {
     (fields[index].props.onInput as (e: { currentTarget: { value: string } }) => void)({ currentTarget: { value } });
@@ -59,6 +59,87 @@ test("Agent sessions settings point to Projects for the per-project switch and a
   expect(byTag(note, "input")).toHaveLength(0);
   const source = await Bun.file(new URL("../src/ui/agentSettings.tsx", import.meta.url)).text();
   expect(source).not.toContain("draft.repos");
+});
+
+/** An editor with recorded callbacks, for the header and grouping tests. */
+function editor(over: Partial<Parameters<typeof AgentEditor>[0]> = {}) {
+  const calls: string[] = [];
+  const tree = AgentEditor({
+    agent: profile(),
+    isDefault: false,
+    canRemove: true,
+    open: false,
+    onToggle: () => calls.push("toggle"),
+    onChange: () => calls.push("change"),
+    onRemove: () => calls.push("remove"),
+    onDefault: () => calls.push("default"),
+    ...over,
+  });
+  return { tree, calls };
+}
+
+test("a collapsed profile's header offers Make default and Remove agent, and shows no fields", () => {
+  const { tree, calls } = editor();
+  const buttons = byTag(tree, "button");
+  const toggle = buttons.find((b) => b.props.class === "agent-toggle");
+  expect(toggle?.props["aria-expanded"]).toBe(false);
+  expect(textOf(toggle)).toContain("Fake Agent");
+  const labels = buttons.map((b) => textOf(b).trim());
+  expect(labels).toContain("Make default");
+  expect(labels).toContain("Remove agent");
+  expect(byTag(tree, "input")).toHaveLength(0);
+  expect(byTag(tree, "textarea")).toHaveLength(0);
+  expect(byTag(tree, "h4")).toHaveLength(0);
+
+  const makeDefault = buttons.find((b) => textOf(b).trim() === "Make default");
+  // Optional calls: a missing button leaves `calls` empty, which the expectations below catch.
+  (makeDefault?.props.onClick as (() => void) | undefined)?.();
+  expect(calls).toEqual(["default"]);
+  (toggle?.props.onClick as (() => void) | undefined)?.();
+  expect(calls).toEqual(["default", "toggle"]);
+});
+
+test("the default profile's header offers neither action when it is the only one", () => {
+  const labels = byTag(editor({ isDefault: true, canRemove: false }).tree, "button").map((b) => textOf(b).trim());
+  expect(labels).not.toContain("Make default");
+  expect(labels).not.toContain("Remove agent");
+});
+
+test("an expanded profile groups its fields as Command, Change starters and Action prompts", () => {
+  const { tree } = editor({ open: true });
+  expect(byTag(tree, "h4").map((h) => textOf(h))).toEqual(["Command", "Change starters", "Action prompts"]);
+  const toggle = byTag(tree, "button").find((b) => b.props.class === "agent-toggle");
+  expect(toggle?.props["aria-expanded"]).toBe(true);
+  expect(byTag(tree, "div").some((d) => d.props.id === toggle?.props["aria-controls"])).toBe(true);
+});
+
+test("each prompt's additional instructions follow that prompt before the next prompt begins", () => {
+  const { tree } = editor({ open: true });
+  // Every prompt and instructions field in document order, as P (prompt) or S (additional instructions).
+  const order = elements(tree)
+    .filter((el) => (el.type === "input" || el.type === "textarea") && el.props.placeholder !== undefined)
+    .map((el) => (el.props.placeholder === "nothing is appended" ? "S" : "P"))
+    .join("");
+  expect(order).toBe("PS".repeat(KEYS.length));
+  // Labelled in the same order as the prompts.
+  const labels = elements(tree)
+    .filter((el) => el.props.class === "agent-prompt-label")
+    .map((el) => textOf(el));
+  expect(labels).toEqual(["Name", "Command", "Resume command", "Draft artifacts", "Implement", "Validate", "Archive", "Ship", "Resolve conflicts", "Integrate"]);
+});
+
+test("the Agent sessions section is grouped as Agents, Shortcuts, Console, Projects and lists no worktree", async () => {
+  expect(textOf(byTag(ShortcutEditor({ shortcuts: [], onChange: () => {} }), "h3")[0])).toBe("Shortcuts");
+  expect(textOf(byTag(PerProjectNote(), "h3")[0])).toBe("Projects");
+  // AgentSettings uses hooks, so its order is read from its source.
+  const source = await Bun.file(new URL("../src/ui/agentSettings.tsx", import.meta.url)).text();
+  const body = source.slice(source.indexOf("export function AgentSettings"));
+  const at = ["<h2>Agent sessions</h2>", "<h3>Agents</h3>", "<ShortcutEditor", "<h3>Console</h3>", "<PerProjectNote"].map((s) => body.indexOf(s));
+  expect(at.every((i) => i >= 0)).toBe(true);
+  expect([...at].sort((a, b) => a - b)).toEqual(at);
+  expect(source).not.toContain("Session worktrees");
+  expect(source).not.toContain("worktreePath");
+  expect(body.match(/<h2>/g)).toHaveLength(1);
 });
 
 /** The preset buttons as `[label, mark]`, in the order they are shown, and a way to click one. */
