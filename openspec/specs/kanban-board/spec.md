@@ -782,11 +782,11 @@ Wherever a board or the overview offers actions for what it shows — **New chan
 - **THEN** the action area wraps below the title and counts as one group, and every action in it stays fully visible
 
 ### Requirement: The dashboard opens with a hero header
-Every view SHALL open with a hero header. It SHALL show the product mark and the title `OpenSpec Dashboard` in large type, at least 32px and growing with the window up to 56px, with a one-line tagline under it. The status corner (Open work, scan errors, the theme control, the last-update age, Refresh and the auto-refresh control) SHALL sit in the hero's top-right corner, and the main navigation as large tabs, each with an icon beside its name, SHALL sit below the title. The auto-refresh control SHALL stand next to Refresh, at the same control size as the rest of the corner, and SHALL carry an accessible name saying it sets the auto-refresh interval. The current view's header band and filter bar SHALL continue on the hero's ground, a soft accent glow with a faint dot grid that fades out before the board, so that title, navigation, view header and filters read as one header; a line SHALL close the hero off from the board. The hero's decoration SHALL be drawn from theme tokens, be purely decorative, and SHALL NOT reduce the contrast of any text in it below the rules of the token set. On narrow windows the status corner SHALL move below the title and the title SHALL shrink, without horizontal scrolling.
+Every view SHALL open with a hero header. It SHALL show the product mark and the title `Spec Control` in large type, at least 32px and growing with the window up to 56px, with the one-line tagline `Mission control for every agent change across your repositories. Never miss a change.` under it. The status corner (Open work, scan errors, the theme control, the last-update age, Refresh and the auto-refresh control) SHALL sit in the hero's top-right corner, and the main navigation as large tabs, each with an icon beside its name, SHALL sit below the title. The auto-refresh control SHALL stand next to Refresh, at the same control size as the rest of the corner, and SHALL carry an accessible name saying it sets the auto-refresh interval. The current view's header band and filter bar SHALL continue on the hero's ground, a soft accent glow with a faint dot grid that fades out before the board, so that title, navigation, view header and filters read as one header; a line SHALL close the hero off from the board. The hero's decoration SHALL be drawn from theme tokens, be purely decorative, and SHALL NOT reduce the contrast of any text in it below the rules of the token set. On narrow windows the status corner SHALL move below the title and the title SHALL shrink, without horizontal scrolling.
 
 #### Scenario: Hero on the combined board
 - **WHEN** the combined board is opened in a 1920px wide window
-- **THEN** the page shows the mark and `OpenSpec Dashboard` in type of at least 48px, the tagline, the status corner at the top right, the navigation tabs with icons, and then `All changes` with its counts, **New change** and the filter bar on the same glowing ground
+- **THEN** the page shows the mark and `Spec Control` in type of at least 48px, the tagline `Mission control for every agent change across your repositories. Never miss a change.`, the status corner at the top right, the navigation tabs with icons, and then `All changes` with its counts, **New change** and the filter bar on the same glowing ground
 
 #### Scenario: Every view has the hero
 - **WHEN** the user moves to Settings or Activity
@@ -821,7 +821,7 @@ The dashboard SHALL show its own product mark instead of a generic icon: a draft
 
 #### Scenario: Mark is decorative
 - **WHEN** a screen reader reads the hero
-- **THEN** it reads `OpenSpec Dashboard` and nothing for the mark
+- **THEN** it reads `Spec Control` and nothing for the mark
 
 ### Requirement: The board fits half a screen
 The board SHALL offer two layouts of the same columns and cards: **Lanes**, the columns side by side, and **Stack**, each column a full-width section whose repository groups (or, on a repository board, cards) flow in a grid, with the page scrolling vertically so the hero scrolls away. By default the layout SHALL follow the window: **Stack** below 1280px wide, **Lanes** otherwise, switching live as the window is resized. A **Lanes**/**Stack** switch in the filter bar SHALL mark the layout on screen and SHALL make an explicit choice that overrides the default and persists in the URL (`layout=lanes` or `layout=stack`); an unknown value SHALL mean the default. The layout SHALL NOT be a filter: it changes no card or count, and **Clear filters** keeps it. In **Lanes**, a column without cards SHALL shrink to a slim rail that still shows its name and count, and lanes SHALL be narrower on windows narrower than 1600px. Grouping, minimizing, counts, the archived bound and every card's content SHALL be the same in both layouts.
@@ -1020,3 +1020,22 @@ A Kanban board SHALL run the pull-request watch of the `pull-requests` capabilit
 #### Scenario: A repository board watches only its own cards
 - **WHEN** the repository board of `beta-soc` is open and `alpha-infra` has a not-ready pull request but `beta-soc` has none
 - **THEN** the board starts no watch refresh
+
+### Requirement: Preferences kept in the browser survive the rename
+Every value the UI keeps in the browser's `localStorage` — the theme, whether the tour was seen, collapsed groups, the auto-refresh interval, the last seen What's new entry and the last seen activity — SHALL be stored under a key starting with `spec-control.`. Once per browser, before any of them is read, the UI SHALL copy every key under the former prefix `openspec-dashboard.` that holds a value to the key of the same name under `spec-control.`, unless that key already holds a value, and SHALL then record in `spec-control.migrated` that the copy was made. Once that record exists the UI SHALL NOT read any former key again, so that a preference changed or removed after the copy is never brought back by the former one. The copy SHALL NOT remove the former keys. When `localStorage` is unavailable or throws, the UI SHALL behave as it does without a stored value. The demo SHALL use the same keys.
+
+#### Scenario: Theme carries over
+- **WHEN** the browser holds `openspec-dashboard.theme` = `light` and no `spec-control.theme`, and the user opens the dashboard
+- **THEN** the dashboard is shown in the light theme and `spec-control.theme` now holds `light`
+
+#### Scenario: New value wins
+- **WHEN** the browser holds `spec-control.autoRefresh` = `30s` and `openspec-dashboard.autoRefresh` = `5s`
+- **THEN** auto-refresh is `30s`
+
+#### Scenario: Removing a preference does not bring back the old one
+- **WHEN** the theme was copied to `spec-control.theme` and the user then selects `system`, which removes that key, and reloads
+- **THEN** the theme follows the system and is not taken from `openspec-dashboard.theme` again
+
+#### Scenario: Tour not shown again after the upgrade
+- **WHEN** the browser holds the former tour key marking the tour as seen
+- **THEN** the tour does not start by itself after the upgrade

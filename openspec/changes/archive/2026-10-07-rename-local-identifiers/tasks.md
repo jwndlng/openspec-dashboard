@@ -28,7 +28,7 @@
 ## 5. Build and release
 
 - [x] 5.1 `scripts/build.ts` reads `SPEC_CONTROL_VERSION`, else `OPENSPEC_DASHBOARD_VERSION`, else `dev`, and defines `SPEC_CONTROL_BUILD_VERSION`; `src/server/version.ts` reads it; `SPEC_CONTROL_VERSION=v1.2.3 bun run build && ./dist/spec-control --version` prints `v1.2.3`, and `test/version.test.ts` passes
-- [~] 5.2 `.github/workflows/release.yml` sets `SPEC_CONTROL_VERSION`; check with `actionlint`
+- [x] 5.2 `.github/workflows/release.yml` sets `SPEC_CONTROL_VERSION`; check with `actionlint`
 
 ## 6. Text that names the home
 

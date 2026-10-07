@@ -53,7 +53,7 @@ be refused with that reason and the overlay SHALL show it.
 
 ### Requirement: The console runs in the console folder, never in a repository
 The console's working directory SHALL be the console folder. By default this SHALL be the folder `console` under the
-dashboard's home directory (`~/.openspec-dashboard/console/`), which the dashboard SHALL create when it does not exist.
+dashboard's home directory (`~/.spec-control/console/`), which the dashboard SHALL create when it does not exist.
 The user MAY set another console folder in the agent sessions settings. A configured console folder SHALL be an
 absolute path to an existing directory, and MUST NOT be a tracked repository's folder or lie inside one; a folder that
 contains tracked repositories is allowed. Saving an invalid console folder SHALL be refused with a reason and leave the
@@ -63,7 +63,7 @@ console, no worktree SHALL be created, no branch made and no git command run.
 
 #### Scenario: Default folder
 - **WHEN** no console folder is configured and the user opens the console for the first time
-- **THEN** `~/.openspec-dashboard/console/` is created and the agent's working directory is that folder
+- **THEN** `~/.spec-control/console/` is created and the agent's working directory is that folder
 
 #### Scenario: Workspace root
 - **WHEN** the user sets the console folder to `/w/acme`, which contains the tracked repositories `/w/acme/demo-ops`
@@ -161,7 +161,7 @@ console runs, the control SHALL show no state.
 
 ### Requirement: Console sessions are session records without a repository
 A console session SHALL be stored, retained, listed and attached like every other session: its record lives under
-`~/.openspec-dashboard/sessions/`, it counts towards the newest 50 ended sessions kept, its terminal is served over the
+`~/.spec-control/sessions/`, it counts towards the newest 50 ended sessions kept, its terminal is served over the
 same WebSocket under the same guard, text sent on the user's behalf follows the same echo rule, and stopping the
 dashboard ends it. It SHALL be marked as a console session and SHALL carry no repository, change, action or branch. It
 MUST NOT be listed or counted in the Open work list, MUST NOT appear on any card or in any change's detail view, and

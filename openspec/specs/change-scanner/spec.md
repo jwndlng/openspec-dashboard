@@ -120,7 +120,7 @@ The scanner SHALL record the repository's current branch and every checkout that
 - **THEN** it is recorded as locked
 
 ### Requirement: Per-repository failure isolation and snapshot caching
-A failure in one repository MUST NOT fail the scan; the repository is reported with `ok: false` and an `error`, retaining the changes from its last successful scan. After each scan the full snapshot SHALL be written to `~/.openspec-dashboard/cache/snapshot.json`, and on startup the cached snapshot SHALL be served until the first scan completes.
+A failure in one repository MUST NOT fail the scan; the repository is reported with `ok: false` and an `error`, retaining the changes from its last successful scan. After each scan the full snapshot SHALL be written to `~/.spec-control/cache/snapshot.json`, and on startup the cached snapshot SHALL be served until the first scan completes.
 
 #### Scenario: One repo path was deleted
 - **WHEN** an enabled repo's path no longer exists

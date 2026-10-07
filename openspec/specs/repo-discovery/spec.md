@@ -7,10 +7,10 @@ Defines how the dashboard persists its configuration and discovers, tracks and n
 
 ### Requirement: Dashboard configuration is persisted in the user's home directory
 
-The dashboard SHALL store its configuration in `~/.openspec-dashboard/config.json` containing `scanRoots`, `ignorePaths`, `repos` (each with `id`, `path`, `name`, `enabled`), `pollIntervalSeconds` and `port`. The dashboard MUST create the directory and a default config on first start and MUST write config atomically (temp file + rename). All stored paths (`scanRoots`, `ignorePaths`, `repos[].path`) MUST be canonical: `~` expanded, symlinks resolved and spelled with their on-disk casing; a path that does not exist is stored normalised as given. When loading a config written by an earlier version, the dashboard MUST default a missing `ignorePaths` to an empty list, canonicalise stored paths, recompute repository ids, and merge repositories that resolve to the same directory — keeping the enabled entry, otherwise the first, together with that entry's name — and MUST NOT reset the config because of such entries.
+The dashboard SHALL store its configuration in `~/.spec-control/config.json` containing `scanRoots`, `ignorePaths`, `repos` (each with `id`, `path`, `name`, `enabled`), `pollIntervalSeconds` and `port`. The dashboard MUST create the directory and a default config on first start and MUST write config atomically (temp file + rename). All stored paths (`scanRoots`, `ignorePaths`, `repos[].path`) MUST be canonical: `~` expanded, symlinks resolved and spelled with their on-disk casing; a path that does not exist is stored normalised as given. When loading a config written by an earlier version, the dashboard MUST default a missing `ignorePaths` to an empty list, canonicalise stored paths, recompute repository ids, and merge repositories that resolve to the same directory — keeping the enabled entry, otherwise the first, together with that entry's name — and MUST NOT reset the config because of such entries.
 
 #### Scenario: First start creates default config
-- **WHEN** the dashboard starts and `~/.openspec-dashboard/config.json` does not exist
+- **WHEN** the dashboard starts and `~/.spec-control/config.json` does not exist
 - **THEN** it creates the directory and a config with empty `scanRoots`, empty `ignorePaths`, empty `repos`, `pollIntervalSeconds: 60` and `port: 4711`
 
 #### Scenario: Config survives restart
@@ -87,7 +87,7 @@ The dashboard SHALL discover repositories by walking each given scan root to a b
 
 #### Scenario: Discovery does not change the config
 - **WHEN** discovery finds repositories that are not in the config
-- **THEN** `~/.openspec-dashboard/config.json` is unchanged
+- **THEN** `~/.spec-control/config.json` is unchanged
 
 #### Scenario: Only the latest discovery result is shown
 - **WHEN** the user edits the roots twice in quick succession and the first discovery finishes after the second
