@@ -269,15 +269,47 @@ The overview SHALL offer two layouts of the same repositories, `Table` and `Tile
 - **THEN** the same "no repository matches" message as in the table is shown
 
 ### Requirement: Tiles have one size and one layout
-In the tiles layout every tile SHALL have the same width and the same height, whatever its repository holds, and SHALL place its parts in the same positions: a header with the repository's monogram in its repository colour, its name and path hint, the last-updated age and the Pull action; one line of badges (shared-config profiles, scan failure, off-default-branch notice, work-in-progress indicator); the open and to-archive totals as large numbers; and the checkout summary. A tile whose repository has no open changes SHALL keep the same size and show "no open changes" where the totals would be. When the badges do not fit their area, that area SHALL scroll within the tile, keeping every badge reachable, instead of growing the tile. Everything the "Overview offers a table and a tiles layout" requirement lists for a tile SHALL still be shown.
+In the tiles layout every tile SHALL have the same width and the same height, whatever its repository holds, and SHALL place its parts in the same positions, in fixed zones that each hold one kind of content, top to bottom:
+
+1. **Identity**: the repository's monogram in its repository colour, its name with the path hint and the rename action, and the last-updated age. The identity zone SHALL hold no other action.
+2. **Status**: one badge area holding, in this order, the scan failure, the off-default-branch notice, the work-in-progress indicator, the shared-config profiles and the labels. When the badges do not fit their area, that area SHALL scroll within the tile, keeping every badge reachable, instead of growing the tile; an empty status area SHALL keep its space.
+3. **Figures**: the open total, the to-archive total and the open pull request figure, side by side as three figures of the same style, each with its label below or beside its number.
+4. **Checkouts**: the checkout summary, on one line.
+5. **Footer**: the tile's actions — **Console**, then **Pull** for a git repository whose last scan succeeded, and **Settings** at the end.
+
+A tile MUST NOT show the number of changes per board stage. A tile whose repository has no open changes SHALL keep the same size and show "no open changes" where the open and to-archive figures would be, keeping its open pull request figure.
+
+**Settings** SHALL be a disclosure that marks whether it is open. Opening it SHALL show the project's own settings and **Disable**, as the "Each managed project carries its own settings on the overview" requirement describes, in a panel laid over the tile without changing the tile's size or moving any other tile. The panel SHALL close when Settings is activated again, when the user presses Escape, when the user clicks outside it, and when another tile's Settings opens; at most one panel SHALL be open at a time. Opening, using or closing the panel MUST NOT open the repository's board. A pending `Scanning…` tile SHALL show no footer actions.
+
+Everything the "Overview offers a table and a tiles layout" requirement lists for a tile SHALL still be shown.
 
 #### Scenario: Uneven repositories
 - **WHEN** `alpha-infra` has five worktrees and three config profiles and `quill-docs` has no worktree and no open change
-- **THEN** both tiles have the same height, `quill-docs` shows "no open changes", and `alpha-infra` reads `5 worktrees · 5 branches active` rather than listing them
+- **THEN** both tiles have the same height, `quill-docs` shows "no open changes" in place of its open and to-archive figures, and `alpha-infra` reads `5 worktrees · 5 branches active` rather than listing them
 
 #### Scenario: Grid reflows
 - **WHEN** the window narrows
 - **THEN** the tiles reflow to fewer per row, keep equal sizes, and the page does not scroll horizontally
+
+#### Scenario: Same places on every tile
+- **WHEN** `alpha-infra` is a git repository with agent sessions enabled and `notes-folder` is a folder without git
+- **THEN** on both tiles the name, the badges, the figures, the checkout summary and the footer sit at the same heights, the identity zone holds no button, and only `alpha-infra`'s footer offers Pull
+
+#### Scenario: Pull requests among the figures
+- **WHEN** the cached list of `alpha-infra` has 3 open pull requests
+- **THEN** its tile shows `3` labelled as open pull requests beside the open and to-archive figures, linking to `/pull-requests?repo=<id of alpha-infra>`
+
+#### Scenario: Opening and closing Settings
+- **WHEN** the user activates Settings on the tile of `demo-ops`
+- **THEN** its settings panel is shown over the tile, Settings is marked open, no tile changes size and the board is not opened; pressing Escape closes the panel
+
+#### Scenario: One panel at a time
+- **WHEN** the settings panel of `demo-ops` is open and the user activates Settings on the tile of `alpha-infra`
+- **THEN** the panel of `demo-ops` closes and that of `alpha-infra` opens
+
+#### Scenario: Disabling from the panel
+- **WHEN** the user opens Settings on the tile of `demo-agent` and activates Disable
+- **THEN** `demo-agent` leaves Managed projects as the "Repositories are enabled, disabled and ignored from the overview" requirement describes, and the board is not opened
 
 ### Requirement: The overview has a header band with its actions
 The projects overview SHALL open with a header band like the boards': the title `Projects`, the numbers of tracked repositories, open changes and changes to archive as labelled counts, and **New project** and **Pull all** in the band's action area. Below it, a bar SHALL hold the repository search, the **Work in progress** toggle, the `Table`/`Tiles` layout toggle as one segmented control and, in the tiles layout, the sort. Their behaviour and URL persistence are unchanged.
@@ -404,6 +436,8 @@ Each managed project on the projects overview, as a table row and as a tile, SHA
 
 While a setting is being saved its control SHALL show that it is working and SHALL not be activatable again; when saving fails the reason SHALL be shown on that project and the setting SHALL show its previous value. Activating any of these controls, or typing in the rename field, MUST NOT open the repository's board. A pending `Scanning…` entry SHALL offer none of these settings.
 
+A row offers these settings inline. A tile SHALL offer them, together with **Disable**, in its **Settings** panel (see "Tiles have one size and one layout"): one labelled line per setting, in the order above, each control behaving exactly as on a row, with **Disable** set apart after them. A setting that is not shown on a row for the project SHALL not be shown in the panel either.
+
 #### Scenario: Switching a project off for agent sessions
 - **WHEN** agent sessions are on and the user switches the toggle on the row of `alpha-infra` to Disabled
 - **THEN** the configuration has agent sessions switched off for `alpha-infra` without any Save, the toggle reads Disabled, the cards of `alpha-infra` show no session starter, and the board is not opened
@@ -467,6 +501,10 @@ While a setting is being saved its control SHALL show that it is working and SHA
 #### Scenario: The update is refused
 - **WHEN** the user switches a project's agent sessions to Disabled and the server refuses the request
 - **THEN** the project shows the reason and the toggle reads Enabled again
+
+#### Scenario: Settings on a tile
+- **WHEN** agent sessions are on, two agent profiles are configured, and the user opens **Settings** on the tile of `demo-ops`, a git repository
+- **THEN** the panel lists Agent sessions, Agent, PR titles, Docs auto-merge and Labels as labelled lines, followed by Disable, and the board is not opened
 
 ### Requirement: Disabled repositories can be forgotten from the overview
 Each entry under Unmanaged projects labelled `disabled` SHALL offer **Forget** beside **Enable**. Forget SHALL take effect when activated, without a separate save and without a confirmation, and SHALL remove the repository from the configuration together with its name and its agent-session settings. Its tooltip SHALL say so, and SHALL say that a repository still under a workspace root is offered again as a discovered repository. After Forget the overview SHALL run discovery again. Forget SHALL NOT be offered on discovered or integratable entries, nor on managed projects. While Forget is in progress its control SHALL show that it is working; when it fails the reason SHALL be shown on that entry and the entry SHALL stay.

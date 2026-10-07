@@ -10,11 +10,11 @@
 
 - [x] 2.1 Add the `<details class="tile-settings">` disclosure whose panel renders one labelled line per applicable setting (Agent sessions, Agent, PR titles, Docs auto-merge, Labels) by calling the existing controls, then Disable after a divider, stopping click propagation; verify that `test/projectSettingsUi.test.ts` and `test/untrackedUi.test.ts` still find and activate every control on a tile without the board opening, adjusting them only to look inside the panel
 - [x] 2.2 Add a test that the panel shows exactly the lines a row shows for the same project (one agent profile → no Agent line; no git → no PR titles or auto-merge line)
-- [~] 2.3 Add the single effect in `Overview` that keeps one panel open, closes it on Escape (returning focus to its summary) and on an outside `pointerdown`; verify by hand in `bun run dev` with two tiles
+- [x] 2.3 Add the single effect in `Overview` that keeps one panel open, closes it on Escape (returning focus to its summary) and on an outside `pointerdown`; verify by hand in `bun run dev` with two tiles
 
 ## 3. Styles
 
-- [~] 3.1 Rewrite the `.tile` grid rows, the figures row, the footer and the `.tile-settings` panel in `src/ui/styles.css` (panel absolutely positioned inside the tile, scrolling; no hover lift while open; footer never wraps, checkout summary truncates); verify in `bun run dev` that tiles of a busy, an idle, a non-git and a failed repository have equal heights and matching zone positions, in light and dark themes, at a narrow window without horizontal scroll
+- [x] 3.1 Rewrite the `.tile` grid rows, the figures row, the footer and the `.tile-settings` panel in `src/ui/styles.css` (panel absolutely positioned inside the tile, scrolling; no hover lift while open; footer never wraps, checkout summary truncates); verify in `bun run dev` that tiles of a busy, an idle, a non-git and a failed repository have equal heights and matching zone positions, in light and dark themes, at a narrow window without horizontal scroll
 
 ## 4. Wrap-up
 
