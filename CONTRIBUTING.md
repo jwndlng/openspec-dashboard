@@ -1,5 +1,8 @@
 # Contributing
 
+This file describes how Spec Control itself is developed, by the maintainer and their agents. If you found a bug or
+have an idea, please [open an issue](https://github.com/jwndlng/spec-control/issues) rather than a pull request.
+
 Work in this repository is driven by [OpenSpec](https://github.com/Fission-AI/OpenSpec) changes under `openspec/changes/`.
 One change = one branch = one pull request.
 
@@ -11,6 +14,8 @@ One change = one branch = one pull request.
    The dashboard matches branches to changes by name, so this repository shows up correctly on its own board.
 3. **Implement** — `/opsx:apply <change-name>`; tick tasks in `tasks.md` as they are done.
    A change that alters behaviour the built-in Help describes updates `src/ui/helpContent.tsx` as well.
+   Feature detail goes into the Help and the spec, not the README: `README.md` changes only when a key feature, the
+   global → project → change structure, the run steps or what the dashboard touches changes.
 4. **Check** — `bun run check` (lint, typecheck, tests) must pass before pushing. CI runs the same command, plus the
    single-binary build, on Linux and macOS.
 5. **Pull request** — the title follows [Conventional Commits](https://www.conventionalcommits.org/) and becomes the
