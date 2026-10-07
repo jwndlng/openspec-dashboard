@@ -1,11 +1,15 @@
 import { mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { stringify as stringifyYaml } from "yaml";
+import { ISSUE_FILE, isIssueNumber, MAX_ISSUE_TITLE } from "../shared/issues.ts";
+import type { SourceIssue } from "../shared/types.ts";
+import { githubRepoFromRemote } from "./gh.ts";
+import { originUrl } from "./git.ts";
 import { CHANGE_NAME } from "./source.ts";
 
 export type CreateChangeResult =
   | { ok: true; name: string; dir: string; wrotePrompt: boolean; staged: boolean }
-  | { ok: false; reason: "invalid-name" | "invalid-prompt" | "invalid-dependencies" | "no-openspec-dir" | "duplicate-active" | "duplicate-archived"; message: string };
+  | { ok: false; reason: "invalid-name" | "invalid-prompt" | "invalid-dependencies" | "invalid-issue" | "not-on-github" | "no-openspec-dir" | "duplicate-active" | "duplicate-archived"; message: string };
 
 const SCHEMA_LINE = /^schema:\s*["']?([A-Za-z0-9._-]+)/m;
 const ARCHIVE_PREFIX = /^(\d{4}-\d{2}-\d{2})-(.+)$/;
@@ -14,6 +18,20 @@ const GIT_TIMEOUT_MS = 10_000;
 /** More than a handful of dependencies is not an order any more; the cap keeps the file and the form honest. */
 export const MAX_DEPENDENCIES = 32;
 const DEPENDS_ON_HEADER = "# Changes that must be implemented and merged before this one is implemented (spec-control).\n";
+
+const ISSUE_HEADER = "# The GitHub issue this change was imported from (spec-control).\n";
+
+/** The validated `issue` of a create request, or the reason it is refused. Absent and `null` mean none. */
+export function validateIssue(issue: unknown): { ok: true; issue?: { number: number; title?: string } } | { ok: false; message: string } {
+  if (issue === undefined || issue === null) return { ok: true };
+  if (typeof issue !== "object" || Array.isArray(issue)) return { ok: false, message: "issue must be an object with a number" };
+  const { number, title } = issue as Record<string, unknown>;
+  if (!isIssueNumber(number)) return { ok: false, message: "issue.number must be a positive integer" };
+  if (title !== undefined && title !== null && (typeof title !== "string" || title.length > MAX_ISSUE_TITLE)) {
+    return { ok: false, message: `issue.title must be a string of at most ${MAX_ISSUE_TITLE} characters` };
+  }
+  return { ok: true, issue: typeof title === "string" && title.trim() !== "" ? { number, title } : { number } };
+}
 
 /** The validated `dependsOn` of a create request, or the reason it is refused. Absent and `null` mean none. */
 export function validateDependsOn(name: string, dependsOn: unknown): { ok: true; names: string[] } | { ok: false; message: string } {
@@ -108,14 +126,16 @@ async function isDirectory(path: string): Promise<boolean> {
 
 /**
  * Creates `openspec/changes/<name>/` in the repository, atomically (exclusive-create so two callers cannot both
- * succeed), and writes `.openspec.yaml` (and `prompt.md` when a non-whitespace prompt is given, and `depends-on.yaml`
- * when dependencies are given — validated before anything is created).
+ * succeed), and writes `.openspec.yaml` (and `prompt.md` when a non-whitespace prompt is given, `depends-on.yaml`
+ * when dependencies are given, and `issue.yaml` when the change is imported from a GitHub issue — all validated before
+ * anything is created). The issue's repository is the one the repository's own `origin` names, read with the
+ * read-only `git config --get`; it is never taken from the request.
  *
  * Writes only inside that new directory and never invokes the `openspec` CLI. A failed write after `mkdir` removes
  * the just-created directory so a half-empty change never remains. Once both writes have succeeded, and only then,
  * the directory is staged with one `git add` (see `stageChangeDir`); a refused create runs no git at all.
  */
-export async function createChange(repoPath: string, name: string, prompt?: string, dependsOn?: unknown): Promise<CreateChangeResult> {
+export async function createChange(repoPath: string, name: string, prompt?: string, dependsOn?: unknown, issue?: unknown): Promise<CreateChangeResult> {
   if (typeof name !== "string" || !CHANGE_NAME.test(name)) {
     return { ok: false, reason: "invalid-name", message: "change name must match ^[A-Za-z0-9._-]+$" };
   }
@@ -124,11 +144,20 @@ export async function createChange(repoPath: string, name: string, prompt?: stri
   }
   const deps = validateDependsOn(name, dependsOn);
   if (!deps.ok) return { ok: false, reason: "invalid-dependencies", message: deps.message };
+  const imported = validateIssue(issue);
+  if (!imported.ok) return { ok: false, reason: "invalid-issue", message: imported.message };
   if (!(await isDirectory(join(repoPath, "openspec", "changes")))) {
     return { ok: false, reason: "no-openspec-dir", message: "repository has no openspec/changes directory" };
   }
   if (await archivedNames(repoPath).then((names) => names.has(name))) {
     return { ok: false, reason: "duplicate-archived", message: `a change named "${name}" is already archived` };
+  }
+
+  let source: SourceIssue | undefined;
+  if (imported.issue) {
+    const github = githubRepoFromRemote(await originUrl(repoPath));
+    if (!github) return { ok: false, reason: "not-on-github", message: "the repository's origin is not on GitHub, so it has no issues to import from" };
+    source = { github, ...imported.issue };
   }
 
   const dir = join(repoPath, "openspec", "changes", name);
@@ -151,6 +180,9 @@ export async function createChange(repoPath: string, name: string, prompt?: stri
     }
     if (deps.names.length) {
       await writeFile(join(dir, "depends-on.yaml"), DEPENDS_ON_HEADER + stringifyYaml({ depends_on: deps.names }), { encoding: "utf8", flag: "wx" });
+    }
+    if (source) {
+      await writeFile(join(dir, ISSUE_FILE), ISSUE_HEADER + stringifyYaml(source), { encoding: "utf8", flag: "wx" });
     }
   } catch (err) {
     await rm(dir, { recursive: true, force: true }).catch(() => {});

@@ -576,6 +576,11 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: 
 /* Whether an open pull request is ready, in its status role — never info, which is a running agent's. The word says it;
    the colour only repeats it. The role colours keep 4.5:1 on the working card's tint in both themes. */
 .card .card-pr-ready { font-family: var(--font-sans); }
+.card .card-issue { display: inline-flex; align-items: center; gap: 3px; padding: 2px 7px; font-size: 11px; font-family: var(--font-mono); color: var(--fg-subtle); border: 1px solid var(--border-light); border-radius: var(--radius-sm); text-decoration: none; white-space: nowrap; }
+.card .card-issue:hover { color: var(--brand-fg); border-color: var(--brand-soft); background: var(--brand-softer); }
+.card .card-issue:focus-visible { outline: 2px solid var(--brand); outline-offset: 1px; }
+.detail-issue { display: inline-flex; align-items: center; gap: 4px; font-family: var(--font-mono); text-decoration: none; }
+.detail-issue:hover { color: var(--brand-fg); }
 .card .card-pr-ready.success { color: var(--success); }
 .card .card-pr-ready.danger { color: var(--danger); }
 .card .card-pr-ready.warning { color: var(--warning); }
@@ -905,6 +910,26 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: 
 .new-change-depends label .hint { margin-left: auto; color: var(--fg-subtle); }
 .new-change-depends > .hint { margin: 0; }
 .new-change-summary { margin: 0; font-size: 13px; color: var(--fg-body); }
+.issue-import-bar { align-items: center; }
+.issue-import-bar input.input { flex: 1; font-family: inherit; }
+.issue-import-bar .btn { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.issue-import .issue-import-status { margin: -8px 0 0; color: var(--fg-subtle); }
+.issue-import-list { display: flex; flex-direction: column; gap: 2px; margin: 0; padding: 6px 0; list-style: none; max-height: min(52vh, 460px); overflow-y: auto; border: 1px solid var(--border-light); border-radius: var(--radius); background: var(--bg-section); }
+.issue-import-list > li { display: flex; flex-direction: column; gap: 6px; padding: 6px 10px; font-size: 13px; border-bottom: 1px solid var(--border-light); }
+.issue-import-list > li:last-child { border-bottom: 0; }
+.issue-import-list > li.empty { color: var(--fg-subtle); border-bottom: 0; }
+.issue-import-list > li.imported .issue-title { color: var(--fg-subtle); }
+.issue-import-list > li.working { background: var(--brand-softer); }
+.issue-import-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 8px; min-width: 0; }
+.issue-import-row input[type="checkbox"] { align-self: center; margin: 0; }
+.issue-import-row .issue-number { color: var(--fg-subtle); font-size: 12px; }
+.issue-import-row .issue-title { flex: 1 1 14em; min-width: 0; color: var(--fg-heading); text-decoration: none; overflow-wrap: anywhere; }
+.issue-import-row .issue-title:hover { color: var(--brand-fg); text-decoration: underline; }
+.issue-import-row .issue-meta { margin-left: auto; color: var(--fg-subtle); white-space: nowrap; }
+.issue-import .issue-imported { margin: 0 0 0 26px; color: var(--fg-subtle); }
+.new-change .issue-import-name { margin-left: 26px; flex-direction: column; }
+.new-change .issue-import-name input.input { padding: 6px 9px; }
+.new-change-results li .mono { overflow-wrap: anywhere; }
 .new-change-results li { display: flex; gap: 10px; align-items: baseline; padding: 3px 10px; font-size: 13px; }
 .new-change-results .repo { font-weight: 600; color: var(--fg-heading); min-width: 0; }
 .new-change-results .outcome { margin-left: auto; text-align: right; font-size: 12px; }

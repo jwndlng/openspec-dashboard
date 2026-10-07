@@ -74,6 +74,12 @@ export const HELP_SECTIONS: readonly HelpSection[] = [
             <strong>New change</strong> on a board creates <code>openspec/changes/&lt;name&gt;/</code>, optionally with a
             prompt, and stages it. Nothing is committed.
           </li>
+          <li>
+            <strong>Import from issues</strong> on a project's board lists its open GitHub issues; check the ones you want
+            and each becomes a change, named after its title (you can rename it), with the issue's text as its prompt and an{" "}
+            <code>issue.yaml</code> recording where it came from. The card then links to the issue, and an issue already
+            imported is marked so it is not imported twice.
+          </li>
         </ol>
       </>
     ),
@@ -192,8 +198,9 @@ export const HELP_SECTIONS: readonly HelpSection[] = [
         <code>gh</code>), signed in with <code>gh auth login</code>, only when you open a view that shows them or press
         Refresh — and while an open board shows a pull request that is not ready yet: then that board asks again for those
         projects on its own, every minute while checks run, every five minutes while it waits on a draft, a conflict or a
-        failing check, and not at all while the tab is hidden. Nothing is ever changed on GitHub. Without <code>gh</code>{" "}
-        the view says so and everything else works.
+        failing check, and not at all while the tab is hidden. <strong>Import from issues</strong> reads a project's open
+        issues the same way, only when you open it or press its Refresh. Nothing is ever changed on GitHub. Without{" "}
+        <code>gh</code> the view says so and everything else works.
       </p>
     ),
   },
@@ -207,7 +214,7 @@ export const HELP_SECTIONS: readonly HelpSection[] = [
           changes a repository only when you click something:
         </p>
         <ul>
-          <li>Pull, New change, Dismiss, Clean up and applying shared config, each on the repository you chose;</li>
+          <li>Pull, New change, Import from issues, Dismiss, Clean up and applying shared config, each on the repository you chose;</li>
           <li>creating and removing an agent session's worktree.</li>
         </ul>
         <p>

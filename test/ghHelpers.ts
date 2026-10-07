@@ -98,3 +98,17 @@ export function checkRun(status: string, conclusion = ""): Record<string, unknow
 export function statusContext(state: string): Record<string, unknown> {
   return { __typename: "StatusContext", context: "legacy", state };
 }
+
+/** An open issue in the shape `gh issue list --json …` prints, with defaults for everything a test does not set. */
+export function ghIssue(patch: Record<string, unknown> & { number: number }): Record<string, unknown> {
+  return {
+    title: `issue ${patch.number}`,
+    body: `Body of issue ${patch.number}.`,
+    url: `https://github.com/acme/alpha-infra/issues/${patch.number}`,
+    author: { login: "octo" },
+    labels: [],
+    createdAt: "2026-09-01T10:00:00Z",
+    updatedAt: "2026-09-02T10:00:00Z",
+    ...patch,
+  };
+}

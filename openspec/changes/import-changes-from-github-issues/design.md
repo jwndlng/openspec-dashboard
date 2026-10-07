@@ -103,7 +103,8 @@ validation, request sequencing) go into `src/ui/importIssuesState.ts` for tests 
 
 ### Demo
 `demoApi.listIssues` returns invented issues for one sample repository (`alpha-infra`), marks one as already imported
-by giving a sample change a `sourceIssue`, and imports through the demo's existing in-memory create.
+by giving a sample change a `sourceIssue`. Importing goes through the demo's `createChange`, which already refuses
+with "the demo does not persist changes" — so in the demo every row shows that refusal, as the New change form does.
 
 ## Risks / Trade-offs
 

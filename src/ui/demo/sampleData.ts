@@ -8,7 +8,7 @@ import { DEFAULT_SHORTCUTS } from "../../shared/agentDefaults.ts";
 import { deriveStage } from "../../shared/columns.ts";
 import { resolveDependencies } from "../../shared/dependencies.ts";
 import { detectLabels } from "../../shared/labels.ts";
-import type { ActivityEvent, AgentProfile, ArtifactStatus, ChangeSnapshot, CheckoutStatus, Config, EnvironmentCheck, EnvironmentReport, IntegratableRepo, PullRequest, PullRequestsResponse, RepoConfig, RepoPullRequests, RepoSnapshot, SharedProfile, Shortcut, Snapshot, Worktree } from "../../shared/types.ts";
+import type { ActivityEvent, AgentProfile, ArtifactStatus, ChangeSnapshot, CheckoutStatus, Config, EnvironmentCheck, EnvironmentReport, GithubIssue, IntegratableRepo, PullRequest, PullRequestsResponse, RepoConfig, RepoIssues, RepoPullRequests, RepoSnapshot, SharedProfile, Shortcut, Snapshot, Worktree } from "../../shared/types.ts";
 import { summarizeWorkInProgress } from "../../shared/workInProgress.ts";
 
 /** Appears in the demo bundle only; test/demoBundle.test.ts uses it to tell the two bundles apart. */
@@ -50,6 +50,8 @@ interface SampleChange {
   onMain?: string;
   /** The changes of the same repository it declares in `depends-on.yaml`. */
   dependsOn?: string[];
+  /** The sample GitHub issue (of `acme/<repository>`) it was imported from, as `issue.yaml` would record it. */
+  issue?: { number: number; title: string };
   warnings?: string[];
 }
 
@@ -197,7 +199,7 @@ const REPOS: SampleRepo[] = [
       { name: "paginate-list-endpoints", tasks: [3, 22], age: 2 },
       { name: "migrate-to-postgres-16", tasks: [0, 31], age: 5 },
       { name: "structured-error-codes", written: "specs", age: 1, branch: "feat/structured-error-codes" },
-      { name: "idempotency-keys", written: "proposal", age: 9 },
+      { name: "idempotency-keys", written: "proposal", age: 9, issue: { number: 214, title: "Support idempotency keys on POST endpoints" } },
       { name: "deprecate-v1-auth", tasks: [12, 12], age: 3, branch: "chore/deprecate-v1-auth" },
       // Code-complete, two checks only a person can make: `Done`, sub-state `validate`.
       { name: "verify-rate-limit-headers", tasks: [11, 13], awaiting: 2, age: 0.5 },
@@ -405,6 +407,7 @@ export function buildSample(now: number): Sample {
         warnings: c.warnings,
         // Provisional, as the scanner records it; resolved against the whole repository below.
         ...(c.dependsOn ? { dependsOn: c.dependsOn.map((name) => ({ name, state: "waiting" as const })) } : {}),
+        ...(c.issue ? { sourceIssue: { github: `acme/${r.name}`, ...c.issue } } : {}),
         ...deriveStage(input),
       };
     });
@@ -631,4 +634,35 @@ export function buildPullRequests(snapshot: Snapshot, now: number, fetchedAt: nu
     return { repoId: repo.id, github: `acme/${repo.name}`, status: "ok", fetchedAt: new Date(fetchedAt).toISOString(), truncated: { open: false, closed: false }, pullRequests };
   });
   return { viewer: DEMO_VIEWER, repos };
+}
+
+/** Open issues per sample repository, newest first; `age` in hours. Invented, like everything else here. */
+const SAMPLE_ISSUES: Record<string, { number: number; title: string; body: string; author: string; labels: string[]; age: number }[]> = {
+  "atlas-api": [
+    { number: 231, title: "Rate limit responses lack a Retry-After header", body: "Clients back off blindly when they get a 429.\n\nExpected: a `Retry-After` header with the seconds until the window resets.", author: "demo-rae", labels: ["bug", "api"], age: 5 },
+    { number: 228, title: "Timeouts on the export endpoint for large accounts", body: "Exports over ~50k rows time out after 30 s. Stream the response or move it to a background job.", author: "demo-kit", labels: ["bug", "performance"], age: 30 },
+    { number: 220, title: "Document pagination cursors in the API reference", body: "The reference shows `page` and `per_page`, but list endpoints return cursors now.", author: "demo-sam", labels: ["docs"], age: 80 },
+    { number: 214, title: "Support idempotency keys on POST endpoints", body: "Retries after a network error create duplicate orders. Accept an `Idempotency-Key` header.", author: "demo-rae", labels: ["enhancement", "api"], age: 260 },
+  ],
+  "harbor-web": [
+    { number: 77, title: "Settings page forgets the selected tab on reload", body: "Open Settings, pick Notifications, reload: it is back on General.", author: "demo-kit", labels: ["bug", "ui"], age: 12 },
+    { number: 74, title: "Add a compact density option for tables", body: "Power users want more rows on screen.", author: "demo-sam", labels: ["enhancement"], age: 140 },
+  ],
+};
+
+/** The demo's answer to listing a repository's issues: made up, and nothing leaves the page. */
+export function buildIssues(snapshot: Snapshot, repoId: string, now: number): RepoIssues {
+  const repo = snapshot.repos.find((r) => r.id === repoId);
+  const sample = repo ? SAMPLE_ISSUES[repo.name] : undefined;
+  if (!repo || !sample) return { repoId, status: "unavailable", reason: "not on GitHub", issues: [] };
+  const issues: GithubIssue[] = sample.map((issue) => ({
+    number: issue.number,
+    title: issue.title,
+    body: issue.body,
+    url: `https://github.com/acme/${repo.name}/issues/${issue.number}`,
+    author: issue.author,
+    labels: issue.labels,
+    createdAt: new Date(now - issue.age * HOUR).toISOString(),
+  }));
+  return { repoId, github: `acme/${repo.name}`, status: "ok", fetchedAt: new Date(now).toISOString(), truncated: false, issues };
 }

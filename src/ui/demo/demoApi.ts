@@ -8,7 +8,7 @@ import { ApiError, type Api, labelLists } from "../api.ts";
 import { demoApply, demoPreview, newCleanupState, remainingWorktrees } from "./demoCleanup.ts";
 import { createDemoSessions } from "./demoSessions.ts";
 import { sampleArtifactFiles } from "./sampleArtifacts.ts";
-import { buildActivity, buildPullRequests, buildSample, DEMO_CARRIED, demoEnvironment, DEMO_PROFILES, DEMO_ROOT } from "./sampleData.ts";
+import { buildActivity, buildIssues, buildPullRequests, buildSample, DEMO_CARRIED, demoEnvironment, DEMO_PROFILES, DEMO_ROOT } from "./sampleData.ts";
 import type { Clock } from "./transcripts.ts";
 
 
@@ -463,6 +463,12 @@ export function createDemoApi({ now = Date.now, latencyMs = 150, clock }: DemoAp
       generatedAt = new Date(now()).toISOString();
       return reply({ started: true });
     },
+    // Listing issues in the demo starts nothing: the sample issues are made up.
+    listIssues: (repoId) =>
+      attempt(() => {
+        if (!snapshot().repos.some((r) => r.id === repoId)) throw new ApiError(404, "unknown or disabled repository");
+        return buildIssues(sample.snapshot, repoId, now());
+      }),
     // The demo does not write to disk: creating a change would need a place for it to persist, which the demo has not.
     createChange: () => new Promise((_, reject) => setTimeout(() => reject(new ApiError(503, "the demo does not persist changes")), latencyMs)),
     sharedConfig: () => reply({ profiles }),

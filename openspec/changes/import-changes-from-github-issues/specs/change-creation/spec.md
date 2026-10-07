@@ -85,7 +85,7 @@ After `.openspec.yaml` and any `prompt.md`, `depends-on.yaml` and `issue.yaml` h
 
 That invocation is the only git command creating a change may run and the only write the dashboard makes outside the new directory. Creating a change MUST NOT commit, push, stash, reset, switch a branch, create or delete a ref, contact a remote or run a repository hook, and MUST NOT invoke the `openspec` CLI or any other external command. Reading the `origin` remote to learn the GitHub repository for `issue.yaml` SHALL use only the read-only `git config --get`, and SHALL happen before anything is written.
 
-Staging is best-effort: the change already exists on disk, so if git is unavailable, the repository is not a git repository, its index is locked, git exits non-zero or the invocation times out, the dashboard SHALL leave the change in place and still answer `201`, reporting `staged` as false. Nothing about the change's validity, its column or its appearance on the board depends on whether it was staged. Git MUST NOT be invoked at all for a create that is refused.
+Staging is best-effort: the change already exists on disk, so if git is unavailable, the repository is not a git repository, its index is locked, git exits non-zero or the invocation times out, the dashboard SHALL leave the change in place and still answer `201`, reporting `staged` as false. Nothing about the change's validity, its column or its appearance on the board depends on whether it was staged. Git MUST NOT be invoked at all for a create that is refused, except the read-only `git config --get remote.origin.url` of a create that carries an issue.
 
 #### Scenario: The new change is tracked
 - **WHEN** a change `add-audit-trail` is created in a git repository
@@ -109,7 +109,7 @@ Staging is best-effort: the change already exists on disk, so if git is unavaila
 
 #### Scenario: A refused create runs no git
 - **WHEN** `POST /api/repos/<id>/changes` is refused for any reason
-- **THEN** no git command is run for that repository and its index is byte-for-byte unchanged
+- **THEN** no git command is run for that repository — apart from reading `remote.origin.url` for a create that carries an issue — and its index is byte-for-byte unchanged
 
 #### Scenario: Dependencies are staged with the change
 - **WHEN** a change is created in a git repository with dependencies

@@ -2,6 +2,7 @@ import { join, sep } from "node:path";
 import { parse as parseYaml } from "yaml";
 import { resolveDependencies } from "../shared/dependencies.ts";
 import { deriveStage, isPlanned } from "../shared/columns.ts";
+import { ISSUE_FILE, toSourceIssue } from "../shared/issues.ts";
 import { detectLabels } from "../shared/labels.ts";
 import type { ChangeSnapshot, Config, DetectedLabel, RepoConfig, RepoSnapshot, SharedConfig, Snapshot, Worktree } from "../shared/types.ts";
 import { summarizeWorkInProgress } from "../shared/workInProgress.ts";
@@ -55,6 +56,18 @@ export function parseDependsOn(text: string): { names: string[]; unreadable: boo
     else if (!names.includes(name)) names.push(name);
   }
   return { names, unreadable: false, warnings };
+}
+
+/** Bound on `issue.yaml`, which holds three short values. */
+export const ISSUE_LIMIT_BYTES = 16 * 1024;
+
+/** A change's `issue.yaml`, validated; `undefined` for a file that is not YAML or not a well-formed source issue. */
+export function parseIssueFile(text: string): ChangeSnapshot["sourceIssue"] {
+  try {
+    return toSourceIssue(parseYaml(text));
+  } catch {
+    return undefined;
+  }
 }
 
 interface Marker {
@@ -207,6 +220,19 @@ async function scanChange(ctx: RepoContext, entry: ChangeDirEntry, withGit: bool
       if (parsed.names.length) dependsOn = parsed.names.map((name) => ({ name, state: "waiting" }));
     }
   }
+  // `issue.yaml` records the GitHub issue the change was imported from: display only, read for archived changes too so
+  // an issue stays marked as imported. Anything malformed simply leaves the change without a source issue.
+  let sourceIssue: ChangeSnapshot["sourceIssue"];
+  const issuePath = join(entry.dir, ISSUE_FILE);
+  const issueInfo = await ctx.source.readFileInfo(issuePath);
+  if (issueInfo) {
+    // Only a regular file in the change directory itself: a symbolic link resolves elsewhere and is ignored.
+    const dirReal = (await ctx.source.readFileInfo(entry.dir))?.realPath;
+    const inPlace = issueInfo.isFile && dirReal !== undefined && issueInfo.realPath === join(dirReal, ISSUE_FILE);
+    const text = inPlace && issueInfo.size <= ISSUE_LIMIT_BYTES ? await ctx.source.readText(issuePath) : undefined;
+    sourceIssue = text === undefined ? undefined : parseIssueFile(text);
+    if (!sourceIssue) warnings.push(`${ISSUE_FILE} could not be read as a GitHub issue reference and is ignored`);
+  }
   if (tasks && tasks.total === 0 && isPlanned(artifacts)) {
     warnings.push("tasks file has no tasks");
   }
@@ -245,6 +271,7 @@ async function scanChange(ctx: RepoContext, entry: ChangeDirEntry, withGit: bool
     prompt,
     ...(dependsOn ? { dependsOn } : {}),
     ...(dependsOnUnreadable ? { blocked: true } : {}),
+    ...(sourceIssue ? { sourceIssue } : {}),
     warnings: warnings.length ? warnings : undefined,
   };
 }
