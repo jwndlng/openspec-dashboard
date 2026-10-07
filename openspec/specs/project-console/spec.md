@@ -225,7 +225,7 @@ runs, the control SHALL show no state, only its label.
 
 ### Requirement: Project console sessions are session records outside change work
 A project console session SHALL be stored, retained, listed and attached like every other session. Its record lives
-under `~/.openspec-dashboard/sessions/`. It counts towards the newest 50 ended sessions kept. Its terminal is served over
+under `~/.spec-control/sessions/`. It counts towards the newest 50 ended sessions kept. Its terminal is served over
 the same WebSocket under the same guard, text sent on the user's behalf follows the same echo rule, and stopping the
 dashboard ends it. It SHALL be marked as a project console session. It SHALL carry the project's repository id and
 folder, and no change, action or branch. It MUST NOT be listed or counted in Open work, MUST NOT appear on any card or in

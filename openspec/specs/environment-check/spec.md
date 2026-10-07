@@ -42,7 +42,10 @@ The report SHALL contain these checks and no others:
   distinguish "not installed" from "no credentials found", and SHALL say that it looked for credentials rather than
   claim there are none.
 - **Dashboard home** (`dashboard-home`): whether the dashboard's home directory exists or can be created and whether a
-  file can be written in it.
+  file can be written in it. While the home migration of the `dashboard-api` capability has steps left to retry, could
+  not move the former home `~/.openspec-dashboard/`, or found it left as a directory next to `~/.spec-control/`, a
+  writable home SHALL be reported as `warning`, naming what is left and why, with a remedy; otherwise it SHALL say
+  nothing about the former home.
 
 #### Scenario: git is found
 - **WHEN** `git` is on the PATH
@@ -71,6 +74,14 @@ The report SHALL contain these checks and no others:
 #### Scenario: Home directory not writable
 - **WHEN** the dashboard's home directory cannot be written to
 - **THEN** the `dashboard-home` check is `problem` and names the directory
+
+#### Scenario: A migration step is still pending
+- **WHEN** the home was moved but one session worktree could not be re-registered because its repository was missing
+- **THEN** the `dashboard-home` check is `warning`, names that worktree and the reason, and says the dashboard retries on the next start
+
+#### Scenario: Former home left next to the new one
+- **WHEN** `~/.openspec-dashboard/` and `~/.spec-control/` both exist as directories
+- **THEN** the `dashboard-home` check is `warning`, names `~/.openspec-dashboard/` as no longer used, and the dashboard uses `~/.spec-control/`
 
 ### Requirement: The report is computed locally, reads nothing from a tracked repository and contacts no network
 Computing the report MUST NOT contact a network, MUST NOT read or write anything inside a tracked repository, and MUST

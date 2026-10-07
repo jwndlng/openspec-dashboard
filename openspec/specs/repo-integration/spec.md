@@ -164,7 +164,7 @@ integratable, nothing is added to the configuration, and the session's outcome â
 Integration SHALL NOT make the dashboard write to a repository. The dashboard MUST NOT run `openspec init`, in process
 or as a subprocess, MUST NOT create, edit or delete any file in the folder, and MUST NOT run a git command for the
 integration session. Everything written in the folder is written by the user's agent under its own permission prompts.
-Adding the repository to `~/.openspec-dashboard/config.json` and starting a scan are the only state the dashboard
+Adding the repository to `~/.spec-control/config.json` and starting a scan are the only state the dashboard
 changes, and both are outside the repository.
 
 #### Scenario: The dashboard writes nothing

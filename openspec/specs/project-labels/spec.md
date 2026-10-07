@@ -10,7 +10,7 @@ the overview to the repositories carrying them.
 ### Requirement: A tracked repository can carry custom labels
 
 Each repository entry in the dashboard configuration SHALL accept an optional list of custom labels, stored in
-`~/.openspec-dashboard/config.json` with that entry and never in the repository. A label SHALL be trimmed, SHALL be 1 to
+`~/.spec-control/config.json` with that entry and never in the repository. A label SHALL be trimmed, SHALL be 1 to
 32 characters long, MUST NOT contain a control character or a comma, and SHALL be unique within its repository
 ignoring case. A repository SHALL carry at most 20 custom labels. A configuration that breaks one of these rules SHALL
 be refused on save with an error naming the repository and the label, and nothing SHALL be saved. A configuration
@@ -235,7 +235,7 @@ than colour.
 The labels dialog of a managed project on the projects overview SHALL offer, for each custom label and each detected
 label it lists, a control that chooses that label's colour from the assignable hues, plus **Auto**, which returns the
 label to its derived colour. A choice SHALL apply to the label's name ignoring case on every repository, SHALL take
-effect at once without a separate save, and SHALL persist in `~/.openspec-dashboard/config.json` in a top-level
+effect at once without a separate save, and SHALL persist in `~/.spec-control/config.json` in a top-level
 `labelColors` map from the label's name in lower case to the chosen hue, never in a repository. **Auto** SHALL remove
 the label's entry, so the map never holds a derived colour. While a choice is being saved the dialog SHALL show that it
 is working; when it fails the dialog SHALL show the reason and the label's colour SHALL stay as it was. Choosing a

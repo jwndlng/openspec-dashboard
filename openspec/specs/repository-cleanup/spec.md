@@ -59,7 +59,7 @@ anything to the repository.
 - **THEN** the worktree is kept with the reason that a session is running in it
 
 #### Scenario: Locked worktree created by the user
-- **WHEN** a clean, merged linked worktree outside `~/.openspec-dashboard/worktrees/` is locked with reason
+- **WHEN** a clean, merged linked worktree outside `~/.spec-control/worktrees/` is locked with reason
   `in use by editor`
 - **THEN** it is kept and the reason names the lock and `in use by editor`
 

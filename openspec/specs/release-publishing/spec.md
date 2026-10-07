@@ -46,11 +46,11 @@ Each push to `main` SHALL create or update a single draft GitHub release whose n
 - **THEN** the draft release is updated, no release is published and no tag is pushed
 
 ### Requirement: Publishing a release attaches verified binaries
-When a release whose tag starts with `v` is published, the release workflow SHALL build the single binary from that tag for `darwin-arm64`, `darwin-x64`, `linux-x64` and `linux-arm64`, each on a runner of that platform, and SHALL attach them to the release as `openspec-dashboard-<tag>-<platform>`, together with a `SHA256SUMS` file covering every attached binary. Each binary SHALL have a GitHub build-provenance attestation. Before anything is attached, each binary MUST run successfully with `--help`, and `--version` MUST print exactly the release tag; if any platform fails to build or verify, nothing SHALL be attached. After attaching, the workflow SHALL append to the release notes a section naming the downloads and showing how to verify a download's checksum and attestation. A draft release, or a release whose tag does not start with `v`, SHALL trigger no build.
+When a release whose tag starts with `v` is published, the release workflow SHALL build the single binary from that tag for `darwin-arm64`, `darwin-x64`, `linux-x64` and `linux-arm64`, each on a runner of that platform, and SHALL attach them to the release as `spec-control-<tag>-<platform>`, together with a `SHA256SUMS` file covering every attached binary. Each binary SHALL have a GitHub build-provenance attestation. Before anything is attached, each binary MUST run successfully with `--help`, and `--version` MUST print exactly the release tag; if any platform fails to build or verify, nothing SHALL be attached. After attaching, the workflow SHALL append to the release notes a section naming the downloads and showing how to verify a download's checksum and attestation. A draft release, or a release whose tag does not start with `v`, SHALL trigger no build.
 
 #### Scenario: Publishing the draft
 - **WHEN** the maintainer publishes the draft release `v0.4.0`
-- **THEN** the release gains `openspec-dashboard-v0.4.0-darwin-arm64`, `-darwin-x64`, `-linux-x64`, `-linux-arm64` and `SHA256SUMS`, each binary has a provenance attestation, and the notes end with download and verification instructions
+- **THEN** the release gains `spec-control-v0.4.0-darwin-arm64`, `-darwin-x64`, `-linux-x64`, `-linux-arm64` and `SHA256SUMS`, each binary has a provenance attestation, and the notes end with download and verification instructions
 
 #### Scenario: Version mismatch blocks the upload
 - **WHEN** a binary built for release `v0.4.0` prints anything other than `v0.4.0` for `--version`
@@ -69,19 +69,23 @@ When a release whose tag starts with `v` is published, the release workflow SHAL
 - **THEN** the release workflow builds nothing and attaches nothing
 
 ### Requirement: The binary reports its version
-`openspec-dashboard --version` SHALL print the version the binary was built as and exit with status 0 without starting the server, opening a browser or reading configuration. A binary built by the release workflow SHALL report its release tag (for example `v0.4.0`); any other build, including `bun run dev` and a local `bun run build`, SHALL report `dev`. The `--help` output SHALL list `--version`.
+`spec-control --version` SHALL print the version the binary was built as and exit with status 0 without starting the server, opening a browser or reading configuration. A binary built by the release workflow SHALL report its release tag (for example `v0.4.0`); any other build, including `bun run dev` and a local `bun run build`, SHALL report `dev`, unless the build was given a version in `SPEC_CONTROL_VERSION` (or, for one release, the former `OPENSPEC_DASHBOARD_VERSION` when `SPEC_CONTROL_VERSION` is unset), which the release workflow sets to the tag. The `--help` output SHALL list `--version`.
 
 #### Scenario: Release binary
 - **WHEN** the binary attached to release `v0.4.0` is run with `--version`
 - **THEN** it prints `v0.4.0` and exits 0
 
 #### Scenario: Local build
-- **WHEN** a contributor runs `bun run build` and then `./dist/openspec-dashboard --version`
+- **WHEN** a contributor runs `bun run build` and then `./dist/spec-control --version`
 - **THEN** it prints `dev` and exits 0
 
 #### Scenario: No side effects
 - **WHEN** `--version` is passed
-- **THEN** no port is bound, no browser is opened and nothing under `~/.openspec-dashboard/` is written
+- **THEN** no port is bound, no browser is opened and nothing under `~/.spec-control/` or `~/.openspec-dashboard/` is written or moved
+
+#### Scenario: Build as a given version
+- **WHEN** a contributor runs `SPEC_CONTROL_VERSION=v1.2.3 bun run build` and then `./dist/spec-control --version`
+- **THEN** it prints `v1.2.3` and exits 0
 
 ### Requirement: Releasing is documented
 `CONTRIBUTING.md` SHALL describe how a release is made — labels come from pull request titles, the draft is updated on every merge to `main`, the maintainer reviews and publishes it, publishing builds and attaches the binaries, and a `major` label forces a major bump — and `README.md` SHALL point to the releases page for downloading a binary, including how to verify it and that the macOS binary is not notarised.
