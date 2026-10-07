@@ -1,4 +1,4 @@
-// CLI entry point: `openspec-dashboard [--port N] [--no-open] [--version]`.
+// CLI entry point: `spec-control [--port N] [--no-open] [--version]`.
 import indexHtmlAsset from "../../dist/ui/index.html" with { type: "text" };
 import { createFetchHandler, createWebSocketHandlers, type AppState, type TerminalSocketData } from "./api.ts";
 import { diffSnapshots, sessionEvent } from "./activity/events.ts";
@@ -27,7 +27,7 @@ function parseArgs(argv: string[]): CliArgs {
     else if (arg === "--port") args.port = Number(argv[++i]);
     else if (arg.startsWith("--port=")) args.port = Number(arg.slice("--port=".length));
     else if (arg === "-h" || arg === "--help") {
-      console.log(`openspec-dashboard ${VERSION}\nusage: openspec-dashboard [--port N] [--no-open] [--version]`);
+      console.log(`spec-control ${VERSION}\nusage: spec-control [--port N] [--no-open] [--version]`);
       process.exit(0);
     } else if (arg === "--version") {
       console.log(VERSION);
@@ -89,7 +89,7 @@ async function main(): Promise<void> {
     websocket: createWebSocketHandlers(state) as unknown as Bun.WebSocketHandler<TerminalSocketData>,
   });
   const url = `http://127.0.0.1:${server.port}`;
-  console.log(`openspec-dashboard listening on ${url}`);
+  console.log(`spec-control listening on ${url}`);
   if (args.open) openBrowser(url);
 
   const shutdown = () => {

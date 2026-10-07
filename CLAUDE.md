@@ -1,6 +1,8 @@
-# openspec-dashboard — agent guide
+# Spec Control — agent guide
 
-Local-first, read-only Kanban across OpenSpec repositories, shipped as a single Bun binary.
+Spec Control (`spec-control`, formerly OpenSpec Dashboard): local-first, read-only Kanban across OpenSpec repositories,
+shipped as a single Bun binary. Releases are `spec-control-<tag>-<platform>`; the demo is at
+`https://blog.wndlng.ch/spec-control/`.
 See `README.md` for what it does and `CONTRIBUTING.md` for the branch, commit and PR conventions.
 
 ## Commands
@@ -9,7 +11,7 @@ See `README.md` for what it does and `CONTRIBUTING.md` for the branch, commit an
 bun install
 bun run dev        # build the UI, serve http://127.0.0.1:4711 from source
 bun run check      # lint + typecheck + tests — run before every push; CI runs exactly this
-bun run build      # dist/openspec-dashboard (UI and fonts embedded); --version prints dev, or $OPENSPEC_DASHBOARD_VERSION
+bun run build      # dist/spec-control (UI and fonts embedded); --version prints dev, or $OPENSPEC_DASHBOARD_VERSION
 bun test test/scanner.test.ts   # a single test file
 ```
 
@@ -21,6 +23,11 @@ bun test test/scanner.test.ts   # a single test file
   their structure: change them together with the tests, and never reformat or lint them.
 - `openspec/` — this project's own specs (`openspec/specs/`) and changes. Requirements live there; read the relevant
   spec before changing behaviour.
+- **The old name stays on purpose in local identifiers.** The home directory `~/.openspec-dashboard/`, the
+  `OPENSPEC_DASHBOARD_HOME` and `OPENSPEC_DASHBOARD_VERSION` variables, the browser storage keys `openspec-dashboard.*`,
+  the `openspec-dashboard:shared` markers in repositories' `openspec/config.yaml` and the `depends-on.yaml` header keep
+  the pre-rename name. Renaming them needs a migration (registered worktree paths, rewritten config files) and is a
+  separate follow-up change; do not rename them piecemeal.
 
 ## Invariants — do not break these
 
@@ -113,7 +120,7 @@ bun test test/scanner.test.ts   # a single test file
 3. **`@fission-ai/openspec` internals only through `src/server/openspecAdapter.ts`.** Do not call the library's
    `resolveSchema`/`loadChangeContext`: they locate files via `import.meta.url`, which does not exist inside the
    compiled binary. The adapter embeds the schema at build time. Anything that works under `bun run` but reads files
-   relative to a module path must also be verified in `dist/openspec-dashboard`.
+   relative to a module path must also be verified in `dist/spec-control`.
 4. **No network at runtime, except the pull action and the pull-request query.** The UI is one HTML file with inlined
    JS, CSS and fonts; do not add CDN links, remote fonts or fetches to other hosts — the links to github.com in the
    Pull requests view, on cards and in the detail header are links the user follows, not requests the page makes. The server reaches a network in exactly

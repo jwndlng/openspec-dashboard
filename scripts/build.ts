@@ -1,5 +1,5 @@
 // Compiles the server (with the UI built beforehand into dist/ui/index.html) into the single binary
-// dist/openspec-dashboard. The version it reports comes from OPENSPEC_DASHBOARD_VERSION, set by the release workflow;
+// dist/spec-control. The version it reports comes from OPENSPEC_DASHBOARD_VERSION, set by the release workflow;
 // every other build is `dev` (src/server/version.ts).
 import { rm } from "node:fs/promises";
 import { join } from "node:path";
@@ -14,7 +14,7 @@ const build = Bun.spawn(
     "--compile",
     "src/server/index.ts",
     "--outfile",
-    "dist/openspec-dashboard",
+    "dist/spec-control",
     "--define",
     `OPENSPEC_DASHBOARD_BUILD_VERSION=${JSON.stringify(version)}`,
   ],

@@ -1,4 +1,4 @@
-// The OpenSpec Dashboard mark, as data: the in-app logo (logo.tsx) and the favicon (scripts/build-ui.ts) both draw it
+// The Spec Control mark, as data: the in-app logo (logo.tsx) and the favicon (scripts/build-ui.ts) both draw it
 // from here, so they never drift apart. A drafting sheet: faint construction lines overshoot a rounded square, ticks
 // mark its corner-radius centres, and a hub sits in the middle. On the square's four edges sit the stations a change
 // passes — an arrow for the proposal at the top, a document for the spec on the right, a triangle for the delta at the

@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "openspec-dashboard",
+      "name": "spec-control",
       "dependencies": {
         "@fission-ai/openspec": "^1.13.0",
         "@xterm/addon-fit": "0.11.0",

@@ -53,7 +53,7 @@ export const HELP_SECTIONS: readonly HelpSection[] = [
     body: () => (
       <>
         <p>
-          The dashboard shows the OpenSpec changes of the repositories on this machine. It finds them under the folders you
+          Spec Control shows the OpenSpec changes of the repositories on this machine. It finds them under the folders you
           tell it about, and reads them; it does not need a server, an account or a network.
         </p>
         <ol>

@@ -1,7 +1,7 @@
 {
-  "name": "openspec-dashboard",
+  "name": "spec-control",
   "version": "0.1.0",
-  "description": "Local-first Kanban across all OpenSpec repositories on this machine",
+  "description": "Mission control for every agent change across your repositories. Never miss a change.",
   "type": "module",
   "private": true,
   "license": "MIT",

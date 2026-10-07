@@ -292,9 +292,9 @@ export function App() {
           <LogoMark size={60} />
           <div class="hero-copy">
             <h1 class="hero-title">
-              OpenSpec <span class="hero-accent">Dashboard</span>
+              Spec <span class="hero-accent">Control</span>
             </h1>
-            <p class="hero-tagline">Central management for OpenSpec across all your repositories — never miss a change.</p>
+            <p class="hero-tagline">Mission control for every agent change across your repositories. Never miss a change.</p>
           </div>
           {/* Status and actions: the hero's top corner. */}
           <div class="topbar-end">

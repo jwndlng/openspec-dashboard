@@ -25,7 +25,7 @@ export interface TourStep {
 
 export const TOUR_STEPS: readonly TourStep[] = [
   {
-    title: "Welcome to OpenSpec Dashboard",
+    title: "Welcome to Spec Control",
     text: "One board for the OpenSpec changes in all your repositories, read straight from your files. This short tour shows where things are — press Esc to skip it at any time.",
   },
   {
