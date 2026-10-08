@@ -1,6 +1,6 @@
 ## 1. Visible name and tagline
 
-- [~] 1.1 Hero: title `Spec Control`, tagline `Mission control for every agent change across your repositories. Never miss a change.` (`src/ui/app.tsx`); verify the hero at 1920px and 720px in both themes
+- [x] 1.1 Hero: title `Spec Control`, tagline `Mission control for every agent change across your repositories. Never miss a change.` (`src/ui/app.tsx`); verify the hero at 1920px and 720px in both themes
 - [x] 1.2 Page titles `Spec Control` and `Spec Control — Demo` (`scripts/build-ui.ts`); tour welcome step `Welcome to Spec Control` (`src/ui/tourState.ts`); product name in Help (`src/ui/helpContent.tsx`) and in comments that name the product (`src/ui/logoMark.ts`)
 - [x] 1.3 Search `src/` and `scripts/` for any other user-visible `OpenSpec Dashboard`, `openspec-dashboard` or "the dashboard" used as the product name in UI copy, and update it; leave local identifiers untouched (home directory, `OPENSPEC_DASHBOARD_*`, storage keys, shared-config markers, `depends-on.yaml` header)
 
@@ -24,7 +24,7 @@
 ## 5. Repository, demo and release
 
 - [x] 5.1 After merge, rename the GitHub repository to `jwndlng/spec-control`, update its description and topics (keep `openspec`); confirm the old git remote, a release download URL and an issue URL redirect
-- [~] 5.2 Confirm `pages.yml` deploys the demo at `https://blog.wndlng.ch/spec-control/`; add `openspec-dashboard/index.html` to the user-site repository redirecting to the new path with the hash preserved; verify `https://blog.wndlng.ch/openspec-dashboard/#/board` lands on the new board
+- [x] 5.2 Confirm `pages.yml` deploys the demo at `https://blog.wndlng.ch/spec-control/`; add `openspec-dashboard/index.html` to the user-site repository redirecting to the new path with the hash preserved; verify `https://blog.wndlng.ch/openspec-dashboard/#/board` lands on the new board
 - [x] 5.3 Publish the next release; verify assets are `spec-control-<tag>-<platform>`, `gh attestation verify` works with `--repo jwndlng/spec-control`, and check whether a pre-rename release still verifies with the new name (drop the README note if it does)
 - [x] 5.4 Write a follow-up OpenSpec change for renaming the local identifiers (home directory with worktree repair, `OPENSPEC_DASHBOARD_*`, storage keys, shared-config markers)
 
