@@ -25,7 +25,7 @@
 
 - [x] 5.1 After merge, rename the GitHub repository to `jwndlng/spec-control`, update its description and topics (keep `openspec`); confirm the old git remote, a release download URL and an issue URL redirect
 - [~] 5.2 Confirm `pages.yml` deploys the demo at `https://blog.wndlng.ch/spec-control/`; add `openspec-dashboard/index.html` to the user-site repository redirecting to the new path with the hash preserved; verify `https://blog.wndlng.ch/openspec-dashboard/#/board` lands on the new board
-- [ ] 5.3 Publish the next release; verify assets are `spec-control-<tag>-<platform>`, `gh attestation verify` works with `--repo jwndlng/spec-control`, and check whether a pre-rename release still verifies with the new name (drop the README note if it does)
+- [x] 5.3 Publish the next release; verify assets are `spec-control-<tag>-<platform>`, `gh attestation verify` works with `--repo jwndlng/spec-control`, and check whether a pre-rename release still verifies with the new name (drop the README note if it does)
 - [x] 5.4 Write a follow-up OpenSpec change for renaming the local identifiers (home directory with worktree repair, `OPENSPEC_DASHBOARD_*`, storage keys, shared-config markers)
 
 ## 6. What's new
