@@ -213,6 +213,36 @@ test("a blocked change is refused Implement, naming what it waits for, and may s
   expect(draft).toMatchObject({ state: "running", action: "draft", change: "add-health-endpoint" });
 });
 
+test("Fast-forward: one session on the change's branch whose prompt drafts, implements and ships; refused when blocked or planned", async () => {
+  const h = track(await harness({ agent: { prompts: { draft: "draft {change}", implement: "implement {change}" } } }));
+  h.config.repos[0] = { ...h.config.repos[0], prTitleConvention: "conventional-commits", agent: { enabled: true, autoMergeDocs: true } };
+  const changes = h.snapshot.repos[0].changes;
+  const drafting = changes.find((c) => !c.archived && availableActions(c).includes("fastForward"))!;
+  const planned = changes.find((c) => !c.archived && c.stage === "ready")!;
+  await expect(h.manager.open({ repoId: h.repoId, change: planned.name, action: "fastForward" })).rejects.toMatchObject({ status: 400 });
+
+  Object.assign(drafting, { blocked: true, dependsOn: [{ name: "add-billing-api", state: "waiting" }] });
+  await expect(h.manager.open({ repoId: h.repoId, change: drafting.name, action: "fastForward" })).rejects.toMatchObject({
+    status: 400,
+    message: "Fast-forward is held back: waits for add-billing-api (waiting)",
+  });
+  expect(h.manager.list()).toEqual([]);
+  expect(existsSync(join(worktreesDir(), h.repoId))).toBe(false); // a refused request creates no worktree
+  Object.assign(drafting, { blocked: false, dependsOn: undefined });
+
+  const s = await h.manager.open({ repoId: h.repoId, change: drafting.name, action: "fastForward" });
+  expect(s).toMatchObject({ state: "running", action: "fastForward", branch: `feat/${drafting.name}`, autoMerge: false });
+  expect(s.worktreePath).toBe(join(worktreesDir(), h.repoId, drafting.name));
+  expect(h.manager.get(s.id)).not.toHaveProperty("autoMergeAskedAt");
+  const view = await watch(h.manager, s.id);
+  await waitFor(() => view.text().includes("fake-agent ready"), "agent banner");
+  const args = view.text().replace(/\r?\n/g, "");
+  expect(args).toContain(`args=["draft ${drafting.name} This change is fast-forwarded`);
+  expect(args).toContain(`implement ${drafting.name} When every task is settled, ship the work without asking me: Ship the work`);
+  expect(args).toContain("Title the pull request as a Conventional Commit");
+  expect(args).not.toContain("auto-merge");
+});
+
 test("a crash is recorded; shutdown ends agents; a restarted dashboard knows nothing is running", async () => {
   const h = track(await harness());
   const s = await h.manager.open({ repoId: h.repoId, change: "upgrade-runtime", action: "implement" });

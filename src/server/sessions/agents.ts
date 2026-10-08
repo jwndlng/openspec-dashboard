@@ -1,5 +1,5 @@
 // Agent profiles (design.md D16): an agent is a command line plus opening prompts. Nothing here knows any vendor.
-import { AUTO_MERGE_DOCS_ARCHIVE_INSTRUCTION, AUTO_MERGE_DOCS_INSTRUCTION, CONVENTIONAL_COMMITS_SHIP_SENTENCE, DEFAULT_INTEGRATE_PROMPT, DEFAULT_RESOLVE_CONFLICTS_PROMPT, DEFAULT_SHIP_PROMPT, type AgentAvailability, type AgentProfile, type Config, type PrTitleConvention, type PromptKey, type RepoConfig, type SessionAction } from "../../shared/types.ts";
+import { AUTO_MERGE_DOCS_ARCHIVE_INSTRUCTION, AUTO_MERGE_DOCS_INSTRUCTION, CONVENTIONAL_COMMITS_SHIP_SENTENCE, DEFAULT_INTEGRATE_PROMPT, DEFAULT_RESOLVE_CONFLICTS_PROMPT, DEFAULT_SHIP_PROMPT, FAST_FORWARD_CONTINUE_SENTENCE, FAST_FORWARD_SHIP_SENTENCE, fastForwardAvailable, type AgentAvailability, type AgentProfile, type Config, type PrTitleConvention, type PromptKey, type RepoConfig, type SessionAction } from "../../shared/types.ts";
 import { AGENT_PRESETS } from "../../shared/agentDefaults.ts";
 import { whichOnPath } from "../paths.ts";
 import { CHANGE_NAME } from "../source.ts";
@@ -41,8 +41,15 @@ function compose(agent: AgentProfile, key: PromptKey, prompt: string): string {
  * The opening prompt for a starter, or undefined when this agent has none (the starter is then not offered). With
  * `autoMerge` (the project opted in and the worktree holds only OpenSpec documents) an Archive prompt ends with the fixed
  * archive auto-merge instruction, after the suffix like Ship's; every other starter ignores it (archive-auto-merge-docs).
+ * `convention` is the project's pull request title convention, which only Fast-forward's Ship part uses.
  */
-export function openingPrompt(agent: AgentProfile, action: SessionAction, change: string, { autoMerge = false }: { autoMerge?: boolean } = {}): string | undefined {
+export function openingPrompt(
+  agent: AgentProfile,
+  action: SessionAction,
+  change: string,
+  { autoMerge = false, convention }: { autoMerge?: boolean; convention?: PrTitleConvention } = {},
+): string | undefined {
+  if (action === "fastForward") return fastForwardPrompt(agent, change, { convention });
   const template = agent.prompts[action];
   // Checked before the suffix: additional instructions are an addition, never a prompt of their own, so they never make
   // a starter available (agent-sessions spec).
@@ -50,6 +57,18 @@ export function openingPrompt(agent: AgentProfile, action: SessionAction, change
   if (!CHANGE_NAME.test(change)) throw new Error("invalid change name");
   const prompt = compose(agent, action, template).replaceAll("{change}", change);
   return autoMerge && action === "archive" ? `${prompt} ${AUTO_MERGE_DOCS_ARCHIVE_INSTRUCTION}` : prompt;
+}
+
+/**
+ * Fast-forward has no prompt of its own: the agent's Draft and Implement prompts, each with its additional
+ * instructions, then Ship's exactly as Ship would send it, joined by two fixed sentences. Never with an auto-merge
+ * instruction — the pull request it asks for is the change's only review. Undefined without both Draft and Implement.
+ */
+export function fastForwardPrompt(agent: AgentProfile, change: string, { convention }: { convention?: PrTitleConvention } = {}): string | undefined {
+  if (!fastForwardAvailable(agent)) return undefined;
+  const draft = openingPrompt(agent, "draft", change) as string;
+  const implement = openingPrompt(agent, "implement", change) as string;
+  return `${draft} ${FAST_FORWARD_CONTINUE_SENTENCE} ${implement} ${FAST_FORWARD_SHIP_SENTENCE} ${shipPrompt(agent, change, { convention })}`;
 }
 
 /**

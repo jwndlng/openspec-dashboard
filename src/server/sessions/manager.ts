@@ -173,7 +173,8 @@ export class SessionManager {
     if (isDismissing(repo.id, change)) throw new SessionError(409, "this change is being dismissed");
     const snapshot = scanned.changes.find((c) => c.name === change && !c.archived);
     if (!snapshot) throw new SessionError(404, "unknown change");
-    const heldBack = action === "implement" ? blockedReason(snapshot) : undefined;
+    // Fast-forward implements too, so a blocked change is refused with the same named reason as Implement.
+    const heldBack = action === "implement" ? blockedReason(snapshot) : action === "fastForward" ? blockedReason(snapshot, "Fast-forward") : undefined;
     if (heldBack) throw new SessionError(400, heldBack);
     if (!availableActions(snapshot).includes(action)) throw new SessionError(400, `"${action}" is not available for this change in its current stage`);
 
@@ -197,7 +198,7 @@ export class SessionManager {
 
     const agent = agentFor(config, repo);
     if (!agent) throw new SessionError(503, "no agent is configured");
-    let prompt = openingPrompt(agent, action, change);
+    let prompt = openingPrompt(agent, action, change, { convention: repo.prTitleConvention });
     if (!prompt) throw new SessionError(400, `${agent.name} has no "${action}" prompt configured`);
     if (!Bun.which(agent.command[0])) throw new SessionError(503, `${agent.name} was not found (${agent.command[0]}); install it or change its command in Settings`);
 
@@ -585,7 +586,7 @@ export class SessionManager {
       .repos.find((r) => r.id === session.repoId)
       ?.changes.find((c) => c.name === session.change && !c.archived);
     if (!change) throw new SessionError(404, "unknown change");
-    const heldBack = action === "implement" ? blockedReason(change) : undefined;
+    const heldBack = action === "implement" ? blockedReason(change) : action === "fastForward" ? blockedReason(change, "Fast-forward") : undefined;
     if (heldBack) throw new SessionError(400, heldBack);
     if (!availableActions(change).includes(action)) throw new SessionError(400, `"${action}" is not available for this change in its current stage`);
     const agent = config.agentSessions.agents.find((a) => a.id === session.agentId);
@@ -593,7 +594,7 @@ export class SessionManager {
     // Archive sent here runs where this session runs — often an Implement worktree with code in it, which the check sees.
     const repo = config.repos.find((r) => r.id === session.repoId);
     const autoMerge = repo !== undefined && (await this.archiveAutoMerge(repo, session, action));
-    const text = openingPrompt(agent, action, session.change, { autoMerge }) as string;
+    const text = openingPrompt(agent, action, session.change, { autoMerge, convention: repo?.prTitleConvention }) as string;
     // The recorded action is what the user asked for, whether or not the agent's terminal echoed the prompt in time.
     session.action = action;
     if (autoMerge) session.autoMergeAskedAt = new Date().toISOString();

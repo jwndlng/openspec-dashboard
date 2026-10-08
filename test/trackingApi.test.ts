@@ -312,6 +312,22 @@ test("more than 200 label colours are refused", async () => {
   state.config = await saveConfig({ ...state.config, labelColors: undefined });
 });
 
+test("the Fast-forward warning is switched off and on at once, and nothing else changes", async () => {
+  const before = await saved();
+  expect(before.agentSessions.confirmFastForward).toBeUndefined();
+  const off = await send("/api/agent-sessions/fast-forward-warning", { show: false });
+  expect(off.status).toBe(200);
+  expect((await off.json()).agentSessions.confirmFastForward).toBe(false);
+  expect(await saved()).toEqual({ ...before, agentSessions: { ...before.agentSessions, confirmFastForward: false } });
+  expect(state.config.agentSessions.confirmFastForward).toBe(false);
+  for (const body of [{ show: "no" }, {}, { show: null }, { show: 0 }]) expect((await send("/api/agent-sessions/fast-forward-warning", body)).status).toBe(400);
+  expect((await saved()).agentSessions.confirmFastForward).toBe(false);
+  expect((await send("/api/agent-sessions/fast-forward-warning", { show: true })).status).toBe(200);
+  expect((await saved()).agentSessions.confirmFastForward).toBe(true);
+  expect(triggered).toBe(0);
+  state.config = await saveConfig({ ...state.config, agentSessions: before.agentSessions });
+});
+
 test("a disabled repository is forgotten and offered by discovery again; an enabled one is refused", async () => {
   expect((await send(`/api/repos/${alphaId()}/forget`, {})).status).toBe(200);
   expect((await saved()).repos).toEqual([]);
@@ -362,6 +378,7 @@ test("the settings routes are refused cross-site and change nothing", async () =
     [`/api/repos/${alphaId()}/auto-fetch`, { minutes: 15 }],
     [`/api/repos/${alphaId()}/forget`, {}],
     ["/api/labels/color", { label: "client", hue: 290 }],
+    ["/api/agent-sessions/fast-forward-warning", { show: false }],
   ];
   for (const [path, body] of routes) {
     expect((await send(path, body, { origin: "https://example.com" })).status).toBe(403);

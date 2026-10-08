@@ -262,6 +262,15 @@ async function postLabelColor(state: AppState, req: Request): Promise<Response> 
   return json(saved);
 }
 
+/** "Don't show this warning again" in the Fast-forward dialog, and its way back: one setting, saved at once. */
+async function postFastForwardWarning(state: AppState, req: Request): Promise<Response> {
+  const { show } = await readJson(req);
+  if (typeof show !== "boolean") return json({ error: "show must be true or false" }, 400);
+  const { previous, saved } = await updateConfig(state, (current) => ({ ...current, agentSessions: { ...current.agentSessions, confirmFastForward: show } }));
+  afterConfigChange(state, previous);
+  return json(saved);
+}
+
 /** Forget on the overview: only a repository the user disabled, so a stale tab cannot drop one still managed. */
 async function postRepoForget(state: AppState, id: string): Promise<Response> {
   const { previous, saved } = await updateConfig(state, (current) => {
@@ -995,6 +1004,7 @@ export function createFetchHandler({ state, indexHtml }: AppOptions): (req: Requ
       const enabledMatch = /^\/api\/repos\/([^/]+)\/enabled$/.exec(pathname);
       if (req.method === "POST" && enabledMatch) return tracking(() => postRepoEnabled(state, req, decodeURIComponent(enabledMatch[1])));
       if (req.method === "POST" && pathname === "/api/labels/color") return tracking(() => postLabelColor(state, req));
+      if (req.method === "POST" && pathname === "/api/agent-sessions/fast-forward-warning") return tracking(() => postFastForwardWarning(state, req));
       const repoSetting = /^\/api\/repos\/([^/]+)\/(name|agent|labels|pr-title-convention|auto-fetch|forget)$/.exec(pathname);
       if (req.method === "POST" && repoSetting) {
         const id = decodeURIComponent(repoSetting[1]);

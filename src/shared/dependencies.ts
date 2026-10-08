@@ -94,12 +94,15 @@ export function resolveDependencies(changes: ChangeSnapshot[]): ChangeSnapshot[]
   });
 }
 
-/** Why **Implement** is withheld from a blocked change, naming every unmet dependency; undefined when it is not. */
-export function blockedReason(change: Pick<ChangeSnapshot, "blocked" | "dependsOn">): string | undefined {
+/**
+ * Why **Implement** — or **Fast-forward**, which implements too — is withheld from a blocked change, naming every
+ * unmet dependency; undefined when it is not.
+ */
+export function blockedReason(change: Pick<ChangeSnapshot, "blocked" | "dependsOn">, starter: "Implement" | "Fast-forward" = "Implement"): string | undefined {
   if (!change.blocked) return undefined;
   const unmet = (change.dependsOn ?? []).filter((d) => d.state !== "met");
-  if (unmet.length === 0) return "Implement is held back: depends-on.yaml could not be read";
-  return `Implement is held back: waits for ${unmet.map((d) => `${d.name} (${d.state})`).join(", ")}`;
+  if (unmet.length === 0) return `${starter} is held back: depends-on.yaml could not be read`;
+  return `${starter} is held back: waits for ${unmet.map((d) => `${d.name} (${d.state})`).join(", ")}`;
 }
 
 /**

@@ -15,6 +15,13 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    id: "2026-10-08-fast-forward",
+    date: "2026-10-08",
+    title: "Fast-forward a small change to a pull request",
+    summary:
+      "A card that is not planned yet now offers **FF** beside **Draft artifacts**: the agent writes the artifacts, implements the change and opens a pull request in one go, and the pull request is the only review. It asks you to confirm first — tick **Don't show this warning again** to skip that, and turn it back on under **Settings › Agent sessions**.",
+  },
+  {
     id: "2026-10-08-auto-fetch",
     date: "2026-10-08",
     title: "Projects can fetch on their own",

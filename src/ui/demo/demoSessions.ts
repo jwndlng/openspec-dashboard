@@ -14,6 +14,10 @@ const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
 const DAY = 24 * HOUR;
 
+
+/** Fast-forward has no recording of its own: the demo plays its first phase, the draft. */
+const transcriptOf = (action: SessionAction): TranscriptName => (action === "fastForward" ? "draft" : action);
+
 /** Same names the dashboard uses for a session's worktree and branch. */
 const worktreeName = (action: SessionAction, change: string) => (action === "archive" ? `archive-${change}` : change);
 export const sessionWorktreePath = (repoId: string, name: string) => `${DEMO_ROOT.replace(/\/[^/]+$/, "")}/.spec-control/worktrees/${repoId}/${name}`;
@@ -296,7 +300,7 @@ export function createDemoSessions({ now, getConfig, getSnapshot, integratable, 
       if (!scanned?.ok) throw new ApiError(409, "the repository's last scan failed");
       const snapshot = scanned.changes.find((c) => c.name === change && !c.archived);
       if (!snapshot) throw new ApiError(404, "unknown change");
-      const heldBack = action === "implement" ? blockedReason(snapshot) : undefined;
+      const heldBack = action === "implement" ? blockedReason(snapshot) : action === "fastForward" ? blockedReason(snapshot, "Fast-forward") : undefined;
       if (heldBack) throw new ApiError(400, heldBack);
       if (!availableActions(snapshot).includes(action)) throw new ApiError(400, `"${action}" is not available for this change in its current stage`);
       const existing = sessions.find((s) => s.session.repoId === repoId && s.session.change === change && s.session.state === "running");
@@ -306,7 +310,7 @@ export function createDemoSessions({ now, getConfig, getSnapshot, integratable, 
       const at = now();
       const created: DemoSession = {
         name: worktreeName(action, change),
-        transcript: action,
+        transcript: transcriptOf(action),
         startedAtMs: at,
         position: { index: 0, waiting: false },
         work: { state: "clean", base: "origin/main" },
@@ -466,7 +470,7 @@ export function createDemoSessions({ now, getConfig, getSnapshot, integratable, 
       // action, so the recording has no way to show two consoles for one change either.
       // Sent with one activation, as in the dashboard: the recording's agent takes the prompt up straight away.
       s.session.action = action;
-      run(s, action);
+      run(s, transcriptOf(action));
       return { ...s.session, submitted: true, autoMerge: false };
     },
 

@@ -128,13 +128,13 @@ test("each prompt's additional instructions follow that prompt before the next p
   expect(labels).toEqual(["Name", "Command", "Resume command", "Draft artifacts", "Implement", "Validate", "Archive", "Ship", "Resolve conflicts", "Integrate"]);
 });
 
-test("the Agent sessions section is grouped as Agents, Shortcuts, Console, Projects and lists no worktree", async () => {
+test("the Agent sessions section is grouped as Agents, Shortcuts, Fast-forward, Console, Projects and lists no worktree", async () => {
   expect(textOf(byTag(ShortcutEditor({ shortcuts: [], onChange: () => {} }), "h3")[0])).toBe("Shortcuts");
   expect(textOf(byTag(PerProjectNote(), "h3")[0])).toBe("Projects");
   // AgentSettings uses hooks, so its order is read from its source.
   const source = await Bun.file(new URL("../src/ui/agentSettings.tsx", import.meta.url)).text();
   const body = source.slice(source.indexOf("export function AgentSettings"));
-  const at = ["<h2>Agent sessions</h2>", "<h3>Agents</h3>", "<ShortcutEditor", "<h3>Console</h3>", "<PerProjectNote"].map((s) => body.indexOf(s));
+  const at = ["<h2>Agent sessions</h2>", "<h3>Agents</h3>", "<ShortcutEditor", "<h3>Fast-forward</h3>", "<h3>Console</h3>", "<PerProjectNote"].map((s) => body.indexOf(s));
   expect(at.every((i) => i >= 0)).toBe(true);
   expect([...at].sort((a, b) => a - b)).toEqual(at);
   expect(source).not.toContain("Session worktrees");
@@ -193,4 +193,14 @@ test("before availability has loaded every preset is offered, unmarked, in prese
     ["+ Antigravity preset", ""],
   ]);
   expect(picker(AGENT_PRESETS.map((p) => structuredClone(p.profile))).rows).toEqual([]);
+});
+
+test("Fast-forward has no prompt field of its own, and its warning is a setting that reads ticked until switched off", async () => {
+  const tree = AgentEditor({ agent: profile({ prompts: { draft: "d {change}", implement: "i {change}" } }), isDefault: true, canRemove: false, open: true, onToggle: () => {}, onChange: () => {}, onRemove: () => {}, onDefault: () => {} });
+  const ids = elements(tree).map((el) => String(el.props.id ?? ""));
+  expect(ids.some((id) => id.includes("fastForward"))).toBe(false);
+  expect(textOf(tree)).toContain("Fast-forward has no prompt of its own");
+  const source = await Bun.file(new URL("../src/ui/agentSettings.tsx", import.meta.url)).text();
+  expect(source).toContain("checked={settings.confirmFastForward !== false}");
+  expect(source).toContain("Warn before fast-forwarding");
 });

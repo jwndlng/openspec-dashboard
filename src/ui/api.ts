@@ -75,6 +75,8 @@ export interface Api {
   setRepoAutoFetch(repoId: string, minutes: AutoFetchMinutes | null): Promise<Config>;
   /** A label's colour from a labels dialog, saved at once for every repository; `hue: null` is Auto. `ApiError` 400 when refused. */
   setLabelColor(label: string, hue: number | null): Promise<Config>;
+  /** Whether Fast-forward asks for confirmation first, saved at once. */
+  setFastForwardWarning(show: boolean): Promise<Config>;
   /** Forget on a disabled entry, saved at once. `ApiError` 409 for an enabled repository. */
   forgetRepo(repoId: string): Promise<Config>;
   /** Read-only; pass the draft roots and ignore paths to discover against unsaved edits. */
@@ -228,6 +230,7 @@ export const httpApi: Api = {
     call<Config>(`/api/repos/${encodeURIComponent(repoId)}/pr-title-convention`, { method: "POST", body: JSON.stringify({ convention }) }),
   setRepoAutoFetch: (repoId, minutes) => call<Config>(`/api/repos/${encodeURIComponent(repoId)}/auto-fetch`, { method: "POST", body: JSON.stringify({ minutes }) }),
   setLabelColor: (label, hue) => call<Config>("/api/labels/color", { method: "POST", body: JSON.stringify({ label, hue }) }),
+  setFastForwardWarning: (show) => call<Config>("/api/agent-sessions/fast-forward-warning", { method: "POST", body: JSON.stringify({ show }) }),
   forgetRepo: (repoId) => call<Config>(`/api/repos/${encodeURIComponent(repoId)}/forget`, { method: "POST", body: "{}" }),
   discover: (scanRoots, ignorePaths) =>
     call<DiscoverResult>("/api/discover", { method: "POST", body: scanRoots || ignorePaths ? JSON.stringify({ scanRoots, ignorePaths }) : undefined }),
@@ -314,6 +317,7 @@ export const api: Api = {
   setRepoPrTitleConvention: (...args) => current.setRepoPrTitleConvention(...args),
   setRepoAutoFetch: (...args) => current.setRepoAutoFetch(...args),
   setLabelColor: (...args) => current.setLabelColor(...args),
+  setFastForwardWarning: (...args) => current.setFastForwardWarning(...args),
   forgetRepo: (repoId) => current.forgetRepo(repoId),
   discover: (scanRoots, ignorePaths) => current.discover(scanRoots, ignorePaths),
   scan: () => current.scan(),

@@ -139,6 +139,8 @@ const agentSessionsSchema = z
     // Absent means a config saved before shortcuts were configurable: it carries the shipped ones. An empty list is the
     // user's own decision and is kept — the dashboard never adds a shortcut back.
     shortcuts: z.array(shortcutSchema).default(() => defaultAgentSessions().shortcuts),
+    // Absent means Fast-forward asks first; only the user's "don't show this warning again" or Settings makes it false.
+    confirmFastForward: z.boolean().optional(),
   })
   .default({})
   .superRefine((cfg, ctx) => {

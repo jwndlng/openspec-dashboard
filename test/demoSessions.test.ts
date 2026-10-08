@@ -154,6 +154,18 @@ test("the waiting session shows its question and goes on when answered; reopenin
   expect(again.text()).toContain("1.1 ticked");
 });
 
+test("Fast-forward in the demo: offered like the dashboard, plays the draft, and its warning can be switched off", async () => {
+  const { api } = demo();
+  expect(await refusal(api.openSession("a71c02e9", "migrate-to-postgres-16", "fastForward"))).toBe('400: "fastForward" is not available for this change in its current stage');
+  const started = await api.openSession("a71c02e9", "idempotency-keys", "fastForward");
+  expect(started).toMatchObject({ state: "running", action: "fastForward", branch: "feat/idempotency-keys", autoMerge: false });
+  expect((await api.config()).agentSessions.confirmFastForward).toBeUndefined();
+  expect((await api.setFastForwardWarning(false)).agentSessions.confirmFastForward).toBe(false);
+  expect((await api.config()).agentSessions.confirmFastForward).toBe(false);
+  await expect(api.setFastForwardWarning("no" as never)).rejects.toMatchObject({ status: 400 });
+  expect((await demo().api.config()).agentSessions.confirmFastForward).toBeUndefined(); // a reload starts over
+});
+
 test("starting a session: validated like the dashboard, one per change, in memory only", async () => {
   const { api } = demo();
   expect(await refusal(api.openSession("a71c02e9", "idempotency-keys", "implement"))).toBe('400: "implement" is not available for this change in its current stage');

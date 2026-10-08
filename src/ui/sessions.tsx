@@ -4,6 +4,7 @@ import { createContext, type ComponentChildren } from "preact";
 import { useCallback, useContext, useEffect, useMemo, useState } from "preact/hooks";
 import { changeSessions, isConsole, isIntegration, isProjectConsole, type AgentAvailability, type ChangeSession, type ChangeSnapshot, type Config, type ConsoleSession, type IntegrationSession, type ProjectConsoleSession, type SessionAction, type SessionWorktree, type Snapshot } from "../shared/types.ts";
 import { api } from "./api.ts";
+import { FastForwardDialog, type FastForwardChoice } from "./fastForwardDialog.tsx";
 import { cdCommand, relTime } from "./format.ts";
 import { assignRepoHues, repoTint } from "./repoGroups.ts";
 import { afterStart, agentForRepo, type AutoMergeReport, cardSessionControls, conflictBadge, openWork, type SessionBadge, nextStepFor, sessionBadge, sessionsEnabledFor, startShowsConsole, type StarterPlace, workBadge, worktreeForChange } from "./sessionState.ts";
@@ -54,7 +55,8 @@ interface SessionUi {
   /**
    * Starts a session, or sends the next step into the change's running one. Resolves with the reason when the request
    * was refused and no session exists to report it — the caller shows it where the starter was activated. `show` says
-   * whether the session's console is shown afterwards; a card's starter leaves the user on the board.
+   * whether the session's console is shown afterwards; a card's starter leaves the user on the board. Fast-forward asks
+   * for confirmation first unless the user switched that off; a cancelled one resolves with nothing and starts nothing.
    */
   start(repoId: string, change: string, action: SessionAction, show: boolean): Promise<string | undefined>;
   refresh(): Promise<void>;
@@ -78,6 +80,7 @@ export function SessionProvider({
   showIntegration = () => {},
   projectConsoleRepoId,
   showProjectConsole = () => {},
+  onConfig = () => {},
   children,
 }: {
   config: Config | null;
@@ -88,6 +91,8 @@ export function SessionProvider({
   showIntegration?: (id: string | undefined) => void;
   projectConsoleRepoId?: string;
   showProjectConsole?: (repoId: string | undefined) => void;
+  /** Takes a configuration the server saved on the way, so the app's copy follows (the Fast-forward warning). */
+  onConfig?: (config: Config) => void;
   children: ComponentChildren;
 }) {
   const enabled = config?.agentSessions.enabled === true;
@@ -147,8 +152,28 @@ export function SessionProvider({
   const [unsentId, reportUnsent] = useState<string>();
   const [autoMerge, reportAutoMerge] = useState<AutoMergeReport>();
 
+  /** The Fast-forward warning on screen, and how the start waiting for it goes on. */
+  const [fastForwardAsk, setFastForwardAsk] = useState<{ repoId: string; change: string; answer: (choice: FastForwardChoice | undefined) => void }>();
+  const askFastForward = useCallback(
+    (repoId: string, change: string) => new Promise<FastForwardChoice | undefined>((resolve) => setFastForwardAsk({ repoId, change, answer: resolve })),
+    [],
+  );
+
   const start = useCallback(
     async (repoId: string, change: string, action: SessionAction, show: boolean) => {
+      let warningNotSaved: string | undefined;
+      if (action === "fastForward" && config?.agentSessions.confirmFastForward !== false) {
+        const choice = await askFastForward(repoId, change);
+        if (!choice) return undefined;
+        if (choice.neverAgain) {
+          // Saved before the start; a save that fails is reported, but what the user confirmed still starts.
+          try {
+            onConfig(await api.setFastForwardWarning(false));
+          } catch (err) {
+            warningNotSaved = `"Don't show this warning again" was not saved: ${err instanceof Error ? err.message : String(err)}`;
+          }
+        }
+      }
       try {
         const into = nextStepFor(sessions, repoId, change).promptSessionId;
         const session = into ? await api.promptSession(into, action) : await api.openSession(repoId, change, action);
@@ -162,14 +187,14 @@ export function SessionProvider({
         await refresh();
         // By id and place, not through `openPanel`: a session just started is not in this closure's list yet.
         if (show) openConsole(repoId, change, session.id);
-        return undefined;
+        return warningNotSaved;
       } catch (err) {
         // A start that failed has no session and so no panel to report itself in: the reason goes back to the caller,
         // which shows it next to the starter. Not the provider's `error` — the poll clears that within seconds.
         return err instanceof Error ? err.message : String(err);
       }
     },
-    [refresh, openConsole, sessions, reportUnsent],
+    [refresh, openConsole, sessions, reportUnsent, config, askFastForward, onConfig],
   );
 
   const shown = consoleOpen && enabled;
@@ -177,7 +202,26 @@ export function SessionProvider({
     () => ({ config, snapshot, sessions, consoles, consoleOpen: shown, showConsole, integrations, integrationId, showIntegration, projectConsoles, projectConsoleRepoId, showProjectConsole, agents, worktrees, endingId, focusTick, unsentId, reportUnsent, autoMerge, reportAutoMerge, requestEnd, error, openPanel, start, refresh }),
     [config, snapshot, sessions, consoles, shown, integrations, integrationId, showIntegration, projectConsoles, projectConsoleRepoId, showProjectConsole, agents, worktrees, endingId, focusTick, unsentId, autoMerge, error, openPanel, start, refresh],
   );
-  return <Context.Provider value={value}>{children}</Context.Provider>;
+  const answerFastForward = useCallback(
+    (choice: FastForwardChoice | undefined) => {
+      fastForwardAsk?.answer(choice);
+      setFastForwardAsk(undefined);
+    },
+    [fastForwardAsk],
+  );
+  return (
+    <Context.Provider value={value}>
+      {children}
+      {fastForwardAsk && (
+        <FastForwardDialog
+          change={fastForwardAsk.change}
+          agentName={agentForRepo(config, fastForwardAsk.repoId)?.name}
+          onConfirm={answerFastForward}
+          onCancel={() => answerFastForward(undefined)}
+        />
+      )}
+    </Context.Provider>
+  );
 }
 
 /**
@@ -327,9 +371,10 @@ export function OpenWork() {
   );
 }
 
-const STARTER_LABEL: Record<SessionAction, string> = { draft: "Draft artifacts", implement: "Implement", validate: "Validate", archive: "Archive" };
+const STARTER_LABEL: Record<SessionAction, string> = { draft: "Draft artifacts", fastForward: "FF", implement: "Implement", validate: "Validate", archive: "Archive" };
 const STARTER_HINT: Record<SessionAction, string> = {
   draft: "Start an agent in a terminal to write this change's missing artifacts",
+  fastForward: "Fast-forward: write the artifacts, implement and open a pull request, without stopping for review",
   implement: "Start an agent in a terminal to implement this change's tasks",
   validate: "Start an agent in a terminal to walk you through this change's tasks awaiting validation",
   archive: "Start an agent in a terminal to sync the specs and archive this completed change",
@@ -364,9 +409,11 @@ export function SessionControls({ card, place }: { card: Pick<ChangeSnapshot, "r
         // Always an opening: a card offers no starter while a session runs, so `start` never types into one from here.
         <button
           type="button"
-          class="btn sm session-start"
+          class={`btn sm session-start${action === "fastForward" ? " session-ff" : ""}`}
           key={action}
           title={unavailable ?? `${STARTER_HINT[action]} (${agent?.name})`}
+          // `FF` alone says nothing to a screen reader: the name is the whole hint.
+          aria-label={action === "fastForward" ? `${STARTER_HINT[action]} (${agent?.name})` : undefined}
           disabled={Boolean(unavailable) || starting !== undefined}
           onClick={async () => {
             setStarting(action);
@@ -375,7 +422,7 @@ export function SessionControls({ card, place }: { card: Pick<ChangeSnapshot, "r
             setStarting(undefined);
           }}
         >
-          {starting === action ? "Starting…" : `▶ ${STARTER_LABEL[action]}`}
+          {starting === action ? "Starting…" : `${action === "fastForward" ? "⏵⏵" : "▶"} ${STARTER_LABEL[action]}`}
         </button>
       ))}
       {failure && (

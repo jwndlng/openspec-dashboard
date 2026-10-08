@@ -1,6 +1,6 @@
 // Pure helpers for the agent-session UI; free of DOM access at import time so they can be unit-tested.
 import { pullRequestReadiness } from "../shared/pullRequestReadiness.ts";
-import { availableActions, isChangeless, OPEN_SESSION_STATES, repoAgentEnabled, SHIPPABLE_WORK, type AgentAvailability, type AgentProfile, type AutoEnded, type ProjectConsoleLike, type ChangeSnapshot, type Config, type RepoSnapshot, type ChangeSession, changeSessions, type ConsoleSession, type PullRequest, type Session, type SessionAction, type SessionWorktree, type ShipResult, type WorkStatus } from "../shared/types.ts";
+import { availableActions, fastForwardAvailable, isChangeless, OPEN_SESSION_STATES, repoAgentEnabled, SHIPPABLE_WORK, type AgentAvailability, type AgentProfile, type AutoEnded, type ProjectConsoleLike, type ChangeSnapshot, type Config, type RepoSnapshot, type ChangeSession, changeSessions, type ConsoleSession, type PullRequest, type Session, type SessionAction, type SessionWorktree, type ShipResult, type WorkStatus } from "../shared/types.ts";
 
 /** Session starters are shown when the feature is on, for every tracked repository that has not been switched off. */
 export function sessionsEnabledFor(config: Config | null, repoId: string): boolean {
@@ -19,7 +19,7 @@ export function agentForRepo(config: Config | null, repoId: string): AgentProfil
 export function startersFor(config: Config | null, card: Pick<ChangeSnapshot, "repoId" | "archived" | "artifacts" | "stage" | "subState" | "blocked">): SessionAction[] {
   const agent = agentForRepo(config, card.repoId);
   if (!agent) return [];
-  return availableActions(card).filter((action) => Boolean(agent.prompts[action]));
+  return availableActions(card).filter((action) => (action === "fastForward" ? fastForwardAvailable(agent) : Boolean(agent.prompts[action])));
 }
 
 /**

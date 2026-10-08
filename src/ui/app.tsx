@@ -282,7 +282,7 @@ export function App() {
     <PullRequestsProvider>
     {/* Above both the page and the overlay: the detail view's Console tab reads sessions from here too, and the
         end-session dialog it opens must not sit inside the part that goes inert. */}
-    <SessionProvider config={config} snapshot={shown} consoleOpen={consoleShown} showConsole={showConsole} integrationId={integrationShown ? integrationId : undefined} showIntegration={showIntegration} projectConsoleRepoId={projectConsoleShown ? projectConsoleRepoId : undefined} showProjectConsole={showProjectConsole}>
+    <SessionProvider config={config} snapshot={shown} consoleOpen={consoleShown} showConsole={showConsole} integrationId={integrationShown ? integrationId : undefined} showIntegration={showIntegration} projectConsoleRepoId={projectConsoleShown ? projectConsoleRepoId : undefined} showProjectConsole={showProjectConsole} onConfig={setConfig}>
     {/* Everything but the detail overlay: inert while it is open, so the board behind it takes no focus and no clicks. */}
     <div class="app" inert={overlayOpen} aria-hidden={overlayOpen ? "true" : undefined}>
       {/* The hero: the product's name, big, over a soft accent glow; below it the navigation, and — continuing the same
