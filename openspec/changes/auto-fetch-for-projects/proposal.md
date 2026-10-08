@@ -56,7 +56,7 @@ choose, so merged pull requests show up without a manual step.
   the time of its last fetch (`FETCH_HEAD`), read-only.
 - `src/ui/projectSettings.tsx`, `src/ui/overview.tsx`, `src/ui/overviewState.ts`, `src/ui/kanban.tsx` (board
   header), `src/ui/untracked.tsx` (`Tracking`), `src/ui/api.ts`, `src/ui/pull.tsx`, `src/ui/pullState.ts`,
-  `src/ui/styles.css`, `src/ui/helpContent.tsx`, `src/ui/demo/demoApi.ts`, `src/ui/demo/sampleData.ts` — the
+  `src/ui/styles.css`, `src/ui/helpContent.tsx`, `src/ui/changelog.ts` (What's new), `src/ui/demo/demoApi.ts`, `src/ui/demo/sampleData.ts` — the
   drop-down, the last-fetch note, Help, the demo.
 - `CLAUDE.md` — invariants 1 and 4.
 - Tests: `test/pull.test.ts`, a new `test/autoFetch.test.ts`, `test/trackingApi.test.ts`, `test/demoApi.test.ts` and
