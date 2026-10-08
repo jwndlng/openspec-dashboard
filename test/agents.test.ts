@@ -1,9 +1,9 @@
 import { expect, test } from "bun:test";
 import { defaultAgentSessions, defaultConfig, newRepoConfig, validateConfig } from "../src/server/config.ts";
-import { agentEnv, agentFor, integratePrompt, launchCommand, launchWithoutPrompt, openingPrompt, resolveConflictsPrompt, shipPrompt } from "../src/server/sessions/agents.ts";
+import { agentEnv, agentFor, fastForwardPrompt, integratePrompt, launchCommand, launchWithoutPrompt, openingPrompt, resolveConflictsPrompt, shipPrompt } from "../src/server/sessions/agents.ts";
 import { Scrollback, sessionBranch, worktreeName } from "../src/server/sessions/manager.ts";
 import { AGENT_PRESETS, ANTIGRAVITY_PROFILE, CLAUDE_PROFILE, CODEX_PROFILE, DEFAULT_SHORTCUTS, FORMER_PROMPTS } from "../src/shared/agentDefaults.ts";
-import { AUTO_MERGE_DOCS_ARCHIVE_INSTRUCTION, AUTO_MERGE_DOCS_INSTRUCTION, availableActions, CONVENTIONAL_COMMITS_SHIP_SENTENCE, DEFAULT_INTEGRATE_PROMPT, DEFAULT_RESOLVE_CONFLICTS_PROMPT, DEFAULT_SHIP_PROMPT, integrateUnavailable, type AgentAvailability, type ChangeSession, type Session } from "../src/shared/types.ts";
+import { AUTO_MERGE_DOCS_ARCHIVE_INSTRUCTION, AUTO_MERGE_DOCS_INSTRUCTION, availableActions, CONVENTIONAL_COMMITS_SHIP_SENTENCE, DEFAULT_INTEGRATE_PROMPT, DEFAULT_RESOLVE_CONFLICTS_PROMPT, DEFAULT_SHIP_PROMPT, FAST_FORWARD_CONTINUE_SENTENCE, FAST_FORWARD_SHIP_SENTENCE, integrateUnavailable, type AgentAvailability, type ChangeSession, type Session } from "../src/shared/types.ts";
 import { agentForRepo, cardIsLive, cardSessionControls, NEEDS_YOU_AFTER_MS, parseArgLines, sessionBadge, sessionForChange, sessionsEnabledFor, silenceDuration, slugId, startersFor } from "../src/ui/sessionState.ts";
 import { fakeProfile } from "./sessionHelpers.ts";
 
@@ -302,7 +302,7 @@ test("starters: a blocked change is not offered Implement, everything else is un
 
 test("starters: stage decides, narrowed to the prompts the agent has", () => {
   const a = (...s: ("done" | "ready" | "blocked")[]) => s.map((status, i) => ({ id: `a${i}`, status }));
-  expect(availableActions({ artifacts: a("done", "ready"), stage: "drafts" })).toEqual(["draft"]);
+  expect(availableActions({ artifacts: a("done", "ready"), stage: "drafts" })).toEqual(["draft", "fastForward"]);
   expect(availableActions({ artifacts: a("done", "done"), stage: "ready" })).toEqual(["implement"]);
   expect(availableActions({ artifacts: a("done", "done"), stage: "done" })).toEqual(["archive"]);
   expect(availableActions({ artifacts: a("done", "done"), stage: "done", subState: "complete" })).toEqual(["archive"]);
@@ -562,4 +562,52 @@ test("an agent's waiting report comes first, worded as the agent's report", () =
   expect(sessionBadge(session({ state: "failed", error: "no such file", waitingReportedAt: reported }), now).tone).toBe("danger");
   // Nothing unparseable claims anything.
   expect(sessionBadge(session({ lastOutputAt: "2026-01-01T00:50:00Z", waitingReportedAt: "nonsense" }), now).label).toBe("may need you 10m");
+});
+
+test("Fast-forward: offered only while a change is unplanned and not blocked, and only to an agent that can draft and implement", () => {
+  const a = (...s: ("done" | "ready" | "blocked")[]) => s.map((status, i) => ({ id: `a${i}`, status }));
+  expect(availableActions({ artifacts: [], stage: "unknown" })).toEqual(["draft", "fastForward"]);
+  expect(availableActions({ artifacts: a("ready", "blocked"), stage: "backlog" })).toEqual(["draft", "fastForward"]);
+  expect(availableActions({ artifacts: a("done", "ready"), stage: "drafts", blocked: true })).toEqual(["draft"]);
+  // Ready with an optional design still missing: Draft stays offered, Fast-forward does not.
+  expect(availableActions({ artifacts: [{ id: "tasks", status: "done", required: true }, { id: "design", status: "ready", required: false }], stage: "ready" })).toEqual(["draft", "implement"]);
+  expect(availableActions({ artifacts: a("done", "ready"), stage: "archived", archived: "2026-06-18" })).toEqual([]);
+
+  const repo = newRepoConfig("/w/demo-ops", true);
+  const withPrompts = (prompts: Record<string, string>) => ({ ...base, repos: [repo], agentSessions: { ...base.agentSessions, enabled: true, agents: [fakeProfile({ prompts })], defaultAgent: "fake" } });
+  const card = { repoId: repo.id, artifacts: a("done", "ready"), stage: "drafts" as const };
+  expect(startersFor(withPrompts({ draft: "d {change}", implement: "i {change}" }), card)).toEqual(["draft", "fastForward"]);
+  expect(startersFor(withPrompts({ draft: "d {change}" }), card)).toEqual(["draft"]);
+  expect(startersFor(withPrompts({ implement: "i {change}" }), card)).toEqual([]);
+});
+
+test("Fast-forward: Draft, then Implement, then Ship, each with its additional instructions, and never an auto-merge instruction", () => {
+  const profile = fakeProfile({ promptSuffixes: { draft: "Keep it short.", implement: "Run the tests.", ship: "Mention the ticket." } });
+  const ship = shipPrompt(profile, "cache-api-calls");
+  const expected = `draft cache-api-calls Keep it short. ${FAST_FORWARD_CONTINUE_SENTENCE} implement cache-api-calls Run the tests. ${FAST_FORWARD_SHIP_SENTENCE} ${ship}`;
+  expect(fastForwardPrompt(profile, "cache-api-calls")).toBe(expected);
+  expect(openingPrompt(profile, "fastForward", "cache-api-calls")).toBe(expected);
+  // Asked for an auto-merge instruction, a starter other than Archive ignores it — Fast-forward included.
+  expect(openingPrompt(profile, "fastForward", "cache-api-calls", { autoMerge: true })).toBe(expected);
+  expect(expected).not.toContain(AUTO_MERGE_DOCS_INSTRUCTION);
+  expect(expected).not.toContain(AUTO_MERGE_DOCS_ARCHIVE_INSTRUCTION);
+  expect(expected).not.toContain("\n");
+  // The project's title convention reaches its Ship part exactly as Ship would send it.
+  const titled = fastForwardPrompt(profile, "cache-api-calls", { convention: "conventional-commits" }) as string;
+  expect(titled.endsWith(shipPrompt(profile, "cache-api-calls", { convention: "conventional-commits" }))).toBe(true);
+  expect(titled).toContain(CONVENTIONAL_COMMITS_SHIP_SENTENCE);
+  // Without both phases there is nothing to fast-forward.
+  expect(fastForwardPrompt(fakeProfile({ prompts: { draft: "d {change}" } }), "cache-api-calls")).toBeUndefined();
+  expect(openingPrompt(fakeProfile({ prompts: { implement: "i {change}" } }), "fastForward", "cache-api-calls")).toBeUndefined();
+  expect(() => fastForwardPrompt(profile, "../etc")).toThrow("invalid change name");
+});
+
+test("Fast-forward with the preconfigured Claude Code profile starts with the ff command and carries the `- [~]` meaning", () => {
+  const prompt = fastForwardPrompt(CLAUDE_PROFILE, "cache-api-calls") as string;
+  expect(prompt.startsWith("/opsx:ff cache-api-calls ")).toBe(true);
+  expect(prompt).toContain("/opsx:apply cache-api-calls — ");
+  expect(prompt).toContain("`- [~]`");
+  expect(prompt.endsWith(DEFAULT_SHIP_PROMPT)).toBe(true);
+  expect(prompt.indexOf(FAST_FORWARD_CONTINUE_SENTENCE)).toBeLessThan(prompt.indexOf("/opsx:apply"));
+  expect(launchCommand(CLAUDE_PROFILE, prompt).argv).toEqual(["claude", prompt]);
 });

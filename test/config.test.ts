@@ -204,6 +204,13 @@ test("a config that does not mention shortcuts carries the shipped ones; an empt
   expect(shortcutsOf(withShortcuts([]))).toEqual([]);
 });
 
+test("the Fast-forward warning: absent loads as absent, a boolean is kept, anything else is refused", () => {
+  const config = defaultConfig();
+  expect(validateConfig(config).agentSessions.confirmFastForward).toBeUndefined();
+  expect(validateConfig({ ...config, agentSessions: { ...config.agentSessions, confirmFastForward: false } }).agentSessions.confirmFastForward).toBe(false);
+  expect(() => validateConfig({ ...config, agentSessions: { ...config.agentSessions, confirmFastForward: "no" } })).toThrow(ConfigValidationError);
+});
+
 test("a saved shortcut list is carried through unchanged: no default is ever added back", () => {
   const mine = [
     { id: "ship", title: "Ship it", prompt: "Commit the work, push the branch and open a pull request; ask me before force-pushing." },

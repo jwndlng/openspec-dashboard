@@ -334,6 +334,8 @@ export interface AgentSessionsConfig {
   consoleDir?: string;
   /** The console's shortcuts, in the order they are offered. Empty means no shortcuts are offered at all. */
   shortcuts: Shortcut[];
+  /** Whether Fast-forward asks for confirmation first; absent means it does. */
+  confirmFastForward?: boolean;
 }
 
 export interface Config {
@@ -349,8 +351,15 @@ export interface Config {
   labelColors?: Record<string, number>;
 }
 
-export type SessionAction = "draft" | "implement" | "validate" | "archive";
-export const SESSION_ACTIONS: readonly SessionAction[] = ["draft", "implement", "validate", "archive"];
+/**
+ * The session starters. `fastForward` drafts, implements and ships in one session; it has no prompt of its own — it is
+ * composed from the Draft, Implement and Ship prompts (`fastForwardPrompt` in `src/server/sessions/agents.ts`).
+ */
+export type SessionAction = "draft" | "fastForward" | "implement" | "validate" | "archive";
+export const SESSION_ACTIONS: readonly SessionAction[] = ["draft", "fastForward", "implement", "validate", "archive"];
+/** The starters a profile carries a prompt for: every one but Fast-forward. */
+export type StarterPromptKey = Exclude<SessionAction, "fastForward">;
+export const STARTER_PROMPT_KEYS: readonly StarterPromptKey[] = ["draft", "implement", "validate", "archive"];
 /**
  * `ship` is a prompt, not a starter: it asks the agent of an existing session to commit, push and open a pull request.
  * `integrate` is not a starter for a change either: it opens an integration session in a repository that does not use
@@ -358,7 +367,7 @@ export const SESSION_ACTIONS: readonly SessionAction[] = ["draft", "implement", 
  * no text from the browser reaches the command line. `resolveConflicts` is a prompt of the same kind as `ship`: it
  * asks the agent of an existing session to make its branch merge into the base again.
  */
-export type PromptKey = SessionAction | "ship" | "integrate" | "resolveConflicts";
+export type PromptKey = StarterPromptKey | "ship" | "integrate" | "resolveConflicts";
 /** Agent-neutral on purpose, so every profile can ship without being configured for it. */
 /** What a prompt sent on the user's behalf answers (a next step, Resolve conflicts): the session, and whether the prompt
  *  was submitted. `false` means the agent of a running session did not show the typed prompt (it may be showing a
@@ -398,6 +407,18 @@ export const AUTO_MERGE_DOCS_ARCHIVE_INSTRUCTION =
  *  which the agent knows and the dashboard does not. */
 export const DEFAULT_RESOLVE_CONFLICTS_PROMPT =
   "The branch for {change} in this worktree no longer merges into the default branch. Bring it up to date with the default branch and resolve every conflict, keeping what this branch set out to do. Then run the project's checks and push the branch. Do not merge the pull request.";
+
+/** Between the Draft and the Implement prompt of a Fast-forward prompt: one line, agent-neutral, not editable. */
+export const FAST_FORWARD_CONTINUE_SENTENCE =
+  "This change is fast-forwarded: once every artifact is written, do not stop for my review — the pull request will be its only review — and go straight on to implementing it:";
+
+/** Between the Implement and the Ship prompt of a Fast-forward prompt: one line, agent-neutral, not editable. */
+export const FAST_FORWARD_SHIP_SENTENCE = "When every task is settled, ship the work without asking me:";
+
+/** Fast-forward needs both phases it chains; Ship always has a default. */
+export function fastForwardAvailable(agent: Pick<AgentProfile, "prompts">): boolean {
+  return Boolean(agent.prompts.draft) && Boolean(agent.prompts.implement);
+}
 
 /** Like Ship's, so every agent can integrate without being configured for it. It names no change and carries no
  *  placeholder: the repository folder is the agent's working directory. Which tools OpenSpec is installed for is the
@@ -677,11 +698,19 @@ export function repoAgentEnabled(repo: Pick<RepoConfig, "enabled" | "agent">): b
   return repo.enabled && repo.agent?.enabled !== false;
 }
 
+/** Stages before every required artifact is written: the only ones Fast-forward is offered in. */
+const UNPLANNED_STAGES: readonly Stage[] = ["unknown", "backlog", "drafts"];
+
 /** The session starters a change currently qualifies for (before feature/opt-in checks). */
 export function availableActions(change: Pick<ChangeSnapshot, "archived" | "artifacts" | "stage" | "subState" | "blocked">): SessionAction[] {
   if (change.archived) return [];
   const actions: SessionAction[] = [];
-  if (change.artifacts.length === 0 || change.artifacts.some((a) => a.status !== "done")) actions.push("draft");
+  if (change.artifacts.length === 0 || change.artifacts.some((a) => a.status !== "done")) {
+    actions.push("draft");
+    // Fast-forward is for a change not planned yet — once Ready it is Implement and Ship. It goes on to implement, so a
+    // change waiting for its dependencies may only be drafted.
+    if (!change.blocked && UNPLANNED_STAGES.includes(change.stage)) actions.push("fastForward");
+  }
   // A change waiting for its dependencies may still be drafted; only implementing it would break the order.
   if ((change.stage === "ready" || change.stage === "implementing") && !change.blocked) actions.push("implement");
   // In `Done` there is nothing left to implement; offering it is what sends an agent back into finished code.

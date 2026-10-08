@@ -146,6 +146,13 @@ export const HELP_SECTIONS: readonly HelpSection[] = [
             nothing.
           </li>
           <li>
+            <strong>FF</strong> (Fast-forward), beside <strong>Draft artifacts</strong> on a change that is not planned yet,
+            asks the agent to write the artifacts, implement the change and open a pull request in one go, without
+            stopping for your review — the pull request is the only review, and it is never merged for you. It asks you
+            to confirm first; <strong>Don't show this warning again</strong> skips that, and{" "}
+            <AppLink path="/settings" query="?section=agents">Settings → Agent sessions</AppLink> brings it back.
+          </li>
+          <li>
             <strong>Open work</strong> in the top bar lists running agents and worktrees that still hold something.{" "}
             <strong>End session</strong> stops an agent and, by default, pulls the repository and — when nothing would be
             lost — removes its worktree; clear either box before confirming to skip it.

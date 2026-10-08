@@ -400,6 +400,12 @@ export function createDemoApi({ now = Date.now, latencyMs = 150, clock }: DemoAp
         config = Object.keys(colors).length ? { ...rest, labelColors: colors } : rest;
         return config;
       }),
+    setFastForwardWarning: (show) =>
+      failing(() => {
+        if (typeof show !== "boolean") throw new ApiError(400, "show must be true or false");
+        config = { ...config, agentSessions: { ...config.agentSessions, confirmFastForward: show } };
+        return config;
+      }),
     forgetRepo: (repoId) =>
       failing(() => {
         const repo = config.repos.find((r) => r.id === repoId);

@@ -3,7 +3,7 @@
 import type { ComponentChildren } from "preact";
 import { useEffect, useState } from "preact/hooks";
 import { AGENT_PRESETS } from "../shared/agentDefaults.ts";
-import { DEFAULT_INTEGRATE_PROMPT, DEFAULT_RESOLVE_CONFLICTS_PROMPT, DEFAULT_SHIP_PROMPT, SESSION_ACTIONS, type AgentAvailability, type AgentProfile, type AgentSessionsConfig, type Config, type PromptKey, type SessionAction, type Shortcut } from "../shared/types.ts";
+import { DEFAULT_INTEGRATE_PROMPT, DEFAULT_RESOLVE_CONFLICTS_PROMPT, DEFAULT_SHIP_PROMPT, STARTER_PROMPT_KEYS, type AgentAvailability, type AgentProfile, type AgentSessionsConfig, type Config, type PromptKey, type Shortcut, type StarterPromptKey } from "../shared/types.ts";
 import { api } from "./api.ts";
 import { addShortcut, moveShortcut, removeShortcut, restoredShortcuts } from "./quickReplies.ts";
 import { parseArgLines, slugId } from "./sessionState.ts";
@@ -14,7 +14,7 @@ interface Props {
   update: (patch: Partial<Config>) => void;
 }
 
-const ACTION_LABEL: Record<SessionAction, string> = { draft: "Draft artifacts", implement: "Implement", validate: "Validate", archive: "Archive" };
+const ACTION_LABEL: Record<StarterPromptKey, string> = { draft: "Draft artifacts", implement: "Implement", validate: "Validate", archive: "Archive" };
 
 /** One prompt of a profile and how it is edited; the action prompts are textareas showing their default. */
 interface PromptSpec {
@@ -25,7 +25,8 @@ interface PromptSpec {
   note?: ComponentChildren;
 }
 
-const STARTER_PROMPTS: PromptSpec[] = SESSION_ACTIONS.map((action) => ({ key: action, label: ACTION_LABEL[action], multiline: false, placeholder: "no prompt — this starter is not offered" }));
+// Fast-forward has no prompt of its own: it is composed from Draft artifacts, Implement and Ship.
+const STARTER_PROMPTS: PromptSpec[] = STARTER_PROMPT_KEYS.map((action) => ({ key: action, label: ACTION_LABEL[action], multiline: false, placeholder: "no prompt — this starter is not offered" }));
 
 const ACTION_PROMPTS: PromptSpec[] = [
   { key: "ship", label: "Ship", multiline: true, placeholder: DEFAULT_SHIP_PROMPT },
@@ -171,7 +172,8 @@ export function AgentEditor({
             <h4>Change starters</h4>
             <p class="hint">
               What each starter on a card asks this agent. An empty prompt means the starter is not offered; additional instructions are appended only when the prompt is set — this
-              text alone does not offer the starter. <code>{"{change}"}</code> may be used.
+              text alone does not offer the starter. <code>{"{change}"}</code> may be used. <strong>Fast-forward</strong> has no prompt of its own: it sends Draft artifacts,
+              then Implement, then Ship, each with its additional instructions, and is offered only while both Draft artifacts and Implement are set.
             </p>
             {STARTER_PROMPTS.map(field)}
           </div>
@@ -377,6 +379,20 @@ export function AgentSettings({ draft, update }: Props) {
         </div>
 
         <ShortcutEditor shortcuts={settings.shortcuts} onChange={(shortcuts) => set({ shortcuts })} />
+
+        <h3>Fast-forward</h3>
+        <label class="check">
+          <input
+            type="checkbox"
+            checked={settings.confirmFastForward !== false}
+            onChange={(e) => set({ confirmFastForward: e.currentTarget.checked ? undefined : false })}
+          />
+          Warn before fast-forwarding
+        </label>
+        <p class="hint">
+          <strong>FF</strong> on a card has the agent write a change's artifacts, implement it and open a pull request without stopping for your review — the pull request is
+          the only review. With this on, it asks first.
+        </p>
 
         <h3>Console</h3>
         <label class="agent-tools">
