@@ -52,9 +52,13 @@ choose, so merged pull requests show up without a manual step.
 - `src/server/config.ts`, `src/shared/types.ts` — `autoFetchMinutes` on a repository; the last automatic-fetch outcome
   and last fetch time on `RepoSnapshot`.
 - `src/server/api.ts`, `src/server/index.ts` — the new endpoint; wiring the scheduler, rescan and work-status refresh.
-- `src/server/scanner.ts` — reads the time of the last fetch (`FETCH_HEAD`) read-only.
-- `src/ui/projectSettings.tsx`, `src/ui/overview.tsx`, `src/ui/untracked.tsx` (`Tracking`), `src/ui/api.ts`,
-  `src/ui/pullState.ts`, `src/ui/demo/demoApi.ts` — the drop-down, the last-fetch note, the demo.
+- `src/server/scanner.ts`, `src/server/source.ts`, `src/server/git.ts` — read whether a repository has a remote and
+  the time of its last fetch (`FETCH_HEAD`), read-only.
+- `src/ui/projectSettings.tsx`, `src/ui/overview.tsx`, `src/ui/overviewState.ts`, `src/ui/kanban.tsx` (board
+  header), `src/ui/untracked.tsx` (`Tracking`), `src/ui/api.ts`, `src/ui/pull.tsx`, `src/ui/pullState.ts`,
+  `src/ui/styles.css`, `src/ui/helpContent.tsx`, `src/ui/demo/demoApi.ts`, `src/ui/demo/sampleData.ts` — the
+  drop-down, the last-fetch note, Help, the demo.
 - `CLAUDE.md` — invariants 1 and 4.
-- Tests: `test/pull.test.ts`, a new `test/autoFetch.test.ts`, API and UI tests.
+- Tests: `test/pull.test.ts`, a new `test/autoFetch.test.ts`, `test/trackingApi.test.ts`, `test/demoApi.test.ts` and
+  the overview, pull and settings UI tests.
 - No new dependency, no new git subcommand, no `gh`.
