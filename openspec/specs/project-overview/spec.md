@@ -436,7 +436,7 @@ Each managed project on the projects overview, as a table row and as a tile, SHA
 - **Agent**: a picker offering "default agent" and every configured agent profile by name, showing the project's current choice. It SHALL be shown only when more than one agent profile is configured and the project's agent sessions are enabled. Choosing "default agent" SHALL clear the project's own choice.
 - **PR titles**: a picker offering **No convention** and **Conventional Commits**, showing the project's current choice, with an accessible name that includes the project's name and a tooltip saying that Ship asks the agent to title its pull requests this way. It SHALL be shown only for a project that is a git repository. Choosing **No convention** SHALL clear the project's convention. The setting is used by Ship, as the `agent-sessions` capability specifies; while agent sessions are switched off globally or for the project, the picker SHALL still show and change the project's own setting.
 - **Auto-merge docs-only pull requests**: a toggle whose state reads **On** or **Off**, exposed to assistive technology as a switch with the project's name in its accessible name, and explained in a tooltip: when on, Ship and Archive ask the agent to enable auto-merge on a pull request whose changes are all under `openspec/`, and on no other, and once such a pull request has merged the dashboard ends that session and removes its worktree when that is safe. A project without a saved setting SHALL show **Off**. It SHALL be shown only while the project's agent sessions are enabled and the project is a git repository; while agent sessions are switched off globally it SHALL be shown inactive, like the agent-session toggle.
-- **Auto fetch**: a drop-down offering **Off**, **Every 5 minutes**, **Every 15 minutes**, **Every 30 minutes** and **Every hour**, showing the project's current choice, with an accessible name that includes the project's name and a tooltip saying that the dashboard then fetches the project's remote on that interval so merged branches and conflicts stay current, that it only fetches and never updates the checkout — that stays the Pull action — and that it uses git's own credentials without prompting. A project without a saved setting SHALL show **Off**; choosing **Off** SHALL clear the project's setting. It SHALL be shown only for a project that is a git repository, and SHALL be shown whether agent sessions are on or off: it describes the project, not its sessions. What the setting does is specified in the `repository-pull` capability.
+- **Auto fetch**: a drop-down offering **Off**, **Every 15 seconds**, **Every 30 seconds**, **Every minute**, **Every 5 minutes**, **Every 10 minutes**, **Every 15 minutes**, **Every 30 minutes** and **Every hour**, showing the project's current choice, with an accessible name that includes the project's name and a tooltip saying that the dashboard then fetches the project's remote on that interval so merged branches and conflicts stay current, that it only fetches and never updates the checkout — that stays the Pull action — that it uses git's own credentials without prompting, and that it is on, every minute, unless switched off. A project without a saved setting SHALL show **Every minute**, the default; choosing **Off** SHALL save that the project is not fetched automatically, and choosing **Every minute** SHALL clear the project's setting. It SHALL be shown only for a project that is a git repository, and SHALL be shown whether agent sessions are on or off: it describes the project, not its sessions. What the setting does is specified in the `repository-pull` capability.
 - **Rename**: an action beside the project's name, on the row and the tile, that turns the project's name into a text field in place, prefilled with the current name. Pressing Enter or moving focus out of the field SHALL save the trimmed name; pressing Escape SHALL leave the name unchanged. A name that is empty after trimming MUST NOT be saved, and the field SHALL say why. An unchanged name SHALL be saved without a request. The new name SHALL be shown on the overview, on the repository's board and in the board's repository groups at once.
 - **Labels**: an action that replaces the settings dialog with the project's labels dialog, as the `project-labels` capability specifies.
 
@@ -541,16 +541,24 @@ The dialog SHALL close when the user presses Escape, activates its close control
 - **THEN** its row and tile show no settings button
 
 #### Scenario: Switching auto fetch on
-- **WHEN** the user picks **Every 15 minutes** under Auto fetch in the settings dialog of `demo-ops`
-- **THEN** the configuration has `autoFetchMinutes: 15` for `demo-ops` without any Save, the drop-down shows Every 15 minutes, its other settings are unchanged, no scan is started by the setting itself, and the board is not opened
+- **WHEN** the user picks **Every 15 seconds** under Auto fetch in the settings dialog of `demo-ops`, which has it Off
+- **THEN** the configuration has `autoFetchSeconds: 15` for `demo-ops` without any Save, the drop-down shows Every 15 seconds, its other settings are unchanged, no scan is started by the setting itself, and the board is not opened
 
 #### Scenario: Switching auto fetch off
-- **WHEN** the user picks **Off** under Auto fetch for a project that fetches every 15 minutes
-- **THEN** the project's entry no longer carries `autoFetchMinutes`
+- **WHEN** the user picks **Off** under Auto fetch for a project that fetches every minute
+- **THEN** the project's entry carries `autoFetchSeconds: 0`, the drop-down shows Off, and the project is no longer fetched automatically
+
+#### Scenario: Back to the default
+- **WHEN** the user picks **Every minute** under Auto fetch for a project that has it Off
+- **THEN** the project's entry no longer carries `autoFetchSeconds`
+
+#### Scenario: Auto fetch is on by default
+- **WHEN** a project has no saved auto-fetch setting
+- **THEN** its Auto fetch drop-down shows Every minute
 
 #### Scenario: Auto fetch is off by default
-- **WHEN** a project has no saved auto-fetch setting
-- **THEN** its Auto fetch drop-down shows Off
+- **WHEN** the user switched the Auto fetch of `demo-ops` Off and the dashboard is restarted
+- **THEN** its drop-down still shows Off, because Off is a saved choice and not the absence of one, and `demo-ops` is not fetched automatically
 
 #### Scenario: Auto fetch with agent sessions off
 - **WHEN** agent sessions are switched off in Settings
