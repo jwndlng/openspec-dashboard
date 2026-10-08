@@ -15,10 +15,10 @@
 ## 3. Release workflow
 
 - [x] 3.1 In `.github/workflows/release.yml`, make the `desktop` job's smoke test also require `.DS_Store` and `.background/background.tiff` in the mounted image (D6, release-publishing); verify the YAML parses and the step fails on an unstyled image (Electrobun's original)
-- [ ] 3.2 Verify on GitHub's `macos-latest` before merging: a throwaway workflow on this branch runs `bun run build:desktop` and uploads the `.dmg`; it succeeds, and the downloaded image opens laid out. Remove the throwaway workflow before merging
+- [~] 3.2 Verify on GitHub's `macos-latest` before merging: a throwaway workflow on this branch runs `bun run build:desktop` and uploads the `.dmg`; it succeeds, and the downloaded image opens laid out. Remove the throwaway workflow before merging
 
 ## 4. Documentation
 
 - [x] 4.1 CONTRIBUTING (Releasing): the `desktop` job lays out the disk image and checks the layout; a local `bun run build:desktop` lays it out too, needs the terminal allowed to control Finder once, and refuses while a `Spec Control` volume is mounted; verify by reading
 - [x] 4.2 Add a What's new entry at the top of `src/ui/changelog.ts`: the macOS app's disk image now shows how to install it by dragging it to Applications; verify `bun test test/whatsNew.test.ts`
-- [ ] 4.3 Verify `openspec validate styled-dmg-installer --strict` and `bun run check` pass
+- [x] 4.3 Verify `openspec validate styled-dmg-installer --strict` and `bun run check` pass
