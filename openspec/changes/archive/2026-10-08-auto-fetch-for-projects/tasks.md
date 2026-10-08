@@ -30,10 +30,10 @@
 - [x] 5.1 Add `tracking.setAutoFetch` (`src/ui/untracked.tsx`) and the client call in `src/ui/api.ts`; verify with a `Tracking` unit test that the busy state and a refused save restore the previous value
 - [x] 5.2 Add `AutoFetchPicker` to `src/ui/projectSettings.tsx` (git only, shown with agent sessions off, tooltip per spec) as a labelled line in the project's settings dialog after Docs auto-merge; verify with overview UI tests for the scenarios in the project-overview delta
 - [x] 5.3 Add `fetchNote()` to `src/ui/pullState.ts` (`fetched 4m ago` / `never fetched` / `auto fetch failed`, tooltip with exact time, interval and masked reason; nothing for no remote or no git) and render it beside Pull on row, tile and board header; verify with pure-helper tests and a render test
-- [~] 5.4 Support the setting in `src/ui/demo/demoApi.ts` (stores it, reports a plausible `lastFetchedAt`, never fetches); verify by building the demo and switching the drop-down
+- [x] 5.4 Support the setting in `src/ui/demo/demoApi.ts` (stores it, reports a plausible `lastFetchedAt`, never fetches); verify by building the demo and switching the drop-down
 
 ## 6. Docs and invariants
 
 - [x] 6.1 Update `CLAUDE.md` invariants 1 and 4 for the automatic fetch (fetch only, opt-in per project, on its interval, through `pull.ts`); verify by reading them against the dashboard-api delta
 - [x] 6.2 Mention auto fetch in the help page / What's new if those list per-project settings; verify the help test passes
-- [~] 6.3 Run `bun run check` and `bun run build`, start `dist/spec-control`, set a project to 5 minutes and confirm a fetch happens and the note updates; verify `openspec validate auto-fetch-for-projects --strict` passes
+- [x] 6.3 Run `bun run check` and `bun run build`, start `dist/spec-control`, set a project to 5 minutes and confirm a fetch happens and the note updates; verify `openspec validate auto-fetch-for-projects --strict` passes

@@ -436,6 +436,7 @@ Each managed project on the projects overview, as a table row and as a tile, SHA
 - **Agent**: a picker offering "default agent" and every configured agent profile by name, showing the project's current choice. It SHALL be shown only when more than one agent profile is configured and the project's agent sessions are enabled. Choosing "default agent" SHALL clear the project's own choice.
 - **PR titles**: a picker offering **No convention** and **Conventional Commits**, showing the project's current choice, with an accessible name that includes the project's name and a tooltip saying that Ship asks the agent to title its pull requests this way. It SHALL be shown only for a project that is a git repository. Choosing **No convention** SHALL clear the project's convention. The setting is used by Ship, as the `agent-sessions` capability specifies; while agent sessions are switched off globally or for the project, the picker SHALL still show and change the project's own setting.
 - **Auto-merge docs-only pull requests**: a toggle whose state reads **On** or **Off**, exposed to assistive technology as a switch with the project's name in its accessible name, and explained in a tooltip: when on, Ship and Archive ask the agent to enable auto-merge on a pull request whose changes are all under `openspec/`, and on no other, and once such a pull request has merged the dashboard ends that session and removes its worktree when that is safe. A project without a saved setting SHALL show **Off**. It SHALL be shown only while the project's agent sessions are enabled and the project is a git repository; while agent sessions are switched off globally it SHALL be shown inactive, like the agent-session toggle.
+- **Auto fetch**: a drop-down offering **Off**, **Every 5 minutes**, **Every 15 minutes**, **Every 30 minutes** and **Every hour**, showing the project's current choice, with an accessible name that includes the project's name and a tooltip saying that the dashboard then fetches the project's remote on that interval so merged branches and conflicts stay current, that it only fetches and never updates the checkout — that stays the Pull action — and that it uses git's own credentials without prompting. A project without a saved setting SHALL show **Off**; choosing **Off** SHALL clear the project's setting. It SHALL be shown only for a project that is a git repository, and SHALL be shown whether agent sessions are on or off: it describes the project, not its sessions. What the setting does is specified in the `repository-pull` capability.
 - **Rename**: an action beside the project's name, on the row and the tile, that turns the project's name into a text field in place, prefilled with the current name. Pressing Enter or moving focus out of the field SHALL save the trimmed name; pressing Escape SHALL leave the name unchanged. A name that is empty after trimming MUST NOT be saved, and the field SHALL say why. An unchanged name SHALL be saved without a request. The new name SHALL be shown on the overview, on the repository's board and in the board's repository groups at once.
 - **Labels**: an action that replaces the settings dialog with the project's labels dialog, as the `project-labels` capability specifies.
 
@@ -443,7 +444,7 @@ While a setting is being saved its control SHALL show that it is working and SHA
 
 Each managed row and tile SHALL show a **settings button**: an icon button whose accessible name and tooltip say that it opens the project's settings and include the project's name. On a row it SHALL sit in the row's actions, after **Console** and **Pull**; on a tile, at the end of the footer (see "Tiles have one size and one layout"). The table SHALL have no column for agent sessions or any other setting, and a row SHALL show none of the settings above except Rename, and neither Labels nor Disable.
 
-Activating the settings button SHALL open the project's settings dialog over the dimmed page, titled with the word Settings and the project's name, with an accessible name that includes the project's name. Rows and tiles SHALL open the same dialog. It SHALL hold one labelled line per setting, in this order: **Agent sessions**, **Agent**, **PR titles** and **Docs auto-merge**. Then **Labels**, and then **Disable**, which SHALL be set apart after the settings as the "Repositories are enabled, disabled and ignored from the overview" requirement describes. Each control SHALL keep the behaviour, wording, accessible name, switch role, tooltip and visibility rules described above. A setting that does not apply to the project SHALL leave no line. The Docs auto-merge switch's visible text MAY read just **On** or **Off**, because its line names the setting. A change in the dialog SHALL be reflected in the dialog at once, without closing it. At most one dialog SHALL be open at a time.
+Activating the settings button SHALL open the project's settings dialog over the dimmed page, titled with the word Settings and the project's name, with an accessible name that includes the project's name. Rows and tiles SHALL open the same dialog. It SHALL hold one labelled line per setting, in this order: **Agent sessions**, **Agent**, **PR titles**, **Docs auto-merge** and **Auto fetch**. Then **Labels**, and then **Disable**, which SHALL be set apart after the settings as the "Repositories are enabled, disabled and ignored from the overview" requirement describes. Each control SHALL keep the behaviour, wording, accessible name, switch role, tooltip and visibility rules described above. A setting that does not apply to the project SHALL leave no line. The Docs auto-merge switch's visible text MAY read just **On** or **Off**, because its line names the setting. A change in the dialog SHALL be reflected in the dialog at once, without closing it. At most one dialog SHALL be open at a time.
 
 The dialog SHALL close when the user presses Escape, activates its close control or clicks the backdrop, and when the project leaves Managed projects. When it closes, keyboard focus SHALL return to the settings button that opened it, if that button is still on the page. Opening, using or closing the dialog MUST NOT open the repository's board or change the route.
 
@@ -513,7 +514,7 @@ The dialog SHALL close when the user presses Escape, activates its close control
 
 #### Scenario: Settings on a tile
 - **WHEN** agent sessions are on, two agent profiles are configured, and the user activates the settings button on the tile of `demo-ops`, a git repository
-- **THEN** the settings dialog of `demo-ops` lists Agent sessions, Agent, PR titles, Docs auto-merge and Labels as labelled lines, followed by Disable set apart, and the board is not opened
+- **THEN** the settings dialog of `demo-ops` lists Agent sessions, Agent, PR titles, Docs auto-merge, Auto fetch and Labels as labelled lines, followed by Disable set apart, and the board is not opened
 
 #### Scenario: The same dialog from a row
 - **WHEN** the user activates the settings button on the row of `demo-ops`
@@ -538,6 +539,26 @@ The dialog SHALL close when the user presses Escape, activates its close control
 #### Scenario: Nothing to set while scanning
 - **WHEN** `beta-soc` was enabled a moment ago and is shown as `Scanning…`
 - **THEN** its row and tile show no settings button
+
+#### Scenario: Switching auto fetch on
+- **WHEN** the user picks **Every 15 minutes** under Auto fetch in the settings dialog of `demo-ops`
+- **THEN** the configuration has `autoFetchMinutes: 15` for `demo-ops` without any Save, the drop-down shows Every 15 minutes, its other settings are unchanged, no scan is started by the setting itself, and the board is not opened
+
+#### Scenario: Switching auto fetch off
+- **WHEN** the user picks **Off** under Auto fetch for a project that fetches every 15 minutes
+- **THEN** the project's entry no longer carries `autoFetchMinutes`
+
+#### Scenario: Auto fetch is off by default
+- **WHEN** a project has no saved auto-fetch setting
+- **THEN** its Auto fetch drop-down shows Off
+
+#### Scenario: Auto fetch with agent sessions off
+- **WHEN** agent sessions are switched off in Settings
+- **THEN** every git project's settings dialog still shows its Auto fetch line, and it can be changed
+
+#### Scenario: No auto fetch without git
+- **WHEN** a managed project is a folder that is not a git repository
+- **THEN** its settings dialog shows no Auto fetch line
 
 ### Requirement: Disabled repositories can be forgotten from the overview
 Each entry under Unmanaged projects labelled `disabled` SHALL offer **Forget** beside **Enable**. Forget SHALL take effect when activated, without a separate save and without a confirmation, and SHALL remove the repository from the configuration together with its name and its agent-session settings. Its tooltip SHALL say so, and SHALL say that a repository still under a workspace root is offered again as a discovered repository. After Forget the overview SHALL run discovery again. Forget SHALL NOT be offered on discovered or integratable entries, nor on managed projects. While Forget is in progress its control SHALL show that it is working; when it fails the reason SHALL be shown on that entry and the entry SHALL stay.
@@ -587,3 +608,22 @@ agent profile's header in Settings, MUST NOT change how these controls look.
 - **WHEN** Settings shows an agent profile collapsed
 - **THEN** its header toggle keeps its borderless look, its hover background and its focus ring, and the overview's
   toggles are unaffected by it
+
+### Requirement: A project shows when it was last fetched
+For a managed git repository the projects overview row and tile, and the repository board header, SHALL show beside the Pull control how long ago the repository was last fetched, as a relative age (for example `fetched 4m ago`), with the exact time in a tooltip. The time SHALL be read from the repository itself, so a fetch the user ran outside the dashboard counts as well, and SHALL be read without writing anything. A repository that was never fetched SHALL show `never fetched`; a repository without a remote, and a folder without git, SHALL show nothing. When the project has auto fetch on, the note SHALL also say so and at which interval. When the most recent automatic fetch of the project failed, the note SHALL say that auto fetch failed, in a warning tone that is not conveyed by colour alone, with the reason, credentials masked, in its tooltip; the next successful fetch, automatic or by Pull, SHALL clear it. The note SHALL update from the rescan that follows a fetch, without a page reload.
+
+#### Scenario: Recently fetched
+- **WHEN** `demo-ops` has auto fetch every 15 minutes and its last fetch was 4 minutes ago
+- **THEN** its row shows `fetched 4m ago` beside Pull, and the tooltip gives the exact time and says it is fetched every 15 minutes
+
+#### Scenario: Fetched outside the dashboard
+- **WHEN** the user runs `git fetch` in a terminal for `alpha-infra`, which has auto fetch off, and the overview rescans
+- **THEN** its row shows that it was fetched moments ago
+
+#### Scenario: Automatic fetch failed
+- **WHEN** the last automatic fetch of `demo-ops` failed because the remote could not be reached
+- **THEN** its row shows that auto fetch failed, with the reason in the tooltip, and after a successful Pull the warning is gone
+
+#### Scenario: No remote
+- **WHEN** a git repository has no remote configured
+- **THEN** its row shows no fetch note
