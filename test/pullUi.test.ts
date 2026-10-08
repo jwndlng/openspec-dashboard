@@ -141,18 +141,21 @@ test("the fetch note says when the repository was last fetched, how often it is 
 
   expect(fetchNote({ hasRemote: true }, now)).toMatchObject({ label: "never fetched", tone: "" });
   expect(fetchNote({ hasRemote: true, lastFetchedAt: ago(0.2) }, now)?.label).toBe("fetched just now");
-  const recent = fetchNote({ hasRemote: true, lastFetchedAt: ago(4), autoFetchMinutes: 15 }, now);
+  const recent = fetchNote({ hasRemote: true, lastFetchedAt: ago(4), autoFetchSeconds: 900 }, now);
   expect(recent).toMatchObject({ label: "fetched 4m ago", tone: "" });
   expect(recent?.detail).toContain(new Date(ago(4)).toLocaleString());
   expect(recent?.detail).toContain("every 15 minutes");
   expect(recent?.detail).toContain("only updated by Pull");
-  expect(fetchNote({ hasRemote: true, lastFetchedAt: ago(4), autoFetchMinutes: 60 }, now)?.detail).toContain("every hour");
+  expect(fetchNote({ hasRemote: true, lastFetchedAt: ago(4), autoFetchSeconds: 3600 }, now)?.detail).toContain("every hour");
+  expect(fetchNote({ hasRemote: true, lastFetchedAt: ago(4), autoFetchSeconds: 60 }, now)?.detail).toContain("every minute");
+  expect(fetchNote({ hasRemote: true, lastFetchedAt: ago(4), autoFetchSeconds: 15 }, now)?.detail).toContain("every 15 seconds");
   expect(fetchNote({ hasRemote: true, lastFetchedAt: ago(4) }, now)?.detail).not.toContain("automatically");
 
   // a failure shows, as text and not only as a colour, with its reason — until something fetched after it
-  const failed = fetchNote({ hasRemote: true, lastFetchedAt: ago(20), autoFetch: { at: ago(5), ok: false, reason: "Could not resolve host: git.example.invalid." }, autoFetchMinutes: 5 }, now);
+  const failed = fetchNote({ hasRemote: true, lastFetchedAt: ago(20), autoFetch: { at: ago(5), ok: false, reason: "Could not resolve host: git.example.invalid." }, autoFetchSeconds: 300 }, now);
   expect(failed).toMatchObject({ label: "⚠ auto fetch failed", tone: "warning" });
   expect(failed?.detail).toContain("failed: Could not resolve host: git.example.invalid.");
+  expect(failed?.detail).toContain("can be switched off in the project's settings");
   expect(fetchNote({ hasRemote: true, lastFetchedAt: ago(1), autoFetch: { at: ago(5), ok: false, reason: "timed out" } }, now)?.label).toBe("fetched 1m ago");
   expect(fetchNote({ hasRemote: true, lastFetchedAt: ago(5), autoFetch: { at: ago(5), ok: true } }, now)?.label).toBe("fetched 5m ago");
 

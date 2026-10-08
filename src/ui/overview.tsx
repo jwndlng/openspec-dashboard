@@ -1,6 +1,6 @@
 import type { ComponentChildren } from "preact";
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
-import { integrateUnavailable, type Config, type RepoConfig, type Snapshot, type WorkInProgress } from "../shared/types.ts";
+import { autoFetchInterval, integrateUnavailable, type Config, type RepoConfig, type Snapshot, type WorkInProgress } from "../shared/types.ts";
 import { api } from "./api.ts";
 import { hasCheckoutInfo } from "./checkoutMarkers.ts";
 import { createDiscoveryStore, type DiscoveryState } from "./discoveryState.ts";
@@ -196,7 +196,7 @@ export function Row({ row, now, tracking, labelFilter, config }: { row: Overview
         )}
         {repo && <ProjectConsoleButton repoId={repo.id} variant="project" />}
         {row.isGit && row.ok && <PullButton repoId={row.id} repoName={row.name} variant="overview" />}
-        {row.isGit && <FetchNoteBadge input={{ ...row, autoFetchMinutes: repo?.autoFetchMinutes }} now={now} />}
+        {row.isGit && <FetchNoteBadge input={{ ...row, autoFetchSeconds: autoFetchInterval(repo) }} now={now} />}
         {repo && <SettingsButton id={row.id} name={repo.name} tracking={tracking} />}
       </td>
     </tr>
@@ -340,7 +340,7 @@ export function Tile({ row, now, hue, tracking, labelFilter, config }: { row: Ov
       <footer class="tile-foot">
         {repo && <ProjectConsoleButton repoId={repo.id} variant="project" />}
         {row.isGit && row.ok && <PullButton repoId={row.id} repoName={row.name} variant="overview" />}
-        {row.isGit && <FetchNoteBadge input={{ ...row, autoFetchMinutes: repo?.autoFetchMinutes }} now={now} />}
+        {row.isGit && <FetchNoteBadge input={{ ...row, autoFetchSeconds: autoFetchInterval(repo) }} now={now} />}
         {repo && <SettingsButton id={row.id} name={repo.name} tracking={tracking} />}
       </footer>
     </article>

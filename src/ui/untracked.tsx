@@ -3,7 +3,7 @@
 // what it is and offered the actions that fit it (Enable, Ignore, Integrate), each saved at once. The view is hook-free
 // so tests can walk it; `useTracking` holds what changes.
 import { useState } from "preact/hooks";
-import type { AutoFetchMinutes, Config, PrTitleConvention, RepoConfig } from "../shared/types.ts";
+import type { AutoFetchSeconds, Config, PrTitleConvention, RepoConfig } from "../shared/types.ts";
 import { api, type RepoAgentPatch } from "./api.ts";
 import { IconEyeOff } from "./icons.tsx";
 import type { DiscoveryState } from "./discoveryState.ts";
@@ -36,7 +36,7 @@ export interface Tracking {
   setAgent(id: string, patch: RepoAgentPatch): void;
   setLabels(id: string, patch: Pick<RepoConfig, "labels" | "hiddenLabels">): void;
   setPrTitleConvention(id: string, convention: PrTitleConvention | null): void;
-  setAutoFetch(id: string, minutes: AutoFetchMinutes | null): void;
+  setAutoFetch(id: string, seconds: AutoFetchSeconds | 0): void;
   /** A label's colour, chosen in the labels dialog of `id` (whose busy and error state it uses) and shared by every repository. */
   setLabelColor(id: string, label: string, hue: number | null): void;
   /** The project whose labels dialog is open. */
@@ -141,7 +141,7 @@ export function useTracking({ onConfig, rediscover }: { onConfig: (config: Confi
     setAgent: (id, patch) => void run(id, "agent", () => api.setRepoAgent(id, patch).then(save())),
     setLabels: (id, patch) => void run(id, "labels", () => api.setRepoLabels(id, patch).then(save())),
     setPrTitleConvention: (id, convention) => void run(id, "prTitles", () => api.setRepoPrTitleConvention(id, convention).then(save())),
-    setAutoFetch: (id, minutes) => void run(id, "autoFetch", () => api.setRepoAutoFetch(id, minutes).then(save())),
+    setAutoFetch: (id, seconds) => void run(id, "autoFetch", () => api.setRepoAutoFetch(id, seconds).then(save())),
     setLabelColor: (id, label, hue) => void run(id, "labels", () => api.setLabelColor(label, hue).then(save())),
     labelsOpen: dialogs.labelsOpen,
     openLabels: (id) => {

@@ -4,7 +4,7 @@ import { LabelChips } from "./labels.tsx";
 import { boardColumns, isComplete } from "../shared/columns.ts";
 import { waitingNote } from "../shared/dependencies.ts";
 import { linkedPullRequest } from "../shared/pullRequestLink.ts";
-import { frameworkInfo, type ChangeSnapshot, type Config, type PullRequest, type PullRequestsResponse, type RepoSnapshot, type Snapshot } from "../shared/types.ts";
+import { autoFetchInterval, frameworkInfo, type ChangeSnapshot, type Config, type PullRequest, type PullRequestsResponse, type RepoSnapshot, type Snapshot } from "../shared/types.ts";
 import { NoRepos } from "./empty.tsx";
 import { parseFilters, resolveLayout, serializeFilters, STACK_BELOW_PX, type Filters } from "./filters.ts";
 import { FilterBar } from "./boardFilters.tsx";
@@ -438,7 +438,7 @@ function RepoHeader({ repo, config, now, stats, onCreated }: { repo: RepoSnapsho
         <div class="band-actions">
           <ProjectConsoleButton repoId={repo.id} variant="board" />
           {canGit && <PullButton repoId={repo.id} repoName={repo.name} />}
-          {canGit && <FetchNoteBadge input={{ ...repo, autoFetchMinutes: config?.repos.find((r) => r.id === repo.id)?.autoFetchMinutes }} now={now} />}
+          {canGit && <FetchNoteBadge input={{ ...repo, autoFetchSeconds: autoFetchInterval(config?.repos.find((r) => r.id === repo.id)) }} now={now} />}
           {canGit && <CleanupButton repoId={repo.id} repoName={repo.name} onDone={onCreated} />}
           {/* Every eligible git repository: whether it is on GitHub is the dialog's to say, after asking. */}
           {canGit && (

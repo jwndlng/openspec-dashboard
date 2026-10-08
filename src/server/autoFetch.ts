@@ -1,11 +1,14 @@
-// Auto fetch: for a project whose setting the user switched on, the pull action's fetch — and only that — on the
-// interval they chose (openspec/specs/repository-pull: "A project can be fetched automatically, fetch only").
+// Auto fetch: for every project whose setting the user did not switch off, the pull action's fetch — and only that — on
+// its interval, every minute by default (openspec/specs/repository-pull: "Projects are fetched automatically unless
+// switched off, fetch only").
 //
-// One timer per opted-in repository and none otherwise, so a dashboard where nobody opted in schedules nothing at all.
+// One timer per eligible repository and none otherwise, so a dashboard whose projects are all switched off, not git or
+// without a remote schedules nothing at all.
 // `plan()` is re-run after every config write and every scan; it keeps a timer whose interval did not change, so a
 // rescan never postpones a fetch. A timer that fires re-checks eligibility first, then re-arms one interval later,
-// whatever came of the fetch: a failing remote is tried again at the next interval, never sooner.
-import type { AutoFetchOutcome, Config, PullResult, RepoConfig, RepoSnapshot, Snapshot } from "../shared/types.ts";
+// whatever came of the fetch: a failing remote is tried again at the next interval, never sooner, and a repository
+// whose fetch is still running or waiting is not queued a second time, however short the interval.
+import { type AutoFetchOutcome, autoFetchInterval, type Config, type PullResult, type RepoConfig, type RepoSnapshot, type Snapshot } from "../shared/types.ts";
 import { type FetchOutcome, fetchRepository } from "./pull.ts";
 
 const CONCURRENCY = 3;
@@ -22,7 +25,7 @@ export interface AutoFetcherDeps {
 }
 
 interface Planned {
-  minutes: number;
+  seconds: number;
   timer: unknown;
 }
 
@@ -30,17 +33,20 @@ export class AutoFetcher {
   private readonly planned = new Map<string, Planned>();
   private readonly outcomes = new Map<string, AutoFetchOutcome>();
   private readonly queue: string[] = [];
+  /** Repositories whose automatic fetch is running now. */
+  private readonly fetching = new Set<string>();
   private running = 0;
   private stopped = false;
 
   constructor(private readonly deps: AutoFetcherDeps) {}
 
-  /** The interval a repository is fetched at right now, or undefined when it is not fetched automatically. */
-  private dueMinutes(repo: RepoConfig, scanned: RepoSnapshot | undefined): number | undefined {
-    if (!repo.enabled || repo.autoFetchMinutes === undefined) return undefined;
+  /** The interval, in seconds, a repository is fetched at right now, or undefined when it is not fetched automatically. */
+  private dueSeconds(repo: RepoConfig, scanned: RepoSnapshot | undefined): number | undefined {
+    const seconds = autoFetchInterval(repo);
+    if (!repo.enabled || seconds === undefined) return undefined;
     // Skipped without running git: not scanned yet, scan failed, not git, or nothing to fetch from.
     if (!scanned?.ok || !scanned.isGit || scanned.hasRemote !== true) return undefined;
-    return repo.autoFetchMinutes;
+    return seconds;
   }
 
   /** Arms, keeps or clears each repository's timer to match the configuration and the latest scan. */
@@ -49,15 +55,15 @@ export class AutoFetcher {
     const scanned = new Map(this.deps.getSnapshot().repos.map((r) => [r.id, r]));
     const wanted = new Map<string, number>();
     for (const repo of this.deps.getConfig().repos) {
-      const minutes = this.dueMinutes(repo, scanned.get(repo.id));
-      if (minutes !== undefined) wanted.set(repo.id, minutes);
+      const seconds = this.dueSeconds(repo, scanned.get(repo.id));
+      if (seconds !== undefined) wanted.set(repo.id, seconds);
     }
     for (const [id, planned] of this.planned) {
-      if (wanted.get(id) === planned.minutes) continue;
+      if (wanted.get(id) === planned.seconds) continue;
       this.clear(planned.timer);
       this.planned.delete(id);
     }
-    for (const [id, minutes] of wanted) if (!this.planned.has(id)) this.arm(id, minutes);
+    for (const [id, seconds] of wanted) if (!this.planned.has(id)) this.arm(id, seconds);
     // A forgotten repository leaves no outcome behind.
     const configured = new Set(this.deps.getConfig().repos.map((r) => r.id));
     for (const id of this.outcomes.keys()) if (!configured.has(id)) this.outcomes.delete(id);
@@ -87,19 +93,20 @@ export class AutoFetcher {
     return { ...snapshot, repos: snapshot.repos.map((r) => (this.outcomes.has(r.id) ? { ...r, autoFetch: this.outcomes.get(r.id) } : r)) };
   }
 
-  private arm(id: string, minutes: number): void {
-    const timer = (this.deps.setTimer ?? defaultSetTimer)(() => this.fire(id, minutes), minutes * 60_000);
-    this.planned.set(id, { minutes, timer });
+  private arm(id: string, seconds: number): void {
+    const timer = (this.deps.setTimer ?? defaultSetTimer)(() => this.fire(id, seconds), seconds * 1000);
+    this.planned.set(id, { seconds, timer });
   }
 
   private clear(timer: unknown): void {
     (this.deps.clearTimer ?? defaultClearTimer)(timer);
   }
 
-  private fire(id: string, minutes: number): void {
-    if (this.stopped || this.planned.get(id)?.minutes !== minutes) return;
-    this.arm(id, minutes);
-    if (!this.queue.includes(id)) this.queue.push(id);
+  private fire(id: string, seconds: number): void {
+    if (this.stopped || this.planned.get(id)?.seconds !== seconds) return;
+    this.arm(id, seconds);
+    // Still fetching or still waiting for a slot: this turn is skipped, the next one is an interval later.
+    if (!this.queue.includes(id) && !this.fetching.has(id)) this.queue.push(id);
     this.drain();
   }
 
@@ -107,7 +114,9 @@ export class AutoFetcher {
     while (this.running < CONCURRENCY && this.queue.length > 0) {
       const id = this.queue.shift() as string;
       this.running++;
+      this.fetching.add(id);
       void this.fetchOne(id).finally(() => {
+        this.fetching.delete(id);
         this.running--;
         this.drain();
       });
@@ -118,7 +127,7 @@ export class AutoFetcher {
     // The setting may have been switched off, or the project disabled, since the timer was armed.
     const repo = this.deps.getConfig().repos.find((r) => r.id === id);
     const scanned = this.deps.getSnapshot().repos.find((r) => r.id === id);
-    if (this.stopped || !repo || this.dueMinutes(repo, scanned) === undefined) return;
+    if (this.stopped || !repo || this.dueSeconds(repo, scanned) === undefined) return;
     let outcome: FetchOutcome;
     try {
       outcome = await (this.deps.fetch ?? fetchRepository)(repo);

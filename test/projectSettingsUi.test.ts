@@ -143,26 +143,31 @@ test("the PR titles picker is not offered for a folder without git, and is inact
 
 const autoFetchSelects = selectNamed("Auto fetch for ");
 
-test("every git project offers an Auto fetch drop-down in its dialog, Off by default, with agent sessions off too, saved at once", () => {
+test("every git project offers an Auto fetch drop-down in its dialog, every minute by default, with agent sessions off too, saved at once", () => {
   const { t, calls } = tracking();
   for (const config of [configWith(), configWith({ sessions: false }), configWith({ agent: { enabled: false } })]) {
     const [select] = autoFetchSelects(dialog(config, t));
     expect(select.props["aria-label"]).toBe("Auto fetch for alpha-infra");
-    expect(select.props.value).toBe("");
+    expect(select.props.value).toBe("60");
     expect(String(select.props.title)).toContain("only fetches");
+    expect(String(select.props.title)).toContain("every minute, unless you switch it off");
     expect(String(select.props.title)).toContain("Pull");
-    expect(byTag(select, "option").map(textOf)).toEqual(["Off", "Every 5 minutes", "Every 15 minutes", "Every 30 minutes", "Every hour"]);
+    expect(byTag(select, "option").map(textOf)).toEqual(["Off", "Every 15 seconds", "Every 30 seconds", "Every minute", "Every 5 minutes", "Every 10 minutes", "Every 15 minutes", "Every 30 minutes", "Every hour"]);
     expect(click(select)).toBe(true);
     (select.props.onChange as (e: unknown) => void)({ currentTarget: { value: "15" } });
   }
   expect(calls).toEqual(Array(3).fill("autoFetch a 15"));
 
   const set = tracking();
-  const withAutoFetch: Config = { ...configWith(), repos: [{ ...configWith().repos[0], autoFetchMinutes: 15 }] };
+  const withAutoFetch: Config = { ...configWith(), repos: [{ ...configWith().repos[0], autoFetchSeconds: 15 }] };
   const [select] = autoFetchSelects(dialog(withAutoFetch, set.t));
   expect(select.props.value).toBe("15");
-  (select.props.onChange as (e: unknown) => void)({ currentTarget: { value: "" } });
-  expect(set.calls).toEqual(["autoFetch a null"]);
+  (select.props.onChange as (e: unknown) => void)({ currentTarget: { value: "0" } });
+  (select.props.onChange as (e: unknown) => void)({ currentTarget: { value: "60" } });
+  expect(set.calls).toEqual(["autoFetch a 0", "autoFetch a 60"]);
+
+  const off: Config = { ...configWith(), repos: [{ ...configWith().repos[0], autoFetchSeconds: 0 }] };
+  expect(autoFetchSelects(dialog(off, set.t))[0].props.value).toBe("0");
 });
 
 test("no Auto fetch drop-down for a folder without git; inactive while a setting saves", () => {
@@ -176,7 +181,7 @@ const fetchNotes = (node: unknown) => byTag(node as never, "span").filter((s) =>
 test("a git project shows its fetch note beside Pull on its row and tile, with its own interval; a folder without git none", () => {
   const fetched = { ...snapshotRepo, hasRemote: true, lastFetchedAt: "2026-10-01T00:00:00Z" };
   const [fetchedRow] = overviewRows({ generatedAt: "2026-10-01T00:00:00Z", repos: [fetched] });
-  const config: Config = { ...configWith(), repos: [{ ...configWith().repos[0], autoFetchMinutes: 30 }] };
+  const config: Config = { ...configWith(), repos: [{ ...configWith().repos[0], autoFetchSeconds: 1800 }] };
   for (const node of [Row({ row: fetchedRow, now: 0, tracking: tracking().t, config }), Tile({ row: fetchedRow, now: 0, tracking: tracking().t, config })]) {
     const [badge] = fetchNotes(node);
     expect(textOf(badge)).toBe("fetched just now");

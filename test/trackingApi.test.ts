@@ -251,20 +251,22 @@ test("an unknown convention or a body without one is refused", async () => {
   expect(await saved()).toEqual(before);
 });
 
-test("auto fetch is set and cleared, keeping everything else, re-planning without a scan or a fetch", async () => {
+test("auto fetch is set, switched off and reset to the default, keeping everything else, re-planning without a scan or a fetch", async () => {
   let planned = 0;
   state.autoFetcher = { plan: () => void planned++ } as unknown as AppState["autoFetcher"];
   try {
     state.config = await saveConfig({ ...state.config, repos: [{ ...newRepoConfig(paths().alpha, true), name: "Alpha", agent: { enabled: false }, labels: ["client"], prTitleConvention: "conventional-commits" }] });
-    expect((await send(`/api/repos/${alphaId()}/auto-fetch`, { minutes: 15 })).status).toBe(200);
-    expect(await alphaEntry()).toMatchObject({ name: "Alpha", enabled: true, agent: { enabled: false }, labels: ["client"], prTitleConvention: "conventional-commits", autoFetchMinutes: 15 });
-    expect(state.config.repos[0].autoFetchMinutes).toBe(15);
-    expect((await send(`/api/repos/${alphaId()}/auto-fetch`, { minutes: null })).status).toBe(200);
+    expect((await send(`/api/repos/${alphaId()}/auto-fetch`, { seconds: 15 })).status).toBe(200);
+    expect(await alphaEntry()).toMatchObject({ name: "Alpha", enabled: true, agent: { enabled: false }, labels: ["client"], prTitleConvention: "conventional-commits", autoFetchSeconds: 15 });
+    expect(state.config.repos[0].autoFetchSeconds).toBe(15);
+    expect((await send(`/api/repos/${alphaId()}/auto-fetch`, { seconds: 0 })).status).toBe(200);
+    expect(await alphaEntry()).toMatchObject({ autoFetchSeconds: 0 });
+    expect((await send(`/api/repos/${alphaId()}/auto-fetch`, { seconds: 60 })).status).toBe(200);
     const repo = await alphaEntry();
-    expect(repo && "autoFetchMinutes" in repo).toBe(false);
+    expect(repo && "autoFetchSeconds" in repo).toBe(false);
     expect(repo).toMatchObject({ name: "Alpha", prTitleConvention: "conventional-commits" });
     expect(triggered).toBe(0);
-    expect(planned).toBe(2);
+    expect(planned).toBe(3);
   } finally {
     state.autoFetcher = undefined;
   }
@@ -272,7 +274,7 @@ test("auto fetch is set and cleared, keeping everything else, re-planning withou
 
 test("an unsupported auto-fetch interval or a body without one is refused", async () => {
   const before = await saved();
-  for (const body of [{ minutes: 1 }, { minutes: "15" }, { minutes: 0 }, { minutes: true }, {}]) expect((await send(`/api/repos/${alphaId()}/auto-fetch`, body)).status).toBe(400);
+  for (const body of [{ seconds: 1 }, { seconds: 45 }, { seconds: "15" }, { seconds: null }, { seconds: true }, { minutes: 15 }, {}]) expect((await send(`/api/repos/${alphaId()}/auto-fetch`, body)).status).toBe(400);
   expect(await saved()).toEqual(before);
 });
 
@@ -348,7 +350,7 @@ test("the settings routes refuse an unknown repository", async () => {
     [`/api/repos/${id}/agent`, { enabled: false }],
     [`/api/repos/${id}/labels`, { labels: ["x"] }],
     [`/api/repos/${id}/pr-title-convention`, { convention: "conventional-commits" }],
-    [`/api/repos/${id}/auto-fetch`, { minutes: 15 }],
+    [`/api/repos/${id}/auto-fetch`, { seconds: 15 }],
     [`/api/repos/${id}/forget`, {}],
   ];
   for (const [path, body] of routes) expect((await send(path, body)).status).toBe(404);

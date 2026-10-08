@@ -90,7 +90,8 @@ export interface FetchNoteInput {
   hasRemote?: boolean;
   lastFetchedAt?: string;
   autoFetch?: AutoFetchOutcome;
-  autoFetchMinutes?: number;
+  /** The project's effective auto-fetch interval in seconds; absent when it is switched off. */
+  autoFetchSeconds?: number;
 }
 
 export interface FetchNote {
@@ -100,7 +101,13 @@ export interface FetchNote {
   detail: string;
 }
 
-const every = (minutes: number) => (minutes === 60 ? "every hour" : `every ${minutes} minutes`);
+
+/** "every 15 seconds", "every minute", "every 5 minutes", "every hour". */
+export function autoFetchEvery(seconds: number): string {
+  if (seconds === 60) return "every minute";
+  if (seconds === 3600) return "every hour";
+  return seconds < 60 ? `every ${seconds} seconds` : `every ${seconds / 60} minutes`;
+}
 
 /**
  * When the repository was last fetched, by anyone, and whether its last automatic fetch failed (project-overview: "A
@@ -109,13 +116,13 @@ const every = (minutes: number) => (minutes === 60 ? "every hour" : `every ${min
  */
 export function fetchNote(input: FetchNoteInput, now = Date.now()): FetchNote | undefined {
   if (input.hasRemote !== true) return undefined;
-  const auto = input.autoFetchMinutes ? ` Fetched automatically ${every(input.autoFetchMinutes)}; the checkout itself is only updated by Pull.` : "";
+  const auto = input.autoFetchSeconds ? ` Fetched automatically ${autoFetchEvery(input.autoFetchSeconds)}; the checkout itself is only updated by Pull.` : "";
   const last = input.lastFetchedAt ? `Last fetched ${new Date(input.lastFetchedAt).toLocaleString()}.` : "Never fetched.";
   const failure = input.autoFetch;
   const fetchedSince = failure && input.lastFetchedAt !== undefined && Date.parse(input.lastFetchedAt) > Date.parse(failure.at);
   if (failure && !failure.ok && !fetchedSince) {
     const why = (failure.reason ?? "no reason given").replace(/[.\s]+$/, "");
-    return { label: "⚠ auto fetch failed", tone: "warning", detail: `The automatic fetch at ${new Date(failure.at).toLocaleString()} failed: ${why}. ${last}${auto}` };
+    return { label: "⚠ auto fetch failed", tone: "warning", detail: `The automatic fetch at ${new Date(failure.at).toLocaleString()} failed: ${why}. ${last}${auto} Auto fetch can be switched off in the project's settings.` };
   }
   if (!input.lastFetchedAt) return { label: "never fetched", tone: "", detail: `${last}${auto}` };
   const ago = relTime(input.lastFetchedAt, now);

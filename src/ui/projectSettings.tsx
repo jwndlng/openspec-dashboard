@@ -5,10 +5,11 @@
 // tile. Hook-free, so tests can walk them; the state lives in `useTracking`. Every control stops the click, so a row or
 // tile that holds one never opens the repository's board because of it.
 import type { ComponentChildren } from "preact";
-import { AUTO_FETCH_MINUTES, type AutoFetchMinutes, CONVENTIONAL_COMMITS_SHIP_SENTENCE, repoAgentEnabled, type Config, type DetectedLabel, type PrTitleConvention, type RepoConfig } from "../shared/types.ts";
+import { AUTO_FETCH_SECONDS, type AutoFetchSeconds, autoFetchInterval, CONVENTIONAL_COMMITS_SHIP_SENTENCE, repoAgentEnabled, type Config, type DetectedLabel, type PrTitleConvention, type RepoConfig } from "../shared/types.ts";
 import { IconPencil, IconSettings, IconTag } from "./icons.tsx";
 import { labelSuggestions, RepoLabelsEditor } from "./labels.tsx";
 import { Modal } from "./modal.tsx";
+import { autoFetchEvery } from "./pullState.ts";
 import { DisableButton, type Tracking } from "./untracked.tsx";
 import { followInApp, hrefWithQuery } from "./url.ts";
 
@@ -162,9 +163,9 @@ export function PrTitlesPicker({ repo, isGit, tracking }: { repo: RepoConfig; is
 }
 
 export const AUTO_FETCH_TITLE =
-  "Auto fetch: the dashboard fetches this project's remote at this interval, so merged branches and conflicts stay current. It only fetches — the checkout is updated by Pull alone — and uses git's own credentials without ever prompting. Saved at once.";
+  "Auto fetch: the dashboard fetches this project's remote at this interval, so merged branches and conflicts stay current. It is on, every minute, unless you switch it off here. It only fetches — the checkout is updated by Pull alone — and uses git's own credentials without ever prompting. Saved at once.";
 
-export const autoFetchLabel = (minutes: AutoFetchMinutes) => (minutes === 60 ? "Every hour" : `Every ${minutes} minutes`);
+export const autoFetchLabel = (seconds: AutoFetchSeconds) => `E${autoFetchEvery(seconds).slice(1)}`;
 
 /**
  * How often the project's remote is fetched automatically (repository-pull: fetch only). Only for a git repository, and
@@ -177,18 +178,17 @@ export function AutoFetchPicker({ repo, isGit, tracking }: { repo: RepoConfig; i
       class="input auto-fetch-picker"
       aria-label={`Auto fetch for ${repo.name}`}
       title={AUTO_FETCH_TITLE}
-      value={String(repo.autoFetchMinutes ?? "")}
+      value={String(autoFetchInterval(repo) ?? 0)}
       disabled={tracking.busy[repo.id] !== undefined}
       onClick={stop}
       onChange={(e) => {
-        const value = e.currentTarget.value;
-        tracking.setAutoFetch(repo.id, value ? (Number(value) as AutoFetchMinutes) : null);
+        tracking.setAutoFetch(repo.id, Number(e.currentTarget.value) as AutoFetchSeconds | 0);
       }}
     >
-      <option value="">Off</option>
-      {AUTO_FETCH_MINUTES.map((m) => (
-        <option key={m} value={String(m)}>
-          {autoFetchLabel(m)}
+      <option value="0">Off</option>
+      {AUTO_FETCH_SECONDS.map((s) => (
+        <option key={s} value={String(s)}>
+          {autoFetchLabel(s)}
         </option>
       ))}
     </select>

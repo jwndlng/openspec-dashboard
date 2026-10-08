@@ -221,11 +221,18 @@ test("nothing but the pull action ever reaches a remote: scans and polls leave a
   git(f.repo, "remote", "set-url", "origin", "ssh://git.example.invalid/team/repo.git");
   process.env.GIT_SSH_COMMAND = fakeSsh;
 
-  const repo = newRepoConfig(f.repo, true);
+  // auto fetch switched off: the schedule arms nothing either
+  const repo = { ...newRepoConfig(f.repo, true), autoFetchSeconds: 0 as const };
   const config = { ...defaultConfig(), repos: [repo] };
   const scanner = new Scanner(() => config, { persist: false });
-  for (let i = 0; i < 3; i++) await scanner.trigger().done; // what start-up and the poll interval do
-  expect(scanner.snapshot.repos[0]).toMatchObject({ ok: true, defaultBranch: "main", onDefaultBranch: true });
+  const timers: (() => void)[] = [];
+  const fetcher = new AutoFetcher({ getConfig: () => config, getSnapshot: () => scanner.snapshot, onMoved: () => undefined, setTimer: (run) => timers.push(run), clearTimer: () => undefined });
+  for (let i = 0; i < 3; i++) {
+    await scanner.trigger().done; // what start-up and the poll interval do
+    fetcher.plan();
+  }
+  expect(scanner.snapshot.repos[0]).toMatchObject({ ok: true, defaultBranch: "main", onDefaultBranch: true, hasRemote: true });
+  expect(timers).toHaveLength(0);
   expect(existsSync(marker)).toBe(false);
 
   // …and the recorder does work: the pull action is what trips it
@@ -492,7 +499,7 @@ test("a scan reports whether a repository has a remote and when it was last fetc
   expect(lonelyScanner.snapshot.repos[0]).toMatchObject({ ok: true, hasRemote: false });
 });
 
-test("with auto fetch on, scans, discovery and the state endpoint still never reach the remote; only the schedule does", async () => {
+test("with auto fetch on by default, scans, discovery and the state endpoint still never reach the remote; only the schedule does", async () => {
   const f = await make();
   const marker = join(f.base, "remote-was-contacted");
   const fakeSsh = join(f.base, "fake-ssh.sh");
@@ -501,7 +508,7 @@ test("with auto fetch on, scans, discovery and the state endpoint still never re
   git(f.repo, "remote", "set-url", "origin", "ssh://git.example.invalid/team/repo.git");
   process.env.GIT_SSH_COMMAND = fakeSsh;
 
-  const repo = { ...newRepoConfig(f.repo, true), autoFetchMinutes: 5 as const };
+  const repo = newRepoConfig(f.repo, true); // no setting: fetched every minute
   const config = { ...defaultConfig(), scanRoots: [f.base], repos: [repo] };
   const scanner = new Scanner(() => config, { persist: false });
   const timers: (() => void)[] = [];
