@@ -10,7 +10,7 @@ choose, so merged pull requests show up without a manual step.
 
 ## What Changes
 
-- New per-project setting **Auto fetch** on the projects overview (row and tile Settings panel): a drop-down with
+- New per-project setting **Auto fetch** on the projects overview (a line in the project's settings dialog, after Docs auto-merge; depends on `project-settings-overlay`): a drop-down with
   **Off** (the default), **Every 5 minutes**, **Every 15 minutes**, **Every 30 minutes** and **Every hour**, saved at
   once like the other project settings. Shown only for a git repository.
 - While it is on, the server fetches that project's remote on that interval — **fetch only**: the same `git fetch` the

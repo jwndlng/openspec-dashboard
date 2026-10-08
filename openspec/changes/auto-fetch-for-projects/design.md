@@ -88,8 +88,8 @@ fields it carries over (check `settings.tsx` merges repos as last received, as f
 
 ### D6 — UI
 `AutoFetchPicker` in `projectSettings.tsx`, modelled on `PrTitlesPicker` (git only, shown regardless of agent sessions,
-`tracking.setAutoFetch(id, minutes | null)` in `Tracking`). It goes in the row's inline settings and as a labelled line
-in the tile's Settings panel after Docs auto-merge. The last-fetch note is a pure helper `fetchNote(repo, snapshot, now)`
+`tracking.setAutoFetch(id, minutes | null)` in `Tracking`). It is a labelled line in the project's settings dialog
+(from `project-settings-overlay`, which this change depends on) after Docs auto-merge. The last-fetch note is a pure helper `fetchNote(repo, snapshot, now)`
 in `pullState.ts` (`fetched 4m ago` / `never fetched` / `auto fetch failed`, with tooltip text) rendered beside the
 Pull control on the row, tile and board header. The demo API stores the setting and reports a plausible
 `lastFetchedAt`; it never fetches.
