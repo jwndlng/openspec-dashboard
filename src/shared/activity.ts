@@ -1,5 +1,5 @@
 // Activity helpers shared by the server (serving the feed) and the UI. Pure.
-import type { ActivityEvent, ActivityKind, ActivityPage } from "./types.ts";
+import type { ActivityEvent, ActivityKind, ActivityPage, ActivitySummary } from "./types.ts";
 
 /** Task ticks of one change this close together are shown as one entry. */
 export const COLLAPSE_WINDOW_MS = 60 * 60 * 1000;
@@ -57,6 +57,25 @@ export function collapseTaskProgress(events: readonly ActivityEvent[]): Activity
   return out;
 }
 
+/** What needs a second look: a scan starting to fail, or a session that failed or exited non-zero. The feed's danger tone. */
+export function needsAttention(event: ActivityEvent): boolean {
+  return event.kind === "repo-failing" || (event.kind === "session-ended" && (event.error !== undefined || (event.exitCode ?? 0) !== 0));
+}
+
+/** The summary strip's figures (design D2): counted on recorded events, before task progress is collapsed. */
+export function summarize(events: readonly ActivityEvent[]): ActivitySummary {
+  const summary: ActivitySummary = { created: 0, moved: 0, archived: 0, tasksCompleted: 0, sessions: 0, attention: 0 };
+  for (const event of events) {
+    if (event.kind === "change-created") summary.created += 1;
+    else if (event.kind === "change-moved") summary.moved += 1;
+    else if (event.kind === "change-archived") summary.archived += 1;
+    else if (event.kind === "tasks-progress") summary.tasksCompleted += Math.max(0, event.to.done - event.from.done);
+    else if (event.kind === "session-started") summary.sessions += 1;
+    if (needsAttention(event)) summary.attention += 1;
+  }
+  return summary;
+}
+
 export const DEFAULT_PAGE = 100;
 export const MAX_PAGE = 500;
 
@@ -88,6 +107,8 @@ export function pageEvents(entries: readonly ActivityEvent[], query: ActivityQue
   }
   const events = feed.slice(start, start + limit);
   const page: ActivityPage = { events };
+  // The figures do not depend on the page: only the first one carries them, older pages keep that answer.
+  if (query.before === undefined) page.summary = summarize(matching);
   if (start + limit < feed.length && events.length > 0) page.nextBefore = events[events.length - 1].id;
   if (newestId) page.newestId = newestId;
   if (query.since !== undefined) {

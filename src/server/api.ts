@@ -2,6 +2,7 @@ import { ACTIVITY_KINDS, type ActivityKind } from "../shared/types.ts";
 import { availableName } from "../shared/nameHints.ts";
 import { labelKey } from "../shared/labels.ts";
 import { MAX_PAGE, type ActivityLog, type PageQuery } from "./activity/log.ts";
+import { pageEvents } from "../shared/activity.ts";
 import type { CleanupSelection, Config, DiscoverResult, PullBlockingFile, PullRequestsResponse, PullResolve, RepoConfig, RepoSnapshot, ScanTriggerResult, SharedConfigApplyResult, SharedConfigAssignment, SharedConfigPreview } from "../shared/types.ts";
 import { applyCleanup, CleanupBusyError, previewCleanup } from "./cleanup.ts";
 import { changeDirFor, listArtifactFiles, readArtifactFile } from "./artifacts.ts";
@@ -929,7 +930,7 @@ function getActivity(state: AppState, url: URL): Response {
   query.repos = list("repos");
   if (params.has("before")) query.before = params.get("before") ?? undefined;
   if (params.has("since")) query.since = params.get("since") ?? "";
-  return json(state.activity?.page(query) ?? { events: [] });
+  return json(state.activity?.page(query) ?? pageEvents([], query));
 }
 
 /** Builds the `fetch` handler for Bun.serve (design.md D8). */

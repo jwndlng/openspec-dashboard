@@ -4,7 +4,9 @@ import { boardColumns } from "../src/shared/columns.ts";
 import { summarizeWorkInProgress } from "../src/shared/workInProgress.ts";
 import { checkoutMarkers } from "../src/ui/checkoutMarkers.ts";
 import { availableActions } from "../src/shared/types.ts";
-import { buildPullRequests, buildSample, DEMO_AGENT, DEMO_ROOT } from "../src/ui/demo/sampleData.ts";
+import { buildActivity, buildPullRequests, buildSample, DEMO_AGENT, DEMO_ROOT } from "../src/ui/demo/sampleData.ts";
+import { pageEvents, retained } from "../src/shared/activity.ts";
+import { DAY_COLLAPSE_ABOVE, groupByDay } from "../src/ui/activityState.ts";
 import { meterText } from "../src/ui/kanban.tsx";
 import { pullRequestEntries } from "../src/ui/pullRequestsState.ts";
 import { startersFor } from "../src/ui/sessionState.ts";
@@ -198,4 +200,16 @@ test("the demo shows custom, detected and hidden labels", () => {
   expect(rows.find((r) => r.id === hiding?.id)?.labels.some((l) => l.label === hiding?.hiddenLabels?.[0])).toBe(false);
   // A label shared by several repositories, so the filter has something to narrow.
   expect(filterRows(rows, "", false, ["client"]).length).toBeGreaterThanOrEqual(2);
+});
+
+test("the sample activity has a busy day to collapse and a non-zero count for every summary figure", () => {
+  // The demo is built from the visitor's clock, so check it at several times of day.
+  for (const hours of [0, 5, 9, 14, 23]) {
+    const now = NOW + hours * 3_600_000;
+    const page = pageEvents(retained(buildActivity(buildSample(now).snapshot, now), now));
+    for (const [figure, count] of Object.entries(page.summary ?? {})) expect({ hours, figure, count: count > 0 }).toEqual({ hours, figure, count: true });
+    expect(Object.keys(page.summary ?? {})).toHaveLength(6);
+    const busiest = Math.max(...groupByDay(page.events, new Date(now)).map((d) => d.events.length));
+    expect({ hours, busy: busiest > DAY_COLLAPSE_ABOVE }).toEqual({ hours, busy: true });
+  }
 });

@@ -3,7 +3,7 @@ import { appendFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { newEventId } from "../src/server/activity/events.ts";
 import { ActivityLog, AGE_COMPACT_EVERY_MS, COMPACT_ABOVE_LINES, KEEP_ENTRIES } from "../src/server/activity/log.ts";
-import { collapseTaskProgress, RETENTION_MS, retained } from "../src/shared/activity.ts";
+import { collapseTaskProgress, pageEvents, RETENTION_MS, retained, summarize } from "../src/shared/activity.ts";
 import type { ActivityEvent } from "../src/shared/types.ts";
 import { tempDir } from "./helpers.ts";
 
@@ -32,7 +32,7 @@ test("events survive a restart, newest first", async () => {
   const path = file("restart");
   const log = new ActivityLog(path, clock);
   await log.load();
-  expect(log.page()).toEqual({ events: [] });
+  expect(log.page()).toEqual({ events: [], summary: { created: 0, moved: 0, archived: 0, tasksCompleted: 0, sessions: 0, attention: 0 } });
   await log.append([moved(T0, "a", "Specs", "Ready"), moved(T0 + MIN, "b", "Ready", "Implementing")]);
   const again = new ActivityLog(path, clock);
   await again.load();
@@ -95,7 +95,7 @@ test("paging has no duplicates and no gaps; filters apply; newestId ignores them
   expect(sessions.events).toHaveLength(50);
   expect(sessions.events.every((e) => e.kind === "session-started" && e.repoId === "r1")).toBe(true);
   expect(sessions.newestId).toBe(events[249].id);
-  expect(log.page({ repos: ["nope"] })).toEqual({ events: [], newestId: events[249].id });
+  expect(log.page({ repos: ["nope"] })).toEqual({ events: [], newestId: events[249].id, summary: { created: 0, moved: 0, archived: 0, tasksCompleted: 0, sessions: 0, attention: 0 } });
   expect(log.page({ limit: 1, since: events[244].id }).newerThanSince).toBe(5);
   expect(log.page({ limit: 1, since: "" }).newerThanSince).toBe(250);
 });
@@ -171,11 +171,12 @@ test("the feed only shows, points at and counts the last 7 days, and reading nev
   expect(page.events.map((e) => "change" in e && e.change)).toEqual(["r0", "r1", "r2"]);
   expect(page.nextBefore).toBeUndefined();
   expect(page.newerThanSince).toBe(3);
+  expect(page.summary?.moved).toBe(3);
   expect(page.newestId).toBe(recent[2].id);
   expect(await lineCount(path)).toBe(5);
 
   now = T0 + 10 * DAY;
-  expect(log.page()).toEqual({ events: [] });
+  expect(log.page()).toEqual({ events: [], summary: { created: 0, moved: 0, archived: 0, tasksCompleted: 0, sessions: 0, attention: 0 } });
 });
 
 test("on start, aged-out events are dropped and the file is rewritten without them", async () => {
@@ -233,4 +234,45 @@ test("while running, aged-out entries leave the file at most once an hour, when 
   now += AGE_COMPACT_EVERY_MS;
   await log.append([moved(now, "c", "Specs", "Ready")]);
   expect(await changesIn(path)).toEqual(["b", "c"]);
+});
+
+// ---- summary (activity-summary) ----
+
+const created = (atMs: number, change: string): ActivityEvent => ({ ...base(atMs), kind: "change-created", change, to: "Drafts" });
+const archived = (atMs: number, change: string): ActivityEvent => ({ ...base(atMs), kind: "change-archived", change, from: "Done" });
+const ended = (atMs: number, change: string, exitCode: number): ActivityEvent => ({ ...base(atMs), kind: "session-ended", change, exitCode });
+const failing = (atMs: number): ActivityEvent => ({ ...base(atMs), kind: "repo-failing", error: "boom" });
+
+test("a week in figures: events, not entries; a fall in finished tasks subtracts nothing", () => {
+  const h = (n: number) => T0 + n * 60 * MIN;
+  const events = [
+    ...["a", "b", "c"].map((c, i) => created(h(i), c)),
+    ...[1, 2, 3, 4, 5].map((i) => moved(h(10 + i), `m${i}`, "Drafts", "Ready")),
+    archived(h(20), "x"),
+    archived(h(21), "y"),
+    progress(h(30), "t", 0, 3, 8),
+    progress(h(32), "t", 3, 5, 8),
+    progress(h(34), "t", 5, 4, 8),
+    ...[1, 2, 3, 4].map((i) => started(h(40 + i), `s${i}`)),
+    ended(h(50), "s1", 1),
+    ended(h(51), "s2", 0),
+    failing(h(52)),
+  ];
+  expect(summarize(events)).toEqual({ created: 3, moved: 5, archived: 2, tasksCompleted: 5, sessions: 4, attention: 2 });
+});
+
+test("collapsing does not change the figures; only the first page carries them, over everything matching", () => {
+  const ticks = [progress(T0, "c", 3, 4), progress(T0 + 10 * MIN, "c", 4, 6), progress(T0 + 40 * MIN, "c", 6, 7)];
+  const page = pageEvents(ticks);
+  expect(page.events).toHaveLength(1);
+  expect(page.summary?.tasksCompleted).toBe(4);
+
+  const many = Array.from({ length: 350 }, (_, i) => moved(T0 + i * MIN, `m${i}`, "Drafts", "Ready", i % 2 ? "r2" : "r1"));
+  const first = pageEvents(many, { limit: 100 });
+  expect(first.events).toHaveLength(100);
+  expect(first.summary?.moved).toBe(350);
+  expect(pageEvents(many, { limit: 100, before: first.nextBefore }).summary).toBeUndefined();
+  expect(pageEvents(many, { repos: ["r2"] }).summary?.moved).toBe(175);
+  expect(pageEvents(many, { kinds: ["session-started"] }).summary?.moved).toBe(0);
+  expect(pageEvents([]).summary).toEqual({ created: 0, moved: 0, archived: 0, tasksCompleted: 0, sessions: 0, attention: 0 });
 });

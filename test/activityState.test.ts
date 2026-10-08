@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
-import { pageEvents } from "../src/shared/activity.ts";
+import { needsAttention, pageEvents } from "../src/shared/activity.ts";
 import type { ActivityEvent } from "../src/shared/types.ts";
-import { describe, groupByDay, kindsFor, parseActivityFilters, serializeActivityFilters, timeOfDay, tone, unseenLabel } from "../src/ui/activityState.ts";
+import { collapseDay, DAY_SHOWN, describe, groupByDay, isBusyDay, kindsFor, parseActivityFilters, serializeActivityFilters, timeOfDay, tone, unseenLabel, visibleFigures } from "../src/ui/activityState.ts";
 
 let n = 0;
 const base = (at: Date) => ({ v: 1 as const, id: `id${String(n++).padStart(4, "0")}`, at: at.toISOString(), detectedAt: at.toISOString(), repoId: "r1", repoName: "demo-ops" });
@@ -74,6 +74,8 @@ test("every kind has wording, and what needs a look stands out", () => {
   for (const [event, words, weight] of cases) {
     expect(describe(event)).toBe(words);
     expect(tone(event)).toBe(weight as ReturnType<typeof tone>);
+    // The summary's "need attention" counts exactly what the feed shows in red.
+    expect(needsAttention(event)).toBe(weight === "danger");
   }
 });
 
@@ -90,4 +92,30 @@ test("what is newer than the last seen event is what the server counts", () => {
   const events: ActivityEvent[] = Array.from({ length: 8 }, () => ({ ...base(at), kind: "repo-recovered" as const }));
   expect(pageEvents(events, { limit: 1, since: events[2].id }).newerThanSince).toBe(5);
   expect(pageEvents(events, { limit: 1, since: events[7].id }).newerThanSince).toBe(0);
+});
+
+test("summary figures follow the kind filter", () => {
+  const keys = (groups: Parameters<typeof visibleFigures>[0]) => visibleFigures(groups).map((f) => f.key);
+  expect(keys([])).toEqual(["created", "moved", "archived", "tasksCompleted", "sessions", "attention"]);
+  expect(keys(["sessions"])).toEqual(["sessions", "attention"]);
+  expect(keys(["tasks"])).toEqual(["tasksCompleted"]);
+  expect(keys(["repositories"])).toEqual(["attention"]);
+  expect(keys(["changes", "tasks"])).toEqual(["created", "moved", "archived", "tasksCompleted"]);
+});
+
+test("a busy day shows its newest entries until expanded; a quiet day is never collapsed", () => {
+  const day = (n: number) => ({
+    key: "2026-09-21",
+    label: "Today",
+    events: Array.from({ length: n }, (_, i) => ({ v: 1, id: `e${String(n - i).padStart(4, "0")}`, at: "2026-09-21T09:00:00.000Z", detectedAt: "2026-09-21T09:00:00.000Z", repoId: "r1", repoName: "demo-ops", kind: "repo-recovered" }) as ActivityEvent),
+  });
+  const busy = day(140);
+  const collapsed = collapseDay(busy, false);
+  expect(collapsed.shown).toEqual(busy.events.slice(0, DAY_SHOWN));
+  expect(collapsed.hidden).toBe(120);
+  expect(collapseDay(busy, true)).toEqual({ shown: busy.events, hidden: 0 });
+  expect(collapseDay(day(31), false).hidden).toBe(11);
+  expect(collapseDay(day(30), false)).toEqual({ shown: day(30).events, hidden: 0 });
+  expect(isBusyDay(day(30))).toBe(false);
+  expect(isBusyDay(day(31))).toBe(true);
 });

@@ -15,6 +15,13 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    id: "2026-10-07-activity-summary",
+    date: "2026-10-07",
+    title: "Activity at a glance",
+    summary:
+      "**Activity** now opens with the week in figures: changes created, moved and archived, tasks completed, sessions run, and the entries that need attention. They count the whole log and follow your filters. A busy day shows its newest 20 entries, and **Show more** brings back the rest.",
+  },
+  {
     id: "2026-10-07-project-settings-dialog",
     date: "2026-10-07",
     title: "Project settings in one dialog",
