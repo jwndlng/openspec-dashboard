@@ -109,6 +109,7 @@ export class ActivityLog {
 
   /** Only what is within the window right now, even before the next prune; reading never writes. */
   page(query: ActivityQuery = {}): ActivityPage {
-    return pageEvents(retained(this.entries, this.now()), query);
+    const now = this.now();
+    return pageEvents(retained(this.entries, now), query, now);
   }
 }

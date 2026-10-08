@@ -8,6 +8,7 @@ import { defaultConfig, newRepoConfig } from "../src/server/config.ts";
 import { activityLogPath } from "../src/server/paths.ts";
 import { Scanner } from "../src/server/scanner.ts";
 import type { ActivityEvent, ActivityPage, ChangeSession, Snapshot } from "../src/shared/types.ts";
+import { activityQueryString, httpApi } from "../src/ui/api.ts";
 import { useTempHome } from "./helpers.ts";
 import { git, harness, tempGitRepo, waitFor } from "./sessionHelpers.ts";
 
@@ -37,12 +38,16 @@ afterAll(async () => {
 
 const page = async (query = "") => (await (await fetch(`${base}/api/activity${query}`)).json()) as ActivityPage;
 const kinds = (p: ActivityPage) => p.events.map((e) => e.kind);
+const QUIET = expect.objectContaining({ events: 0, changes: 0, repos: [] });
 const NO_FIGURES = { created: 0, moved: 0, archived: 0, tasksCompleted: 0, sessions: 0, attention: 0 };
 
 test("nothing recorded: an empty feed; without a log at all the endpoint still answers", async () => {
-  expect(await page()).toEqual({ events: [], summary: NO_FIGURES });
+  expect(await page()).toEqual({ events: [], summary: NO_FIGURES, metrics: QUIET });
+  const days = (await page()).metrics?.days ?? [];
+  expect(days.length).toBeGreaterThanOrEqual(8);
+  expect(days.every((d) => d.events === 0 && d.changes === 0)).toBe(true);
   const bare = createFetchHandler({ state: { config: state.config, scanner: state.scanner }, indexHtml: "" });
-  expect(await (await bare(new Request(`${base}/api/activity`))).json()).toEqual({ events: [], summary: NO_FIGURES });
+  expect(await (await bare(new Request(`${base}/api/activity`))).json()).toEqual({ events: [], summary: NO_FIGURES, metrics: QUIET });
 });
 
 test("scans feed the log: baseline on first sight, then real changes; the log lives in the dashboard home and holds no paths", async () => {
@@ -88,6 +93,8 @@ test("paging, filters and validation", async () => {
   // The figures count everything matching on the first page, whatever the limit, and older pages do not repeat them.
   expect(first.summary).toEqual({ ...NO_FIGURES, created: 1, tasksCompleted: 1 });
   expect(second.summary).toBeUndefined();
+  expect(first.metrics?.events).toBe(3);
+  expect(second.metrics).toBeUndefined();
   expect(new Set([...first.events, ...second.events].map((e) => e.id)).size).toBe(3);
 
   const repoId = state.config.repos[0].id;
@@ -95,11 +102,17 @@ test("paging, filters and validation", async () => {
   expect(kinds(onlyTasks)).toEqual(["tasks-progress"]);
   expect(onlyTasks.summary).toEqual({ ...NO_FIGURES, tasksCompleted: 1 });
   expect((await page("?repos=unknown")).summary).toEqual(NO_FIGURES);
+  expect(onlyTasks.metrics?.repos.map((r) => r.repoId)).toEqual([repoId]);
+  expect((await page("?repos=unknown")).metrics).toEqual(QUIET);
+  // Days are the client's: the last one is today where the client is, also when that differs from UTC.
+  const zurich = await page("?tz=Europe/Zurich");
+  expect(zurich.metrics?.days.at(-1)?.day).toBe(new Date().toLocaleDateString("en-CA", { timeZone: "Europe/Zurich" }));
+  expect(zurich.metrics?.events).toBe(3);
   expect(onlyTasks.newestId).toBe((await page()).newestId);
   expect((await page("?repos=unknown")).events).toEqual([]);
   expect((await page(`?limit=1&since=${second.events[0].id}`)).newerThanSince).toBe(2);
 
-  for (const bad of ["?limit=0", "?limit=501", "?limit=abc", "?limit=1.5", "?kinds=made-up"]) {
+  for (const bad of ["?limit=0", "?limit=501", "?limit=abc", "?limit=1.5", "?kinds=made-up", "?tz=Mars/Olympus", "?tz="]) {
     const res = await fetch(`${base}/api/activity${bad}`);
     expect(res.status).toBe(400);
     expect(((await res.json()) as { error: string }).error).toBeTruthy();
@@ -173,4 +186,22 @@ test("resolving conflicts is reported as its own kind, with whether the prompt w
   } finally {
     await manager.shutdown();
   }
+});
+
+test("the client names its time zone, and falls back to UTC when the server does not know it", async () => {
+  expect(activityQueryString({ limit: 100, tz: "Europe/Zurich" })).toBe("?limit=100&tz=Europe%2FZurich");
+  expect(activityQueryString({ limit: 100 })).toBe("?limit=100");
+  const asked: string[] = [];
+  const real = globalThis.fetch;
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const url = String(input);
+    asked.push(url);
+    return url.includes("tz=") ? Response.json({ error: "unknown time zone: Mars/Olympus" }, { status: 400 }) : Response.json({ events: [] });
+  }) as typeof fetch;
+  try {
+    expect(await httpApi.activity({ limit: 1, tz: "Mars/Olympus" })).toEqual({ events: [] });
+  } finally {
+    globalThis.fetch = real;
+  }
+  expect(asked).toEqual(["/api/activity?limit=1&tz=Mars%2FOlympus", "/api/activity?limit=1"]);
 });

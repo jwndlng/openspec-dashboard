@@ -208,6 +208,7 @@ export function activityQueryString(query: ActivityQuery): string {
   if (query.repos?.length) params.set("repos", query.repos.join(","));
   if (query.kinds?.length) params.set("kinds", query.kinds.join(","));
   if (query.since !== undefined) params.set("since", query.since);
+  if (query.tz) params.set("tz", query.tz);
   const text = params.toString();
   return text ? `?${text}` : "";
 }
@@ -216,7 +217,15 @@ export const httpApi: Api = {
   state: () => call<Snapshot>("/api/state"),
   changeArtifacts: (repoId, change) => call<ChangeArtifacts>(`/api/repos/${encodeURIComponent(repoId)}/changes/${encodeURIComponent(change)}/artifacts`),
   artifactFile: (repoId, change, path) => call<ArtifactFileContent>(`/api/repos/${encodeURIComponent(repoId)}/changes/${encodeURIComponent(change)}/file?path=${encodeURIComponent(path)}`),
-  activity: (query = {}) => call<ActivityPage>(`/api/activity${activityQueryString(query)}`),
+  activity: async (query = {}) => {
+    try {
+      return await call<ActivityPage>(`/api/activity${activityQueryString(query)}`);
+    } catch (err) {
+      // A zone the server's runtime does not know: days in UTC beat no feed at all.
+      if (!query.tz || !(err instanceof ApiError) || err.status !== 400) throw err;
+      return call<ActivityPage>(`/api/activity${activityQueryString({ ...query, tz: undefined })}`);
+    }
+  },
   config: () => call<Config>("/api/config"),
   saveConfig: (config) => call<Config>("/api/config", { method: "PUT", body: JSON.stringify(config) }),
   trackRepo: (path) => call<Config>("/api/repos/track", { method: "POST", body: JSON.stringify({ path }) }),

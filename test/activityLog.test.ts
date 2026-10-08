@@ -3,7 +3,7 @@ import { appendFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { newEventId } from "../src/server/activity/events.ts";
 import { ActivityLog, AGE_COMPACT_EVERY_MS, COMPACT_ABOVE_LINES, KEEP_ENTRIES } from "../src/server/activity/log.ts";
-import { collapseTaskProgress, pageEvents, RETENTION_MS, retained, summarize } from "../src/shared/activity.ts";
+import { collapseTaskProgress, measure, pageEvents, RETENTION_MS, retained, summarize } from "../src/shared/activity.ts";
 import type { ActivityEvent } from "../src/shared/types.ts";
 import { tempDir } from "./helpers.ts";
 
@@ -26,13 +26,16 @@ const base = (atMs: number, repoId = "r1") => ({ v: 1 as const, id: newEventId(T
 const moved = (atMs: number, change: string, from: string, to: string, repoId?: string): ActivityEvent => ({ ...base(atMs, repoId), kind: "change-moved", change, from, to });
 const progress = (atMs: number, change: string, from: number, to: number, total = 12): ActivityEvent => ({ ...base(atMs), kind: "tasks-progress", change, column: "Implementing", from: { done: from, total }, to: { done: to, total } });
 const started = (atMs: number, change: string): ActivityEvent => ({ ...base(atMs), kind: "session-started", change, action: "implement", agentName: "Fake Agent" });
+const NO_FIGURES = { created: 0, moved: 0, archived: 0, tasksCompleted: 0, sessions: 0, attention: 0 };
+/** Metrics of nothing: the days of the window are still listed, each at zero. */
+const QUIET = expect.objectContaining({ events: 0, changes: 0, repos: [] });
 const file = (name: string) => join(dir, name, "activity.jsonl");
 
 test("events survive a restart, newest first", async () => {
   const path = file("restart");
   const log = new ActivityLog(path, clock);
   await log.load();
-  expect(log.page()).toEqual({ events: [], summary: { created: 0, moved: 0, archived: 0, tasksCompleted: 0, sessions: 0, attention: 0 } });
+  expect(log.page()).toEqual({ events: [], summary: NO_FIGURES, metrics: QUIET });
   await log.append([moved(T0, "a", "Specs", "Ready"), moved(T0 + MIN, "b", "Ready", "Implementing")]);
   const again = new ActivityLog(path, clock);
   await again.load();
@@ -95,7 +98,7 @@ test("paging has no duplicates and no gaps; filters apply; newestId ignores them
   expect(sessions.events).toHaveLength(50);
   expect(sessions.events.every((e) => e.kind === "session-started" && e.repoId === "r1")).toBe(true);
   expect(sessions.newestId).toBe(events[249].id);
-  expect(log.page({ repos: ["nope"] })).toEqual({ events: [], newestId: events[249].id, summary: { created: 0, moved: 0, archived: 0, tasksCompleted: 0, sessions: 0, attention: 0 } });
+  expect(log.page({ repos: ["nope"] })).toEqual({ events: [], newestId: events[249].id, summary: NO_FIGURES, metrics: QUIET });
   expect(log.page({ limit: 1, since: events[244].id }).newerThanSince).toBe(5);
   expect(log.page({ limit: 1, since: "" }).newerThanSince).toBe(250);
 });
@@ -172,11 +175,12 @@ test("the feed only shows, points at and counts the last 7 days, and reading nev
   expect(page.nextBefore).toBeUndefined();
   expect(page.newerThanSince).toBe(3);
   expect(page.summary?.moved).toBe(3);
+  expect(page.metrics?.events).toBe(3);
   expect(page.newestId).toBe(recent[2].id);
   expect(await lineCount(path)).toBe(5);
 
   now = T0 + 10 * DAY;
-  expect(log.page()).toEqual({ events: [], summary: { created: 0, moved: 0, archived: 0, tasksCompleted: 0, sessions: 0, attention: 0 } });
+  expect(log.page()).toEqual({ events: [], summary: NO_FIGURES, metrics: QUIET });
 });
 
 test("on start, aged-out events are dropped and the file is rewritten without them", async () => {
@@ -275,4 +279,79 @@ test("collapsing does not change the figures; only the first page carries them, 
   expect(pageEvents(many, { repos: ["r2"] }).summary?.moved).toBe(175);
   expect(pageEvents(many, { kinds: ["session-started"] }).summary?.moved).toBe(0);
   expect(pageEvents([]).summary).toEqual({ created: 0, moved: 0, archived: 0, tasksCompleted: 0, sessions: 0, attention: 0 });
+});
+
+// ---- metrics (add-metrics-to-activity) ----
+
+const H = 60 * MIN;
+const named = (event: ActivityEvent, repoId: string, repoName: string): ActivityEvent => ({ ...event, repoId, repoName });
+const tracked = (atMs: number, repoId: string, repoName: string): ActivityEvent => ({ ...base(atMs, repoId), repoName, kind: "repo-tracked", openChanges: 3 });
+
+test("a week per day: every day of the window, quiet ones at zero, events and distinct changes per day", () => {
+  const now = Date.parse("2026-10-07T15:00:00.000Z");
+  const today = Array.from({ length: 12 }, (_, i) => moved(now - i * MIN, `t${i % 3}`, "Ready", "Implementing"));
+  const thursday = Array.from({ length: 40 }, (_, i) => progress(Date.parse("2026-10-01T08:00:00.000Z") + i * MIN, `c${i % 9}`, 0, 1));
+  const m = measure([...thursday, ...today], now, "UTC");
+  expect(m.days.map((d) => d.day)).toEqual(["2026-09-30", "2026-10-01", "2026-10-02", "2026-10-03", "2026-10-04", "2026-10-05", "2026-10-06", "2026-10-07"]);
+  expect(m.days[1]).toEqual({ day: "2026-10-01", events: 40, changes: 9 });
+  expect(m.days[6]).toEqual({ day: "2026-10-06", events: 0, changes: 0 });
+  expect(m.days[7]).toEqual({ day: "2026-10-07", events: 12, changes: 3 });
+  expect(m.events).toBe(52);
+  expect(m.changes).toBe(12);
+});
+
+test("local days: an event counts on the day of its time in the requested zone", () => {
+  const now = Date.parse("2026-10-07T12:00:00.000Z");
+  const late = moved(Date.parse("2026-10-06T23:30:00.000Z"), "a", "Ready", "Implementing");
+  const count = (tz: string) => Object.fromEntries(measure([late], now, tz).days.map((d) => [d.day, d.events]));
+  expect(count("Europe/Zurich")["2026-10-07"]).toBe(1);
+  expect(count("Europe/Zurich")["2026-10-06"]).toBe(0);
+  expect(count("UTC")["2026-10-06"]).toBe(1);
+});
+
+test("a daylight-saving week skips and repeats no day", () => {
+  for (const [tz, now] of [["Europe/Zurich", "2026-10-28T12:00:00.000Z"], ["America/New_York", "2026-11-04T12:00:00.000Z"], ["Europe/Zurich", "2026-03-31T12:00:00.000Z"]] as const) {
+    const days = measure([], Date.parse(now), tz).days.map((d) => d.day);
+    expect(days).toHaveLength(8);
+    for (let i = 1; i < days.length; i++) expect(Date.parse(days[i]) - Date.parse(days[i - 1])).toBe(DAY);
+    expect(days.at(-1)).toBe(now.slice(0, 10));
+  }
+});
+
+test("per project: busiest first, distinct changes, repository events count as events only, the newest name kept", () => {
+  const now = T0 + DAY;
+  const events = [
+    ...Array.from({ length: 30 }, (_, i) => named(moved(T0 + i * MIN, `d${i % 4}`, "Ready", "Implementing"), "r1", "demo-ops")),
+    ...Array.from({ length: 12 }, (_, i) => named(moved(T0 + i * MIN, `a${i % 5}`, "Ready", "Implementing"), "r2", "alpha-infra-old")),
+    named(moved(T0 + H, "a0", "Implementing", "Done"), "r2", "alpha-infra"),
+    tracked(T0, "r3", "beta-soc"),
+    tracked(T0 + MIN, "r3", "beta-soc"),
+  ];
+  expect(measure(events, now).repos).toEqual([
+    { repoId: "r1", repoName: "demo-ops", events: 30, changes: 4 },
+    { repoId: "r2", repoName: "alpha-infra", events: 13, changes: 5 },
+    { repoId: "r3", repoName: "beta-soc", events: 2, changes: 0 },
+  ]);
+  const ties = [tracked(T0, "r9", "zeta"), tracked(T0, "r8", "eta")];
+  expect(measure(ties, now).repos.map((r) => r.repoName)).toEqual(["eta", "zeta"]);
+});
+
+test("the same change name in two projects counts twice", () => {
+  const events = [named(moved(T0, "add-login", "Ready", "Implementing"), "r1", "demo-ops"), named(moved(T0, "add-login", "Ready", "Implementing"), "r2", "alpha-infra")];
+  expect(measure(events, T0 + DAY).changes).toBe(2);
+});
+
+test("metrics count recorded events, follow the filters and come with the first page only", () => {
+  const ticks = [progress(T0, "c", 3, 4), progress(T0 + 10 * MIN, "c", 4, 6), progress(T0 + 40 * MIN, "c", 6, 7)];
+  const page = pageEvents(ticks, {}, T0 + DAY);
+  expect(page.events).toHaveLength(1);
+  expect(page.metrics?.events).toBe(3);
+  expect(page.metrics?.repos).toEqual([{ repoId: "r1", repoName: "demo-ops", events: 3, changes: 1 }]);
+
+  const many = Array.from({ length: 350 }, (_, i) => moved(T0 + i * MIN, `m${i}`, "Drafts", "Ready", i % 2 ? "r2" : "r1"));
+  const first = pageEvents(many, { limit: 100 }, T0 + DAY);
+  expect(first.metrics?.events).toBe(350);
+  expect(pageEvents(many, { limit: 100, before: first.nextBefore }, T0 + DAY).metrics).toBeUndefined();
+  expect(pageEvents(many, { repos: ["r2"] }, T0 + DAY).metrics?.repos.map((r) => r.repoId)).toEqual(["r2"]);
+  expect(pageEvents(many, { kinds: ["session-started"] }, T0 + DAY).metrics?.repos).toEqual([]);
 });

@@ -1,7 +1,7 @@
 // The Activity view's pure parts: filters ↔ URL, grouping by day, wording, and what counts as unseen.
 // Free of DOM access at import time; the storage helpers tolerate a browser that refuses localStorage.
 import { needsAttention } from "../shared/activity.ts";
-import { ACTIVITY_GROUPS, type ActivityEvent, type ActivityKind, type ActivitySummary } from "../shared/types.ts";
+import { ACTIVITY_GROUPS, type ActivityEvent, type ActivityKind, type ActivityRepoCount, type ActivitySummary } from "../shared/types.ts";
 import { storageKey } from "./storage.ts";
 
 export type ActivityGroup = keyof typeof ACTIVITY_GROUPS;
@@ -34,7 +34,7 @@ export function kindsFor(groups: readonly ActivityGroup[]): ActivityKind[] {
   return groups.flatMap((g) => ACTIVITY_GROUPS[g]);
 }
 
-const dayKey = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+export const dayKey = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 
 export interface ActivityDay {
   key: string;
@@ -151,6 +151,67 @@ export function collapseDay(day: ActivityDay, expanded: boolean): { shown: Activ
 
 /** Whether a day offers Show more / Show fewer at all. */
 export const isBusyDay = (day: ActivityDay) => day.events.length > DAY_COLLAPSE_ABOVE;
+
+// ---- metrics (add-metrics-to-activity) ----
+
+/** The browser's own time zone, which the server counts the per-day metrics in; undefined when it cannot say. */
+export function browserTimeZone(): string | undefined {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** The per-project panel lists this many before offering Show N more. */
+export const REPOS_SHOWN = 6;
+
+export function visibleRepos(repos: readonly ActivityRepoCount[], expanded: boolean): { shown: ActivityRepoCount[]; hidden: number } {
+  if (expanded || repos.length <= REPOS_SHOWN) return { shown: [...repos], hidden: 0 };
+  return { shown: repos.slice(0, REPOS_SHOWN), hidden: repos.length - REPOS_SHOWN };
+}
+
+/** A bar's length as a share of the largest one, in [0, 1]; nothing at all draws nothing. */
+export function barShare(value: number, max: number): number {
+  if (!(max > 0) || !(value > 0)) return 0;
+  return Math.min(1, value / max);
+}
+
+/** A `YYYY-MM-DD` key as a local date, never as UTC midnight, so it names the same day as the feed's headings. */
+const localDate = (key: string) => {
+  const [y, m, d] = key.split("-").map(Number);
+  return new Date(y, m - 1, d);
+};
+
+/** Under a day's bar: `Today`, else its short weekday. */
+export function dayLabel(key: string, todayKey: string): string {
+  return key === todayKey ? "Today" : localDate(key).toLocaleDateString(undefined, { weekday: "short" });
+}
+
+/** A day's full name, for the bar's accessible label. */
+export function dayTitle(key: string): string {
+  return localDate(key).toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" });
+}
+
+export const ACTIVITY_METRICS_KEY = storageKey("activity.metrics");
+
+/** Whether the user hid the metrics; storage that cannot be read shows them. */
+export function loadMetricsHidden(): boolean {
+  try {
+    return localStorage.getItem(ACTIVITY_METRICS_KEY) === "hidden";
+  } catch {
+    return false;
+  }
+}
+
+export function saveMetricsHidden(hidden: boolean): void {
+  try {
+    if (hidden) localStorage.setItem(ACTIVITY_METRICS_KEY, "hidden");
+    else localStorage.removeItem(ACTIVITY_METRICS_KEY);
+  } catch {
+    // Storage unavailable: the choice lasts until the page reloads.
+  }
+}
 
 // ---- unseen ----
 
