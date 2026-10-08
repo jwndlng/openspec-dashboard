@@ -3,8 +3,11 @@ import { chmod, mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/pr
 import { existsSync } from "node:fs";
 import { join, relative } from "node:path";
 import { defaultConfig, newRepoConfig } from "../src/server/config.ts";
-import { blockingSet, classifyBlocking, isChangeLeftoverPath, maskCredentials, parseBlobEntries, parseNulList, parseStatusStates, PullBusyError, pullAll, pullRepository, reasonFrom } from "../src/server/pull.ts";
+import { blockingSet, classifyBlocking, fetchRepository, isChangeLeftoverPath, maskCredentials, parseBlobEntries, parseNulList, parseStatusStates, PullBusyError, pullAll, pullRepository, reasonFrom } from "../src/server/pull.ts";
+import { readWorkStatus } from "../src/server/sessions/workStatus.ts";
 import { Scanner } from "../src/server/scanner.ts";
+import { AutoFetcher } from "../src/server/autoFetch.ts";
+import { type AppState, createFetchHandler } from "../src/server/api.ts";
 import { useTempHome } from "./helpers.ts";
 import { type Fixture, fixture, git, localChange, remoteChange, remoteCommits } from "./pullHelpers.ts";
 
@@ -375,4 +378,153 @@ test("a diverged refusal says where to reconcile and never mentions forcing", as
   expect(refused).toMatchObject({ update: "refused", hint: "Reconcile the local commits outside the dashboard, then pull again." });
   expect(refused.blocking).toBeUndefined();
   expect(`${refused.reason} ${refused.hint}`).not.toMatch(/force|--hard|discard|reset/i);
+});
+
+// ---------------------------------------------------------------------------------------------------------------------
+// The automatic fetch: the pull action's fetch and nothing after it.
+// ---------------------------------------------------------------------------------------------------------------------
+
+test("an automatic fetch moves the remote-tracking refs and nothing else: branch, HEAD, index and files stay", async () => {
+  const f = await make();
+  await remoteCommits(f, 2, "app.txt");
+  await writeFile(join(f.repo, "app.txt"), "my uncommitted edit\n");
+  await writeFile(join(f.repo, "untracked.txt"), "mine\n");
+  const at = head(f.repo);
+  const tracking = git(f.repo, "rev-parse", "origin/main");
+  const index = await readFile(join(f.repo, ".git", "index"));
+  const files = await fingerprint(join(f.repo, "openspec"));
+  const outcome = await fetchRepository(newRepoConfig(f.repo, true));
+  expect(outcome).toMatchObject({ ok: true, moved: true });
+  expect(git(f.repo, "rev-parse", "origin/main")).toBe(head(f.other));
+  expect(git(f.repo, "rev-parse", "origin/main")).not.toBe(tracking);
+  expect([head(f.repo), git(f.repo, "symbolic-ref", "--short", "HEAD")]).toEqual([at, "main"]);
+  expect(await readFile(join(f.repo, ".git", "index"))).toEqual(index);
+  expect(await readFile(join(f.repo, "app.txt"), "utf8")).toBe("my uncommitted edit\n");
+  expect(await fingerprint(join(f.repo, "openspec"))).toEqual(files);
+  expect(git(f.repo, "log", "--oneline", "--merges")).toBe("");
+
+  // nothing new: nothing moved
+  expect(await fetchRepository(newRepoConfig(f.repo, true))).toMatchObject({ ok: true, moved: false });
+});
+
+test("an automatic fetch without a remote runs nothing; an unreachable one fails with a masked reason", async () => {
+  const lonely = await make();
+  git(lonely.repo, "remote", "remove", "origin");
+  const before = await fingerprint(lonely.repo);
+  expect(await fetchRepository(newRepoConfig(lonely.repo, true))).toMatchObject({ ok: false, moved: false, reason: "no remote configured" });
+  expect(await fingerprint(lonely.repo)).toEqual(before);
+
+  const f = await make();
+  git(f.repo, "remote", "set-url", "origin", "https://someone:hunter2@git.example.invalid/team/repo.git");
+  const failed = await fetchRepository(newRepoConfig(f.repo, true), { fetchTimeoutMs: 20_000 });
+  expect(failed).toMatchObject({ ok: false, moved: false });
+  expect(failed.reason).not.toContain("hunter2");
+});
+
+test("an automatic fetch and a pull never overlap: a pull waits, a fetch during a pull is skipped", async () => {
+  const slow = await make();
+  git(slow.repo, "remote", "set-url", "origin", "ssh://git.example.invalid/team/repo.git");
+  process.env.GIT_SSH_COMMAND = "sleep 2 #";
+  const repo = newRepoConfig(slow.repo, true);
+
+  // a pull that arrives during an automatic fetch waits for it, then runs its own fetch
+  const auto = fetchRepository(repo, { fetchTimeoutMs: 600 });
+  const started = Date.now();
+  const waited = await pullRepository(repo, { fetchTimeoutMs: 600 });
+  expect(waited.update).toBe("failed"); // it ran, rather than being refused as busy
+  expect(Date.now() - started).toBeGreaterThanOrEqual(1_000); // two timed-out fetches, one after the other
+  expect((await auto).ok).toBe(false);
+
+  // an automatic fetch that falls due during a pull runs nothing
+  const pulling = pullRepository(repo, { fetchTimeoutMs: 600 });
+  expect(await fetchRepository(repo)).toMatchObject({ skipped: true, ok: false, moved: false });
+  await pulling;
+
+  // two pulls still refuse each other
+  const first = pullRepository(repo, { fetchTimeoutMs: 600 });
+  await expect(pullRepository(repo)).rejects.toBeInstanceOf(PullBusyError);
+  await first;
+});
+
+test("after an automatic fetch a squash-merged session branch reads merged", async () => {
+  const f = await make();
+  const wt = join(f.base, "wt-add-login");
+  git(f.repo, "worktree", "add", "-q", "-b", "feat/add-login", wt);
+  await writeFile(join(wt, "login.txt"), "login\n");
+  git(wt, "add", "-A");
+  git(wt, "commit", "-q", "-m", "login");
+  git(wt, "push", "-q", "-u", "origin", "feat/add-login");
+  expect((await readWorkStatus(f.repo, wt)).work.state).toBe("pushed");
+
+  // merged on the remote, as a squash, and the branch deleted there
+  git(f.other, "fetch", "-q");
+  git(f.other, "merge", "-q", "--squash", "origin/feat/add-login");
+  git(f.other, "commit", "-q", "-m", "feat: login (#7)");
+  git(f.other, "push", "-q", "origin", "main");
+  expect((await readWorkStatus(f.repo, wt)).work.state).toBe("pushed"); // as of the last fetch
+
+  expect(await fetchRepository(newRepoConfig(f.repo, true))).toMatchObject({ ok: true, moved: true });
+  expect((await readWorkStatus(f.repo, wt)).work.state).toBe("merged");
+});
+
+test("a scan reports whether a repository has a remote and when it was last fetched, without fetching", async () => {
+  const f = await make();
+  const repo = newRepoConfig(f.repo, true);
+  const config = { ...defaultConfig(), repos: [repo] };
+  const scanner = new Scanner(() => config, { persist: false });
+  await rm(join(f.repo, ".git", "FETCH_HEAD"), { force: true });
+  await scanner.trigger().done;
+  expect(scanner.snapshot.repos[0]).toMatchObject({ ok: true, hasRemote: true });
+  expect(scanner.snapshot.repos[0].lastFetchedAt).toBeUndefined();
+
+  await fetchRepository(repo);
+  await scanner.trigger().done;
+  const fetchedAt = Date.parse(scanner.snapshot.repos[0].lastFetchedAt ?? "");
+  expect(Date.now() - fetchedAt).toBeLessThan(60_000);
+
+  const lonely = await make();
+  git(lonely.repo, "remote", "remove", "origin");
+  git(lonely.repo, "update-ref", "-d", "refs/remotes/origin/main");
+  git(lonely.repo, "update-ref", "-d", "refs/remotes/origin/HEAD");
+  const alone = { ...defaultConfig(), repos: [newRepoConfig(lonely.repo, true)] };
+  const lonelyScanner = new Scanner(() => alone, { persist: false });
+  await lonelyScanner.trigger().done;
+  expect(lonelyScanner.snapshot.repos[0]).toMatchObject({ ok: true, hasRemote: false });
+});
+
+test("with auto fetch on, scans, discovery and the state endpoint still never reach the remote; only the schedule does", async () => {
+  const f = await make();
+  const marker = join(f.base, "remote-was-contacted");
+  const fakeSsh = join(f.base, "fake-ssh.sh");
+  await writeFile(fakeSsh, `#!/bin/sh\necho contacted >> "${marker}"\nexit 1\n`);
+  await chmod(fakeSsh, 0o755);
+  git(f.repo, "remote", "set-url", "origin", "ssh://git.example.invalid/team/repo.git");
+  process.env.GIT_SSH_COMMAND = fakeSsh;
+
+  const repo = { ...newRepoConfig(f.repo, true), autoFetchMinutes: 5 as const };
+  const config = { ...defaultConfig(), scanRoots: [f.base], repos: [repo] };
+  const scanner = new Scanner(() => config, { persist: false });
+  const timers: (() => void)[] = [];
+  const state: AppState = { config, scanner };
+  let moved = 0;
+  state.autoFetcher = new AutoFetcher({ getConfig: () => config, getSnapshot: () => scanner.snapshot, onMoved: () => void moved++, setTimer: (run) => timers.push(run), clearTimer: () => undefined });
+  for (let i = 0; i < 3; i++) {
+    await scanner.trigger().done;
+    state.autoFetcher.plan();
+  }
+  const handle = createFetchHandler({ state, indexHtml: "" });
+  const call = (path: string, method = "GET") =>
+    handle(new Request(`http://127.0.0.1:4711${path}`, { method, headers: { "content-type": "application/json", host: "127.0.0.1:4711", origin: "http://127.0.0.1:4711" }, body: method === "POST" ? "{}" : undefined }));
+  expect((await call("/api/state")).status).toBe(200);
+  expect((await call("/api/discover", "POST")).status).toBe(200);
+  expect(existsSync(marker)).toBe(false);
+
+  // the armed timer is what reaches the remote, and its failure is reported with the repository
+  expect(timers).toHaveLength(1);
+  timers[0]();
+  for (let i = 0; i < 100 && !(await (await call("/api/state")).json()).repos[0].autoFetch; i++) await Bun.sleep(20);
+  expect(existsSync(marker)).toBe(true);
+  expect((await (await call("/api/state")).json()).repos[0].autoFetch).toMatchObject({ ok: false });
+  expect(moved).toBe(0);
+  state.autoFetcher.stop();
 });

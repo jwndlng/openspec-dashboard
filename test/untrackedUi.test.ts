@@ -28,6 +28,7 @@ function tracking(state: Partial<Pick<Tracking, "busy" | "errors" | "renaming" |
     setAgent: (id, patch) => calls.push(`agent ${id} ${JSON.stringify(patch)}`),
     setLabels: (id, patch) => calls.push(`labels ${id} ${JSON.stringify(patch)}`),
     setPrTitleConvention: (id, convention) => calls.push(`prTitles ${id} ${convention}`),
+    setAutoFetch: (id, minutes) => calls.push(`autoFetch ${id} ${minutes}`),
     setLabelColor: (id, label, hue) => calls.push(`labelColor ${id} ${label} ${hue}`),
     openLabels: (id) => calls.push(`openLabels ${id}`),
     closeLabels: () => calls.push("closeLabels"),

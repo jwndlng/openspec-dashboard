@@ -652,6 +652,8 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: 
 /* A blocked pull has a list behind it: the badge becomes the way in, still reading as a badge. */
 .pull-badge-button { cursor: pointer; text-decoration: underline; text-decoration-style: dotted; text-underline-offset: 2px; font-family: inherit; }
 .pull-badge-button:hover, .pull-badge-button:focus-visible { border-color: var(--border-strong); color: var(--fg); }
+/* When the repository was last fetched, beside Pull: one line, whatever the column width. */
+.fetch-note { white-space: nowrap; }
 .pull-blocked { display: flex; flex-direction: column; gap: 10px; padding: 16px 20px 18px; }
 .pull-blocked .hint { margin: 0; font-size: 12px; }
 .pull-blocked-files { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; font-size: 12px; }
@@ -765,7 +767,7 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: 
 .project-settings .setting-line { display: flex; align-items: center; justify-content: space-between; gap: var(--gap-1); min-height: 38px; border-top: 1px solid var(--border-light); }
 .project-settings .setting-line:first-child { border-top: 0; }
 .project-settings .setting-label { font-size: 12px; color: var(--fg-body); white-space: nowrap; }
-.project-settings .setting-line .input.agent-picker, .project-settings .setting-line .input.pr-titles-picker { max-width: 12rem; }
+.project-settings .setting-line .input.agent-picker, .project-settings .setting-line .input.pr-titles-picker, .project-settings .setting-line .input.auto-fetch-picker { max-width: 12rem; }
 /* Disable is not a setting: set apart below them. */
 .project-settings .setting-line.setting-disable { margin-top: var(--gap-1); border-top-color: var(--border); }
 /* Empty, the live region takes no room; it says Saving… or Disabling… under the lines while a save runs. */
@@ -1444,7 +1446,7 @@ body:has(.detail-overlay) { overflow: hidden; }
 .control.agent-toggle.off-globally { color: var(--fg-disabled); border-style: dashed; }
 .control.agent-toggle.off-globally .switch { opacity: 0.5; }
 .control.agent-toggle:disabled { cursor: progress; }
-.input.agent-picker, .input.pr-titles-picker { height: 24px; padding: 0 6px; font-size: 11px; max-width: 10rem; }
+.input.agent-picker, .input.pr-titles-picker, .input.auto-fetch-picker { height: 24px; padding: 0 6px; font-size: 11px; max-width: 10rem; }
 .btn.rename { margin-left: 2px; padding-top: 0; padding-bottom: 0; color: var(--fg-subtle); opacity: 0; }
 .projects tr:hover .btn.rename, .tile:hover .btn.rename, .btn.rename:focus-visible { opacity: 1; }
 .input.rename-input { height: 26px; width: 14rem; max-width: 100%; padding: 0 6px; font-size: 13px; font-weight: 500; }

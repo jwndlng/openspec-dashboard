@@ -251,6 +251,31 @@ test("an unknown convention or a body without one is refused", async () => {
   expect(await saved()).toEqual(before);
 });
 
+test("auto fetch is set and cleared, keeping everything else, re-planning without a scan or a fetch", async () => {
+  let planned = 0;
+  state.autoFetcher = { plan: () => void planned++ } as unknown as AppState["autoFetcher"];
+  try {
+    state.config = await saveConfig({ ...state.config, repos: [{ ...newRepoConfig(paths().alpha, true), name: "Alpha", agent: { enabled: false }, labels: ["client"], prTitleConvention: "conventional-commits" }] });
+    expect((await send(`/api/repos/${alphaId()}/auto-fetch`, { minutes: 15 })).status).toBe(200);
+    expect(await alphaEntry()).toMatchObject({ name: "Alpha", enabled: true, agent: { enabled: false }, labels: ["client"], prTitleConvention: "conventional-commits", autoFetchMinutes: 15 });
+    expect(state.config.repos[0].autoFetchMinutes).toBe(15);
+    expect((await send(`/api/repos/${alphaId()}/auto-fetch`, { minutes: null })).status).toBe(200);
+    const repo = await alphaEntry();
+    expect(repo && "autoFetchMinutes" in repo).toBe(false);
+    expect(repo).toMatchObject({ name: "Alpha", prTitleConvention: "conventional-commits" });
+    expect(triggered).toBe(0);
+    expect(planned).toBe(2);
+  } finally {
+    state.autoFetcher = undefined;
+  }
+});
+
+test("an unsupported auto-fetch interval or a body without one is refused", async () => {
+  const before = await saved();
+  for (const body of [{ minutes: 1 }, { minutes: "15" }, { minutes: 0 }, { minutes: true }, {}]) expect((await send(`/api/repos/${alphaId()}/auto-fetch`, body)).status).toBe(400);
+  expect(await saved()).toEqual(before);
+});
+
 test("a label colour is stored under the label in lower case, and Auto removes it and then the key", async () => {
   const res = await send("/api/labels/color", { label: " Client ", hue: 290 });
   expect(res.status).toBe(200);
@@ -307,6 +332,7 @@ test("the settings routes refuse an unknown repository", async () => {
     [`/api/repos/${id}/agent`, { enabled: false }],
     [`/api/repos/${id}/labels`, { labels: ["x"] }],
     [`/api/repos/${id}/pr-title-convention`, { convention: "conventional-commits" }],
+    [`/api/repos/${id}/auto-fetch`, { minutes: 15 }],
     [`/api/repos/${id}/forget`, {}],
   ];
   for (const [path, body] of routes) expect((await send(path, body)).status).toBe(404);
@@ -333,6 +359,7 @@ test("the settings routes are refused cross-site and change nothing", async () =
     [`/api/repos/${alphaId()}/agent`, { enabled: false }],
     [`/api/repos/${alphaId()}/labels`, { labels: ["x"] }],
     [`/api/repos/${alphaId()}/pr-title-convention`, { convention: "conventional-commits" }],
+    [`/api/repos/${alphaId()}/auto-fetch`, { minutes: 15 }],
     [`/api/repos/${alphaId()}/forget`, {}],
     ["/api/labels/color", { label: "client", hue: 290 }],
   ];

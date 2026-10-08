@@ -16,7 +16,7 @@ import { hasCheckoutInfo } from "./checkoutMarkers.ts";
 import { CleanupButton } from "./cleanup.tsx";
 import { ImportIssuesDialog, SourceIssueLink } from "./importIssues.tsx";
 import { NewChangeDialog } from "./newChangeForm.tsx";
-import { PullButton } from "./pull.tsx";
+import { FetchNoteBadge, PullButton } from "./pull.tsx";
 import { branchNotice } from "./pullState.ts";
 import { cdCommand, daysSince, relTime } from "./format.ts";
 import { isMinimized, loadGroupState, saveGroupState, toggleGroup, type GroupOverrides } from "./groupState.ts";
@@ -403,6 +403,7 @@ function RepoHeader({ repo, config, now, stats, onCreated }: { repo: RepoSnapsho
         <div class="band-actions">
           <ProjectConsoleButton repoId={repo.id} variant="board" />
           {canGit && <PullButton repoId={repo.id} repoName={repo.name} />}
+          {canGit && <FetchNoteBadge input={{ ...repo, autoFetchMinutes: config?.repos.find((r) => r.id === repo.id)?.autoFetchMinutes }} now={now} />}
           {canGit && <CleanupButton repoId={repo.id} repoName={repo.name} onDone={onCreated} />}
           {/* Every eligible git repository: whether it is on GitHub is the dialog's to say, after asking. */}
           {canGit && (

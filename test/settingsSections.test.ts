@@ -156,7 +156,7 @@ test("Settings saves its draft with the repositories as the app last received th
   const repo = { id: "0123456789ab", path: "/w/acme/beta-soc", name: "beta-soc", enabled: true };
   // Settings was opened, the poll interval edited, then beta-soc renamed on the overview.
   const draft = { ...base, pollIntervalSeconds: 120, repos: [repo] };
-  const latest = { ...base, repos: [{ ...repo, name: "Beta SOC", agent: { enabled: false } }] };
+  const latest = { ...base, repos: [{ ...repo, name: "Beta SOC", agent: { enabled: false }, autoFetchMinutes: 15 as const }] };
   expect(withLatestRepos(draft, latest)).toEqual({ ...draft, repos: latest.repos });
 
   // A profile removed in the draft: the repository that used it goes back to the default agent, keeping its switch.

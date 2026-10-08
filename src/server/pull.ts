@@ -1,7 +1,9 @@
 // The pull action: fetch a repository's remote, then fast-forward its main checkout — and nothing more adventurous.
 //
-// This is the ONLY place in the dashboard that contacts a remote or changes a main checkout, and it only ever runs on
-// the user's explicit request (openspec/specs/dashboard-api: "never writes", exception 3; openspec/specs/repository-pull).
+// This is the ONLY place in the dashboard that contacts a remote or changes a main checkout. A pull only ever runs on
+// the user's explicit request (openspec/specs/dashboard-api: "never writes", exception 3; openspec/specs/repository-pull);
+// the one thing that runs on a timer is `fetchRepository`, the same fetch and nothing more, for a project whose
+// auto-fetch setting the user switched on (exception 9; `autoFetch.ts` schedules it).
 // It never merges with a commit, rebases, stashes, resets, forces or switches branches, never touches linked worktrees,
 // and never runs repository hooks: a click in a browser must not execute a repository's scripts.
 //
@@ -298,7 +300,12 @@ function refusalFrom(report: BlockingReport | undefined, reason: string): Pick<P
   };
 }
 
-const inFlight = new Set<string>();
+/**
+ * One fetch per repository at a time, whoever started it. A pull that finds an automatic fetch running waits for it
+ * rather than being refused for something the user did not start; a second pull is refused, and an automatic fetch
+ * that finds anything running is skipped (repository-pull: "An automatic fetch and a pull never overlap").
+ */
+const inFlight = new Map<string, { kind: "pull" | "auto"; done: Promise<unknown> }>();
 
 export class PullBusyError extends Error {
   constructor() {
@@ -306,15 +313,73 @@ export class PullBusyError extends Error {
   }
 }
 
-/** `repo` must come from the dashboard config — never a path from a request. */
-export async function pullRepository(repo: RepoConfig, options: { fetchTimeoutMs?: number } = {}): Promise<PullResult> {
-  if (inFlight.has(repo.id)) throw new PullBusyError();
-  inFlight.add(repo.id);
+async function exclusively<T>(repoId: string, run: () => Promise<T>): Promise<T> {
+  for (let running = inFlight.get(repoId); running; running = inFlight.get(repoId)) {
+    if (running.kind === "pull") throw new PullBusyError();
+    await running.done.catch(() => undefined);
+  }
+  const done = run();
+  inFlight.set(repoId, { kind: "pull", done });
   try {
-    return await pull(repo, options.fetchTimeoutMs ?? FETCH_TIMEOUT_MS);
+    return await done;
+  } finally {
+    inFlight.delete(repoId);
+  }
+}
+
+/** `repo` must come from the dashboard config — never a path from a request. */
+export function pullRepository(repo: RepoConfig, options: { fetchTimeoutMs?: number } = {}): Promise<PullResult> {
+  return exclusively(repo.id, () => pull(repo, options.fetchTimeoutMs ?? FETCH_TIMEOUT_MS));
+}
+
+export interface FetchOutcome {
+  /** True when a pull or another fetch of the repository was running, so nothing ran at all. */
+  skipped?: true;
+  ok: boolean;
+  at: string;
+  /** Whether any remote-tracking ref moved, appeared or went away. */
+  moved: boolean;
+  /** git's reason when `ok` is false, credentials masked. */
+  reason?: string;
+}
+
+/**
+ * The automatic fetch: exactly the pull action's fetch, and nothing after it — no fast-forward, no prune, no hooks.
+ * `repo` must come from the dashboard config. Skipped, running no git, while anything else fetches the repository.
+ */
+export async function fetchRepository(repo: RepoConfig, options: { fetchTimeoutMs?: number } = {}): Promise<FetchOutcome> {
+  if (inFlight.has(repo.id)) return { skipped: true, ok: false, at: new Date().toISOString(), moved: false };
+  const done = autoFetch(repo, options.fetchTimeoutMs ?? FETCH_TIMEOUT_MS);
+  inFlight.set(repo.id, { kind: "auto", done });
+  try {
+    return await done;
   } finally {
     inFlight.delete(repo.id);
   }
+}
+
+async function autoFetch(repo: RepoConfig, fetchTimeoutMs: number): Promise<FetchOutcome> {
+  const before = await inspect(repo.path);
+  if (!before.hasRemote) return { ok: false, at: new Date().toISOString(), moved: false, reason: "no remote configured" };
+  const refsBefore = await remoteRefs(repo.path);
+  const fetched = await fetchRemote(repo.path, before, fetchTimeoutMs);
+  const at = new Date().toISOString();
+  if (!fetched.ok) return { ok: false, at, moved: false, reason: fetched.timedOut ? "timed out" : reasonFrom(fetched.err) };
+  return { ok: true, at, moved: (await remoteRefs(repo.path)) !== refsBefore };
+}
+
+/** Every remote-tracking ref with the commit it names, as one string to compare. */
+async function remoteRefs(repoPath: string): Promise<string> {
+  return (await git(repoPath, ["for-each-ref", "--format=%(refname) %(objectname)", "refs/remotes/"])).out;
+}
+
+/**
+ * Refs, FETCH_HEAD and objects only. No auto-maintenance: a click (or a timer) must not turn into a repack. Submodules
+ * are left alone. The remote is the upstream's, else `origin`.
+ */
+function fetchRemote(repoPath: string, inspection: Inspection, fetchTimeoutMs: number): Promise<Run> {
+  const remote = inspection.remote ?? "origin";
+  return git(repoPath, ["-c", "gc.auto=0", "-c", "maintenance.auto=false", "fetch", "--no-recurse-submodules", "--quiet", remote], fetchTimeoutMs);
 }
 
 async function pull(repo: RepoConfig, fetchTimeoutMs: number): Promise<PullResult> {
@@ -323,9 +388,7 @@ async function pull(repo: RepoConfig, fetchTimeoutMs: number): Promise<PullResul
   const base = { repoId: repo.id, branch: before.branch, upstream: before.upstream, defaultBranch: await defaultBranch(path) };
   if (!before.hasRemote) return { ...base, fetched: false, update: "skipped", reason: "no remote configured; there is nothing to pull" };
 
-  // Refs, FETCH_HEAD and objects only. No auto-maintenance: a click must not turn into a repack. Submodules are left alone.
-  const remote = before.remote ?? "origin";
-  const fetched = await git(path, ["-c", "gc.auto=0", "-c", "maintenance.auto=false", "fetch", "--no-recurse-submodules", "--quiet", remote], fetchTimeoutMs);
+  const fetched = await fetchRemote(path, before, fetchTimeoutMs);
   if (!fetched.ok) return { ...base, fetched: false, update: "failed", reason: fetched.timedOut ? "timed out" : reasonFrom(fetched.err) };
 
   const now = await inspect(path);
@@ -416,14 +479,8 @@ async function putBack(repoPath: string, held: Held[], stagedPaths: string[]): P
 }
 
 /** `repo` must come from the dashboard config; `claim` is only ever a claim, re-checked here before anything moves. */
-export async function resolvePullRepository(repo: RepoConfig, claim: PullResolve, options: ResolveOptions = {}): Promise<PullResult> {
-  if (inFlight.has(repo.id)) throw new PullBusyError();
-  inFlight.add(repo.id);
-  try {
-    return await resolvePull(repo, claim, options);
-  } finally {
-    inFlight.delete(repo.id);
-  }
+export function resolvePullRepository(repo: RepoConfig, claim: PullResolve, options: ResolveOptions = {}): Promise<PullResult> {
+  return exclusively(repo.id, () => resolvePull(repo, claim, options));
 }
 
 async function resolvePull(repo: RepoConfig, claim: PullResolve, options: ResolveOptions): Promise<PullResult> {

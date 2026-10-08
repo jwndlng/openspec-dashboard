@@ -39,7 +39,7 @@ import { NewChangeDialog } from "./newChangeForm.tsx";
 import { assignRepoHues, labelTargets, newChangeTargets } from "./repoGroups.ts";
 import { ProjectSettingsDialog, RenameButton, RenameField, RepoLabelsDialog, SettingsButton } from "./projectSettings.tsx";
 import { ProjectConsoleButton } from "./projectConsole.tsx";
-import { PullAllButton, PullButton } from "./pull.tsx";
+import { FetchNoteBadge, PullAllButton, PullButton } from "./pull.tsx";
 import { OpenPrCount } from "./pullRequests.tsx";
 import { branchNotice } from "./pullState.ts";
 import { repoPath } from "./routes.ts";
@@ -196,6 +196,7 @@ export function Row({ row, now, tracking, labelFilter, config }: { row: Overview
         )}
         {repo && <ProjectConsoleButton repoId={repo.id} variant="project" />}
         {row.isGit && row.ok && <PullButton repoId={row.id} repoName={row.name} compact />}
+        {row.isGit && <FetchNoteBadge input={{ ...row, autoFetchMinutes: repo?.autoFetchMinutes }} now={now} />}
         {repo && <SettingsButton id={row.id} name={repo.name} tracking={tracking} />}
       </td>
     </tr>
@@ -339,6 +340,7 @@ export function Tile({ row, now, hue, tracking, labelFilter, config }: { row: Ov
       <footer class="tile-foot">
         {repo && <ProjectConsoleButton repoId={repo.id} variant="project" />}
         {row.isGit && row.ok && <PullButton repoId={row.id} repoName={row.name} compact />}
+        {row.isGit && <FetchNoteBadge input={{ ...row, autoFetchMinutes: repo?.autoFetchMinutes }} now={now} />}
         {repo && <SettingsButton id={row.id} name={repo.name} tracking={tracking} />}
       </footer>
     </article>

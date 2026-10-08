@@ -189,6 +189,12 @@ export const HELP_SECTIONS: readonly HelpSection[] = [
           does it for every repository. It never merges, rebases, stashes or switches branches.
         </li>
         <li>
+          <strong>Auto fetch</strong>, a project's own setting on Projects, fetches its remote every 5, 15 or 30 minutes or
+          every hour, so a branch whose pull request merged shows as merged without a pull. It only fetches: the checkout
+          itself changes only when you Pull. Beside Pull you see when the project was last fetched, and why if an automatic
+          fetch failed.
+        </li>
+        <li>
           <strong>Clean up</strong> on a repository's board removes leftover worktrees and local branches whose work is
           merged. Only what provably holds no work of its own is offered, and nothing goes before you confirm.
         </li>
@@ -226,7 +232,8 @@ export const HELP_SECTIONS: readonly HelpSection[] = [
         </p>
         <ul>
           <li>Pull, New change, Import from issues, Dismiss, Clean up and applying shared config, each on the repository you chose;</li>
-          <li>creating and removing an agent session's worktree.</li>
+          <li>creating and removing an agent session's worktree;</li>
+          <li>fetching a project's remote on the interval you set, for a project whose Auto fetch you switched on — refs only, never its files.</li>
         </ul>
         <p>
           Its own state — configuration, activity history, session records — lives in <code>~/.spec-control/</code>. It

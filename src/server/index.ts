@@ -3,6 +3,7 @@ import indexHtmlAsset from "../../dist/ui/index.html" with { type: "text" };
 import { createFetchHandler, createWebSocketHandlers, type AppState, type TerminalSocketData } from "./api.ts";
 import { diffSnapshots, sessionEvent } from "./activity/events.ts";
 import { ActivityLog } from "./activity/log.ts";
+import { AutoFetcher } from "./autoFetch.ts";
 import { readSnapshot } from "./cache.ts";
 import { configuredPort, loadConfig } from "./config.ts";
 import { describeOutcome, startHomeMigration } from "./homeMigration.ts";
@@ -90,7 +91,13 @@ async function main(): Promise<void> {
     activity,
     scanner: new Scanner(
       () => state.config,
-      { onSnapshots: (previous, next) => void activity.append(diffSnapshots(previous, next, { now: new Date(), pollIntervalSeconds: state.config.pollIntervalSeconds })) },
+      {
+        onSnapshots: (previous, next) => {
+          // A scan can make a repository eligible (now scanned, now has a remote) or not; the schedule follows it.
+          state.autoFetcher?.plan();
+          void activity.append(diffSnapshots(previous, next, { now: new Date(), pollIntervalSeconds: state.config.pollIntervalSeconds }));
+        },
+      },
       (await readSnapshot()) ?? undefined,
     ),
   };
@@ -102,6 +109,16 @@ async function main(): Promise<void> {
     onIntegrationEnded: (session) => void confirmIntegration(state, session.folder).catch(() => undefined),
   });
   await state.sessions.init();
+  // Only for projects whose auto-fetch setting the user switched on; nothing is scheduled otherwise.
+  state.autoFetcher = new AutoFetcher({
+    getConfig: () => state.config,
+    getSnapshot: () => state.scanner.snapshot,
+    onMoved: () => {
+      state.sessions?.forgetWorktrees();
+      state.scanner.trigger();
+    },
+  });
+  state.autoFetcher.plan();
   state.scanner.start();
 
   server.reload({
@@ -114,6 +131,7 @@ async function main(): Promise<void> {
 
   const shutdown = () => {
     state.scanner.stop();
+    state.autoFetcher?.stop();
     // Children must not outlive the dashboard; sessions in flight become `interrupted` and can be resumed.
     void (state.sessions?.shutdown() ?? Promise.resolve()).finally(() => {
       server.stop(true);

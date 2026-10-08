@@ -6,7 +6,7 @@ import { readdir, readFile, realpath, stat } from "node:fs/promises";
 import { dirname, join, relative } from "node:path";
 import type { LabelEntry } from "../shared/labels.ts";
 import { CHANGE_NAME_PATTERN, type Worktree } from "../shared/types.ts";
-import { checkoutStatus, currentBranch, defaultBranch, hasCommitToBranchFrom, hasRemoteRefs, isGitRepo, lastCommitDate, localOnlyCommits, type ParsedStatus, statusPaths, subdirectory, worktrees } from "./git.ts";
+import { checkoutStatus, currentBranch, defaultBranch, fetchInfo, hasCommitToBranchFrom, hasRemoteRefs, isGitRepo, lastCommitDate, localOnlyCommits, type ParsedStatus, statusPaths, subdirectory, worktrees } from "./git.ts";
 
 export const CHANGE_NAME = CHANGE_NAME_PATTERN;
 const ARCHIVE_PREFIX = /^(\d{4}-\d{2}-\d{2})-(.+)$/;
@@ -77,6 +77,8 @@ export interface RepoSource {
   checkoutStatus(path: string): Promise<ParsedStatus | undefined>;
   /** Whether the repository has any remote-tracking ref. */
   hasRemoteRefs(): Promise<boolean | undefined>;
+  /** Whether the repository has a remote to fetch from, and the time of its last fetch (`FETCH_HEAD`), if any. */
+  fetchInfo(): Promise<{ hasRemote: boolean; lastFetchedAt?: string }>;
   /** Commits of the checkout at `path` that are on no remote-tracking ref (capped). */
   localOnlyCommits(path: string): Promise<number | undefined>;
   /** The project's directory below the git top level; empty when the project is the repository. */
@@ -234,6 +236,10 @@ export class LocalRepoSource implements RepoSource {
 
   hasRemoteRefs(): Promise<boolean | undefined> {
     return hasRemoteRefs(this.path);
+  }
+
+  fetchInfo(): Promise<{ hasRemote: boolean; lastFetchedAt?: string }> {
+    return fetchInfo(this.path);
   }
 
   localOnlyCommits(path: string): Promise<number | undefined> {

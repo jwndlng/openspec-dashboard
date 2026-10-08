@@ -1,11 +1,11 @@
 // A managed project's own settings on the projects overview — its agent sessions, its agent, its pull request titles,
-// its name and its labels —
+// its auto fetch, its name and its labels —
 // each saved at once through `Tracking` (project-overview: "Each managed project carries its own settings"). Apart from
 // Rename, which stays beside the name, they live in the project's settings dialog, opened by the gear on its row or
 // tile. Hook-free, so tests can walk them; the state lives in `useTracking`. Every control stops the click, so a row or
 // tile that holds one never opens the repository's board because of it.
 import type { ComponentChildren } from "preact";
-import { CONVENTIONAL_COMMITS_SHIP_SENTENCE, repoAgentEnabled, type Config, type DetectedLabel, type PrTitleConvention, type RepoConfig } from "../shared/types.ts";
+import { AUTO_FETCH_MINUTES, type AutoFetchMinutes, CONVENTIONAL_COMMITS_SHIP_SENTENCE, repoAgentEnabled, type Config, type DetectedLabel, type PrTitleConvention, type RepoConfig } from "../shared/types.ts";
 import { IconPencil, IconSettings, IconTag } from "./icons.tsx";
 import { labelSuggestions, RepoLabelsEditor } from "./labels.tsx";
 import { Modal } from "./modal.tsx";
@@ -161,6 +161,40 @@ export function PrTitlesPicker({ repo, isGit, tracking }: { repo: RepoConfig; is
   );
 }
 
+export const AUTO_FETCH_TITLE =
+  "Auto fetch: the dashboard fetches this project's remote at this interval, so merged branches and conflicts stay current. It only fetches — the checkout is updated by Pull alone — and uses git's own credentials without ever prompting. Saved at once.";
+
+export const autoFetchLabel = (minutes: AutoFetchMinutes) => (minutes === 60 ? "Every hour" : `Every ${minutes} minutes`);
+
+/**
+ * How often the project's remote is fetched automatically (repository-pull: fetch only). Only for a git repository, and
+ * shown with agent sessions off too: it describes the project, not its sessions.
+ */
+export function AutoFetchPicker({ repo, isGit, tracking }: { repo: RepoConfig; isGit: boolean; tracking: Tracking }) {
+  if (!isGit) return null;
+  return (
+    <select
+      class="input auto-fetch-picker"
+      aria-label={`Auto fetch for ${repo.name}`}
+      title={AUTO_FETCH_TITLE}
+      value={String(repo.autoFetchMinutes ?? "")}
+      disabled={tracking.busy[repo.id] !== undefined}
+      onClick={stop}
+      onChange={(e) => {
+        const value = e.currentTarget.value;
+        tracking.setAutoFetch(repo.id, value ? (Number(value) as AutoFetchMinutes) : null);
+      }}
+    >
+      <option value="">Off</option>
+      {AUTO_FETCH_MINUTES.map((m) => (
+        <option key={m} value={String(m)}>
+          {autoFetchLabel(m)}
+        </option>
+      ))}
+    </select>
+  );
+}
+
 /** The pencil beside a project's name. */
 export function RenameButton({ id, name, tracking }: { id: string; name: string; tracking: Tracking }) {
   return (
@@ -290,6 +324,7 @@ export function ProjectSettingsDialog({ repo, config, isGit, tracking }: { repo:
         <SettingLine label="Agent">{AgentPicker({ repo, config, tracking })}</SettingLine>
         <SettingLine label="PR titles">{PrTitlesPicker({ repo, isGit, tracking })}</SettingLine>
         <SettingLine label="Docs auto-merge">{AutoMergeToggle({ repo, config, isGit, tracking, short: true })}</SettingLine>
+        <SettingLine label="Auto fetch">{AutoFetchPicker({ repo, isGit, tracking })}</SettingLine>
         <SettingLine label="Labels">{LabelsButton({ id: repo.id, name: repo.name, tracking })}</SettingLine>
         <div class="setting-line setting-disable">
           <span class="setting-label">Stop tracking</span>

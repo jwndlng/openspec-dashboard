@@ -444,6 +444,9 @@ export function buildSample(now: number): Sample {
       // every sample repository's default branch is main; two of them sit on another branch and show the notice
       defaultBranch: "main",
       onDefaultBranch: r.branch === "main",
+      // Every sample repository has a remote; the demo never fetches, so "last fetched" is as fictional as the rest.
+      hasRemote: true,
+      lastFetchedAt: iso(Math.min(r.updated, 6) * HOUR),
       worktrees,
       workInProgress: summarizeWorkInProgress(worktrees),
       lastUpdatedAt: iso(r.updated * HOUR),

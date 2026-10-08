@@ -264,6 +264,7 @@ export async function scanRepo(repo: RepoConfig, source: RepoSource = new LocalR
   const onDefaultBranch = mainBranch === undefined ? undefined : branch === mainBranch;
   // Nothing to branch a session from: its change sessions run in place (agent-sessions spec).
   const noCommit = isGit && (await source.hasCommitToBranchFrom().catch(() => undefined)) === false;
+  const fetched = isGit ? await source.fetchInfo().catch(() => undefined) : undefined;
   const project = await framework.readProject(source);
   // Shared config profiles are merged into a framework's own config file; a framework without one is not offered them.
   const sharedConfigFile = framework.sharedConfigFile;
@@ -309,6 +310,7 @@ export async function scanRepo(repo: RepoConfig, source: RepoSource = new LocalR
     defaultBranch: mainBranch,
     onDefaultBranch,
     ...(noCommit ? { noCommit: true as const } : {}),
+    ...(fetched ? { hasRemote: fetched.hasRemote, lastFetchedAt: fetched.lastFetchedAt } : {}),
     worktrees,
     workInProgress,
     // A repository whose only activity is in a worktree is still an active repository.
@@ -490,6 +492,8 @@ export class Scanner {
             defaultBranch: prev?.defaultBranch,
             onDefaultBranch: prev?.onDefaultBranch,
             ...(prev?.noCommit ? { noCommit: true as const } : {}),
+            hasRemote: prev?.hasRemote,
+            lastFetchedAt: prev?.lastFetchedAt,
             worktrees: prev?.worktrees ?? [],
             workInProgress: prev?.workInProgress,
             lastUpdatedAt: prev?.lastUpdatedAt,

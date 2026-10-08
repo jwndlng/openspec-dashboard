@@ -213,6 +213,15 @@ export interface RepoSnapshot {
    * **New project** leaves it). Its change sessions run in place. Omitted otherwise, when unknown and for non-git folders.
    */
   noCommit?: true;
+  /**
+   * Whether the repository has a remote it can be fetched from: a remote-tracking ref or an `origin`. Omitted for
+   * non-git folders and in snapshots cached by older versions.
+   */
+  hasRemote?: boolean;
+  /** When the repository was last fetched, by anyone: the time of its `FETCH_HEAD`. Omitted when never fetched. */
+  lastFetchedAt?: string;
+  /** The most recent automatic fetch, or a pull since, as this run of the dashboard saw it. Display only. */
+  autoFetch?: AutoFetchOutcome;
   /** Every checkout, the main one included. */
   worktrees: Worktree[];
   /** Absent for non-git repositories and in snapshots cached by older versions. */
@@ -250,6 +259,20 @@ export interface RepoConfig {
   hiddenLabels?: string[];
   /** How this project's pull requests are titled, which Ship asks the agent for. Absent means no convention. */
   prTitleConvention?: PrTitleConvention;
+  /** Fetch the project's remote at this interval, in minutes. Absent means never fetched automatically. */
+  autoFetchMinutes?: AutoFetchMinutes;
+}
+
+/** The intervals a project can be fetched at automatically (repository-pull: "fetch only"). */
+export const AUTO_FETCH_MINUTES = [5, 15, 30, 60] as const;
+export type AutoFetchMinutes = (typeof AUTO_FETCH_MINUTES)[number];
+
+/** What the last automatic fetch of a repository, or a pull after it, came to. Kept in memory only. */
+export interface AutoFetchOutcome {
+  at: string;
+  ok: boolean;
+  /** git's reason, credentials masked; only when `ok` is false. */
+  reason?: string;
 }
 
 /** A pull request title convention a project can declare. One value today; an enum so another needs no migration. */

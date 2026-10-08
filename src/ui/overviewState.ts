@@ -1,7 +1,7 @@
 // Projects overview: URL state, row derivation and sorting. Pure, shared by the view and its tests.
 import { isComplete } from "../shared/columns.ts";
 import { type DisplayedLabel, displayedLabels, labelHue, labelKey, type LabelColors } from "../shared/labels.ts";
-import type { Config, DiscoveredRepo, DiscoverResult, RepoSharedConfig, RepoSnapshot, Snapshot, WorkInProgress, Worktree } from "../shared/types.ts";
+import type { AutoFetchOutcome, Config, DiscoveredRepo, DiscoverResult, RepoSharedConfig, RepoSnapshot, Snapshot, WorkInProgress, Worktree } from "../shared/types.ts";
 
 /**
  * The snapshot as the config describes it now: only repositories it enables, under the names it gives them. A config
@@ -121,6 +121,10 @@ export interface OverviewRow {
   workInProgress?: WorkInProgress;
   /** Every checkout of the repository, the main one included. */
   worktrees: Worktree[];
+  /** Whether it can be fetched, when it last was, and its last automatic fetch: the note beside Pull. */
+  hasRemote?: boolean;
+  lastFetchedAt?: string;
+  autoFetch?: AutoFetchOutcome;
   /** Custom labels from the config, then detected ones (`displayedLabels`). */
   labels: DisplayedLabel[];
 }
@@ -219,6 +223,9 @@ export function overviewRows(snapshot: Snapshot, config?: Config | null): Overvi
       sharedConfig: repo.sharedConfig,
       workInProgress: repo.workInProgress,
       worktrees: repo.worktrees,
+      hasRemote: repo.hasRemote,
+      lastFetchedAt: repo.lastFetchedAt,
+      autoFetch: repo.autoFetch,
       isGit: repo.isGit,
       currentBranch: repo.currentBranch,
       defaultBranch: repo.defaultBranch,
