@@ -28,5 +28,5 @@
 ## 5. Verification
 
 - [x] 5.1 Run `bun run check` and verify lint, typecheck and all tests pass
-- [~] 5.2 Run `bun run build`, start `dist/spec-control` against a temp home with a config holding `autoFetchMinutes: 15`, and verify the saved config now has `autoFetchSeconds: 900`, a project without a setting shows "Every minute" and its fetch note updates after a minute
+- [x] 5.2 Run `bun run build`, start `dist/spec-control` against a temp home with a config holding `autoFetchMinutes: 15`, and verify the saved config now has `autoFetchSeconds: 900`, a project without a setting shows "Every minute" and its fetch note updates after a minute
 - [x] 5.3 Run `openspec validate adjust-auto-fetch` and verify the change is valid
