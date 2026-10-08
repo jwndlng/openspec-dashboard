@@ -18,11 +18,11 @@ import { ImportIssuesDialog, SourceIssueLink } from "./importIssues.tsx";
 import { NewChangeDialog } from "./newChangeForm.tsx";
 import { FetchNoteBadge, PullButton } from "./pull.tsx";
 import { branchNotice } from "./pullState.ts";
-import { cdCommand, daysSince, relTime } from "./format.ts";
+import { cdCommand, changeRef, daysSince, relTime } from "./format.ts";
 import { isMinimized, loadGroupState, saveGroupState, toggleGroup, type GroupOverrides } from "./groupState.ts";
 import { assignRepoHues, dependencyChoices, groupByRepo, newChangeTargets, recentArchived } from "./repoGroups.ts";
 import { columnKind } from "./boardMarks.ts";
-import { IconChevronRight, IconCircleDot, IconPlus, IconTerminal } from "./icons.tsx";
+import { IconCheck, IconChevronRight, IconCircleDot, IconCopy, IconPlus, IconTerminal } from "./icons.tsx";
 import { SessionControls, useSessionUi } from "./sessions.tsx";
 import { archivedShown, cardSessionControls, cardWorkingState, type CardWorkingState, consoleTabAvailable, projectConsoleUnavailable } from "./sessionState.ts";
 import { boardFrom, changePath, CONSOLE_TAB, repoPath, serializeDetailQuery } from "./routes.ts";
@@ -90,6 +90,38 @@ export function CopyButton({ text, label }: { text: string; label: string }) {
   );
 }
 
+/**
+ * Copies `project/change` (change-detail: "The detail header copies the change's reference"). Icon only, so its title
+ * and accessible name say what it copies; it confirms only once the clipboard took the text.
+ */
+export function CopyRefButton({ project, change }: { project: string; change: string }) {
+  const ref = changeRef(project, change);
+  const [done, setDone] = useState(false);
+  useEffect(() => {
+    if (!done) return;
+    const t = setTimeout(() => setDone(false), 1500);
+    return () => clearTimeout(t);
+  }, [done]);
+  const label = done ? "Copied" : `Copy ${ref}`;
+  return (
+    <button
+      type="button"
+      class={`btn ghost icon-only copy-ref ${done ? "done" : ""}`}
+      title={label}
+      aria-label={label}
+      onClick={(e) => {
+        e.stopPropagation();
+        navigator.clipboard.writeText(ref).then(() => setDone(true), () => {});
+      }}
+    >
+      {done ? <IconCheck size={12} /> : <IconCopy size={12} />}
+      <span class="visually-hidden" aria-live="polite">
+        {done ? "Copied" : ""}
+      </span>
+    </button>
+  );
+}
+
 /** What a progress bar counts: ticked tasks, or written artifacts while a change is in `Drafts`. */
 export type MeterUnit = "tasks" | "artifacts";
 
@@ -153,7 +185,10 @@ export function ChangeCard({ card, now, from, working, running = false }: { card
     <article class={working?.tinted ? (working.sweeping ? "card live" : "card live pr-waiting") : "card"}>
       <div class="card-top">
         <div class="card-title">
-          <span class="name">{card.name}</span>
+          <div class="name-row">
+            <span class="name">{card.name}</span>
+            <CopyRefButton project={card.repoName} change={card.name} />
+          </div>
           <span class="age" title={card.lastActivityAt ? `last activity ${card.lastActivityAt}` : "no activity date"}>
             {card.archived ? `archived ${card.archived}` : `updated ${relTime(card.lastActivityAt, now)} ago`}
           </span>

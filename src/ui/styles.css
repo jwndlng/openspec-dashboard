@@ -546,6 +546,15 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: 
 .card .name { min-width: 0; font-family: var(--font-mono); font-size: 13px; font-weight: 600; line-height: 19px; color: var(--fg-heading); word-break: break-word; text-transform: none; letter-spacing: 0; }
 .card-title { flex: 1; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .card-title .age { font-family: var(--font-mono); font-size: 11px; color: var(--fg-subtle); }
+/* Copy `project/change` beside the name (kanban-board: "Cards copy the change's reference"). The icon keeps its box at
+   rest, so the name wraps the same whether it is shown or not; touch screens have no hover, so there it always shows. */
+.card .name-row { display: flex; align-items: flex-start; gap: 2px; min-width: 0; }
+.btn.copy-ref { flex: none; padding: 3px; line-height: 0; color: var(--fg-subtle); }
+.btn.copy-ref.done { color: var(--success); }
+.card .copy-ref { opacity: 0; }
+.card:hover .copy-ref, .card .copy-ref:focus-visible, .card .copy-ref.done { opacity: 1; }
+@media (hover: none) { .card .copy-ref { opacity: 1; } }
+.detail-head .crumbs .copy-ref { align-self: center; }
 /* The quick way into a change's agent console; neutral, since blue on the board means a running agent. */
 .card .console-link {
   flex: none; display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 20px;

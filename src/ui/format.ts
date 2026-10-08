@@ -85,6 +85,11 @@ export function leftoverHint(change: { name: string; archived?: string | null; c
   return { label: `active copy left · ${left.column}`, title };
 }
 
+/** How a change is referred to outside the dashboard: the repository's display name, a slash, the change name. */
+export function changeRef(project: string, change: string): string {
+  return `${project}/${change}`;
+}
+
 export function cdCommand(repoPath: string): string {
   return `cd ${shellQuote(repoPath)}`;
 }
