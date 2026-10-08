@@ -16,7 +16,8 @@ project's console and name the project, and the accessible name SHALL contain th
 icon alone for its name. In the repository board header the control SHALL be placed among the board's actions, first,
 ahead of the pull, cleanup and new-change actions, and MUST NOT be styled as a ghost button. That action area SHALL be
 shown whenever the control is offered, also when no other action is. On the overview row and tile the control SHALL be
-outlined and set apart from the project's agent settings, so that it is not read as one of them. Activating it SHALL
+outlined and placed before the project's settings button, so that it is not read as a setting: the project's settings
+are in its settings dialog, and the console stays on the row and tile because it is an action. Activating it SHALL
 open the project console overlay for that project. On the overview, activating it MUST NOT open the repository's board.
 While agent sessions are disabled globally, the control MUST NOT be shown. When the project's own agent sessions setting
 is disabled, or the project's agent executable was not found on this machine, the control SHALL be inactive and its
@@ -54,6 +55,11 @@ NOT depend on the project's last scan having succeeded.
 #### Scenario: Scan failed
 - **WHEN** `demo-ops`'s last scan failed but its folder exists
 - **THEN** its console control is active and opens a console in that folder
+
+#### Scenario: Console stays on the row and tile
+- **WHEN** agent sessions are on and the user looks at the row and the tile of `alpha-infra`
+- **THEN** each shows **Console** before the settings button, and the project settings dialog of `alpha-infra` holds no
+  console control
 
 ### Requirement: The project console runs the project's agent without a prompt
 A project console SHALL run the project's agent: the profile chosen for that project, else the default agent. It SHALL be

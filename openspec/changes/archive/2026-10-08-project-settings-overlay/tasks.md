@@ -20,7 +20,7 @@
 - [x] 4.1 In `src/ui/overview.tsx`, drop the Agent sessions `<th>` and the `agent-cell` `<td>`, delete `AgentControls`, set the `PendingTableRow` column count to 6, and make `row-actions` hold Console, Pull and the gear. Remove the row's Labels and Disable. Verify with a test that a row holds no switch, picker, Labels or Disable
 - [x] 4.2 Replace `TileSettings` with `SettingsButton` at the end of the tile footer, and delete `useTileSettingsPanels` and its call. Verify with a test that the footer holds Console, Pull and the gear, and that no `details` element remains
 - [x] 4.3 Render `ProjectSettingsDialog` in `Overview` next to `RepoLabelsDialog`, only while `settingsOpen` names an enabled repository that is in the snapshot. Verify in the running app (`bun run dev`) that it opens from a row and from a tile without opening the board
-- [~] 4.4 Update `src/ui/styles.css`: scope the `.setting-line` rules to the dialog, move the console separator to the actions cell, and remove `.agent-cell`, `.agent-controls`, `.tile-settings*` and the `.tile:has(.tile-settings[open])` rules. Verify with `grep` that nothing references the removed classes, and check in both themes that the row height and the tile size are unchanged
+- [x] 4.4 Update `src/ui/styles.css`: scope the `.setting-line` rules to the dialog, move the console separator to the actions cell, and remove `.agent-cell`, `.agent-controls`, `.tile-settings*` and the `.tile:has(.tile-settings[open])` rules. Verify with `grep` that nothing references the removed classes, and check in both themes that the row height and the tile size are unchanged
 
 ## 5. Tests
 
@@ -30,5 +30,5 @@
 ## 6. Tour, demo and manual checks
 
 - [x] 6.1 Confirm that no `data-tour` anchor and no demo or screenshot code targets the removed controls (`grep -rn "tile-settings\|agent-cell\|agent-controls" src scripts`). Then open the demo build (`bun run build:demo`) and check that the gear opens the dialog in both layouts
-- [~] 6.2 Check manually in `bun run dev`, with the keyboard only: Tab to a row's gear and press Enter, toggle Docs auto-merge, press Escape, and confirm that focus is back on the gear. Repeat from a tile, and through Labels then Escape. With agent sessions off globally, confirm that the dialog shows the dashed off-globally links to Settings › Agent sessions
+- [x] 6.2 Check manually in `bun run dev`, with the keyboard only: Tab to a row's gear and press Enter, toggle Docs auto-merge, press Escape, and confirm that focus is back on the gear. Repeat from a tile, and through Labels then Escape. With agent sessions off globally, confirm that the dialog shows the dashed off-globally links to Settings › Agent sessions
 - [x] 6.3 Run `bun run build` and open `dist/spec-control` to confirm that the dialog works in the compiled binary
