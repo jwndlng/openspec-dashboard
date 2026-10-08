@@ -1,6 +1,6 @@
 import type { ActivityQuery } from "../shared/activity.ts";
 import type { ActivityPage, AutoMergePromptResult, ConsoleSession, ProjectConsoleLike, CleanupPreview, CleanupResult, CleanupSelection, ChangeIssueRef, CreateChangeResponse, DismissPreview, DismissResult, EnvironmentReport, PromptResult, PullRequestsResponse, PullResolve, PullResult, RepoIssues, ShipResult, StartResult, WorkStatus } from "../shared/types.ts";
-import type { AgentAvailability, ArtifactFileContent, ChangeArtifacts, Config, CreateProjectResponse, DiscoverResult, IntegrationSession, PrTitleConvention, RepoConfig, ScanTriggerResult, Session, SessionAction, SessionWorktree, SharedConfig, SharedConfigApplyResult, SharedConfigAssignment, SharedConfigPreview, Snapshot } from "../shared/types.ts";
+import type { AgentAvailability, AutoFetchMinutes, ArtifactFileContent, ChangeArtifacts, Config, CreateProjectResponse, DiscoverResult, IntegrationSession, PrTitleConvention, RepoConfig, ScanTriggerResult, Session, SessionAction, SessionWorktree, SharedConfig, SharedConfigApplyResult, SharedConfigAssignment, SharedConfigPreview, Snapshot } from "../shared/types.ts";
 import { socketOrigin } from "./url.ts";
 
 export class ApiError extends Error {
@@ -71,6 +71,8 @@ export interface Api {
   setRepoLabels(repoId: string, patch: Pick<RepoConfig, "labels" | "hiddenLabels">): Promise<Config>;
   /** A project's PR titles picker, saved at once; `null` means no convention. */
   setRepoPrTitleConvention(repoId: string, convention: PrTitleConvention | null): Promise<Config>;
+  /** The project's Auto fetch drop-down, saved at once; `null` is Off. `ApiError` 400 for an interval not offered. */
+  setRepoAutoFetch(repoId: string, minutes: AutoFetchMinutes | null): Promise<Config>;
   /** A label's colour from a labels dialog, saved at once for every repository; `hue: null` is Auto. `ApiError` 400 when refused. */
   setLabelColor(label: string, hue: number | null): Promise<Config>;
   /** Forget on a disabled entry, saved at once. `ApiError` 409 for an enabled repository. */
@@ -224,6 +226,7 @@ export const httpApi: Api = {
   setRepoLabels: (repoId, patch) => call<Config>(`/api/repos/${encodeURIComponent(repoId)}/labels`, { method: "POST", body: JSON.stringify(labelLists(patch)) }),
   setRepoPrTitleConvention: (repoId, convention) =>
     call<Config>(`/api/repos/${encodeURIComponent(repoId)}/pr-title-convention`, { method: "POST", body: JSON.stringify({ convention }) }),
+  setRepoAutoFetch: (repoId, minutes) => call<Config>(`/api/repos/${encodeURIComponent(repoId)}/auto-fetch`, { method: "POST", body: JSON.stringify({ minutes }) }),
   setLabelColor: (label, hue) => call<Config>("/api/labels/color", { method: "POST", body: JSON.stringify({ label, hue }) }),
   forgetRepo: (repoId) => call<Config>(`/api/repos/${encodeURIComponent(repoId)}/forget`, { method: "POST", body: "{}" }),
   discover: (scanRoots, ignorePaths) =>
@@ -309,6 +312,7 @@ export const api: Api = {
   setRepoAgent: (...args) => current.setRepoAgent(...args),
   setRepoLabels: (...args) => current.setRepoLabels(...args),
   setRepoPrTitleConvention: (...args) => current.setRepoPrTitleConvention(...args),
+  setRepoAutoFetch: (...args) => current.setRepoAutoFetch(...args),
   setLabelColor: (...args) => current.setLabelColor(...args),
   forgetRepo: (repoId) => current.forgetRepo(repoId),
   discover: (scanRoots, ignorePaths) => current.discover(scanRoots, ignorePaths),

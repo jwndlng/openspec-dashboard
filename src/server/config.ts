@@ -184,6 +184,8 @@ const repoSchema = z.object({
   labels: labelsSchema,
   hiddenLabels: labelsSchema,
   prTitleConvention: z.literal("conventional-commits").optional(),
+  // AUTO_FETCH_MINUTES, spelled out for zod's tuple; a test keeps the two equal.
+  autoFetchMinutes: z.union([z.literal(5), z.literal(15), z.literal(30), z.literal(60)]).optional(),
 });
 
 /** The first label that repeats another one of the list, ignoring case. */

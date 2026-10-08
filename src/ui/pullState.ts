@@ -1,6 +1,7 @@
 // Pure helpers for the pull action's UI: how an outcome reads, what a blocked pull's files mean, and what the
 // off-default-branch notice says.
-import type { PullBlockingFile, PullResult, RepoSnapshot } from "../shared/types.ts";
+import type { AutoFetchOutcome, PullBlockingFile, PullResult, RepoSnapshot } from "../shared/types.ts";
+import { relTime } from "./format.ts";
 
 export interface PullOutcome {
   label: string;
@@ -82,4 +83,41 @@ export function branchNotice(repo: Pick<RepoSnapshot, "currentBranch" | "default
     short: `${where}, not ${repo.defaultBranch}`,
     long: `This checkout is ${where}, not ${repo.defaultBranch}. Archived changes, specs and progress shown for this repository come from that branch and may be outdated. Changes that live in worktrees are read from their own checkouts and are not affected.`,
   };
+}
+
+/** What the fetch note beside Pull is made of: the repository's scan, and its auto-fetch setting from the config. */
+export interface FetchNoteInput {
+  hasRemote?: boolean;
+  lastFetchedAt?: string;
+  autoFetch?: AutoFetchOutcome;
+  autoFetchMinutes?: number;
+}
+
+export interface FetchNote {
+  label: string;
+  tone: "" | "warning";
+  /** Tooltip: the exact time, the interval when auto fetch is on, and the reason of a failure. */
+  detail: string;
+}
+
+const every = (minutes: number) => (minutes === 60 ? "every hour" : `every ${minutes} minutes`);
+
+/**
+ * When the repository was last fetched, by anyone, and whether its last automatic fetch failed (project-overview: "A
+ * project shows when it was last fetched"). Nothing for a repository without a remote. A failure is shown until a later
+ * fetch — automatic, a pull, or the user's own `git fetch` — is newer than it.
+ */
+export function fetchNote(input: FetchNoteInput, now = Date.now()): FetchNote | undefined {
+  if (input.hasRemote !== true) return undefined;
+  const auto = input.autoFetchMinutes ? ` Fetched automatically ${every(input.autoFetchMinutes)}; the checkout itself is only updated by Pull.` : "";
+  const last = input.lastFetchedAt ? `Last fetched ${new Date(input.lastFetchedAt).toLocaleString()}.` : "Never fetched.";
+  const failure = input.autoFetch;
+  const fetchedSince = failure && input.lastFetchedAt !== undefined && Date.parse(input.lastFetchedAt) > Date.parse(failure.at);
+  if (failure && !failure.ok && !fetchedSince) {
+    const why = (failure.reason ?? "no reason given").replace(/[.\s]+$/, "");
+    return { label: "⚠ auto fetch failed", tone: "warning", detail: `The automatic fetch at ${new Date(failure.at).toLocaleString()} failed: ${why}. ${last}${auto}` };
+  }
+  if (!input.lastFetchedAt) return { label: "never fetched", tone: "", detail: `${last}${auto}` };
+  const ago = relTime(input.lastFetchedAt, now);
+  return { label: ago === "just now" ? "fetched just now" : `fetched ${ago} ago`, tone: "", detail: `${last}${auto}` };
 }

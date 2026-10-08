@@ -5,7 +5,7 @@ import { useContext, useRef, useState } from "preact/hooks";
 import type { PullResolve, PullResult } from "../shared/types.ts";
 import { api } from "./api.ts";
 import { Modal } from "./modal.tsx";
-import { blockingNote, pullOutcome, resolveSummary } from "./pullState.ts";
+import { blockingNote, type FetchNoteInput, fetchNote, pullOutcome, resolveSummary } from "./pullState.ts";
 
 type PullState = "running" | PullResult;
 
@@ -203,6 +203,17 @@ export function PullButton({ repoId, repoName, compact = false }: { repoId: stri
           <PullBlockedList result={result} running={running} onResolve={(claim) => void ui.resolve(repoId, claim)} />
         </Modal>
       )}
+    </span>
+  );
+}
+
+/** Beside Pull: when the repository was last fetched, and whether its automatic fetch failed. Nothing without a remote. */
+export function FetchNoteBadge({ input, now }: { input: FetchNoteInput; now: number }) {
+  const note = fetchNote(input, now);
+  if (!note) return null;
+  return (
+    <span class={`badge fetch-note ${note.tone}`} title={note.detail}>
+      {note.label}
     </span>
   );
 }

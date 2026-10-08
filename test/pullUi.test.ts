@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import type { PullBlockingFile, PullResult } from "../src/shared/types.ts";
-import { PullBlockedList } from "../src/ui/pull.tsx";
-import { blockingNote, branchNotice, pullNeedsReport, pullOutcome, resolveSummary } from "../src/ui/pullState.ts";
+import { FetchNoteBadge, PullBlockedList } from "../src/ui/pull.tsx";
+import { blockingNote, branchNotice, fetchNote, pullNeedsReport, pullOutcome, resolveSummary } from "../src/ui/pullState.ts";
 import { byTag, textOf } from "./vnode.ts";
 
 const result = (patch: Partial<PullResult>): PullResult => ({ repoId: "r", fetched: true, update: "up-to-date", branch: "main", upstream: "origin/main", defaultBranch: "main", ...patch });
@@ -130,4 +130,34 @@ test("once resolved the same list becomes the outcome: what was replaced, and wh
 
   const noCopies = PullBlockedList({ result: result({ fetched: false, update: "fast-forwarded", commits: 1, resolved: [{ path: yaml }] }), running: false, onResolve: () => {} });
   expect(textOf(noCopies)).not.toContain("kept at");
+});
+
+test("the fetch note says when the repository was last fetched, how often it is fetched, and when an automatic fetch failed", () => {
+  const now = Date.parse("2026-10-08T12:00:00Z");
+  const ago = (minutes: number) => new Date(now - minutes * 60_000).toISOString();
+  // nothing without a remote, or for a folder without git (which has no `hasRemote`)
+  expect(fetchNote({ hasRemote: false, lastFetchedAt: ago(4) }, now)).toBeUndefined();
+  expect(fetchNote({}, now)).toBeUndefined();
+
+  expect(fetchNote({ hasRemote: true }, now)).toMatchObject({ label: "never fetched", tone: "" });
+  expect(fetchNote({ hasRemote: true, lastFetchedAt: ago(0.2) }, now)?.label).toBe("fetched just now");
+  const recent = fetchNote({ hasRemote: true, lastFetchedAt: ago(4), autoFetchMinutes: 15 }, now);
+  expect(recent).toMatchObject({ label: "fetched 4m ago", tone: "" });
+  expect(recent?.detail).toContain(new Date(ago(4)).toLocaleString());
+  expect(recent?.detail).toContain("every 15 minutes");
+  expect(recent?.detail).toContain("only updated by Pull");
+  expect(fetchNote({ hasRemote: true, lastFetchedAt: ago(4), autoFetchMinutes: 60 }, now)?.detail).toContain("every hour");
+  expect(fetchNote({ hasRemote: true, lastFetchedAt: ago(4) }, now)?.detail).not.toContain("automatically");
+
+  // a failure shows, as text and not only as a colour, with its reason — until something fetched after it
+  const failed = fetchNote({ hasRemote: true, lastFetchedAt: ago(20), autoFetch: { at: ago(5), ok: false, reason: "Could not resolve host: git.example.invalid." }, autoFetchMinutes: 5 }, now);
+  expect(failed).toMatchObject({ label: "⚠ auto fetch failed", tone: "warning" });
+  expect(failed?.detail).toContain("failed: Could not resolve host: git.example.invalid.");
+  expect(fetchNote({ hasRemote: true, lastFetchedAt: ago(1), autoFetch: { at: ago(5), ok: false, reason: "timed out" } }, now)?.label).toBe("fetched 1m ago");
+  expect(fetchNote({ hasRemote: true, lastFetchedAt: ago(5), autoFetch: { at: ago(5), ok: true } }, now)?.label).toBe("fetched 5m ago");
+
+  // the badge carries the label and puts the detail in its tooltip
+  const badge = FetchNoteBadge({ input: { hasRemote: true, lastFetchedAt: ago(4) }, now });
+  expect(textOf(badge as never)).toBe("fetched 4m ago");
+  expect(FetchNoteBadge({ input: { hasRemote: false }, now })).toBeNull();
 });

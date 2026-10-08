@@ -363,6 +363,11 @@ test("the overview's per-project settings change the in-memory config at once, w
   expect("prTitleConvention" in ((await api.setRepoPrTitleConvention(second.id, null)).repos.find((r) => r.id === second.id) ?? {})).toBe(false);
   await expect(api.setRepoPrTitleConvention(second.id, "angular" as never)).rejects.toMatchObject({ status: 400 });
 
+  // auto fetch is stored like the real setting, and the demo fetches nothing
+  expect((await api.setRepoAutoFetch(second.id, 15)).repos.find((r) => r.id === second.id)?.autoFetchMinutes).toBe(15);
+  expect("autoFetchMinutes" in ((await api.setRepoAutoFetch(second.id, null)).repos.find((r) => r.id === second.id) ?? {})).toBe(false);
+  await expect(api.setRepoAutoFetch(second.id, 1 as never)).rejects.toMatchObject({ status: 400 });
+
   expect((await api.setLabelColor(" Client ", 290)).labelColors).toEqual({ client: 290 });
   expect((await api.config()).labelColors).toEqual({ client: 290 });
   expect("labelColors" in (await api.setLabelColor("client", null))).toBe(false);

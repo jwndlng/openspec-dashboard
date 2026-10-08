@@ -40,7 +40,7 @@ bun test test/scanner.test.ts   # a single test file
 1. **Read-only towards tracked repositories, with enumerated exceptions.** The dashboard writes to a tracked
    repository only in response to an explicit user action, only to the paths enumerated in the "never writes"
    requirement of `openspec/specs/dashboard-api/spec.md`, deletes nothing there beyond the worktrees, branches, change directories and confirmed change leftovers enumerated below, and runs a git
-   command that writes only where enumerated below. Today that list has eight entries: the managed sections of `openspec/config.yaml` (applying shared config profiles,
+   command that writes only where enumerated below. Today that list has nine entries: the managed sections of `openspec/config.yaml` (applying shared config profiles,
    `src/server/sharedConfig.ts`); for agent sessions, off by default, a session's git worktree, created with
    `git worktree add` (directory under `~/.spec-control/worktrees/`, never inside the repository's working tree)
    and removed with a non-forcing `git worktree remove` after the user confirmed and read-only checks proved nothing
@@ -58,7 +58,12 @@ bun test test/scanner.test.ts   # a single test file
    `~/.spec-control/pull-backups/`, removing exactly those files from the working tree and, for the staged ones,
    from the index with `git rm --cached` (never `-f`), then retrying the fast-forward and, if it is still refused,
    writing them back and re-staging them with `git add -- <those paths>` (`src/server/pull.ts`, the only place that
-   contacts a remote or changes a main checkout); and the **create-change action** — a new `openspec/changes/<name>/` directory
+   contacts a remote or changes a main checkout); the **automatic fetch** — for a project whose auto-fetch setting the
+   user switched on (`autoFetchMinutes`, off by default), exactly the pull action's `git fetch` and nothing after it, on
+   that interval (`fetchRepository` in `src/server/pull.ts`, scheduled by `src/server/autoFetch.ts`): remote-tracking
+   refs, `FETCH_HEAD` and objects only, never a fast-forward, merge, prune or anything in a working tree or index, never
+   overlapping a pull of the same project, and never in the demo — the opt-in is the explicit action; and the
+   **create-change action** — a new `openspec/changes/<name>/` directory
    with the schema marker `.openspec.yaml`, when the user typed one, `prompt.md`, when the user picked any
    dependencies, `depends-on.yaml` (a `depends_on:` list of validated change names), and, for a change imported from a
    GitHub issue, `issue.yaml` (the `owner/name` read from the repository's own `origin`, never from the request, the
@@ -84,11 +89,13 @@ bun test test/scanner.test.ts   # a single test file
    `~/.spec-control/worktrees/`, which rewrites only that worktree's record in the repository and its `.git` file and is
    retried on later starts until it succeeds (`src/server/homeMigration.ts` through `repairMovedWorktree` in
    `src/server/sessions/worktree.ts`). Those six modules and the home migration are the only places that write to a
-   tracked repository. Apart from the pull action and
-   those two `git add`s, the main checkout's index and files are never touched and no remote is ever contacted; the main
+   tracked repository. Apart from the pull action, the
+   automatic fetch and those two `git add`s, the main checkout's index and files are never touched and no remote is ever
+   contacted; the main
    checkout's branch is never changed by anything; and the pull action runs only on the user's explicit request — never
-   on a timer, during a scan, on page load or as a side effect (`test/pull.test.ts` proves scans leave a recording
-   remote untouched). Starting the user's
+   on a timer, during a scan, on page load or as a side effect; the only fetch on a timer is the automatic fetch above,
+   for the projects that opted in (`test/pull.test.ts` proves scans, discovery and the state endpoint leave a recording
+   remote untouched, with auto fetch on too). Starting the user's
    agent in that worktree on the user's click is not a write by the dashboard: what the agent changes is decided by its
    own permission prompts. That is also why **Integrate** (`src/server/integration.ts`) needs no entry in the list
    above: it starts the default agent in a git repository that is not tracked yet so the agent can run `openspec init`
@@ -108,7 +115,7 @@ bun test test/scanner.test.ts   # a single test file
    write nothing to a repository. In particular `tasks.md` is never written: the dashboard reads the three checkbox
    states (`[x]`, `[~]` — finished, awaiting the user's confirmation — and `[ ]`) and shows them; only the agent, in its
    own session under its own permission prompts, ticks a box or writes a `- [~]`. All other writes stay under `~/.spec-control/` (or `SPEC_CONTROL_HOME`
-   in tests), apart from that new project folder. Apart from the worktree commands (the home migration's `worktree repair` among them), the pull action's `fetch`, `merge --ff-only`, leftover `rm --cached`
+   in tests), apart from that new project folder. Apart from the worktree commands (the home migration's `worktree repair` among them), the pull action's and the automatic fetch's `fetch`, the pull action's `merge --ff-only`, leftover `rm --cached`
    and restoring `add`, the create-change and dismissal `add`, the cleanup's `branch -D` and the new project's `git init`, git is invoked only with
    the read-only subcommands listed in that spec — among them `ls-tree`, `cat-file` and `hash-object` without `-w`,
    which is how a leftover is told from the user's own work, and `merge-tree --write-tree`, which answers whether a
@@ -140,10 +147,10 @@ bun test test/scanner.test.ts   # a single test file
    Do not call the library's `resolveSchema`/`loadChangeContext`: they locate files via `import.meta.url`, which does not exist inside the
    compiled binary. The adapter embeds the schema at build time. Anything that works under `bun run` but reads files
    relative to a module path must also be verified in `dist/spec-control`.
-4. **No network at runtime, except the pull action and the pull-request and issue queries.** The UI is one HTML file with inlined
+4. **No network at runtime, except the pull action, the automatic fetch and the pull-request and issue queries.** The UI is one HTML file with inlined
    JS, CSS and fonts; do not add CDN links, remote fonts or fetches to other hosts — the links to github.com in the
    Pull requests view, the Import from issues dialog, on cards and in the detail header are links the user follows, not requests the page makes. The server reaches a network in exactly
-   two places, both on the user's own action: when git does, inside the pull action of invariant 1, and when `gh` does,
+   two places, both on the user's own action: when git does, inside the pull action or a project's opted-in automatic fetch of invariant 1, and when `gh` does,
    inside the pull-request or issue query of invariant 1 (`src/server/pullRequests.ts`, `src/server/issues.ts`) — for
    issues, the user opened Import from issues or pressed its Refresh; for pull requests, the user activated Refresh, or opened
    the Pull requests view, a repository's pull-request dialog or a Kanban board (whose cards link to their change's pull

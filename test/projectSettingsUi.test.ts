@@ -34,6 +34,7 @@ function tracking(state: Partial<Pick<Tracking, "busy" | "errors" | "renaming" |
     setAgent: (id, patch) => calls.push(`agent ${id} ${JSON.stringify(patch)}`),
     setLabels: (id, patch) => calls.push(`labels ${id} ${JSON.stringify(patch)}`),
     setPrTitleConvention: (id, convention) => calls.push(`prTitles ${id} ${convention}`),
+    setAutoFetch: (id, minutes) => calls.push(`autoFetch ${id} ${minutes}`),
     setLabelColor: (id, label, hue) => calls.push(`labelColor ${id} ${label} ${hue}`),
     openLabels: (id) => calls.push(`openLabels ${id}`),
     closeLabels: () => calls.push("closeLabels"),
@@ -138,6 +139,51 @@ test("the PR titles picker is not offered for a folder without git, and is inact
   const [plain] = overviewRows({ generatedAt: "2026-10-01T00:00:00Z", repos: [{ ...snapshotRepo, isGit: false }] });
   expect(prTitleSelects(dialog(configWith(), tracking().t, plain))).toHaveLength(0);
   expect(prTitleSelects(dialog(configWith(), tracking({ busy: { a: "prTitles" } }).t))[0].props.disabled).toBe(true);
+});
+
+const autoFetchSelects = selectNamed("Auto fetch for ");
+
+test("every git project offers an Auto fetch drop-down in its dialog, Off by default, with agent sessions off too, saved at once", () => {
+  const { t, calls } = tracking();
+  for (const config of [configWith(), configWith({ sessions: false }), configWith({ agent: { enabled: false } })]) {
+    const [select] = autoFetchSelects(dialog(config, t));
+    expect(select.props["aria-label"]).toBe("Auto fetch for alpha-infra");
+    expect(select.props.value).toBe("");
+    expect(String(select.props.title)).toContain("only fetches");
+    expect(String(select.props.title)).toContain("Pull");
+    expect(byTag(select, "option").map(textOf)).toEqual(["Off", "Every 5 minutes", "Every 15 minutes", "Every 30 minutes", "Every hour"]);
+    expect(click(select)).toBe(true);
+    (select.props.onChange as (e: unknown) => void)({ currentTarget: { value: "15" } });
+  }
+  expect(calls).toEqual(Array(3).fill("autoFetch a 15"));
+
+  const set = tracking();
+  const withAutoFetch: Config = { ...configWith(), repos: [{ ...configWith().repos[0], autoFetchMinutes: 15 }] };
+  const [select] = autoFetchSelects(dialog(withAutoFetch, set.t));
+  expect(select.props.value).toBe("15");
+  (select.props.onChange as (e: unknown) => void)({ currentTarget: { value: "" } });
+  expect(set.calls).toEqual(["autoFetch a null"]);
+});
+
+test("no Auto fetch drop-down for a folder without git; inactive while a setting saves", () => {
+  const [plain] = overviewRows({ generatedAt: "2026-10-01T00:00:00Z", repos: [{ ...snapshotRepo, isGit: false }] });
+  expect(autoFetchSelects(dialog(configWith(), tracking().t, plain))).toHaveLength(0);
+  expect(autoFetchSelects(dialog(configWith(), tracking({ busy: { a: "autoFetch" } }).t))[0].props.disabled).toBe(true);
+});
+
+const fetchNotes = (node: unknown) => byTag(node as never, "span").filter((s) => String(s.props.class).includes("fetch-note"));
+
+test("a git project shows its fetch note beside Pull on its row and tile, with its own interval; a folder without git none", () => {
+  const fetched = { ...snapshotRepo, hasRemote: true, lastFetchedAt: "2026-10-01T00:00:00Z" };
+  const [fetchedRow] = overviewRows({ generatedAt: "2026-10-01T00:00:00Z", repos: [fetched] });
+  const config: Config = { ...configWith(), repos: [{ ...configWith().repos[0], autoFetchMinutes: 30 }] };
+  for (const node of [Row({ row: fetchedRow, now: 0, tracking: tracking().t, config }), Tile({ row: fetchedRow, now: 0, tracking: tracking().t, config })]) {
+    const [badge] = fetchNotes(node);
+    expect(textOf(badge)).toBe("fetched just now");
+    expect(String(badge.props.title)).toContain("every 30 minutes");
+  }
+  const [plain] = overviewRows({ generatedAt: "2026-10-01T00:00:00Z", repos: [{ ...fetched, isGit: false }] });
+  expect(fetchNotes(Row({ row: plain, now: 0, tracking: tracking().t, config }))).toHaveLength(0);
 });
 
 test("Rename turns the name into a field: Enter and blur save, Escape cancels, each once", () => {
@@ -331,7 +377,7 @@ const actionsOf = (node: unknown) =>
 
 /** Every setting, Labels and Disable control, by its accessible name. */
 const settingControls = (node: unknown) =>
-  [...byTag(node as never, "button"), ...byTag(node as never, "select"), ...byTag(node as never, "a")].map((el) => String(el.props["aria-label"])).filter((n) => /^(Agent|PR titles|Auto-merge|Labels|Disable)/.test(n));
+  [...byTag(node as never, "button"), ...byTag(node as never, "select"), ...byTag(node as never, "a")].map((el) => String(el.props["aria-label"])).filter((n) => /^(Agent|PR titles|Auto-merge|Auto fetch|Labels|Disable)/.test(n));
 
 test("a row has no Agent sessions column: its actions are Console, Pull and the gear, with no setting, Labels or Disable", () => {
   for (const config of [configWith({ agents: 2 }), configWith({ sessions: false })]) {
@@ -403,11 +449,11 @@ test("a folder without git offers no Pull on its tile, and a failed scan none ei
 
 test("the settings dialog lists its lines in order, then Disable set apart; a setting that does not apply leaves no line", () => {
   const t = tracking().t;
-  expect(settingLines(dialog(configWith({ agents: 2 }), t))).toEqual(["Agent sessions", "Agent", "PR titles", "Docs auto-merge", "Labels", "Stop tracking"]);
-  expect(settingLines(dialog(configWith(), t))).toEqual(["Agent sessions", "PR titles", "Docs auto-merge", "Labels", "Stop tracking"]);
+  expect(settingLines(dialog(configWith({ agents: 2 }), t))).toEqual(["Agent sessions", "Agent", "PR titles", "Docs auto-merge", "Auto fetch", "Labels", "Stop tracking"]);
+  expect(settingLines(dialog(configWith(), t))).toEqual(["Agent sessions", "PR titles", "Docs auto-merge", "Auto fetch", "Labels", "Stop tracking"]);
   const [plainRow] = overviewRows({ generatedAt: "2026-10-01T00:00:00Z", repos: [{ ...snapshotRepo, isGit: false }] });
   expect(settingLines(dialog(configWith(), t, plainRow))).toEqual(["Agent sessions", "Labels", "Stop tracking"]);
-  expect(settingLines(dialog(configWith({ agent: { enabled: false } }), t))).toEqual(["Agent sessions", "PR titles", "Labels", "Stop tracking"]);
+  expect(settingLines(dialog(configWith({ agent: { enabled: false } }), t))).toEqual(["Agent sessions", "PR titles", "Auto fetch", "Labels", "Stop tracking"]);
   // The console is an action on the row and tile, not a setting.
   expect(byComponent(dialog(configWith(), t), ProjectConsoleButton)).toHaveLength(0);
 });

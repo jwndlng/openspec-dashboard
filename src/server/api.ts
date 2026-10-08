@@ -1,9 +1,10 @@
-import { ACTIVITY_KINDS, type ActivityKind } from "../shared/types.ts";
+import { ACTIVITY_KINDS, AUTO_FETCH_MINUTES, type ActivityKind } from "../shared/types.ts";
 import { availableName } from "../shared/nameHints.ts";
 import { labelKey } from "../shared/labels.ts";
 import { MAX_PAGE, type ActivityLog, type PageQuery } from "./activity/log.ts";
 import { pageEvents } from "../shared/activity.ts";
-import type { CleanupSelection, Config, DiscoverResult, PullBlockingFile, PullRequestsResponse, PullResolve, RepoConfig, RepoSnapshot, ScanTriggerResult, SharedConfigApplyResult, SharedConfigAssignment, SharedConfigPreview } from "../shared/types.ts";
+import type { AutoFetchMinutes, CleanupSelection, Config, DiscoverResult, PullBlockingFile, PullRequestsResponse, PullResult, PullResolve, RepoConfig, RepoSnapshot, ScanTriggerResult, SharedConfigApplyResult, SharedConfigAssignment, SharedConfigPreview } from "../shared/types.ts";
+import type { AutoFetcher } from "./autoFetch.ts";
 import { applyCleanup, CleanupBusyError, previewCleanup } from "./cleanup.ts";
 import { changeDirFor, listArtifactFiles, readArtifactFile } from "./artifacts.ts";
 import { consoleFolderProblem } from "./sessions/consoleFolder.ts";
@@ -34,6 +35,8 @@ export interface AppState {
   pullRequests?: PullRequests;
   /** Issue queries in flight; created on first use. Holds no list between requests. */
   issues?: Issues;
+  /** The auto-fetch schedule. Absent in contexts that never fetch on their own (tests, unless they bring one). */
+  autoFetcher?: AutoFetcher;
 }
 
 /** The part of Bun's server object the handler needs: upgrading the terminal request to a WebSocket. */
@@ -83,6 +86,8 @@ async function putConfig(state: AppState, req: Request): Promise<Response> {
 function afterConfigChange(state: AppState, previous: Config): void {
   // A repository may have been added, removed or re-pointed: look its `origin` up again when it is next projected.
   state.pullRequests?.forgetOrigins();
+  // An auto-fetch setting, or the set of enabled repositories, may have changed: re-arm at once, without fetching.
+  state.autoFetcher?.plan();
   if (state.config.pollIntervalSeconds !== previous.pollIntervalSeconds) {
     state.scanner.start(); // reschedules and kicks off a scan
   } else if (enabledIds(state.config) !== enabledIds(previous)) {
@@ -206,6 +211,13 @@ async function postRepoPrTitleConvention(state: AppState, req: Request, id: stri
   const { convention } = await readJson(req);
   if (convention !== null && convention !== "conventional-commits") return json({ error: "convention must be conventional-commits or null" }, 400);
   return updateRepo(state, id, ({ prTitleConvention: _old, ...repo }) => (convention ? { ...repo, prTitleConvention: convention } : repo));
+}
+
+/** The project's Auto fetch drop-down on the overview: one of the offered intervals sets it, `null` removes the key. */
+async function postRepoAutoFetch(state: AppState, req: Request, id: string): Promise<Response> {
+  const { minutes } = await readJson(req);
+  if (minutes !== null && !AUTO_FETCH_MINUTES.includes(minutes as AutoFetchMinutes)) return json({ error: `minutes must be one of ${AUTO_FETCH_MINUTES.join(", ")} or null` }, 400);
+  return updateRepo(state, id, ({ autoFetchMinutes: _old, ...repo }) => (minutes === null ? repo : { ...repo, autoFetchMinutes: minutes as AutoFetchMinutes }));
 }
 
 /** The project's labels dialog on the overview: either list replaced, an empty one removed, validated as in a `PUT`. */
@@ -758,7 +770,7 @@ async function postPull(state: AppState, req: Request, repoId: string): Promise<
   }
   try {
     const result = resolve ? await resolvePullRepository(repo, resolve) : await pullRepository(repo);
-    state.scanner.trigger();
+    afterFetch(state, [result]);
     return json(result);
   } catch (err) {
     if (err instanceof PullBusyError) return json({ error: err.message }, 409);
@@ -766,9 +778,16 @@ async function postPull(state: AppState, req: Request, repoId: string): Promise<
   }
 }
 
+/** After a pull: it is the repositories' latest fetch, and a moved base can turn a work status into `merged`. */
+function afterFetch(state: AppState, results: PullResult[]): void {
+  for (const result of results) state.autoFetcher?.notePull(result);
+  state.sessions?.forgetWorktrees();
+  state.scanner.trigger();
+}
+
 async function postPullAll(state: AppState): Promise<Response> {
   const results = await pullAll(pullable(state));
-  state.scanner.trigger();
+  afterFetch(state, results);
   return json({ results });
 }
 
@@ -961,7 +980,7 @@ export function createFetchHandler({ state, indexHtml }: AppOptions): (req: Requ
       const artifactMatch = req.method === "GET" ? ARTIFACT_ROUTE.exec(pathname) : null;
       if (artifactMatch) return artifactRoutes(state, url, artifactMatch);
       if (req.method === "POST" && pathname === "/api/worktrees/remove") return postWorktreeRemove(state, req);
-      if (req.method === "GET" && pathname === "/api/state") return json(state.scanner.snapshot);
+      if (req.method === "GET" && pathname === "/api/state") return json(state.autoFetcher?.withOutcomes(state.scanner.snapshot) ?? state.scanner.snapshot);
       // Read-only and local (openspec/specs/environment-check): no network, nothing in a tracked repository.
       // `force` is what **Re-check** sends: the user just changed the machine, which no cache key can see.
       if (req.method === "GET" && pathname === "/api/environment") {
@@ -976,13 +995,14 @@ export function createFetchHandler({ state, indexHtml }: AppOptions): (req: Requ
       const enabledMatch = /^\/api\/repos\/([^/]+)\/enabled$/.exec(pathname);
       if (req.method === "POST" && enabledMatch) return tracking(() => postRepoEnabled(state, req, decodeURIComponent(enabledMatch[1])));
       if (req.method === "POST" && pathname === "/api/labels/color") return tracking(() => postLabelColor(state, req));
-      const repoSetting = /^\/api\/repos\/([^/]+)\/(name|agent|labels|pr-title-convention|forget)$/.exec(pathname);
+      const repoSetting = /^\/api\/repos\/([^/]+)\/(name|agent|labels|pr-title-convention|auto-fetch|forget)$/.exec(pathname);
       if (req.method === "POST" && repoSetting) {
         const id = decodeURIComponent(repoSetting[1]);
         if (repoSetting[2] === "name") return tracking(() => postRepoName(state, req, id));
         if (repoSetting[2] === "agent") return tracking(() => postRepoAgent(state, req, id));
         if (repoSetting[2] === "labels") return tracking(() => postRepoLabels(state, req, id));
         if (repoSetting[2] === "pr-title-convention") return tracking(() => postRepoPrTitleConvention(state, req, id));
+        if (repoSetting[2] === "auto-fetch") return tracking(() => postRepoAutoFetch(state, req, id));
         return tracking(() => postRepoForget(state, id));
       }
       if (req.method === "GET" && pathname === "/api/shared-config") return getSharedConfig();

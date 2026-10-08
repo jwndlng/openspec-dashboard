@@ -1,6 +1,7 @@
 // Read-only git helpers. Every call sets `cwd` to the repository and passes
 // paths after `--`; nothing here ever mutates a repository.
-import { join } from "node:path";
+import { stat } from "node:fs/promises";
+import { isAbsolute, join } from "node:path";
 import type { CheckoutStatus, Worktree } from "../shared/types.ts";
 
 const DEFAULT_TIMEOUT_MS = 10_000;
@@ -224,6 +225,23 @@ export async function checkoutStatus(path: string): Promise<ParsedStatus | undef
 export async function hasRemoteRefs(cwd: string): Promise<boolean | undefined> {
   const out = await git(cwd, ["rev-parse", "--symbolic", "--remotes"]);
   return out === undefined ? undefined : out.trim() !== "";
+}
+
+/**
+ * Whether the repository can be fetched from, and when it last was — by anyone, the dashboard or the user's terminal.
+ * Reads `origin`'s URL, the remote-tracking refs and the time of `FETCH_HEAD`; nothing is written.
+ */
+export async function fetchInfo(cwd: string): Promise<{ hasRemote: boolean; lastFetchedAt?: string }> {
+  const [refs, origin, fetchHead] = await Promise.all([hasRemoteRefs(cwd), originUrl(cwd), git(cwd, ["rev-parse", "--git-path", "FETCH_HEAD"])]);
+  const hasRemote = refs === true || origin !== undefined;
+  const path = fetchHead?.trim();
+  if (!path) return { hasRemote };
+  try {
+    const { mtime } = await stat(isAbsolute(path) ? path : join(cwd, path));
+    return { hasRemote, lastFetchedAt: mtime.toISOString() };
+  } catch {
+    return { hasRemote };
+  }
 }
 
 export const LOCAL_ONLY_LIMIT = 100;
