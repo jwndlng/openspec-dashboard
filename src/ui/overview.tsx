@@ -195,7 +195,7 @@ export function Row({ row, now, tracking, labelFilter, config }: { row: Overview
           </span>
         )}
         {repo && <ProjectConsoleButton repoId={repo.id} variant="project" />}
-        {row.isGit && row.ok && <PullButton repoId={row.id} repoName={row.name} compact />}
+        {row.isGit && row.ok && <PullButton repoId={row.id} repoName={row.name} variant="overview" />}
         {row.isGit && <FetchNoteBadge input={{ ...row, autoFetchMinutes: repo?.autoFetchMinutes }} now={now} />}
         {repo && <SettingsButton id={row.id} name={repo.name} tracking={tracking} />}
       </td>
@@ -339,7 +339,7 @@ export function Tile({ row, now, hue, tracking, labelFilter, config }: { row: Ov
       <TileCheckouts row={row} />
       <footer class="tile-foot">
         {repo && <ProjectConsoleButton repoId={repo.id} variant="project" />}
-        {row.isGit && row.ok && <PullButton repoId={row.id} repoName={row.name} compact />}
+        {row.isGit && row.ok && <PullButton repoId={row.id} repoName={row.name} variant="overview" />}
         {row.isGit && <FetchNoteBadge input={{ ...row, autoFetchMinutes: repo?.autoFetchMinutes }} now={now} />}
         {repo && <SettingsButton id={row.id} name={repo.name} tracking={tracking} />}
       </footer>
