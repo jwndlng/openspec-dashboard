@@ -43,9 +43,11 @@ export default {
     exitOnLastWindowClosed: false,
   },
   // Without a Developer ID the app is ad-hoc signed instead: Apple silicon runs no unsigned code (unsigned-macos-app).
+  // The disk image is then laid out as an installer window around the app, unchanged (styled-dmg-installer).
   scripts: {
     postBuild: "scripts/adhoc-sign.ts",
     postWrap: "scripts/adhoc-sign.ts",
+    postPackage: "scripts/style-dmg.ts",
   },
   // No `release.baseUrl` and no Updater: the app never fetches anything (desktop-app spec). Updates are a separate change.
 } satisfies ElectrobunConfig;
