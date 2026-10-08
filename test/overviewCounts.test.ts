@@ -31,8 +31,8 @@ test("a row shows the open and to-archive totals and no count per stage", () => 
   const cells = byTag(node, "td").map(textOf);
   expect(cells[0]).toBe("12");
   expect(cells[1]).toBe("2 to archive");
-  // The name cell, the two totals, PRs, work in progress, updated, agent sessions and actions: no stage cells.
-  expect(cells).toHaveLength(7);
+  // The name cell, the two totals, PRs, work in progress, updated and actions: no stage cells, no settings column.
+  expect(cells).toHaveLength(6);
   for (const stage of STAGES) expect(textOf(node)).not.toContain(stage);
 });
 

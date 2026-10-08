@@ -33,11 +33,11 @@ import {
   wipIndicator,
 } from "./overviewState.ts";
 import { Stat } from "./band.tsx";
-import { IconCheck, IconChevronDown, IconFolderGit, IconGitBranch, IconPlus, IconSearch, IconSettings, IconX } from "./icons.tsx";
+import { IconCheck, IconChevronDown, IconFolderGit, IconGitBranch, IconPlus, IconSearch, IconX } from "./icons.tsx";
 import { LabelChips, labelHueStyle } from "./labels.tsx";
 import { NewChangeDialog } from "./newChangeForm.tsx";
 import { assignRepoHues, labelTargets, newChangeTargets } from "./repoGroups.ts";
-import { AgentPicker, AgentToggle, AutoMergeToggle, LabelsButton, PrTitlesPicker, RenameButton, RenameField, RepoLabelsDialog } from "./projectSettings.tsx";
+import { ProjectSettingsDialog, RenameButton, RenameField, RepoLabelsDialog, SettingsButton } from "./projectSettings.tsx";
 import { ProjectConsoleButton } from "./projectConsole.tsx";
 import { PullAllButton, PullButton } from "./pull.tsx";
 import { OpenPrCount } from "./pullRequests.tsx";
@@ -45,7 +45,7 @@ import { branchNotice } from "./pullState.ts";
 import { repoPath } from "./routes.ts";
 import { useSessionUi } from "./sessions.tsx";
 import { summarize } from "./sharedConfigState.ts";
-import { DisableButton, type Tracking, UnmanagedSection, useTracking } from "./untracked.tsx";
+import { type Tracking, UnmanagedSection, useTracking } from "./untracked.tsx";
 import { currentQuery, followInApp, href, hrefWithQuery, navigate, replaceQuery } from "./url.ts";
 
 /** Plain left-click only, so modifier-clicks and text selection keep their browser behaviour. */
@@ -145,20 +145,6 @@ function RepoNameEdit({ row, repo, tracking }: { row: OverviewRow; repo?: RepoCo
   );
 }
 
-/** The project's agent-session switch, its agent when there is a choice, its PR titles, whether docs-only pull requests auto-merge, and its console. */
-function AgentControls({ repo, config, isGit, tracking }: { repo?: RepoConfig; config?: Config | null; isGit: boolean; tracking: Tracking }) {
-  if (!repo || !config) return null;
-  return (
-    <span class="agent-controls">
-      <AgentToggle repo={repo} config={config} tracking={tracking} />
-      <AgentPicker repo={repo} config={config} tracking={tracking} />
-      <PrTitlesPicker repo={repo} isGit={isGit} tracking={tracking} />
-      <AutoMergeToggle repo={repo} config={config} isGit={isGit} tracking={tracking} />
-      <ProjectConsoleButton repoId={repo.id} variant="project" />
-    </span>
-  );
-}
-
 /** What a row or tile needs to offer the project's own settings: its entry in the saved config. */
 export interface ProjectSettingsProps {
   config?: Config | null;
@@ -166,9 +152,14 @@ export interface ProjectSettingsProps {
 
 const repoOf = (config: Config | null | undefined, id: string) => config?.repos.find((r) => r.id === id);
 
+/**
+ * One project in the table. Its settings are not inline: the gear in its actions opens its settings dialog, where Labels
+ * and Disable are too; a save that failed is reported beside the actions.
+ */
 export function Row({ row, now, tracking, labelFilter, config }: { row: OverviewRow; now: number; tracking: Tracking; labelFilter?: LabelFilter } & ProjectSettingsProps) {
   const idle = row.open === 0;
   const repo = repoOf(config, row.id);
+  const error = tracking.errors[row.id];
   return (
     <tr class={idle ? "idle" : ""} title={`${row.path} · ${row.archived} archived`} onClick={openOnPlainClick(row)}>
       <th scope="row" class="repo-name">
@@ -197,13 +188,15 @@ export function Row({ row, now, tracking, labelFilter, config }: { row: Overview
       <td class="when" title={row.lastUpdatedAt ?? "no activity date"}>
         {lastUpdated(row, now)}
       </td>
-      <td class="agent-cell">
-        <AgentControls repo={repo} config={config} isGit={row.isGit} tracking={tracking} />
-      </td>
       <td class="row-actions">
+        {error && (
+          <span class="row-error" role="alert" title={error}>
+            {error}
+          </span>
+        )}
+        {repo && <ProjectConsoleButton repoId={repo.id} variant="project" />}
         {row.isGit && row.ok && <PullButton repoId={row.id} repoName={row.name} compact />}
-        {repo && <LabelsButton id={row.id} name={repo.name} tracking={tracking} />}
-        <DisableButton id={row.id} name={row.name} tracking={tracking} />
+        {repo && <SettingsButton id={row.id} name={repo.name} tracking={tracking} />}
       </td>
     </tr>
   );
@@ -288,53 +281,10 @@ function TileFigure({ label, tone, children }: { label: string; tone?: string; c
   );
 }
 
-/** One labelled line of a tile's settings panel; nothing when the control does not apply to the project. */
-function SettingLine({ label, children }: { label: string; children: ComponentChildren }) {
-  if (children === null || children === undefined) return null;
-  return (
-    <div class="setting-line">
-      <span class="setting-label">{label}</span>
-      {children}
-    </div>
-  );
-}
-
-/**
- * The tile's own settings and Disable, behind a native disclosure: no state in the tile, so it stays hook-free and its
- * controls are always in the tree. The panel lies over the tile; `useTileSettingsPanels` keeps one open at a time. The
- * controls are called as functions so one that does not apply (null) leaves no line behind.
- */
-function TileSettings({ row, repo, config, tracking }: { row: OverviewRow; repo?: RepoConfig; config?: Config | null; tracking: Tracking }) {
-  const stopClick = (e: MouseEvent) => e.stopPropagation();
-  return (
-    // biome-ignore lint/a11y/useKeyWithClickEvents: only keeps the tile's pointer shortcut from firing; the summary is the keyboard path
-    <details class="tile-settings" onClick={stopClick}>
-      <summary class="btn sm ghost icon-only" aria-label={`Settings of ${row.name}`} title="Settings: this project's own settings, Labels and Disable, saved at once">
-        <IconSettings size={15} />
-      </summary>
-      <div class="tile-settings-panel">
-        {repo && config && (
-          <>
-            <SettingLine label="Agent sessions">{AgentToggle({ repo, config, tracking })}</SettingLine>
-            <SettingLine label="Agent">{AgentPicker({ repo, config, tracking })}</SettingLine>
-            <SettingLine label="PR titles">{PrTitlesPicker({ repo, isGit: row.isGit, tracking })}</SettingLine>
-            <SettingLine label="Docs auto-merge">{AutoMergeToggle({ repo, config, isGit: row.isGit, tracking, short: true })}</SettingLine>
-          </>
-        )}
-        {repo && <SettingLine label="Labels">{LabelsButton({ id: row.id, name: repo.name, tracking })}</SettingLine>}
-        <div class="setting-line setting-disable">
-          <span class="setting-label">Stop tracking</span>
-          <DisableButton id={row.id} name={row.name} tracking={tracking} />
-        </div>
-      </div>
-    </details>
-  );
-}
-
 /**
  * Everything a row shows, in fixed zones that put each part at the same height on every tile: identity, status,
- * figures, the checkout summary and the footer with the tile's actions. The project's settings sit in the
- * footer's Settings panel instead of beside the actions, so the footer never wraps.
+ * figures, the checkout summary and the footer with the tile's actions. The project's settings are in its settings
+ * dialog, opened by the gear at the end of the footer, so the footer never wraps.
  */
 export function Tile({ row, now, hue, tracking, labelFilter, config }: { row: OverviewRow; now: number; hue?: number; tracking: Tracking; labelFilter?: LabelFilter } & ProjectSettingsProps) {
   const idle = row.open === 0;
@@ -389,45 +339,10 @@ export function Tile({ row, now, hue, tracking, labelFilter, config }: { row: Ov
       <footer class="tile-foot">
         {repo && <ProjectConsoleButton repoId={repo.id} variant="project" />}
         {row.isGit && row.ok && <PullButton repoId={row.id} repoName={row.name} compact />}
-        <TileSettings row={row} repo={repo} config={config} tracking={tracking} />
+        {repo && <SettingsButton id={row.id} name={repo.name} tracking={tracking} />}
       </footer>
     </article>
   );
-}
-
-/**
- * At most one tile's settings panel is open, and Escape or a click outside closes it (project-overview: "Tiles have one
- * size and one layout"). The DOM's `open` attribute is the only state, so the tiles stay hook-free.
- */
-function useTileSettingsPanels() {
-  useEffect(() => {
-    const open = () => [...document.querySelectorAll<HTMLDetailsElement>("details.tile-settings[open]")];
-    // `toggle` does not bubble: listened for in the capture phase.
-    const onToggle = (e: Event) => {
-      const opened = e.target;
-      if (!(opened instanceof HTMLDetailsElement) || !opened.matches(".tile-settings") || !opened.open) return;
-      for (const d of open()) if (d !== opened) d.open = false;
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "Escape") return;
-      for (const d of open()) {
-        const hadFocus = d.contains(document.activeElement);
-        d.open = false;
-        if (hadFocus) d.querySelector("summary")?.focus();
-      }
-    };
-    const onPointer = (e: PointerEvent) => {
-      for (const d of open()) if (!(e.target instanceof Node && d.contains(e.target))) d.open = false;
-    };
-    document.addEventListener("toggle", onToggle, true);
-    document.addEventListener("keydown", onKey);
-    document.addEventListener("pointerdown", onPointer);
-    return () => {
-      document.removeEventListener("toggle", onToggle, true);
-      document.removeEventListener("keydown", onKey);
-      document.removeEventListener("pointerdown", onPointer);
-    };
-  }, []);
 }
 
 /** The overview's discovery runs, kept across visits: coming back shows the last result while a new run is under way. */
@@ -478,7 +393,6 @@ export function Overview({ snapshot, config, onConfig, onReload }: { snapshot: S
     });
   };
   const tracking = useTracking({ onConfig, rediscover });
-  useTileSettingsPanels();
   // Against the saved roots and ignore paths, whenever the overview opens or they change (a save in Settings).
   const rootsKey = config ? JSON.stringify([config.scanRoots, config.ignorePaths]) : undefined;
   useEffect(() => {
@@ -511,6 +425,9 @@ export function Overview({ snapshot, config, onConfig, onReload }: { snapshot: S
   const untrackedShown = untracked.filter((e) => matchesSearch(e, state.q));
   const nothingTracked = snapshot !== null && rows.length === 0 && pending.length === 0;
   const labelsRepo = tracking.labelsOpen ? repoOf(config, tracking.labelsOpen) : undefined;
+  // Only for a project that is managed and scanned: once it is disabled or gone, its dialog is too.
+  const settingsRow = tracking.settingsOpen ? rows.find((r) => r.id === tracking.settingsOpen) : undefined;
+  const settingsRepo = settingsRow ? repoOf(config, settingsRow.id) : undefined;
   const runningIntegration = (path: string) => ui.integrations.find((s) => s.folder === path && s.state === "running")?.id;
 
   const header = (key: SortKey, label: string, cls = "") => {
@@ -665,9 +582,6 @@ export function Overview({ snapshot, config, onConfig, onReload }: { snapshot: S
                 </th>
                 {header("wip", SORT_LABEL.wip)}
                 {header("updated", SORT_LABEL.updated, "when")}
-                <th scope="col" class="agent-cell" title="Whether agent sessions can be started for the project, saved at once">
-                  Agent sessions
-                </th>
                 <th scope="col" class="row-actions">
                   <span class="visually-hidden">Actions</span>
                 </th>
@@ -675,7 +589,7 @@ export function Overview({ snapshot, config, onConfig, onReload }: { snapshot: S
             </thead>
             <tbody>
               {pendingShown.map((row) => (
-                <PendingTableRow key={row.id} row={row} columns={7} />
+                <PendingTableRow key={row.id} row={row} columns={6} />
               ))}
               {visible.map((row) => (
                 <Row key={row.id} row={row} now={now} tracking={tracking} labelFilter={labelFilter} config={config} />
@@ -692,6 +606,7 @@ export function Overview({ snapshot, config, onConfig, onReload }: { snapshot: S
             onReload={onReload}
           />
         )}
+        {settingsRow && settingsRepo?.enabled && config && <ProjectSettingsDialog repo={settingsRepo} config={config} isGit={settingsRow.isGit} tracking={tracking} />}
         {labelsRepo && config && (
           <RepoLabelsDialog repo={labelsRepo} repos={config.repos} detected={snapshot?.repos.find((r) => r.id === labelsRepo.id)?.detectedLabels ?? []} labelColors={config.labelColors} tracking={tracking} />
         )}

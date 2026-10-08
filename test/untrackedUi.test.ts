@@ -9,13 +9,14 @@ import { DisableButton, type Tracking, UnmanagedSection, type UntrackedSectionPr
 import { byComponent, byTag, textOf } from "./vnode.ts";
 
 /** Records what the view asks for instead of calling the server. */
-function tracking(state: Partial<Pick<Tracking, "busy" | "errors" | "renaming" | "labelsOpen">> = {}) {
+function tracking(state: Partial<Pick<Tracking, "busy" | "errors" | "renaming" | "labelsOpen" | "settingsOpen">> = {}) {
   const calls: string[] = [];
   const t: Tracking = {
     busy: state.busy ?? {},
     errors: state.errors ?? {},
     renaming: state.renaming,
     labelsOpen: state.labelsOpen,
+    settingsOpen: state.settingsOpen,
     enable: (e) => calls.push(`enable ${e.id}`),
     disable: (id) => calls.push(`disable ${id}`),
     ignore: (e) => calls.push(`ignore ${e.id}`),
@@ -30,6 +31,8 @@ function tracking(state: Partial<Pick<Tracking, "busy" | "errors" | "renaming" |
     setLabelColor: (id, label, hue) => calls.push(`labelColor ${id} ${label} ${hue}`),
     openLabels: (id) => calls.push(`openLabels ${id}`),
     closeLabels: () => calls.push("closeLabels"),
+    openSettings: (id) => calls.push(`openSettings ${id}`),
+    closeSettings: () => calls.push("closeSettings"),
   };
   return { t, calls };
 }
@@ -148,33 +151,37 @@ test("discovery running, a root error and a search without matches are all said"
   expect(textOf(section({ entries: [] }).view)).toContain("Every repository under the workspace roots is managed.");
 });
 
-test("Disable on a row and a tile disables without opening the repository", () => {
+test("Disable is in the settings dialog, not on a row or tile; it disables without opening the repository", () => {
   const repo: RepoSnapshot = { id: "a", name: "alpha-infra", path: "/w/alpha-infra", ok: true, scannedAt: "2026-10-01T00:00:00Z", isGit: true, worktrees: [], changes: [] };
   const [row] = overviewRows({ generatedAt: "2026-10-01T00:00:00Z", repos: [repo] });
+  const managed: Config = { ...config, repos: [...config.repos, { id: "a", path: "/w/alpha-infra", name: "alpha-infra", enabled: true }] };
   const { t, calls } = tracking();
-  for (const node of [Row({ row, now: 0, tracking: t }), Tile({ row, now: 0, tracking: t })]) {
-    const disable = byTag(node, "button").filter((b) => b.props["aria-label"] === "Disable alpha-infra");
-    expect(disable).toHaveLength(1);
-    const btn = disable[0];
-    let stopped = false;
-    (btn.props.onClick as (e: unknown) => void)({ stopPropagation: () => (stopped = true) });
-    expect(stopped).toBe(true);
+  for (const node of [Row({ row, now: 0, tracking: t, config: managed }), Tile({ row, now: 0, tracking: t, config: managed })]) {
+    expect(byTag(node, "button").filter((b) => String(b.props["aria-label"]).startsWith("Disable"))).toHaveLength(0);
   }
-  expect(calls).toEqual(["disable a", "disable a"]);
+  const [btn] = byTag(DisableButton({ id: "a", name: "alpha-infra", tracking: t }), "button");
+  expect(btn.props["aria-label"]).toBe("Disable alpha-infra");
+  let stopped = false;
+  (btn.props.onClick as (e: unknown) => void)({ stopPropagation: () => (stopped = true) });
+  expect(stopped).toBe(true);
+  expect(calls).toEqual(["disable a"]);
 
   const busy = byTag(DisableButton({ id: "a", name: "alpha-infra", tracking: tracking({ busy: { a: "disable" }, errors: {} }).t }), "button")[0];
   expect(textOf(busy)).toBe("Disabling…");
   expect(busy.props.disabled).toBe(true);
-  const failed = DisableButton({ id: "a", name: "alpha-infra", tracking: tracking({ errors: { a: "repository not found" } }).t });
-  expect(textOf(failed)).toContain("repository not found");
+  // A failure is reported on the project itself, on the row as on the tile.
+  const failed = tracking({ errors: { a: "repository not found" } }).t;
+  for (const node of [Row({ row, now: 0, tracking: failed, config: managed }), Tile({ row, now: 0, tracking: failed, config: managed })]) {
+    expect(textOf(node)).toContain("repository not found");
+  }
 });
 
 test("a just-enabled repository shows as Scanning… in both layouts; nothing tracked offers New project in place", () => {
   const pending = { id: "p", name: "beta-soc", path: "/w/acme/beta-soc", hint: "acme" };
-  const row = PendingTableRow({ row: pending, columns: 9 });
+  const row = PendingTableRow({ row: pending, columns: 6 });
   expect(textOf(row)).toContain("Scanning…");
   expect(textOf(row)).toContain("acme/");
-  expect(byTag(row, "td")[0].props.colSpan).toBe(9);
+  expect(byTag(row, "td")[0].props.colSpan).toBe(6);
   expect(textOf(PendingTile({ row: pending }))).toContain("Scanning…");
 
   const empty = NothingTracked({ config });

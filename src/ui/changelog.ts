@@ -15,6 +15,13 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    id: "2026-10-07-project-settings-dialog",
+    date: "2026-10-07",
+    title: "Project settings in one dialog",
+    summary:
+      "On **Projects**, each row and tile now has a gear that opens the project's settings: **Agent sessions**, **Agent**, **PR titles**, **Docs auto-merge**, **Labels** and **Disable**, the same from the table and the tiles. The table loses its **Agent sessions** column, and **Console** and **Pull** stay on the row and the tile.",
+  },
+  {
     id: "2026-10-07-agent-reports-waiting",
     date: "2026-10-07",
     title: "Know when your agent waits for you",
