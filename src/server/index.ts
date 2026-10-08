@@ -109,7 +109,7 @@ async function main(): Promise<void> {
     onIntegrationEnded: (session) => void confirmIntegration(state, session.folder).catch(() => undefined),
   });
   await state.sessions.init();
-  // Only for projects whose auto-fetch setting the user switched on; nothing is scheduled otherwise.
+  // Every minute by default, for each enabled git project with a remote whose auto fetch the user did not switch off.
   state.autoFetcher = new AutoFetcher({
     getConfig: () => state.config,
     getSnapshot: () => state.scanner.snapshot,

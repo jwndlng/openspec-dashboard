@@ -66,11 +66,12 @@ bun test test/scanner.test.ts   # a single test file
    `~/.spec-control/pull-backups/`, removing exactly those files from the working tree and, for the staged ones,
    from the index with `git rm --cached` (never `-f`), then retrying the fast-forward and, if it is still refused,
    writing them back and re-staging them with `git add -- <those paths>` (`src/server/pull.ts`, the only place that
-   contacts a remote or changes a main checkout); the **automatic fetch** — for a project whose auto-fetch setting the
-   user switched on (`autoFetchMinutes`, off by default), exactly the pull action's `git fetch` and nothing after it, on
-   that interval (`fetchRepository` in `src/server/pull.ts`, scheduled by `src/server/autoFetch.ts`): remote-tracking
+   contacts a remote or changes a main checkout); the **automatic fetch** — for every enabled git project with a remote
+   unless the user switched its auto fetch off (`autoFetchSeconds`: every minute when absent, `0` for off), exactly the
+   pull action's `git fetch` and nothing after it, on that interval (`fetchRepository` in `src/server/pull.ts`, scheduled by `src/server/autoFetch.ts`): remote-tracking
    refs, `FETCH_HEAD` and objects only, never a fast-forward, merge, prune or anything in a working tree or index, never
-   overlapping a pull of the same project, and never in the demo — the opt-in is the explicit action; and the
+   overlapping a pull of the same project or itself, and never in the demo — the per-project setting, which the user can
+   switch off, is what allows it; and the
    **create-change action** — a new `openspec/changes/<name>/` directory
    with the schema marker `.openspec.yaml`, when the user typed one, `prompt.md`, when the user picked any
    dependencies, `depends-on.yaml` (a `depends_on:` list of validated change names), and, for a change imported from a
@@ -102,7 +103,7 @@ bun test test/scanner.test.ts   # a single test file
    contacted; the main
    checkout's branch is never changed by anything; and the pull action runs only on the user's explicit request — never
    on a timer, during a scan, on page load or as a side effect; the only fetch on a timer is the automatic fetch above,
-   for the projects that opted in (`test/pull.test.ts` proves scans, discovery and the state endpoint leave a recording
+   for the projects that did not switch it off (`test/pull.test.ts` proves scans, discovery and the state endpoint leave a recording
    remote untouched, with auto fetch on too). Starting the user's
    agent in that worktree on the user's click is not a write by the dashboard: what the agent changes is decided by its
    own permission prompts. That is also why **Integrate** (`src/server/integration.ts`) needs no entry in the list
@@ -158,7 +159,7 @@ bun test test/scanner.test.ts   # a single test file
 4. **No network at runtime, except the pull action, the automatic fetch and the pull-request and issue queries.** The UI is one HTML file with inlined
    JS, CSS and fonts; do not add CDN links, remote fonts or fetches to other hosts — the links to github.com in the
    Pull requests view, the Import from issues dialog, on cards and in the detail header are links the user follows, not requests the page makes. The server reaches a network in exactly
-   two places, both on the user's own action: when git does, inside the pull action or a project's opted-in automatic fetch of invariant 1, and when `gh` does,
+   two places, both on the user's own action or setting: when git does, inside the pull action or a project's automatic fetch of invariant 1 (on unless switched off), and when `gh` does,
    inside the pull-request or issue query of invariant 1 (`src/server/pullRequests.ts`, `src/server/issues.ts`) — for
    issues, the user opened Import from issues or pressed its Refresh; for pull requests, the user activated Refresh, or opened
    the Pull requests view, a repository's pull-request dialog or a Kanban board (whose cards link to their change's pull

@@ -1,9 +1,9 @@
-import { ACTIVITY_KINDS, AUTO_FETCH_MINUTES, type ActivityKind } from "../shared/types.ts";
+import { ACTIVITY_KINDS, AUTO_FETCH_SECONDS, type ActivityKind, DEFAULT_AUTO_FETCH_SECONDS } from "../shared/types.ts";
 import { availableName } from "../shared/nameHints.ts";
 import { labelKey } from "../shared/labels.ts";
 import { MAX_PAGE, type ActivityLog, type PageQuery } from "./activity/log.ts";
 import { isTimeZone, pageEvents } from "../shared/activity.ts";
-import type { AutoFetchMinutes, CleanupSelection, Config, DiscoverResult, PullBlockingFile, PullRequestsResponse, PullResult, PullResolve, RepoConfig, RepoSnapshot, ScanTriggerResult, SharedConfigApplyResult, SharedConfigAssignment, SharedConfigPreview } from "../shared/types.ts";
+import type { AutoFetchSeconds, CleanupSelection, Config, DiscoverResult, PullBlockingFile, PullRequestsResponse, PullResult, PullResolve, RepoConfig, RepoSnapshot, ScanTriggerResult, SharedConfigApplyResult, SharedConfigAssignment, SharedConfigPreview } from "../shared/types.ts";
 import type { AutoFetcher } from "./autoFetch.ts";
 import { applyCleanup, CleanupBusyError, previewCleanup } from "./cleanup.ts";
 import { changeDirFor, listArtifactFiles, readArtifactFile } from "./artifacts.ts";
@@ -228,11 +228,15 @@ async function postRepoPrTitleConvention(state: AppState, req: Request, id: stri
   return updateRepo(state, id, ({ prTitleConvention: _old, ...repo }) => (convention ? { ...repo, prTitleConvention: convention } : repo));
 }
 
-/** The project's Auto fetch drop-down on the overview: one of the offered intervals sets it, `null` removes the key. */
+/**
+ * The project's Auto fetch drop-down on the overview, in seconds: an offered interval sets it, `0` saves Off, and the
+ * default (every minute) removes the key, so a configuration only records a departure from the default.
+ */
 async function postRepoAutoFetch(state: AppState, req: Request, id: string): Promise<Response> {
-  const { minutes } = await readJson(req);
-  if (minutes !== null && !AUTO_FETCH_MINUTES.includes(minutes as AutoFetchMinutes)) return json({ error: `minutes must be one of ${AUTO_FETCH_MINUTES.join(", ")} or null` }, 400);
-  return updateRepo(state, id, ({ autoFetchMinutes: _old, ...repo }) => (minutes === null ? repo : { ...repo, autoFetchMinutes: minutes as AutoFetchMinutes }));
+  const { seconds } = await readJson(req);
+  if (seconds !== 0 && !AUTO_FETCH_SECONDS.includes(seconds as AutoFetchSeconds)) return json({ error: `seconds must be one of ${AUTO_FETCH_SECONDS.join(", ")} or 0 for off` }, 400);
+  const value = seconds as AutoFetchSeconds | 0;
+  return updateRepo(state, id, ({ autoFetchSeconds: _old, ...repo }) => (value === DEFAULT_AUTO_FETCH_SECONDS ? repo : { ...repo, autoFetchSeconds: value }));
 }
 
 /** The project's labels dialog on the overview: either list replaced, an empty one removed, validated as in a `PUT`. */

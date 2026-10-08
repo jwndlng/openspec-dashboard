@@ -186,8 +186,10 @@ const repoSchema = z.object({
   labels: labelsSchema,
   hiddenLabels: labelsSchema,
   prTitleConvention: z.literal("conventional-commits").optional(),
-  // AUTO_FETCH_MINUTES, spelled out for zod's tuple; a test keeps the two equal.
-  autoFetchMinutes: z.union([z.literal(5), z.literal(15), z.literal(30), z.literal(60)]).optional(),
+  // AUTO_FETCH_SECONDS and 0 (Off), spelled out for zod's tuple; a test keeps the two equal.
+  autoFetchSeconds: z
+    .union([z.literal(0), z.literal(15), z.literal(30), z.literal(60), z.literal(300), z.literal(600), z.literal(900), z.literal(1800), z.literal(3600)])
+    .optional(),
 });
 
 /** The first label that repeats another one of the list, ignoring case. */
@@ -339,7 +341,7 @@ export function migrateConfig(raw: unknown): { config: unknown; changed: boolean
         continue;
       }
       const path = canonicalPath((entry as { path: string }).path);
-      const repo: Record<string, unknown> = { ...(entry as Record<string, unknown>), id: repoId(path), path };
+      const repo: Record<string, unknown> = migrateAutoFetch({ ...(entry as Record<string, unknown>), id: repoId(path), path });
       const kept = byId.get(repo.id as string);
       if (!kept) {
         byId.set(repo.id as string, repo);
@@ -359,6 +361,19 @@ export function migrateConfig(raw: unknown): { config: unknown; changed: boolean
   const changed = JSON.stringify(next) !== JSON.stringify(input);
   const warning = merged.length ? `config.json listed the same directory more than once; merged ${merged.join(", ")}` : undefined;
   return { config: next, changed, warning };
+}
+
+/**
+ * `autoFetchMinutes` (5, 15, 30 or 60, absent = off) became `autoFetchSeconds` (absent = every minute, 0 = off). A
+ * saved interval is kept as the same number of seconds (none of the old ones is the new default). An entry that has both
+ * keeps `autoFetchSeconds`, and a value that is not one of the old intervals is left for validation to report.
+ */
+function migrateAutoFetch(repo: Record<string, unknown>): Record<string, unknown> {
+  if (!("autoFetchMinutes" in repo)) return repo;
+  const { autoFetchMinutes: minutes, ...rest } = repo;
+  if ("autoFetchSeconds" in rest) return rest;
+  if (minutes !== 5 && minutes !== 15 && minutes !== 30 && minutes !== 60) return repo;
+  return { ...rest, autoFetchSeconds: minutes * 60 };
 }
 
 /** Writes via a temp file + rename so a crash never leaves a half-written config. */

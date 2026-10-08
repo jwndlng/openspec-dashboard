@@ -2,9 +2,10 @@ import { expect, test } from "bun:test";
 import { AutoFetcher } from "../src/server/autoFetch.ts";
 import { defaultConfig } from "../src/server/config.ts";
 import type { FetchOutcome } from "../src/server/pull.ts";
-import { AUTO_FETCH_MINUTES, type Config, type RepoConfig, type RepoSnapshot, type Snapshot } from "../src/shared/types.ts";
+import { AUTO_FETCH_SECONDS, type Config, type RepoConfig, type RepoSnapshot, type Snapshot } from "../src/shared/types.ts";
 
-const MINUTE = 60_000;
+const SECOND = 1000;
+const MINUTE = 60 * SECOND;
 
 /** A clock and timers the test advances by hand. */
 function fakeTime() {
@@ -58,19 +59,87 @@ function harness(repos: RepoConfig[], snapshots: RepoSnapshot[], outcome: (r: Re
   return { time, state, fetched, moved, fetcher };
 }
 
-test("the offered intervals are exactly what the configuration accepts", async () => {
+test("the offered intervals and Off are exactly what the configuration accepts", async () => {
   const { newRepoConfig, validateConfig } = await import("../src/server/config.ts");
   const valid = newRepoConfig("/w/acme/a", true);
-  for (const minutes of AUTO_FETCH_MINUTES) {
-    expect(validateConfig({ ...defaultConfig(), repos: [{ ...valid, autoFetchMinutes: minutes }] }).repos[0].autoFetchMinutes).toBe(minutes);
+  for (const seconds of [0, ...AUTO_FETCH_SECONDS]) {
+    expect(validateConfig({ ...defaultConfig(), repos: [{ ...valid, autoFetchSeconds: seconds }] }).repos[0].autoFetchSeconds as number).toBe(seconds);
   }
-  for (const minutes of [1, 10, "15", 0]) {
-    expect(() => validateConfig({ ...defaultConfig(), repos: [{ ...valid, autoFetchMinutes: minutes }] })).toThrow();
+  for (const seconds of [1, 45, 120, "15", null]) {
+    expect(() => validateConfig({ ...defaultConfig(), repos: [{ ...valid, autoFetchSeconds: seconds }] })).toThrow();
   }
 });
 
-test("off by default: nothing is scheduled and nothing fetched", async () => {
-  const h = harness([repo("a"), repo("b")], [scanned("a"), scanned("b")]);
+test("a saved autoFetchMinutes becomes the same interval in seconds", async () => {
+  const { migrateConfig, newRepoConfig, validateConfig } = await import("../src/server/config.ts");
+  const base = newRepoConfig("/w/acme/a", true);
+  const migrate = (entry: Record<string, unknown>) => migrateConfig({ ...defaultConfig(), repos: [{ ...base, ...entry }] });
+  const repoOf = (result: { config: unknown }) => (result.config as { repos: Record<string, unknown>[] }).repos[0];
+
+  const five = migrate({ autoFetchMinutes: 5 });
+  expect(five.changed).toBe(true);
+  expect(repoOf(five)).toMatchObject({ autoFetchSeconds: 300 });
+  expect("autoFetchMinutes" in repoOf(five)).toBe(false);
+  expect(validateConfig(five.config).repos[0].autoFetchSeconds).toBe(300);
+  expect(repoOf(migrate({ autoFetchMinutes: 60 })).autoFetchSeconds).toBe(3600);
+  // both keys: the new one wins, the old one goes
+  const both = repoOf(migrate({ autoFetchMinutes: 15, autoFetchSeconds: 0 }));
+  expect(both.autoFetchSeconds).toBe(0);
+  expect("autoFetchMinutes" in both).toBe(false);
+  // not an old interval: left for validation to report
+  expect(repoOf(migrate({ autoFetchMinutes: 7 })).autoFetchMinutes).toBe(7);
+  // nothing saved: nothing to migrate, and the project is now fetched every minute
+  const none = migrate({});
+  expect(none.changed).toBe(false);
+  expect("autoFetchSeconds" in repoOf(none)).toBe(false);
+});
+
+test("on by default: a project without a setting is fetched every minute", async () => {
+  const h = harness([repo("a")], [scanned("a")]);
+  h.fetcher.plan();
+  expect(h.time.pending()).toBe(1);
+  await h.time.advance(59 * SECOND);
+  expect(h.fetched).toEqual([]);
+  await h.time.advance(151 * SECOND);
+  expect(h.fetched).toEqual(["a", "a", "a"]);
+});
+
+test("every 15 seconds", async () => {
+  const h = harness([repo("a", { autoFetchSeconds: 15 })], [scanned("a")]);
+  h.fetcher.plan();
+  await h.time.advance(61 * SECOND);
+  expect(h.fetched).toEqual(["a", "a", "a", "a"]);
+});
+
+test("a fetch still running when the next one falls due is not started twice", async () => {
+  const releases: (() => void)[] = [];
+  const fetched: string[] = [];
+  const time = fakeTime();
+  const fetcher = new AutoFetcher({
+    getConfig: () => ({ ...defaultConfig(), repos: [repo("a", { autoFetchSeconds: 15 })] }),
+    getSnapshot: () => ({ generatedAt: "", repos: [scanned("a")] }),
+    onMoved: () => undefined,
+    fetch: (r) => {
+      fetched.push(r.id);
+      return new Promise<FetchOutcome>((resolve) => releases.push(() => resolve({ ok: true, at: "t", moved: false })));
+    },
+    setTimer: time.setTimer,
+    clearTimer: time.clearTimer,
+  });
+  fetcher.plan();
+  await time.advance(15 * SECOND);
+  expect(fetched).toEqual(["a"]);
+  await time.advance(30 * SECOND); // two more turns fall due while the first fetch takes 40 seconds
+  expect(fetched).toEqual(["a"]);
+  expect(time.pending()).toBe(1); // the timer keeps re-arming
+  releases.shift()?.();
+  for (let i = 0; i < 5; i++) await Promise.resolve();
+  await time.advance(15 * SECOND);
+  expect(fetched).toEqual(["a", "a"]);
+});
+
+test("switched off: nothing is scheduled and nothing fetched", async () => {
+  const h = harness([repo("a", { autoFetchSeconds: 0 }), repo("b", { autoFetchSeconds: 0 })], [scanned("a"), scanned("b")]);
   h.fetcher.plan();
   expect(h.time.pending()).toBe(0);
   await h.time.advance(120 * MINUTE);
@@ -78,7 +147,7 @@ test("off by default: nothing is scheduled and nothing fetched", async () => {
 });
 
 test("every 15 minutes: three fetches in 46 minutes, the first one interval after the start", async () => {
-  const h = harness([repo("a", { autoFetchMinutes: 15 })], [scanned("a")]);
+  const h = harness([repo("a", { autoFetchSeconds: 900 })], [scanned("a")]);
   h.fetcher.plan();
   await h.time.advance(14 * MINUTE);
   expect(h.fetched).toEqual([]);
@@ -87,7 +156,7 @@ test("every 15 minutes: three fetches in 46 minutes, the first one interval afte
 });
 
 test("re-planning keeps an unchanged timer, so a rescan never postpones a fetch", async () => {
-  const h = harness([repo("a", { autoFetchMinutes: 5 })], [scanned("a")]);
+  const h = harness([repo("a", { autoFetchSeconds: 300 })], [scanned("a")]);
   h.fetcher.plan();
   await h.time.advance(4 * MINUTE);
   h.fetcher.plan();
@@ -97,17 +166,17 @@ test("re-planning keeps an unchanged timer, so a rescan never postpones a fetch"
 });
 
 test("changing the interval re-arms one new interval out; switching off cancels a pending fetch", async () => {
-  const h = harness([repo("a", { autoFetchMinutes: 60 })], [scanned("a")]);
+  const h = harness([repo("a", { autoFetchSeconds: 3600 })], [scanned("a")]);
   h.fetcher.plan();
   await h.time.advance(30 * MINUTE);
-  h.state.config = { ...h.state.config, repos: [repo("a", { autoFetchMinutes: 5 })] };
+  h.state.config = { ...h.state.config, repos: [repo("a", { autoFetchSeconds: 300 })] };
   h.fetcher.plan();
   await h.time.advance(5 * MINUTE);
   expect(h.fetched).toEqual(["a"]);
   await h.time.advance(5 * MINUTE);
   expect(h.fetched).toEqual(["a", "a"]);
 
-  h.state.config = { ...h.state.config, repos: [repo("a")] };
+  h.state.config = { ...h.state.config, repos: [repo("a", { autoFetchSeconds: 0 })] };
   h.fetcher.plan();
   expect(h.time.pending()).toBe(0);
   await h.time.advance(60 * MINUTE);
@@ -115,27 +184,27 @@ test("changing the interval re-arms one new interval out; switching off cancels 
 });
 
 test("a disabled project, a folder without git, one without a remote and one whose scan failed are skipped", async () => {
-  const repos = [repo("off", { enabled: false, autoFetchMinutes: 5 }), repo("plain", { autoFetchMinutes: 5 }), repo("lonely", { autoFetchMinutes: 5 }), repo("broken", { autoFetchMinutes: 5 }), repo("ok", { autoFetchMinutes: 5 })];
+  const repos = [repo("off", { enabled: false, autoFetchSeconds: 300 }), repo("plain", { autoFetchSeconds: 300 }), repo("lonely", { autoFetchSeconds: 300 }), repo("broken", { autoFetchSeconds: 300 }), repo("ok", { autoFetchSeconds: 300 })];
   const snaps = [scanned("off"), scanned("plain", { isGit: false, hasRemote: undefined }), scanned("lonely", { hasRemote: false }), scanned("broken", { ok: false }), scanned("ok")];
   const h = harness(repos, snaps);
   h.fetcher.plan();
   await h.time.advance(5 * MINUTE);
   expect(h.fetched).toEqual(["ok"]);
   // the setting is kept for the disabled project
-  expect(h.state.config.repos[0].autoFetchMinutes).toBe(5);
+  expect(h.state.config.repos[0].autoFetchSeconds).toBe(300);
 });
 
 test("a project disabled between arming and firing is not fetched", async () => {
-  const h = harness([repo("a", { autoFetchMinutes: 5 })], [scanned("a")]);
+  const h = harness([repo("a", { autoFetchSeconds: 300 })], [scanned("a")]);
   h.fetcher.plan();
-  h.state.config = { ...h.state.config, repos: [repo("a", { enabled: false, autoFetchMinutes: 5 })] }; // no plan() yet
+  h.state.config = { ...h.state.config, repos: [repo("a", { enabled: false, autoFetchSeconds: 300 })] }; // no plan() yet
   await h.time.advance(5 * MINUTE);
   expect(h.fetched).toEqual([]);
 });
 
 test("only a fetch that moved a ref asks for a rescan; outcomes are reported, a failure retried one interval later", async () => {
   let call = 0;
-  const h = harness([repo("a", { autoFetchMinutes: 5 })], [scanned("a")], () => {
+  const h = harness([repo("a", { autoFetchSeconds: 300 })], [scanned("a")], () => {
     call++;
     if (call === 1) return { ok: true, at: "t1", moved: false };
     if (call === 2) return { ok: false, at: "t2", moved: false, reason: "could not resolve host" };
@@ -156,14 +225,14 @@ test("only a fetch that moved a ref asks for a rescan; outcomes are reported, a 
 });
 
 test("a successful pull clears a reported failure; a skipped fetch reports nothing", async () => {
-  const h = harness([repo("a", { autoFetchMinutes: 5 })], [scanned("a")], () => ({ ok: false, at: "t", moved: false, reason: "timed out" }));
+  const h = harness([repo("a", { autoFetchSeconds: 300 })], [scanned("a")], () => ({ ok: false, at: "t", moved: false, reason: "timed out" }));
   h.fetcher.plan();
   await h.time.advance(5 * MINUTE);
   expect(h.fetcher.outcome("a")?.ok).toBe(false);
   h.fetcher.notePull({ repoId: "a", fetched: true, update: "up-to-date" });
   expect(h.fetcher.outcome("a")?.ok).toBe(true);
 
-  const skipped = harness([repo("b", { autoFetchMinutes: 5 })], [scanned("b")], () => ({ skipped: true, ok: false, at: "t", moved: false }));
+  const skipped = harness([repo("b", { autoFetchSeconds: 300 })], [scanned("b")], () => ({ skipped: true, ok: false, at: "t", moved: false }));
   skipped.fetcher.plan();
   await skipped.time.advance(5 * MINUTE);
   expect(skipped.fetched).toEqual(["b"]);
@@ -178,7 +247,7 @@ test("many projects falling due at once are fetched a few at a time", async () =
   const releases: (() => void)[] = [];
   const time = fakeTime();
   const fetcher = new AutoFetcher({
-    getConfig: () => ({ ...defaultConfig(), repos: ids.map((id) => repo(id, { autoFetchMinutes: 5 })) }),
+    getConfig: () => ({ ...defaultConfig(), repos: ids.map((id) => repo(id, { autoFetchSeconds: 300 })) }),
     getSnapshot: () => ({ generatedAt: "", repos: ids.map((id) => scanned(id)) }),
     onMoved: () => undefined,
     fetch: () => {
@@ -206,7 +275,7 @@ test("many projects falling due at once are fetched a few at a time", async () =
 });
 
 test("stop clears every timer", () => {
-  const h = harness([repo("a", { autoFetchMinutes: 5 }), repo("b", { autoFetchMinutes: 15 })], [scanned("a"), scanned("b")]);
+  const h = harness([repo("a", { autoFetchSeconds: 300 }), repo("b", { autoFetchSeconds: 900 })], [scanned("a"), scanned("b")]);
   h.fetcher.plan();
   expect(h.time.pending()).toBe(2);
   h.fetcher.stop();

@@ -3,7 +3,7 @@ import { isTimeZone, pageEvents, retained } from "../../shared/activity.ts";
 import { labelKey, labelProblem, MAX_LABEL_COLORS } from "../../shared/labels.ts";
 import { availableName } from "../../shared/nameHints.ts";
 import { summarizeWorkInProgress } from "../../shared/workInProgress.ts";
-import { AUTO_FETCH_MINUTES } from "../../shared/types.ts";
+import { AUTO_FETCH_SECONDS, DEFAULT_AUTO_FETCH_SECONDS } from "../../shared/types.ts";
 import type { ChangeSnapshot, Config, DismissFile, DismissPreview, PullBlockingFile, PullResult, RepoConfig, RepoSharedConfig, RepoSnapshot, SharedConfigApplyResult, SharedConfigPreview, SharedProfile, Snapshot } from "../../shared/types.ts";
 import { ApiError, type Api, labelLists } from "../api.ts";
 import { demoApply, demoPreview, newCleanupState, remainingWorktrees } from "./demoCleanup.ts";
@@ -386,10 +386,10 @@ export function createDemoApi({ now = Date.now, latencyMs = 150, clock }: DemoAp
         return updateRepo(repoId, ({ prTitleConvention: _old, ...r }) => (convention ? { ...r, prTitleConvention: convention } : r));
       }),
     // Stored like the real setting; the demo never fetches anything.
-    setRepoAutoFetch: (repoId, minutes) =>
+    setRepoAutoFetch: (repoId, seconds) =>
       failing(() => {
-        if (minutes !== null && !AUTO_FETCH_MINUTES.includes(minutes)) throw new ApiError(400, `minutes must be one of ${AUTO_FETCH_MINUTES.join(", ")} or null`);
-        return updateRepo(repoId, ({ autoFetchMinutes: _old, ...r }) => (minutes === null ? r : { ...r, autoFetchMinutes: minutes }));
+        if (seconds !== 0 && !AUTO_FETCH_SECONDS.includes(seconds)) throw new ApiError(400, `seconds must be one of ${AUTO_FETCH_SECONDS.join(", ")} or 0 for off`);
+        return updateRepo(repoId, ({ autoFetchSeconds: _old, ...r }) => (seconds === DEFAULT_AUTO_FETCH_SECONDS ? r : { ...r, autoFetchSeconds: seconds }));
       }),
     setLabelColor: (label, hue) =>
       failing(() => {

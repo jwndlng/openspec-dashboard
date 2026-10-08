@@ -1,6 +1,6 @@
 import type { ActivityQuery } from "../shared/activity.ts";
 import type { ActivityPage, AutoMergePromptResult, ConsoleSession, ProjectConsoleLike, CleanupPreview, CleanupResult, CleanupSelection, ChangeIssueRef, CreateChangeResponse, DismissPreview, DismissResult, EnvironmentReport, PromptResult, PullRequestsResponse, PullResolve, PullResult, RepoIssues, ShipResult, StartResult, WorkStatus } from "../shared/types.ts";
-import type { AgentAvailability, AutoFetchMinutes, ArtifactFileContent, ChangeArtifacts, Config, CreateProjectResponse, DiscoverResult, IntegrationSession, PrTitleConvention, RepoConfig, ScanTriggerResult, Session, SessionAction, SessionWorktree, SharedConfig, SharedConfigApplyResult, SharedConfigAssignment, SharedConfigPreview, Snapshot } from "../shared/types.ts";
+import type { AgentAvailability, AutoFetchSeconds, ArtifactFileContent, ChangeArtifacts, Config, CreateProjectResponse, DiscoverResult, IntegrationSession, PrTitleConvention, RepoConfig, ScanTriggerResult, Session, SessionAction, SessionWorktree, SharedConfig, SharedConfigApplyResult, SharedConfigAssignment, SharedConfigPreview, Snapshot } from "../shared/types.ts";
 import { socketOrigin } from "./url.ts";
 
 export class ApiError extends Error {
@@ -72,7 +72,7 @@ export interface Api {
   /** A project's PR titles picker, saved at once; `null` means no convention. */
   setRepoPrTitleConvention(repoId: string, convention: PrTitleConvention | null): Promise<Config>;
   /** The project's Auto fetch drop-down, saved at once; `null` is Off. `ApiError` 400 for an interval not offered. */
-  setRepoAutoFetch(repoId: string, minutes: AutoFetchMinutes | null): Promise<Config>;
+  setRepoAutoFetch(repoId: string, seconds: AutoFetchSeconds | 0): Promise<Config>;
   /** A label's colour from a labels dialog, saved at once for every repository; `hue: null` is Auto. `ApiError` 400 when refused. */
   setLabelColor(label: string, hue: number | null): Promise<Config>;
   /** Whether Fast-forward asks for confirmation first, saved at once. */
@@ -237,7 +237,7 @@ export const httpApi: Api = {
   setRepoLabels: (repoId, patch) => call<Config>(`/api/repos/${encodeURIComponent(repoId)}/labels`, { method: "POST", body: JSON.stringify(labelLists(patch)) }),
   setRepoPrTitleConvention: (repoId, convention) =>
     call<Config>(`/api/repos/${encodeURIComponent(repoId)}/pr-title-convention`, { method: "POST", body: JSON.stringify({ convention }) }),
-  setRepoAutoFetch: (repoId, minutes) => call<Config>(`/api/repos/${encodeURIComponent(repoId)}/auto-fetch`, { method: "POST", body: JSON.stringify({ minutes }) }),
+  setRepoAutoFetch: (repoId, seconds) => call<Config>(`/api/repos/${encodeURIComponent(repoId)}/auto-fetch`, { method: "POST", body: JSON.stringify({ seconds }) }),
   setLabelColor: (label, hue) => call<Config>("/api/labels/color", { method: "POST", body: JSON.stringify({ label, hue }) }),
   setFastForwardWarning: (show) => call<Config>("/api/agent-sessions/fast-forward-warning", { method: "POST", body: JSON.stringify({ show }) }),
   forgetRepo: (repoId) => call<Config>(`/api/repos/${encodeURIComponent(repoId)}/forget`, { method: "POST", body: "{}" }),

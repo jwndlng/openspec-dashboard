@@ -97,10 +97,11 @@ bun run dev                    # or run from source on http://127.0.0.1:4711
 - It listens on `127.0.0.1` only.
 - It reads your repositories with read-only git commands. Scanning and polling never write, fetch or contact a remote.
 - It changes a repository only on something you do — Pull, New change, Dismiss, Clean up, applying shared config,
-  or starting and ending an agent session's worktree. It never commits or pushes; your agent does that, under
-  its own permission prompts.
-- It uses the network only for **Pull** (through git) and to read pull requests (through `gh`), with those tools' own
-  sign-ins. It never sees your credentials and never changes anything on GitHub.
+  or starting and ending an agent session's worktree — plus **Auto fetch**, which fetches each project's remote every
+  minute (refs only, never your files) unless you switch it off in the project's settings. It never commits or pushes;
+  your agent does that, under its own permission prompts.
+- It uses the network only for **Pull** and **Auto fetch** (through git) and to read pull requests (through `gh`), with
+  those tools' own sign-ins. It never sees your credentials and never changes anything on GitHub.
 - Its own state lives in `~/.spec-control/`.
 
 The complete list is in the [dashboard-api spec](openspec/specs/dashboard-api/spec.md).

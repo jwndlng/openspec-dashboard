@@ -259,13 +259,24 @@ export interface RepoConfig {
   hiddenLabels?: string[];
   /** How this project's pull requests are titled, which Ship asks the agent for. Absent means no convention. */
   prTitleConvention?: PrTitleConvention;
-  /** Fetch the project's remote at this interval, in minutes. Absent means never fetched automatically. */
-  autoFetchMinutes?: AutoFetchMinutes;
+  /**
+   * Fetch the project's remote at this interval, in seconds; `0` is Off. Absent means the default, every minute
+   * (`autoFetchInterval`), so the key only records a departure from it.
+   */
+  autoFetchSeconds?: AutoFetchSeconds | 0;
 }
 
-/** The intervals a project can be fetched at automatically (repository-pull: "fetch only"). */
-export const AUTO_FETCH_MINUTES = [5, 15, 30, 60] as const;
-export type AutoFetchMinutes = (typeof AUTO_FETCH_MINUTES)[number];
+/** The intervals a project can be fetched at automatically (repository-pull: "fetched automatically unless switched off"). */
+export const AUTO_FETCH_SECONDS = [15, 30, 60, 300, 600, 900, 1800, 3600] as const;
+export type AutoFetchSeconds = (typeof AUTO_FETCH_SECONDS)[number];
+/** The interval of a project without a saved auto-fetch setting. */
+export const DEFAULT_AUTO_FETCH_SECONDS: AutoFetchSeconds = 60;
+
+/** How often a project is fetched automatically, in seconds, or undefined when its auto fetch is switched off. */
+export function autoFetchInterval(repo: Pick<RepoConfig, "autoFetchSeconds"> | undefined): AutoFetchSeconds | undefined {
+  const seconds = repo?.autoFetchSeconds ?? DEFAULT_AUTO_FETCH_SECONDS;
+  return seconds === 0 ? undefined : seconds;
+}
 
 /** What the last automatic fetch of a repository, or a pull after it, came to. Kept in memory only. */
 export interface AutoFetchOutcome {
