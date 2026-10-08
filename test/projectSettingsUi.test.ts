@@ -441,6 +441,14 @@ test("a tile shows open, to archive and open PRs as figures; without open change
   expect(textOf(zone(idle, "tile-idle"))).toBe("no open changes");
 });
 
+// repository-pull: on the overview Pull is a bordered button like Console, not a ghost one.
+test("a row and a tile give Pull the overview look", () => {
+  for (const node of layouts(configWith(), tracking().t)) {
+    const [pull] = byComponent(node, PullButton);
+    expect(pull.props.variant).toBe("overview");
+  }
+});
+
 test("a folder without git offers no Pull on its tile, and a failed scan none either", () => {
   const [plainRow] = overviewRows({ generatedAt: "2026-10-01T00:00:00Z", repos: [{ ...snapshotRepo, isGit: false }] });
   expect(byComponent(Tile({ row: plainRow, now: 0, tracking: tracking().t, config: configWith() }), PullButton)).toHaveLength(0);

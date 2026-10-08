@@ -157,7 +157,8 @@ export function PullBlockedList({ result: shown, running, onResolve }: { result:
   );
 }
 
-export function PullButton({ repoId, repoName, compact = false }: { repoId: string; repoName?: string; compact?: boolean }) {
+/** `overview`: a row or tile of the projects overview, bordered and as tall as the Console button beside it. */
+export function PullButton({ repoId, repoName, variant = "board" }: { repoId: string; repoName?: string; variant?: "board" | "overview" }) {
   const ui = usePull();
   const [open, setOpen] = useState(false);
   const state = ui.states[repoId];
@@ -170,7 +171,7 @@ export function PullButton({ repoId, repoName, compact = false }: { repoId: stri
     <span class="pull">
       <button
         type="button"
-        class={`btn sm ${compact ? "ghost" : ""}`}
+        class={`btn sm pull-btn${variant === "overview" ? " on-overview" : ""}`}
         title={PULL_HINT}
         disabled={running}
         onClick={(e) => {

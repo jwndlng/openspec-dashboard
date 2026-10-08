@@ -1350,8 +1350,8 @@ body:has(.detail-overlay) { overflow: hidden; }
    width while polling; it sits where a wrapping row absorbs that. */
 .project-console-btn .console-state { color: var(--fg-subtle); font-weight: 400; white-space: nowrap; }
 .project-console-btn .console-state::before { content: "·"; margin-right: 6px; }
-.project-console-btn.on-project { height: 24px; padding: 0 8px; font-size: 11px; border-color: var(--border-strong); background: transparent; }
-.project-console-btn.on-project:hover { background: var(--bg-surface); }
+.project-console-btn.on-project, .pull-btn.on-overview { height: 24px; padding: 0 8px; font-size: 11px; border-color: var(--border-strong); background: transparent; }
+.project-console-btn.on-project:hover, .pull-btn.on-overview:hover { background: var(--bg-surface); }
 .console-head h1 { display: flex; align-items: center; gap: 8px; }
 .console-head .hint { font-size: 12px; color: var(--fg-subtle); }
 .detail > .main-console { flex: 1; min-height: 0; border-left: none; }

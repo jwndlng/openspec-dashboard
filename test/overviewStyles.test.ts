@@ -22,3 +22,16 @@ test("a table row's label chips do not wrap", async () => {
   const rule = (await rules()).find((r) => r.selector === ".projects .repo-name .label-chips");
   expect(rule?.body).toContain("flex-wrap: nowrap");
 });
+
+// repository-pull: the overview's Pull is bordered at rest and as tall as the Console button beside it.
+test("the overview's Pull shares the bordered rule of the project Console button and is never a ghost", async () => {
+  const all = await rules();
+  const rule = all.find((r) => r.selector.split(",").map((s) => s.trim()).includes(".pull-btn.on-overview"));
+  expect(rule?.selector).toContain(".project-console-btn.on-project");
+  expect(rule?.body).toContain("border-color: var(--border-strong)");
+  expect(rule?.body).toContain("height: 24px");
+  const source = await Bun.file(new URL("../src/ui/pull.tsx", import.meta.url)).text();
+  const pullClass = source.match(/class=\{`btn sm pull-btn[^`]*`\}/)?.[0];
+  expect(pullClass).toBeDefined();
+  expect(pullClass).not.toContain("ghost");
+});
