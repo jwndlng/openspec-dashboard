@@ -28,7 +28,13 @@ for await (const chunk of process.stdin) {
     if (line === "exit") process.exit(0);
     if (line === "crash") process.exit(3);
     const report = /^report (\S+)$/.exec(line);
-    if (report && process.env.SPEC_CONTROL_STATE_FILE) await Bun.write(process.env.SPEC_CONTROL_STATE_FILE, report[1]);
+    if (report && process.env.SPEC_CONTROL_STATE_FILE) {
+      // A hook runs after the agent's turn, never in the same moment as the keystroke it answers. Without the pause the
+      // file's mtime, from the kernel's coarse clock (a few ms behind on Linux), can read older than the input that the
+      // dashboard stamped with Date.now(), and the report would be taken for one the user had already answered.
+      await Bun.sleep(25);
+      await Bun.write(process.env.SPEC_CONTROL_STATE_FILE, report[1]);
+    }
     const stream = /^stream (\d+)$/.exec(line);
     if (stream) {
       const until = Date.now() + Number(stream[1]);
