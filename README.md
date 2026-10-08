@@ -59,7 +59,10 @@ reach.
 
 **On an Apple silicon Mac, use the app.** Download `Spec-Control-<tag>-darwin-arm64.dmg` from the
 [releases page](https://github.com/jwndlng/spec-control/releases), open it and drag **Spec Control** to Applications.
-It needs macOS 14 or later, and it is signed and notarised, so macOS opens it after its usual first-open confirmation.
+It needs macOS 14 or later. It is not notarised (no Apple Developer account behind this project), so the first time
+macOS says it cannot verify the app: allow it once with
+`xattr -dr com.apple.quarantine "/Applications/Spec Control.app"`, or choose **Open Anyway** in
+System Settings → Privacy & Security after the first attempt.
 The app runs the same `spec-control` binary in its own window, uses the same `~/.spec-control/` and, if a
 `spec-control` you started in a terminal is already running, shows that one instead of starting another. Closing the
 window keeps the server and your agent sessions running (the app stays in the menu bar); **Quit** stops them, asking
@@ -74,7 +77,7 @@ first while sessions run. The app makes no network request of its own and does n
    `gh attestation verify <file> --repo jwndlng/spec-control`. The same two commands verify the app's `.dmg`.
 3. `chmod +x` it and run it; it opens your browser. Options: `--port N`, `--no-open`, `--version`.
 
-The macOS binaries, unlike the app, are not notarised: if macOS refuses to open one, run
+The macOS binaries are not notarised either: if macOS refuses to open one, run
 `xattr -d com.apple.quarantine <file>`.
 Releases from before the rename are named `openspec-dashboard-<tag>-<platform>` and verify with
 `--repo jwndlng/openspec-dashboard`.
@@ -88,7 +91,7 @@ until you turn them on in Settings.
 ```sh
 bun install
 bun run build                  # → dist/spec-control
-bun run build:desktop          # → the macOS app under desktop/build (Apple silicon, unsigned locally)
+bun run build:desktop          # → the macOS app under desktop/build (Apple silicon, ad-hoc signed)
 bun run dev                    # or run from source on http://127.0.0.1:4711
 ```
 

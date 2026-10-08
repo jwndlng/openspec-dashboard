@@ -2,9 +2,9 @@ name: release
 
 # Publishing the draft release (draft-release.yml) builds the single binary from its tag on each platform, verifies it
 # and attaches it with SHA256SUMS and build-provenance attestations; the `desktop` job wraps the darwin-arm64 binary in
-# the signed, notarised macOS app. A draft, or a tag that does not start with `v`, builds nothing. The build jobs are
-# read-only; only the publish job, which checks out nothing, holds write scopes. The signing secrets are secrets of the
-# `release` environment, which only the `desktop` job uses, and this workflow never runs for a pull request.
+# the macOS app, ad-hoc signed and not notarised (no Apple account, no secrets). A draft, or a tag that does not start
+# with `v`, builds nothing. The build jobs are read-only; only the publish job, which checks out nothing, holds write
+# scopes.
 on:
   release:
     types: [published]
@@ -71,13 +71,12 @@ jobs:
           retention-days: 7
 
   # The macOS app (openspec/specs/desktop-app), Apple silicon only: Electrobun 2 builds no Intel app. It bundles the
-  # darwin-arm64 binary the build job verified, is signed with the Developer ID and notarised, and is checked the way
-  # a user's Mac would check it before anything is attached.
+  # darwin-arm64 binary the build job verified and is ad-hoc signed (desktop/scripts/adhoc-sign.ts), not notarised,
+  # like the macOS binaries; its signature and bundled version are checked before anything is attached.
   desktop:
     needs: build
     runs-on: macos-latest
-    timeout-minutes: 45
-    environment: release
+    timeout-minutes: 30
     env:
       TAG: ${{ github.event.release.tag_name }}
     steps:
@@ -100,45 +99,15 @@ jobs:
           mv "dist/spec-control-$TAG-darwin-arm64" dist/spec-control
           chmod +x dist/spec-control
 
-      # A keychain of its own for this job, deleted at the end whatever happens.
-      - name: Import the Developer ID certificate
-        env:
-          MACOS_CERT_P12: ${{ secrets.MACOS_CERT_P12 }}
-          MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
-        run: |
-          keychain="$RUNNER_TEMP/signing.keychain-db"
-          password="$(openssl rand -hex 24)"
-          printf '%s' "$MACOS_CERT_P12" | base64 --decode > "$RUNNER_TEMP/certificate.p12"
-          security create-keychain -p "$password" "$keychain"
-          security set-keychain-settings -lut 3600 "$keychain"
-          security unlock-keychain -p "$password" "$keychain"
-          security import "$RUNNER_TEMP/certificate.p12" -P "$MACOS_CERT_PASSWORD" -A -t cert -f pkcs12 -k "$keychain"
-          security set-key-partition-list -S apple-tool:,apple: -s -k "$password" "$keychain" > /dev/null
-          security list-keychains -d user -s "$keychain" $(security list-keychains -d user | tr -d '"')
-          rm "$RUNNER_TEMP/certificate.p12"
-
-      - name: Write the App Store Connect API key
-        env:
-          ELECTROBUN_APPLEAPIKEY: ${{ secrets.ELECTROBUN_APPLEAPIKEY }}
-          ELECTROBUN_APPLEAPIKEY_P8: ${{ secrets.ELECTROBUN_APPLEAPIKEY_P8 }}
-        run: |
-          key="$RUNNER_TEMP/AuthKey_$ELECTROBUN_APPLEAPIKEY.p8"
-          printf '%s\n' "$ELECTROBUN_APPLEAPIKEY_P8" > "$key"
-          chmod 600 "$key"
-          echo "ELECTROBUN_APPLEAPIKEYPATH=$key" >> "$GITHUB_ENV"
-
-      - name: Build, sign and notarise the app
+      - name: Build the app
         working-directory: desktop
         env:
           SPEC_CONTROL_VERSION: ${{ github.event.release.tag_name }}
-          ELECTROBUN_DEVELOPER_ID: ${{ secrets.ELECTROBUN_DEVELOPER_ID }}
-          ELECTROBUN_APPLEAPIKEY: ${{ secrets.ELECTROBUN_APPLEAPIKEY }}
-          ELECTROBUN_APPLEAPIISSUER: ${{ secrets.ELECTROBUN_APPLEAPIISSUER }}
         run: |
           bun install --frozen-lockfile
           bun run build
 
-      # The binary inside the app must be the tag's; the app must pass Gatekeeper and carry its notarisation ticket.
+      # The binary inside the app must be the tag's, and the app's ad-hoc signature must verify.
       - name: Smoke test the app
         run: |
           bundled="$(find desktop/build -type f -path '*/bin/spec-control' | head -n 1)"
@@ -156,10 +125,9 @@ jobs:
             echo "::error::no .dmg under desktop/artifacts"
             exit 1
           fi
-          xcrun stapler validate "$dmg"
           mount="$RUNNER_TEMP/dmg"
           hdiutil attach -nobrowse -readonly -mountpoint "$mount" "$dmg"
-          spctl --assess --type execute --verbose=2 "$mount/Spec Control.app"
+          codesign --verify --deep --strict --verbose=2 "$mount/Spec Control.app"
           hdiutil detach "$mount"
           mkdir -p release
           cp "$dmg" "release/Spec-Control-$TAG-darwin-arm64.dmg"
@@ -170,12 +138,6 @@ jobs:
           path: release/Spec-Control-${{ github.event.release.tag_name }}-darwin-arm64.dmg
           if-no-files-found: error
           retention-days: 7
-
-      - name: Delete the keychain and the API key
-        if: always()
-        run: |
-          security delete-keychain "$RUNNER_TEMP/signing.keychain-db" || true
-          rm -f "$RUNNER_TEMP"/AuthKey_*.p8
 
   # Runs only when every platform built and verified, so a failure attaches nothing.
   publish:
@@ -227,7 +189,9 @@ jobs:
           ## Download
 
           The macOS app, for Apple silicon Macs: open `Spec-Control-__TAG__-darwin-arm64.dmg` and drag Spec Control to
-          Applications. It is signed and notarised. To update it later, download the new `.dmg` from the releases page.
+          Applications. Like the binaries it is not notarised, so macOS refuses the first open; allow it once with
+          `xattr -dr com.apple.quarantine "/Applications/Spec Control.app"`, or with **Open Anyway** in System Settings →
+          Privacy & Security. To update it later, download the new `.dmg` from the releases page.
 
           Single binaries, no Bun needed (Intel Macs use `darwin-x64`):
 
@@ -245,7 +209,7 @@ jobs:
           chmod +x spec-control-__TAG__-<platform>
           ```
 
-          The macOS binaries, unlike the app, are not notarised. If macOS refuses to open one, remove the quarantine flag:
+          The macOS binaries are not notarised either. If macOS refuses to open one, remove the quarantine flag:
           `xattr -d com.apple.quarantine spec-control-__TAG__-<platform>`
           NOTES
           sed -i -e "s|__TAG__|$TAG|g" -e "s|__REPO__|$REPO|g" notes.md

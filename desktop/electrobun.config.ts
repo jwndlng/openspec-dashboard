@@ -3,8 +3,8 @@ import type { ElectrobunConfig } from "electrobun";
 // The release tag without its `v`; local builds are 0.0.0. The bundled binary carries the tag itself.
 const version = (process.env.SPEC_CONTROL_VERSION ?? "").replace(/^v/, "") || "0.0.0";
 
-// Signing and notarisation only where their credentials are (the release workflow's `desktop` job): a local build
-// stays unsigned instead of failing.
+// Developer ID signing and notarisation only when their credentials are set; releases ship without them, ad-hoc signed
+// by scripts/adhoc-sign.ts, and so does a local build.
 const signing = Boolean(process.env.ELECTROBUN_DEVELOPER_ID);
 
 export default {
@@ -41,6 +41,11 @@ export default {
   runtime: {
     // Closing the window hides it; the server and its sessions keep running until Quit.
     exitOnLastWindowClosed: false,
+  },
+  // Without a Developer ID the app is ad-hoc signed instead: Apple silicon runs no unsigned code (unsigned-macos-app).
+  scripts: {
+    postBuild: "scripts/adhoc-sign.ts",
+    postWrap: "scripts/adhoc-sign.ts",
   },
   // No `release.baseUrl` and no Updater: the app never fetches anything (desktop-app spec). Updates are a separate change.
 } satisfies ElectrobunConfig;
