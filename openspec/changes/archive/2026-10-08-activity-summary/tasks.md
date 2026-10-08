@@ -13,13 +13,13 @@
 ## 3. Summary strip
 
 - [x] 3.1 Add the figure map and `visibleFigures(groups)` to `src/ui/activityState.ts` (D4): labels, the kinds each figure is made of, hidden when the kind filter excludes all of them; verify with tests in `test/activityState.test.ts` (no filter → six figures; *Sessions* → sessions run and need attention only; *Tasks* → tasks completed only)
-- [~] 3.2 Render the strip in `src/ui/activity.tsx` above the first day from the first page's `summary`, kept across **Load older** and replaced on every reload; hide it while loading and when no event matches; label it as the last 7 days; verify in `bun run dev` that the figures change with the repository and kind filters
-- [~] 3.3 Style `.activity-summary` in `src/ui/styles.css` (D6: compact figures, attention in `--danger` when non-zero, wraps on a narrow window); verify in `bun run dev` in light and dark themes and at phone width with no horizontal scroll
+- [x] 3.2 Render the strip in `src/ui/activity.tsx` above the first day from the first page's `summary`, kept across **Load older** and replaced on every reload; hide it while loading and when no event matches; label it as the last 7 days; verify in `bun run dev` that the figures change with the repository and kind filters
+- [x] 3.3 Style `.activity-summary` in `src/ui/styles.css` (D6: compact figures, attention in `--danger` when non-zero, wraps on a narrow window); verify in `bun run dev` in light and dark themes and at phone width with no horizontal scroll
 
 ## 4. Busy days
 
 - [x] 4.1 Add `DAY_COLLAPSE_ABOVE = 30`, `DAY_SHOWN = 20` and `collapseDay(day, expanded)` returning `{ shown, hidden }` to `src/ui/activityState.ts`; verify with tests for 140, 31 and 30 entries and for an expanded day
-- [~] 4.2 Keep `expanded: Set<dayKey>` in `Activity`, cleared on a filter change (together with `wanted.current`) and kept across reloads and **Load older**; render **Show N more** / **Show fewer** after the day's `<ol>` inside its `<section>`; verify in `bun run dev` that the day headings stay sticky while scrolling a collapsed and an expanded busy day, and that expanding survives a rescan
+- [x] 4.2 Keep `expanded: Set<dayKey>` in `Activity`, cleared on a filter change (together with `wanted.current`) and kept across reloads and **Load older**; render **Show N more** / **Show fewer** after the day's `<ol>` inside its `<section>`; verify in `bun run dev` that the day headings stay sticky while scrolling a collapsed and an expanded busy day, and that expanding survives a rescan
 
 ## 5. Demo
 
@@ -27,5 +27,5 @@
 
 ## 6. Wrap-up
 
-- [~] 6.1 Add a `src/ui/changelog.ts` entry for the summary strip and collapsed busy days, and extend the Activity line in `README.md`; verify the What's new page renders the entry
-- [~] 6.2 Run `bun run check` and `bun run build`, and open Activity in the built binary and in the demo build; verify both succeed and the strip and **Show N more** appear as in the dev build
+- [x] 6.1 Add a `src/ui/changelog.ts` entry for the summary strip and collapsed busy days, and extend the Activity line in `README.md`; verify the What's new page renders the entry
+- [x] 6.2 Run `bun run check` and `bun run build`, and open Activity in the built binary and in the demo build; verify both succeed and the strip and **Show N more** appear as in the dev build
