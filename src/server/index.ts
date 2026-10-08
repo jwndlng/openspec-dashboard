@@ -1,6 +1,6 @@
 // CLI entry point: `spec-control [--port N] [--no-open] [--version]`.
 import indexHtmlAsset from "../../dist/ui/index.html" with { type: "text" };
-import { createFetchHandler, createWebSocketHandlers, type AppState, type TerminalSocketData } from "./api.ts";
+import { createFetchHandler, createWebSocketHandlers, startingFetchHandler, type AppState, type TerminalSocketData } from "./api.ts";
 import { diffSnapshots, sessionEvent } from "./activity/events.ts";
 import { ActivityLog } from "./activity/log.ts";
 import { AutoFetcher } from "./autoFetch.ts";
@@ -73,7 +73,7 @@ async function main(): Promise<void> {
   const server = Bun.serve<TerminalSocketData>({
     hostname: "127.0.0.1",
     port: args.port ?? (await configuredPort(await homeBeforeMigration())),
-    fetch: () => new Response("Spec Control is starting", { status: 503, headers: { "retry-after": "1" } }),
+    fetch: startingFetchHandler,
     websocket: { message() {} },
   });
   for (const line of describeOutcome(await startHomeMigration())) console.log(line);

@@ -14,7 +14,12 @@
       "!openspec",
       "!src/ui/fonts",
       "!.claude",
-      "!**/*.bun-build"
+      "!**/*.bun-build",
+      "!desktop/.hutch",
+      "!desktop/build",
+      "!desktop/artifacts",
+      "!desktop/build-assets",
+      "!desktop/node_modules"
     ]
   },
   "formatter": {

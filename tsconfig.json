@@ -17,5 +17,5 @@
       "@openspec-core/*": ["node_modules/@fission-ai/openspec/dist/core/*"]
     }
   },
-  "include": ["src", "test", "scripts"]
+  "include": ["src", "test", "scripts", "desktop/src/logic"]
 }

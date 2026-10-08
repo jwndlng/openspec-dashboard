@@ -96,6 +96,25 @@ Releases are drafted from pull request titles; publishing the draft is the only 
   that its `--version` is the tag, and only if all four pass attaches them as `spec-control-<tag>-<platform>`
   with `SHA256SUMS`, build-provenance attestations and a Download section appended to the notes. If a platform fails,
   nothing is attached: fix it and re-run the workflow.
+- **Publishing also builds the macOS app** (Apple silicon only; Intel Macs use the `darwin-x64` binary). The `desktop`
+  job in the same workflow bundles the verified `darwin-arm64` binary into `Spec Control.app` with Electrobun
+  (`desktop/`), signs it with the Developer ID, notarises it, checks that the bundled binary's `--version` is the tag,
+  that `spctl --assess` accepts the app and that `xcrun stapler validate` accepts the disk image, and hands
+  `Spec-Control-<tag>-darwin-arm64.dmg` to the publish job, which attaches it with the binaries. It reads these secrets
+  of the `release` environment, which no other job uses:
+  - `MACOS_CERT_P12` — the Developer ID Application certificate with its private key, as a base64-encoded `.p12`;
+  - `MACOS_CERT_PASSWORD` — that `.p12`'s password;
+  - `ELECTROBUN_DEVELOPER_ID` — the signing identity, e.g. `Developer ID Application: <Name> (<TEAMID>)`;
+  - `ELECTROBUN_APPLEAPIKEY` — the App Store Connect API key ID;
+  - `ELECTROBUN_APPLEAPIISSUER` — that key's issuer ID;
+  - `ELECTROBUN_APPLEAPIKEY_P8` — the contents of that key's `AuthKey_<id>.p8` file (the job writes it to a temporary
+    file and passes its path as `ELECTROBUN_APPLEAPIKEYPATH`).
+
+  Without them the `desktop` job fails and, as for any failed platform, nothing is attached.
+- **Building the app locally**: `bun run build:desktop` on an Apple silicon Mac builds the binary, then the app under
+  `desktop/build/` and a `.dmg` under `desktop/artifacts/`. It is unsigned unless `ELECTROBUN_DEVELOPER_ID` is set.
+  `desktop/` has its own `package.json` and lockfile; the Electrobun toolchain (Hutch) is pinned in
+  `desktop/hutch.config.ts` and upgraded only in a change of its own.
 - A local `bun run build` reports `dev`; set `SPEC_CONTROL_VERSION=v1.2.3` to build as a given version.
 
 **What's new.** The dashboard carries its own, shorter changelog for the people running it: the **What's new** dialog,

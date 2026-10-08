@@ -24,6 +24,13 @@ bun test test/scanner.test.ts   # a single test file
   discovery, API and UI stay framework-neutral, and the Kanban derives every column from the module's neutral shape
   (`openspec/specs/spec-frameworks/spec.md`). `src/shared/` — types and column derivation used by both sides.
   `src/ui/` — Preact SPA built into one self-contained `dist/ui/index.html` by `scripts/build-ui.ts`.
+- `desktop/` — the macOS app (Electrobun, Apple silicon only; `openspec/specs/desktop-app/spec.md`), with its own
+  `package.json` and lockfile. It runs the bundled `spec-control` binary as a child process with `--no-open` and shows
+  `http://127.0.0.1:<port>/` in its window — no bridge, no injected script, no server of its own — or attaches to a
+  Spec Control already on the port. It adds no network access: its own process requests only `127.0.0.1`, links to other
+  hosts open in the default browser, and there is no updater, so invariant 4 is unchanged. Its testable decisions live
+  in `desktop/src/logic/` (no Electrobun import), tested by `test/desktop/` in the root `bun test`; `src/main.ts` is the
+  Electrobun wiring only and is not part of the root typecheck. `bun run build:desktop` builds it.
 - `test/fixtures/` — synthetic `openspec/` trees written for the tests (see `test/fixtures/README.md`). Tests assert on
   their structure: change them together with the tests, and never reformat or lint them.
 - `openspec/` — this project's own specs (`openspec/specs/`) and changes. Requirements live there; read the relevant
@@ -33,7 +40,8 @@ bun test test/scanner.test.ts   # a single test file
   `OPENSPEC_DASHBOARD_HOME` and `OPENSPEC_DASHBOARD_VERSION` are still read after their `SPEC_CONTROL_*` successors;
   browser keys `openspec-dashboard.*` are copied once to `spec-control.*` (`src/ui/storage.ts`); and
   `openspec-dashboard:shared` markers are still recognised, though only `spec-control:shared` is written
-  (`src/server/sharedConfig.ts`). Do not add new uses of the old name.
+  (`src/server/sharedConfig.ts`); and the desktop app reads the old home only to find the port the server will use
+  and to write nothing of its own until the server has moved it (`desktop/src/logic/home.ts`). Do not add new uses of the old name.
 
 ## Invariants — do not break these
 
