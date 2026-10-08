@@ -5,7 +5,7 @@ import type { ComponentChildren, RefObject } from "preact";
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import type { ChangeArtifactEntry, ChangeArtifacts, ChangeSnapshot, DismissPreview, DismissResult, RepoSnapshot, Snapshot, TaskProgress } from "../shared/types.ts";
 import { ApiError, api } from "./api.ts";
-import { CopyButton, Meter } from "./kanban.tsx";
+import { CopyButton, CopyRefButton, Meter } from "./kanban.tsx";
 import { renderMarkdown } from "./markdown.tsx";
 import { backTarget, CONSOLE_TAB, changePath, type DetailQuery, parseDetailQuery, repoPath, serializeDetailQuery } from "./routes.ts";
 import { ConsolePanel, ConsoleSessionList } from "./sessionPanel.tsx";
@@ -210,6 +210,7 @@ export function DetailHeader({
           </AppLink>
           <span class="sep">/</span>
           <span class="mono change-name">{change.name}</span>
+          <CopyRefButton project={repo.name} change={change.name} />
         </h1>
         {onDismiss && "column" in change && <DismissButton change={change} failing={!repo.ok} onDismiss={onDismiss} />}
         <CloseButton onClose={onClose} />

@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { cdCommand, checkoutHint, leftoverHint, pendingArchiveHint, splitBranchLabel } from "../src/ui/format.ts";
+import { cdCommand, changeRef, checkoutHint, leftoverHint, pendingArchiveHint, splitBranchLabel } from "../src/ui/format.ts";
 
 test("short branch names are not split", () => {
   expect(splitBranchLabel("feat/add-login")).toEqual({ head: "feat/add-login", tail: "" });
@@ -59,6 +59,12 @@ test("the cd command quotes a path only when it needs to", () => {
   expect(cdCommand("/w/acme/alpha-infra")).toBe("cd /w/acme/alpha-infra");
   expect(cdCommand("/w/acme/My Repos/alpha")).toBe(`cd '/w/acme/My Repos/alpha'`);
   expect(cdCommand("/w/acme/it's")).toBe(`cd '/w/acme/it'\\''s'`);
+});
+
+test("changeRef joins project and change with a slash and nothing else", () => {
+  expect(changeRef("demo-ops", "cloud-deployment")).toBe("demo-ops/cloud-deployment");
+  expect(changeRef("alpha-infra", "v1.2_audit-trail")).toBe("alpha-infra/v1.2_audit-trail");
+  expect(changeRef("alpha-infra", "add-login")).not.toMatch(/\s/);
 });
 
 test("pendingArchiveHint: only for an archive that lives in a linked worktree", () => {
