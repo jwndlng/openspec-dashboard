@@ -672,7 +672,8 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: 
 .pull-blocked-actions { display: flex; align-items: center; gap: 8px; }
 /* Inline in the end-session dialog: the surrounding dialog brings its own padding. */
 .dialog-body .pull-blocked { padding: 0; }
-.row-actions { text-align: right; white-space: nowrap; }
+/* Scoped to the table so it outranks `.projects td`: the settings gear ends every row at its right edge. */
+.projects .row-actions { text-align: right; white-space: nowrap; }
 .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 
 /* ---- Projects overview ---- */

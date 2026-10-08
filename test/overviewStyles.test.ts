@@ -35,3 +35,10 @@ test("the overview's Pull shares the bordered rule of the project Console button
   expect(pullClass).toBeDefined();
   expect(pullClass).not.toContain("ghost");
 });
+
+// project-overview: the settings button sits at the right edge of a row's actions, lined up across rows. A rule scoped
+// to the table must right-align the cell, or `.projects td` (one class and one element) left-aligns it again.
+test("the table's actions cell is right-aligned by a rule that outranks the table's cell alignment", async () => {
+  const rule = (await rules()).find((r) => r.selector === ".projects .row-actions");
+  expect(rule?.body).toContain("text-align: right");
+});
