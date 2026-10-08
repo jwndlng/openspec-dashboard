@@ -71,7 +71,7 @@ The action SHALL rely on git's own credential handling (SSH agent, credential he
 - **THEN** the process is stopped and the result is `failed: timed out`
 
 ### Requirement: Pull is offered where repositories are shown, and only runs on request
-The repository board header and each git repository's row in the projects overview SHALL offer a Pull action, and the overview SHALL offer "Pull all". The dialog that ends an agent session SHALL offer a pull for that session's repository as part of confirming it, under the rules of the `agent-sessions` capability. While a pull runs the control SHALL show that it is running and SHALL NOT start a second one, nor SHALL a second one be started for the same repository from another of these places. The outcome SHALL be shown next to the control as text — up to date, fast-forwarded with the number of commits, fetched only, refused, or failed — with the reason available, and the view SHALL update from the rescan without a page reload. Using the control in an overview row MUST NOT navigate into the repository. Nothing SHALL pull without the user activating one of these controls.
+The repository board header and each git repository's row in the projects overview SHALL offer a Pull action, and the overview SHALL offer "Pull all". The dialog that ends an agent session SHALL offer a pull for that session's repository as part of confirming it, under the rules of the `agent-sessions` capability. While a pull runs the control SHALL show that it is running and SHALL NOT start a second one, nor SHALL a second one be started for the same repository from another of these places. The outcome SHALL be shown next to the control as text — up to date, fast-forwarded with the number of commits, fetched only, refused, or failed — with the reason available, and the view SHALL update from the rescan without a page reload. Using the control in an overview row MUST NOT navigate into the repository. Nothing SHALL pull without the user activating one of these controls. In a projects overview row and tile the Pull control SHALL be a bordered button with the same height, border and font size as the **Console** button beside it, its border shown at rest and not only on hover, so it does not read as plain text; its label, tooltip and outcome are the same as elsewhere.
 
 #### Scenario: From the overview
 - **WHEN** the user activates Pull in the row of a repository that is three commits behind
@@ -92,6 +92,10 @@ The repository board header and each git repository's row in the projects overvi
 #### Scenario: Already running elsewhere
 - **WHEN** a pull for a repository is still running and the user confirms an end-session dialog for that repository with the pull offer selected
 - **THEN** no second pull is started and the running pull's outcome is the one reported
+
+#### Scenario: Pull looks like a button on the overview
+- **WHEN** the projects overview shows the git repository `alpha-infra`, in the table layout and in the tiles layout, without the pointer over its Pull control
+- **THEN** in both layouts its Pull control shows a border and has the same height as the Console button beside it
 
 ### Requirement: Change leftovers blocking a pull are resolved on confirmation
 A blocking file SHALL be a **change leftover** when all of these hold: its path lies inside `openspec/changes/<name>/` for a valid change name other than `archive`; it is not in the checkout's current commit; locally it is only a new file, staged or untracked (not also deleted); and the incoming upstream commit contains it. A leftover SHALL be **identical** when its working-tree content and, when staged, its staged content both equal the incoming content, and SHALL **differ** otherwise. Any other blocking file SHALL be **local work**.
