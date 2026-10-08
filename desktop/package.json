@@ -1,0 +1,14 @@
+{
+  "name": "spec-control-desktop",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "scripts": {
+    "prepare-assets": "bun run scripts/prepare.ts",
+    "build": "bun run scripts/prepare.ts && electrobun build --env=stable",
+    "build:dev": "bun run scripts/prepare.ts && electrobun build"
+  },
+  "devDependencies": {
+    "electrobun": "2.0.2"
+  }
+}

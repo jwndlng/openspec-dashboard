@@ -1,0 +1,5 @@
+# Projected by Hutch, produced by builds, or prepared from ../dist by scripts/prepare.ts
+.hutch/
+build/
+artifacts/
+build-assets/

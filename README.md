@@ -57,13 +57,25 @@ reach.
 
 ## Run
 
-1. Download `spec-control-<tag>-<platform>` for macOS (arm64, x64) or Linux (x64, arm64) from the
-   [releases page](https://github.com/jwndlng/spec-control/releases). It needs nothing else.
+**On an Apple silicon Mac, use the app.** Download `Spec-Control-<tag>-darwin-arm64.dmg` from the
+[releases page](https://github.com/jwndlng/spec-control/releases), open it and drag **Spec Control** to Applications.
+It needs macOS 14 or later, and it is signed and notarised, so macOS opens it after its usual first-open confirmation.
+The app runs the same `spec-control` binary in its own window, uses the same `~/.spec-control/` and, if a
+`spec-control` you started in a terminal is already running, shows that one instead of starting another. Closing the
+window keeps the server and your agent sessions running (the app stays in the menu bar); **Quit** stops them, asking
+first while sessions run. The app makes no network request of its own and does not update itself: to update, choose
+**Releases Page** in its menu and download the new `.dmg`.
+
+**On an Intel Mac or Linux, use the binary.**
+
+1. Download `spec-control-<tag>-<platform>` for macOS (`darwin-x64` on Intel, `darwin-arm64`) or Linux (`linux-x64`,
+   `linux-arm64`) from the [releases page](https://github.com/jwndlng/spec-control/releases). It needs nothing else.
 2. Verify it: `shasum -a 256 -c --ignore-missing SHA256SUMS` and
-   `gh attestation verify <file> --repo jwndlng/spec-control`.
+   `gh attestation verify <file> --repo jwndlng/spec-control`. The same two commands verify the app's `.dmg`.
 3. `chmod +x` it and run it; it opens your browser. Options: `--port N`, `--no-open`, `--version`.
 
-The macOS binaries are not notarised: if macOS refuses to open one, run `xattr -d com.apple.quarantine <file>`.
+The macOS binaries, unlike the app, are not notarised: if macOS refuses to open one, run
+`xattr -d com.apple.quarantine <file>`.
 Releases from before the rename are named `openspec-dashboard-<tag>-<platform>` and verify with
 `--repo jwndlng/openspec-dashboard`.
 
@@ -76,6 +88,7 @@ until you turn them on in Settings.
 ```sh
 bun install
 bun run build                  # → dist/spec-control
+bun run build:desktop          # → the macOS app under desktop/build (Apple silicon, unsigned locally)
 bun run dev                    # or run from source on http://127.0.0.1:4711
 ```
 

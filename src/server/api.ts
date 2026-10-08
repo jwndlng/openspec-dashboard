@@ -23,6 +23,7 @@ import { applyTo, EMPTY_SHARED_CONFIG, loadSharedConfig, previewFor, SharedConfi
 import { SessionError, type SessionManager } from "./sessions/manager.ts";
 import { LocalRepoSource } from "./source.ts";
 import { frameworkById } from "./frameworks/registry.ts";
+import { VERSION } from "./version.ts";
 
 export interface AppState {
   config: Config;
@@ -54,6 +55,20 @@ const JSON_HEADERS = { "content-type": "application/json; charset=utf-8" };
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: JSON_HEADERS });
+}
+
+/**
+ * `GET /api/version`: what a program on the port has to answer to be taken for a Spec Control (the desktop app asks
+ * before it starts or attaches to a server). Reads nothing and starts nothing, so it is safe to answer while starting.
+ */
+function versionResponse(req: Request): Response | undefined {
+  if ((req.method === "GET" || req.method === "HEAD") && new URL(req.url).pathname === "/api/version") return json({ name: "spec-control", version: VERSION });
+  return undefined;
+}
+
+/** What the server answers before the scanner and sessions are ready: its version, and "starting" for everything else. */
+export function startingFetchHandler(req: Request): Response {
+  return versionResponse(req) ?? new Response("Spec Control is starting", { status: 503, headers: { "retry-after": "1" } });
 }
 
 function enabledIds(config: Config): string {
@@ -982,6 +997,8 @@ export function createFetchHandler({ state, indexHtml }: AppOptions): (req: Requ
         const refusal = crossSiteRefusal(req);
         if (refusal) return json({ error: refusal }, 403);
       }
+      const version = versionResponse(req);
+      if (version) return version;
       if (pathname === "/api/sessions" || pathname.startsWith("/api/sessions/")) return sessionRoutes(state, req, url, server);
       if (pathname === "/api/console" && req.method === "POST") return consoleRoute(state);
       if (pathname === "/api/integrations" && req.method === "POST") return integrationRoute(state, req);

@@ -15,6 +15,7 @@
     "build:demo": "bun run scripts/build-ui.ts demo",
     "screenshots": "bun run scripts/screenshots.ts",
     "build": "bun run scripts/build-ui.ts && bun run scripts/build.ts",
+    "build:desktop": "bun run build && cd desktop && bun install --frozen-lockfile && bun run build",
     "test": "bun test",
     "typecheck": "tsc --noEmit",
     "lint": "biome lint .",
