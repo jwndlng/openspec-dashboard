@@ -1,7 +1,7 @@
-import { expect, test } from "bun:test";
+import { afterEach, expect, test } from "bun:test";
 import { needsAttention, pageEvents } from "../src/shared/activity.ts";
 import type { ActivityEvent } from "../src/shared/types.ts";
-import { collapseDay, DAY_SHOWN, describe, groupByDay, isBusyDay, kindsFor, parseActivityFilters, serializeActivityFilters, timeOfDay, tone, unseenLabel, visibleFigures } from "../src/ui/activityState.ts";
+import { ACTIVITY_METRICS_KEY, barShare, collapseDay, DAY_SHOWN, dayKey, dayLabel, loadMetricsHidden, REPOS_SHOWN, saveMetricsHidden, visibleRepos, describe, groupByDay, isBusyDay, kindsFor, parseActivityFilters, serializeActivityFilters, timeOfDay, tone, unseenLabel, visibleFigures } from "../src/ui/activityState.ts";
 
 let n = 0;
 const base = (at: Date) => ({ v: 1 as const, id: `id${String(n++).padStart(4, "0")}`, at: at.toISOString(), detectedAt: at.toISOString(), repoId: "r1", repoName: "demo-ops" });
@@ -118,4 +118,61 @@ test("a busy day shows its newest entries until expanded; a quiet day is never c
   expect(collapseDay(day(30), false)).toEqual({ shown: day(30).events, hidden: 0 });
   expect(isBusyDay(day(30))).toBe(false);
   expect(isBusyDay(day(31))).toBe(true);
+});
+
+// ---- metrics (add-metrics-to-activity) ----
+
+const repoCount = (i: number) => ({ repoId: `r${i}`, repoName: `repo-${i}`, events: 20 - i, changes: 1 });
+
+test("many projects: the 6 busiest, then Show N more; expanded lists all", () => {
+  const nine = Array.from({ length: 9 }, (_, i) => repoCount(i));
+  expect(visibleRepos(nine, false).shown.map((r) => r.repoId)).toEqual(["r0", "r1", "r2", "r3", "r4", "r5"]);
+  expect(visibleRepos(nine, false).hidden).toBe(3);
+  expect(visibleRepos(nine, true)).toEqual({ shown: nine, hidden: 0 });
+  const six = nine.slice(0, REPOS_SHOWN);
+  expect(visibleRepos(six, false)).toEqual({ shown: six, hidden: 0 });
+});
+
+test("bars are shares of the largest, and nothing draws nothing", () => {
+  expect(barShare(10, 40)).toBe(0.25);
+  expect(barShare(40, 40)).toBe(1);
+  expect(barShare(0, 0)).toBe(0);
+  expect(barShare(3, 0)).toBe(0);
+});
+
+test("day labels name the local day: Today, else the weekday", () => {
+  const today = dayKey(new Date(2026, 9, 7));
+  expect(dayLabel(today, today)).toBe("Today");
+  expect(dayLabel("2026-10-06", today)).toBe(new Date(2026, 9, 6).toLocaleDateString(undefined, { weekday: "short" }));
+});
+
+function stubStorage(options: { throws?: boolean } = {}): Map<string, string> {
+  const store = new Map<string, string>();
+  const fail = () => {
+    throw new Error("storage unavailable");
+  };
+  Object.defineProperty(globalThis, "localStorage", {
+    configurable: true,
+    value: options.throws
+      ? { getItem: fail, setItem: fail, removeItem: fail }
+      : { getItem: (key: string) => store.get(key) ?? null, setItem: (key: string, value: string) => void store.set(key, value), removeItem: (key: string) => void store.delete(key) },
+  });
+  return store;
+}
+
+afterEach(() => {
+  Reflect.deleteProperty(globalThis, "localStorage");
+});
+
+test("hiding the metrics is remembered; storage that refuses shows them", () => {
+  const store = stubStorage();
+  expect(loadMetricsHidden()).toBe(false);
+  saveMetricsHidden(true);
+  expect(store.get(ACTIVITY_METRICS_KEY)).toBe("hidden");
+  expect(loadMetricsHidden()).toBe(true);
+  saveMetricsHidden(false);
+  expect(loadMetricsHidden()).toBe(false);
+  stubStorage({ throws: true });
+  expect(loadMetricsHidden()).toBe(false);
+  expect(() => saveMetricsHidden(true)).not.toThrow();
 });

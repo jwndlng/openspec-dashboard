@@ -34,7 +34,7 @@ something.
 - **Everyday actions** — create or dismiss a change, pull a repository, clean up merged branches and worktrees —
   each only when you ask for it.
 - **Activity** — a feed of what happened across your repositories, even while the dashboard was not running,
-  summed up in figures for the last 7 days.
+  summed up in figures and charted per day and per project for the last 7 days.
 - **Pull requests** — each change's pull request on its card, with checks and readiness, read through your GitHub CLI.
 - **New projects** — set up OpenSpec in an existing repository, or start a new one, with your agent doing the
   `openspec init`.

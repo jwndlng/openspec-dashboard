@@ -933,6 +933,8 @@ export interface ActivityPage {
   newerThanSince?: number;
   /** Only on the first page (no `before`): figures over every retained event matching the filters. */
   summary?: ActivitySummary;
+  /** Only on the first page (no `before`): per day and per repository, over every retained event matching the filters. */
+  metrics?: ActivityMetrics;
 }
 
 /** The Activity view's summary strip: counts of recorded events (not feed entries) within the retention window. */
@@ -946,6 +948,35 @@ export interface ActivitySummary {
   sessions: number;
   /** Events the feed shows in its danger tone (`needsAttention`). */
   attention: number;
+}
+
+/**
+ * The Activity view's per-day and per-project metrics: counts of recorded events (not feed entries) within the
+ * retention window. A change is told apart by repository id and change name.
+ */
+export interface ActivityMetrics {
+  events: number;
+  /** Distinct changes touched by the events. */
+  changes: number;
+  /** Every calendar day of the window in the requested time zone, oldest first, quiet days included. */
+  days: ActivityDayCount[];
+  /** Every repository with a counted event, busiest first, then by name. */
+  repos: ActivityRepoCount[];
+}
+
+export interface ActivityDayCount {
+  /** `YYYY-MM-DD` in the requested time zone. */
+  day: string;
+  events: number;
+  changes: number;
+}
+
+export interface ActivityRepoCount {
+  repoId: string;
+  /** The name of its newest counted event. */
+  repoName: string;
+  events: number;
+  changes: number;
 }
 
 /**

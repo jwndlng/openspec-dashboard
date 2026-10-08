@@ -2,7 +2,7 @@ import { ACTIVITY_KINDS, AUTO_FETCH_MINUTES, type ActivityKind } from "../shared
 import { availableName } from "../shared/nameHints.ts";
 import { labelKey } from "../shared/labels.ts";
 import { MAX_PAGE, type ActivityLog, type PageQuery } from "./activity/log.ts";
-import { pageEvents } from "../shared/activity.ts";
+import { isTimeZone, pageEvents } from "../shared/activity.ts";
 import type { AutoFetchMinutes, CleanupSelection, Config, DiscoverResult, PullBlockingFile, PullRequestsResponse, PullResult, PullResolve, RepoConfig, RepoSnapshot, ScanTriggerResult, SharedConfigApplyResult, SharedConfigAssignment, SharedConfigPreview } from "../shared/types.ts";
 import type { AutoFetcher } from "./autoFetch.ts";
 import { applyCleanup, CleanupBusyError, previewCleanup } from "./cleanup.ts";
@@ -958,6 +958,11 @@ function getActivity(state: AppState, url: URL): Response {
   query.repos = list("repos");
   if (params.has("before")) query.before = params.get("before") ?? undefined;
   if (params.has("since")) query.since = params.get("since") ?? "";
+  if (params.has("tz")) {
+    const tz = params.get("tz") ?? "";
+    if (!isTimeZone(tz)) return json({ error: `unknown time zone: ${tz}` }, 400);
+    query.tz = tz;
+  }
   return json(state.activity?.page(query) ?? pageEvents([], query));
 }
 

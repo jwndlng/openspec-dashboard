@@ -384,3 +384,14 @@ test("the overview's per-project settings change the in-memory config at once, w
   // What a reload does: a fresh instance has the original sample again.
   expect((await demo().api.config()).repos[0]).toEqual(first);
 });
+
+test("the demo's activity carries metrics in the visitor's time zone: several projects and busy days", async () => {
+  const at = Date.now();
+  const api = createDemoApi({ now: () => at, latencyMs: 0 });
+  const page = await api.activity({ limit: 100, tz: "Europe/Zurich" });
+  expect(page.metrics?.repos.length).toBeGreaterThan(1);
+  expect(page.metrics?.days.some((d) => d.events > 0)).toBe(true);
+  expect(page.metrics?.days.at(-1)?.day).toBe(new Date(at).toLocaleDateString("en-CA", { timeZone: "Europe/Zurich" }));
+  // A zone this runtime cannot name counts in UTC instead of failing the feed.
+  expect((await api.activity({ limit: 1, tz: "Mars/Olympus" })).metrics?.events).toBe(page.metrics?.events);
+});

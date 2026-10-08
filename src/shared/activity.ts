@@ -1,5 +1,5 @@
 // Activity helpers shared by the server (serving the feed) and the UI. Pure.
-import type { ActivityEvent, ActivityKind, ActivityPage, ActivitySummary } from "./types.ts";
+import type { ActivityDayCount, ActivityEvent, ActivityKind, ActivityMetrics, ActivityPage, ActivityRepoCount, ActivitySummary } from "./types.ts";
 
 /** Task ticks of one change this close together are shown as one entry. */
 export const COLLAPSE_WINDOW_MS = 60 * 60 * 1000;
@@ -76,6 +76,82 @@ export function summarize(events: readonly ActivityEvent[]): ActivitySummary {
   return summary;
 }
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+const dayFormats = new Map<string, Intl.DateTimeFormat>();
+
+/** The formatter that names a calendar day in `timeZone`; throws a `RangeError` for a zone this runtime does not know. */
+function dayFormat(timeZone: string): Intl.DateTimeFormat {
+  let format = dayFormats.get(timeZone);
+  if (!format) {
+    format = new Intl.DateTimeFormat("en-US", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" });
+    dayFormats.set(timeZone, format);
+  }
+  return format;
+}
+
+/** Whether `timeZone` names a zone the metrics can bucket days in. */
+export function isTimeZone(timeZone: string): boolean {
+  try {
+    dayFormat(timeZone);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** `YYYY-MM-DD` of the calendar day `ms` falls on in `timeZone`. */
+export function dayIn(ms: number, timeZone: string): string {
+  const parts = Object.fromEntries(dayFormat(timeZone).formatToParts(ms).map((p) => [p.type, p.value]));
+  return `${parts.year}-${parts.month}-${parts.day}`;
+}
+
+/** The calendar day after `key`, stepped at noon UTC so no day is skipped or repeated (design D2). */
+function nextDay(key: string): string {
+  const [y, m, d] = key.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d, 12) + DAY_MS).toISOString().slice(0, 10);
+}
+
+/**
+ * The per-day and per-project metrics (design D1–D3): counted on recorded events, before task progress is collapsed.
+ * Days run from the one holding the start of the retention window to the one holding `nowMs`, in `timeZone`.
+ */
+export function measure(events: readonly ActivityEvent[], nowMs: number, timeZone = "UTC"): ActivityMetrics {
+  const changeKey = (e: ActivityEvent) => ("change" in e ? `${e.repoId}\n${e.change}` : undefined);
+  const days = new Map<string, { events: number; changes: Set<string> }>();
+  const last = dayIn(nowMs, timeZone);
+  for (let day = dayIn(nowMs - RETENTION_MS, timeZone); ; day = nextDay(day)) {
+    days.set(day, { events: 0, changes: new Set() });
+    if (day >= last) break;
+  }
+  const repos = new Map<string, { repoName: string; newestAt: string; events: number; changes: Set<string> }>();
+  const changes = new Set<string>();
+  for (const event of events) {
+    const key = changeKey(event);
+    if (key) changes.add(key);
+    const at = Date.parse(event.at);
+    const day = Number.isNaN(at) ? undefined : days.get(dayIn(at, timeZone));
+    if (day) {
+      day.events += 1;
+      if (key) day.changes.add(key);
+    }
+    let repo = repos.get(event.repoId);
+    if (!repo) {
+      repo = { repoName: event.repoName, newestAt: event.at, events: 0, changes: new Set() };
+      repos.set(event.repoId, repo);
+    } else if (event.at >= repo.newestAt) {
+      repo.repoName = event.repoName;
+      repo.newestAt = event.at;
+    }
+    repo.events += 1;
+    if (key) repo.changes.add(key);
+  }
+  const dayCounts: ActivityDayCount[] = [...days].map(([day, c]) => ({ day, events: c.events, changes: c.changes.size }));
+  const repoCounts: ActivityRepoCount[] = [...repos]
+    .map(([repoId, r]) => ({ repoId, repoName: r.repoName, events: r.events, changes: r.changes.size }))
+    .sort((a, b) => b.events - a.events || a.repoName.localeCompare(b.repoName) || (a.repoId < b.repoId ? -1 : a.repoId > b.repoId ? 1 : 0));
+  return { events: events.length, changes: changes.size, days: dayCounts, repos: repoCounts };
+}
+
 export const DEFAULT_PAGE = 100;
 export const MAX_PAGE = 500;
 
@@ -87,10 +163,12 @@ export interface ActivityQuery {
   kinds?: ActivityKind[];
   /** When given, the page also says how many recorded events are newer than this id. */
   since?: string;
+  /** IANA time zone the metrics' days are counted in; UTC when absent. */
+  tz?: string;
 }
 
 /** One page of the feed out of everything recorded (`entries` in detection order, oldest first). */
-export function pageEvents(entries: readonly ActivityEvent[], query: ActivityQuery = {}): ActivityPage {
+export function pageEvents(entries: readonly ActivityEvent[], query: ActivityQuery = {}, nowMs = Date.now()): ActivityPage {
   const limit = Math.min(MAX_PAGE, Math.max(1, query.limit ?? DEFAULT_PAGE));
   const newestId = entries.at(-1)?.id;
   const repos = query.repos?.length ? new Set(query.repos) : undefined;
@@ -108,7 +186,10 @@ export function pageEvents(entries: readonly ActivityEvent[], query: ActivityQue
   const events = feed.slice(start, start + limit);
   const page: ActivityPage = { events };
   // The figures do not depend on the page: only the first one carries them, older pages keep that answer.
-  if (query.before === undefined) page.summary = summarize(matching);
+  if (query.before === undefined) {
+    page.summary = summarize(matching);
+    page.metrics = measure(matching, nowMs, query.tz);
+  }
   if (start + limit < feed.length && events.length > 0) page.nextBefore = events[events.length - 1].id;
   if (newestId) page.newestId = newestId;
   if (query.since !== undefined) {
