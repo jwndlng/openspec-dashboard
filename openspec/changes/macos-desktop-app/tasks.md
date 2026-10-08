@@ -2,8 +2,8 @@
 
 ## 1. Spike: prove the risky assumptions first
 
-- [ ] 1.1 In a throwaway Electrobun 2.0.x app (`mainProcess: "bun"`, WKWebView) load `http://127.0.0.1:<port>/` of a running `bun run dev`; verify a POST to `/api/scan` and the terminal WebSocket of a fake session are accepted (no ATS block, `Origin: http://127.0.0.1:<port>`), and record whether `NSAllowsLocalNetworking` is needed in design.md
-- [ ] 1.2 In the same spike verify `navigationRules` + `will-navigate` + `new-window-open` send a `target="_blank"` github.com link to the default browser while the window stays, and that ⌘C/⌘V work in an xterm terminal once an Edit menu is set; record findings in design.md
+- [x] 1.1 In a throwaway Electrobun 2.0.x app (`mainProcess: "bun"`, WKWebView) load `http://127.0.0.1:<port>/` of a running `bun run dev`; verify a POST to `/api/scan` and the terminal WebSocket of a fake session are accepted (no ATS block, `Origin: http://127.0.0.1:<port>`), and record whether `NSAllowsLocalNetworking` is needed in design.md
+- [x] 1.2 In the same spike verify `navigationRules` + `will-navigate` + `new-window-open` send a `target="_blank"` github.com link to the default browser while the window stays, and that ⌘C/⌘V work in an xterm terminal once an Edit menu is set; record findings in design.md
 
 ## 2. Server: version endpoint
 
@@ -21,16 +21,16 @@
 
 ## 4. Desktop app shell (Electrobun)
 
-- [~] 4.1 Scaffold `desktop/` with its own `package.json`, lockfile, exact-pinned `electrobun` and the Hutch toolchain pinned in `hutch.config.ts` (Hutch is not an npm package, design D11), `electrobun.config.ts` (identifier, name, `mainProcess: "bun"`, `exitOnLastWindowClosed: false`, no `release.baseUrl`, no `Updater` import, `copy` of `../dist/spec-control`), icons; verify `bun run build:desktop` produces a dev `.app` that launches
-- [~] 4.2 Wire start-up in `desktop/src/main.ts`: lock, login-shell `PATH`, probe, attach or spawn `spec-control --no-open`, wait for `/api/version`, open the window; error windows for blocked port and failed start (with last output and Retry); verify manually: fresh start, with a CLI already running (attached label, CLI survives quit), with `nc -l 4711` holding the port, and opened twice
-- [~] 4.3 Wire the window: navigation rules, external links via `Utils.openExternal`, close hides, Dock `reopen` shows; application menu (App with Releases Page, Edit roles, View, Window) and menu bar item; verify manually per the spec scenarios (pull request link, paste into terminal, close during a session)
-- [~] 4.4 Wire quit: cancel `before-quit`, `quitPlan`, confirmation naming the session count, SIGTERM and wait up to 10 s, then quit; verify manually that two running fake-agent sessions show as resumable after Quit, and that an attached CLI server keeps running
+- [x] 4.1 Scaffold `desktop/` with its own `package.json`, lockfile, exact-pinned `electrobun` and the Hutch toolchain pinned in `hutch.config.ts` (Hutch is not an npm package, design D11), `electrobun.config.ts` (identifier, name, `mainProcess: "bun"`, `exitOnLastWindowClosed: false`, no `release.baseUrl`, no `Updater` import, `copy` of `../dist/spec-control`), icons; verify `bun run build:desktop` produces a dev `.app` that launches
+- [x] 4.2 Wire start-up in `desktop/src/main.ts`: lock, login-shell `PATH`, probe, attach or spawn `spec-control --no-open`, wait for `/api/version`, open the window; error windows for blocked port and failed start (with last output and Retry); verify manually: fresh start, with a CLI already running (attached label, CLI survives quit), with `nc -l 4711` holding the port, and opened twice
+- [x] 4.3 Wire the window: navigation rules, external links via `Utils.openExternal`, close hides, Dock `reopen` shows; application menu (App with Releases Page, Edit roles, View, Window) and menu bar item; verify manually per the spec scenarios (pull request link, paste into terminal, close during a session)
+- [x] 4.4 Wire quit: cancel `before-quit`, `quitPlan`, confirmation naming the session count, SIGTERM and wait up to 10 s, then quit; verify manually that two running fake-agent sessions show as resumable after Quit, and that an attached CLI server keeps running
 
 ## 5. Release workflow
 
-- [~] 5.1 Add the `desktop` job (macos-latest, `release` environment secrets, temporary keychain, build with the `darwin-arm64` binary from `build`, smoke checks: bundled `--version` equals the tag, `spctl --assess`, `stapler validate`) and rename the dmg to `Spec-Control-<tag>-darwin-arm64.dmg`; verify on a `v0.0.0-test`-style tag in a fork or a dry run with signing skipped
-- [~] 5.2 Make `publish` need `desktop`, extend `SHA256SUMS` and the attestation to the dmg, extend the release-notes download section; verify the workflow lint (`actionlint`) passes and the notes template names the dmg
-- [ ] 5.3 Set up the Apple Developer ID certificate and App Store Connect API key as `release` environment secrets (`MACOS_CERT_P12`, `MACOS_CERT_PASSWORD`, `ELECTROBUN_DEVELOPER_ID`, `ELECTROBUN_APPLEAPIKEY`, `ELECTROBUN_APPLEAPIISSUER`, `ELECTROBUN_APPLEAPIKEY_P8`, the `.p8` contents); verify by publishing the next release and checking the dmg opens on a clean Mac without `xattr`
+- [x] 5.1 Add the `desktop` job (macos-latest, `release` environment secrets, temporary keychain, build with the `darwin-arm64` binary from `build`, smoke checks: bundled `--version` equals the tag, `spctl --assess`, `stapler validate`) and rename the dmg to `Spec-Control-<tag>-darwin-arm64.dmg`; verify on a `v0.0.0-test`-style tag in a fork or a dry run with signing skipped
+- [x] 5.2 Make `publish` need `desktop`, extend `SHA256SUMS` and the attestation to the dmg, extend the release-notes download section; verify the workflow lint (`actionlint`) passes and the notes template names the dmg
+- [x] 5.3 Set up the Apple Developer ID certificate and App Store Connect API key as `release` environment secrets (`MACOS_CERT_P12`, `MACOS_CERT_PASSWORD`, `ELECTROBUN_DEVELOPER_ID`, `ELECTROBUN_APPLEAPIKEY`, `ELECTROBUN_APPLEAPIISSUER`, `ELECTROBUN_APPLEAPIKEY_P8`, the `.p8` contents); verify by publishing the next release and checking the dmg opens on a clean Mac without `xattr`
 
 ## 6. Documentation
 
