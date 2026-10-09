@@ -5,7 +5,7 @@ import type { EnvironmentCheck, EnvironmentReport } from "../src/shared/types.ts
 import { EnvironmentPanel } from "../src/ui/environment.tsx";
 import { environmentAttention, environmentCount, environmentWarning, type EnvironmentState } from "../src/ui/environmentState.ts";
 import { parseSection, SECTION_IDS, serializeSection } from "../src/ui/settingsSections.ts";
-import { byTag, textOf } from "./vnode.ts";
+import { byTag, elements, textOf } from "./vnode.ts";
 
 const check = (patch: Partial<EnvironmentCheck> = {}): EnvironmentCheck => ({ id: "git", label: "git", status: "ok", found: "/usr/bin/git", ...patch });
 
@@ -169,4 +169,18 @@ test("the hero indicator is derived from the report alone", () => {
   const source = readFileSync(new URL("../src/ui/environmentState.ts", import.meta.url), "utf8");
   const imports = [...source.matchAll(/from "([^"]+)"/g)].map((m) => m[1]);
   expect(imports).toEqual(["../shared/types.ts"]);
+});
+
+// Instructions (setup-wizard): shown with the check, each command with a copy control; none for a healthy check.
+test("a problem shows its instructions with a copy control per command, a healthy check none", () => {
+  const withSteps = report([
+    check(),
+    check({ id: "git", label: "git", status: "problem", found: "not found on the PATH", remedy: "Install git.", instructions: [{ text: "Install the tools.", command: "xcode-select --install" }, { text: "Then reopen." }] }),
+  ]);
+  const panel = EnvironmentPanel({ state: { report: withSteps, loading: false }, onRecheck: () => {} });
+  expect(textOf(panel)).toContain("Install the tools.");
+  expect(byTag(panel, "code").map(textOf)).toEqual(["xcode-select --install"]);
+  const copies = elements(panel).filter((el) => typeof el.type === "function" && el.props.text === "xcode-select --install");
+  expect(copies).toHaveLength(1);
+  expect(byTag(EnvironmentPanel({ state: { report: healthy, loading: false }, onRecheck: () => {} }), "ol")).toEqual([]);
 });

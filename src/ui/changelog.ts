@@ -15,6 +15,13 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    id: "2026-10-09-setup-wizard",
+    date: "2026-10-09",
+    title: "Set up in a few steps",
+    summary:
+      "A fresh installation now opens a short **setup**: where your projects live, which agent to use, and a check of the tools Spec Control relies on, with the command to install whatever is missing. Every check in **Settings → Environment** now shows those commands too. Run it again from **Help**.",
+  },
+  {
     id: "2026-10-09-console-agent",
     date: "2026-10-09",
     title: "Pick the console's agent",

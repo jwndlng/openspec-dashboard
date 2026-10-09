@@ -27,6 +27,8 @@ import { IconActivity, IconChevronDown, IconClock, IconGitPullRequest, IconHelp,
 import { HeroHomeMark, HeroHomeTitle } from "./heroHome.tsx";
 import { loadDismissed, saveDismissed, UPDATE_REREAD_MS, UpdateBanner } from "./updateBanner.tsx";
 import { WhatsNew } from "./whatsNew.tsx";
+import { SetupWizard } from "./setupWizard.tsx";
+import { setupAutoOpens, shouldOpenSetup } from "./setupState.ts";
 import { Tour } from "./tour.tsx";
 import { loadTourSeen, saveTourSeen, shouldAutoStart, TOUR_ANCHOR, type TourAnchor, tourAutoStarts } from "./tourState.ts";
 
@@ -70,6 +72,12 @@ export function App() {
   const tourAutoStarted = useRef(false);
   /** Where focus was when the tour opened, so it can go back there. */
   const focusBeforeTour = useRef<Element | null>(null);
+  /** Whether setup is pending on the server; `undefined` until known, which holds the tour back. */
+  const [setupPending, setSetupPending] = useState<boolean>();
+  // The setup wizard. Not in the route either: it configures the dashboard rather than being a place to link to.
+  const [setupOpen, setSetupOpen] = useState(false);
+  /** The wizard opened by itself during this page load; it does so at most once. */
+  const setupAutoOpened = useRef(false);
 
   useEffect(() => onRouteChange(() => setRoute(routeFromPath(currentPath()))), []);
 
@@ -130,6 +138,14 @@ export function App() {
       .catch(() => undefined)
       .finally(() => setConfigSettled(true));
   }, [loadState]);
+
+  useEffect(() => {
+    // A failed read reads as "set up": a wizard nobody asked for is worse than one that waits for the next load.
+    api.setup().then(
+      (s) => setSetupPending(s.pending),
+      () => setSetupPending(false),
+    );
+  }, []);
 
   /**
    * Asks for the environment report. On load, after the configuration was saved, and from **Re-check** — never from the
@@ -256,9 +272,31 @@ export function App() {
   const consoleShown = consoleOpen && config?.agentSessions.enabled === true;
   const integrationShown = integrationId !== undefined && config?.agentSessions.enabled === true;
   const projectConsoleShown = projectConsoleRepoId !== undefined && config?.agentSessions.enabled === true;
-  /** An overlay other than the tour: the tour waits for it to close before starting by itself. */
+  /** An overlay other than the tour and the wizard: both wait for it to close before starting by themselves. */
   const otherOverlayOpen = route.view === "change" || consoleShown || integrationShown || projectConsoleShown;
-  const overlayOpen = otherOverlayOpen || tourOpen;
+  const overlayOpen = otherOverlayOpen || tourOpen || setupOpen;
+
+  useEffect(() => {
+    const ready = configSettled && setupPending !== undefined;
+    if (!shouldOpenSetup({ enabled: setupAutoOpens(), pending: setupPending === true, alreadyOpened: setupAutoOpened.current, ready, overlayOpen: otherOverlayOpen || tourOpen })) return;
+    setupAutoOpened.current = true;
+    setSetupOpen(true);
+  }, [configSettled, setupPending, otherOverlayOpen, tourOpen]);
+
+  const setupSaved = useCallback(
+    (saved: Config) => {
+      setConfig(saved);
+      reloadSoon();
+      // Which checks are needed follows the configuration, as after a save in Settings.
+      void loadEnvironment();
+    },
+    [loadEnvironment, loadState],
+  );
+  const closeSetup = useCallback((done: boolean) => {
+    setSetupOpen(false);
+    // Marked done: the tour may follow on a first visit. Not marked: still pending, so the wizard returns next load.
+    if (done) setSetupPending(false);
+  }, []);
 
   const startTour = useCallback(() => {
     focusBeforeTour.current = document.activeElement;
@@ -274,10 +312,12 @@ export function App() {
   }, []);
 
   useEffect(() => {
-    if (!shouldAutoStart({ enabled: tourAutoStarts(), seen: loadTourSeen(), alreadyStarted: tourAutoStarted.current, ready: configSettled, overlayOpen: otherOverlayOpen })) return;
+    const ready = configSettled && setupPending !== undefined;
+    const blocked = otherOverlayOpen || setupOpen;
+    if (!shouldAutoStart({ enabled: tourAutoStarts(), seen: loadTourSeen(), alreadyStarted: tourAutoStarted.current, ready, overlayOpen: blocked, setupPending: setupPending === true })) return;
     tourAutoStarted.current = true;
     startTour();
-  }, [configSettled, otherOverlayOpen, startTour]);
+  }, [configSettled, setupPending, setupOpen, otherOverlayOpen, startTour]);
 
   // Moving to another route ends the tour as Skip does: its steps point at a page that is no longer there.
   const routeKey = JSON.stringify(route);
@@ -463,7 +503,7 @@ export function App() {
             onUpdate={setUpdate}
           />
         ) : route.view === "help" ? (
-          <Help onTour={startTour} />
+          <Help onTour={startTour} onSetup={() => setSetupOpen(true)} />
         ) : route.view === "activity" ? (
           <Activity snapshot={shown} onSeen={markSeen} />
         ) : route.view === "pullRequests" ? (
@@ -513,6 +553,7 @@ export function App() {
     <IntegrationOverlay />
     <ProjectConsoleOverlay />
     {tourOpen && <Tour onClose={endTour} />}
+    {setupOpen && <SetupWizard config={config} onSaved={setupSaved} onClose={closeSetup} />}
     </SessionProvider>
     </PullRequestsProvider>
     </PullProvider>

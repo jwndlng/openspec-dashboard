@@ -89,3 +89,9 @@ test("Help navigates its sections with the section navigation Settings has, not 
   expect(source).toContain("<SectionNav");
   expect(source + css).not.toContain("help-toc");
 });
+
+test("Getting started introduces setup and how to run it again", () => {
+  const start = walked.find((s) => s.id === "getting-started");
+  expect(start?.text).toContain("Run setup again");
+  expect(start?.text).toContain("setup");
+});

@@ -1,4 +1,5 @@
-// The Help view: built-in guidance in sections, the section navigation Settings has, ?section= deep links, and the tour.
+// The Help view: built-in guidance in sections, the section navigation Settings has, ?section= deep links, the tour and
+// setup.
 import { useRef } from "preact/hooks";
 import { HELP_SECTION_IDS, HELP_SECTIONS } from "./helpContent.tsx";
 import { IconHelp } from "./icons.tsx";
@@ -28,7 +29,7 @@ export function helpNavSections(): NavSection[] {
   }));
 }
 
-export function Help({ onTour }: { onTour: () => void }) {
+export function Help({ onTour, onSetup }: { onTour: () => void; onSetup: () => void }) {
   const scroller = useRef<HTMLDivElement>(null);
   const nav = useSectionNav(scroller, HELP_SECTION_IDS, HELP_PAGE);
   const sections = helpNavSections();
@@ -43,9 +44,14 @@ export function Help({ onTour }: { onTour: () => void }) {
             <h1>Help</h1>
             <p>How the dashboard works, what it shows and what it changes. New here? The tour points out where everything is.</p>
           </div>
-          <button type="button" class="btn primary" onClick={onTour}>
-            Take the tour
-          </button>
+          <div class="help-intro-actions">
+            <button type="button" class="btn primary" onClick={onTour}>
+              Take the tour
+            </button>
+            <button type="button" class="btn" onClick={onSetup}>
+              Run setup again
+            </button>
+          </div>
         </header>
         <SectionNav page={HELP_PAGE} sections={sections} current={nav.current} anchor={nav.anchor} onJump={nav.jump} />
         <div class="help-sections">

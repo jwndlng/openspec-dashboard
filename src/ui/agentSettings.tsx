@@ -361,13 +361,7 @@ export function AgentSettings({ draft, update }: Props) {
   return (
     <section class="panel">
       <h2>Agent sessions</h2>
-      <p class="hint">
-        Start an agent CLI for a change straight from its card; it opens in a terminal here in the dashboard — the same program you would run in your own terminal, with its own
-        login, settings and permission prompts. <strong>Turning this on lets the dashboard start that program on this machine, and the agent can change files and run commands as
-        you allow it to.</strong> Each session works in its own git worktree under <code>~/.spec-control/worktrees/</code>, never in a repository's main checkout — except an{" "}
-        <strong>Integrate</strong> session, which runs in the repository folder itself to set it up for OpenSpec. It applies to <strong>every tracked repository</strong>; switch
-        individual ones off on Projects.
-      </p>
+      <AgentSessionsStatement />
       <div class="row">
         <label class="check">
           <input type="checkbox" checked={settings.enabled} onChange={(e) => set({ enabled: e.currentTarget.checked })} />
@@ -439,5 +433,18 @@ export function AgentSettings({ draft, update }: Props) {
         <PerProjectNote />
       </fieldset>
     </section>
+  );
+}
+
+/** What turning agent sessions on means, stated the same way in Settings and in the setup wizard. */
+export function AgentSessionsStatement() {
+  return (
+    <p class="hint">
+      Start an agent CLI for a change straight from its card; it opens in a terminal here in the dashboard — the same program you would run in your own terminal, with its own
+      login, settings and permission prompts. <strong>Turning this on lets the dashboard start that program on this machine, and the agent can change files and run commands as
+      you allow it to.</strong> Each session works in its own git worktree under <code>~/.spec-control/worktrees/</code>, never in a repository's main checkout — except an{" "}
+      <strong>Integrate</strong> session, which runs in the repository folder itself to set it up for OpenSpec. It applies to <strong>every tracked repository</strong>; switch
+      individual ones off on Projects.
+    </p>
   );
 }

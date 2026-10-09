@@ -611,3 +611,12 @@ test("Fast-forward with the preconfigured Claude Code profile starts with the ff
   expect(prompt.indexOf(FAST_FORWARD_CONTINUE_SENTENCE)).toBeLessThan(prompt.indexOf("/opsx:apply"));
   expect(launchCommand(CLAUDE_PROFILE, prompt).argv).toEqual(["claude", prompt]);
 });
+
+test("every preset says how to install it on each platform, with a command to copy", () => {
+  for (const preset of AGENT_PRESETS) {
+    for (const platform of ["darwin", "linux", "win32"] as const) {
+      const steps = preset.install[platform];
+      expect([preset.profile.id, platform, steps.length > 0, steps.some((step) => !!step.command)]).toEqual([preset.profile.id, platform, true, true]);
+    }
+  }
+});

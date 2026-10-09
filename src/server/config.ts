@@ -221,6 +221,11 @@ export const configSchema = z
       .boolean()
       .optional()
       .transform((on) => (on === false ? (false as const) : undefined)),
+    // Only `"pending"` is stored, and only by `freshConfig`; anything else reads as "set up".
+    setup: z
+      .unknown()
+      .optional()
+      .transform((value) => (value === "pending" ? ("pending" as const) : undefined)),
   })
   .superRefine((cfg, ctx) => {
     const colored = Object.keys(cfg.labelColors ?? {});
@@ -256,6 +261,11 @@ export class ConfigValidationError extends Error {
 
 export function defaultConfig(): Config {
   return { version: 1, scanRoots: [], ignorePaths: [], repos: [], pollIntervalSeconds: DEFAULT_POLL_SECONDS, port: DEFAULT_PORT, agentSessions: defaultAgentSessions() };
+}
+
+/** A configuration made because none could be loaded: the defaults, with the setup wizard still to come. */
+export function freshConfig(): Config {
+  return { ...defaultConfig(), setup: "pending" };
 }
 
 /** Stable identity for a repository: 12 hex chars of the sha1 of its canonical path, so one directory has one id. */
@@ -445,7 +455,7 @@ export async function loadConfig(): Promise<{ config: Config; warning?: string }
     raw = await readFile(path, "utf8");
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
-    const config = await saveConfig(defaultConfig());
+    const config = await saveConfig(freshConfig());
     return { config };
   }
   try {
@@ -456,7 +466,7 @@ export async function loadConfig(): Promise<{ config: Config; warning?: string }
   } catch (err) {
     const backup = `${path}.bak-${Date.now()}`;
     await rename(path, backup);
-    const config = await saveConfig(defaultConfig());
+    const config = await saveConfig(freshConfig());
     const reason = err instanceof Error ? err.message : String(err);
     return { config, warning: `config.json was invalid (${reason}); moved to ${backup} and reset to defaults` };
   }

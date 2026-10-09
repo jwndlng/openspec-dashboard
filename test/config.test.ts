@@ -30,7 +30,10 @@ afterAll(async () => {
 test("first run creates default config", async () => {
   const { config, warning } = await loadConfig();
   expect(warning).toBeUndefined();
-  expect(config).toEqual({ version: 1, scanRoots: [], ignorePaths: [], repos: [], pollIntervalSeconds: 60, port: 4711, agentSessions: defaultAgentSessions() });
+  expect(config).toEqual({ version: 1, scanRoots: [], ignorePaths: [], repos: [], pollIntervalSeconds: 60, port: 4711, agentSessions: defaultAgentSessions(), setup: "pending" });
+  expect(JSON.parse(await readFile(join(home, "config.json"), "utf8")).setup).toBe("pending");
+  // The defaults themselves carry no flag: only a config made because none could be loaded does.
+  expect("setup" in defaultConfig()).toBe(false);
   expect(config.agentSessions.enabled).toBe(false);
   expect(JSON.parse(await readFile(join(home, "config.json"), "utf8")).port).toBe(4711);
 });
@@ -507,4 +510,26 @@ test("a repository's auto-merge setting is optional, kept when set and refused w
   const on = validateConfig({ ...defaultConfig(), repos: [{ ...repo, agent: { enabled: true, autoMergeDocs: true } }] });
   expect(on.repos[0].agent?.autoMergeDocs).toBe(true);
   expect(() => validateConfig({ ...defaultConfig(), repos: [{ ...repo, agent: { enabled: true, autoMergeDocs: "yes" } }] })).toThrow();
+});
+
+test("a config from an earlier version gains no setup flag and is not rewritten for it", async () => {
+  const path = join(home, "config.json");
+  const text = `${JSON.stringify({ ...defaultConfig() }, null, 2)}\n`;
+  await writeFile(path, text);
+  const { config } = await loadConfig();
+  expect(config.setup).toBeUndefined();
+  expect(await readFile(path, "utf8")).toBe(text);
+});
+
+test("any setup value but pending is dropped", () => {
+  expect(validateConfig({ ...defaultConfig(), setup: "yes" }).setup).toBeUndefined();
+  expect(validateConfig({ ...defaultConfig(), setup: true }).setup).toBeUndefined();
+  expect(validateConfig({ ...defaultConfig(), setup: "pending" }).setup).toBe("pending");
+});
+
+test("a config reset because it was invalid asks for setup", async () => {
+  await writeFile(join(home, "config.json"), "{ not json");
+  const { config, warning } = await loadConfig();
+  expect(warning).toContain("reset to defaults");
+  expect(config.setup).toBe("pending");
 });

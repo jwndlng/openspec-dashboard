@@ -38,8 +38,8 @@ something.
 - **Pull requests** — each change's pull request on its card, with checks and readiness, read through your GitHub CLI.
 - **New projects** — set up OpenSpec in an existing repository, or start a new one, with your agent doing the
   `openspec init`.
-- **One file, offline** — a single binary with the UI built in, a short tour on first start and a Help page for the
-  details.
+- **One file, offline** — a single binary with the UI built in, a setup and a short tour on first start and a Help
+  page for the details.
 
 The built-in **Help** explains every part of the dashboard; the full requirements are in
 [`openspec/specs/`](openspec/specs/).
@@ -82,9 +82,11 @@ The macOS binaries are not notarised either: if macOS refuses to open one, run
 Releases from before the rename are named `openspec-dashboard-<tag>-<platform>` and verify with
 `--repo jwndlng/openspec-dashboard`.
 
-**First run.** Open **Settings** and add a workspace root such as `~/Workspace`. Back on **Projects**, the
-repositories found under it are listed below your tracked ones; **Enable** starts tracking one. Agent sessions are off
-until you turn them on in Settings.
+**First run.** A short **setup** opens on the first start: add the folders your projects live in (common ones such
+as `~/Workspace` are suggested) and pick which of the OpenSpec projects found under them to track; choose whether to turn
+agent sessions on and with which agent; and check the tools Spec Control relies on, with the command to install
+whatever is missing — shown for you to copy, never run. Every step can be skipped and changed later in **Settings** or on
+**Projects**, and **Help → Run setup again** opens it once more. Agent sessions stay off unless you turn them on.
 
 **From source.** Needs [Bun](https://bun.sh) ≥ 1.4.
 
