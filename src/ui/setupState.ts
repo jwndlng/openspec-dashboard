@@ -312,6 +312,10 @@ export interface SetupSummary extends SetupSaved {
   defaultAgent?: string;
   /** The console agent's name; absent when the console follows the default agent. */
   consoleAgent?: string;
+  /** How many agent profiles are configured. */
+  agents: number;
+  /** Whether the System check had a report to judge by. */
+  checked: boolean;
   remaining: string[];
 }
 
@@ -325,8 +329,77 @@ export function setupSummary(config: Config | null, saved: SetupSaved, report?: 
     agentSessions: sessions?.enabled === true,
     defaultAgent: sessions?.agents.find((a) => a.id === sessions.defaultAgent)?.name,
     consoleAgent: sessions?.consoleAgent ? sessions.agents.find((a) => a.id === sessions.consoleAgent)?.name : undefined,
+    agents: sessions?.agents.length ?? 0,
+    checked: report !== undefined,
     remaining: (report?.checks ?? []).filter((c) => c.status === "problem" || c.status === "warning").map((c) => c.label),
   };
+}
+
+/** How a step came out, as the Done step marks it. */
+export type DoneMark = "done" | "attention" | "unchanged";
+export const DONE_MARK_LABEL: Record<DoneMark, string> = { done: "Done", attention: "Needs attention", unchanged: "Nothing changed" };
+
+/** One card of the Done step: a step, how it came out, its outcome in a word or a number, and a line of detail. */
+export interface DoneCard {
+  step: Exclude<SetupStep, "Welcome" | "Done">;
+  mark: DoneMark;
+  outcome: string;
+  detail: string;
+}
+
+const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+const listed = (names: readonly string[]) => (names.length <= 1 ? (names[0] ?? "") : `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`);
+
+/** The Done step's cards, one per step from Workspace to System check. Only the System check can need attention. */
+export function doneCards(summary: SetupSummary, home?: string): DoneCard[] {
+  // `~/Workspace` reads better on a card than the full path; anything outside the home folder is shown as it is.
+  const short = (path: string) => (home && (path === home || path.startsWith(`${home}/`)) ? `~${path.slice(home.length)}` : path);
+  const workspaceChanged = summary.rootsAdded.length > 0 || summary.tracked > 0;
+  const defaultName = summary.defaultAgent ?? "the default agent";
+  return [
+    {
+      step: "Workspace",
+      mark: workspaceChanged ? "done" : "unchanged",
+      outcome: summary.tracked > 0 ? plural(summary.tracked, "project", "projects") : "No change",
+      detail:
+        summary.rootsAdded.length > 0
+          ? `${summary.tracked > 0 ? "Tracked, from" : "Added"} ${listed(summary.rootsAdded.map(short))}`
+          : summary.tracked > 0
+            ? "Tracked from your workspace folders"
+            : "No folder added and no project tracked",
+    },
+    {
+      step: "Agents",
+      mark: summary.agentSessions || summary.agentsAdded.length > 0 ? "done" : "unchanged",
+      outcome: plural(summary.agents, "agent", "agents"),
+      detail: [summary.agentSessions ? `Sessions on, ${defaultName} by default` : "Sessions off", summary.agentsAdded.length > 0 ? `added ${listed(summary.agentsAdded)}` : ""]
+        .filter(Boolean)
+        .join("; "),
+    },
+    {
+      step: "Console",
+      mark: summary.agentSessions ? "done" : "unchanged",
+      outcome: summary.consoleAgent ?? summary.defaultAgent ?? "Default agent",
+      detail: !summary.agentSessions ? "Available once agent sessions are on" : summary.consoleAgent ? "Chosen for the console" : "Follows the default agent",
+    },
+    {
+      step: "Project settings",
+      mark: summary.projectsChanged > 0 ? "done" : "unchanged",
+      outcome: summary.projectsChanged > 0 ? plural(summary.projectsChanged, "project", "projects") : "No change",
+      detail: summary.projectsChanged > 0 ? "Their settings were saved" : "Each project keeps its own settings",
+    },
+    {
+      step: "System check",
+      mark: summary.remaining.length > 0 || !summary.checked ? "attention" : "done",
+      outcome: summary.remaining.length > 0 ? `${summary.remaining.length} to fix` : summary.checked ? "All in place" : "Not checked",
+      detail:
+        summary.remaining.length > 0
+          ? `${listed(summary.remaining)} — Settings → Environment shows how`
+          : summary.checked
+            ? "Every tool Spec Control relies on is installed"
+            : "Settings → Environment checks this machine",
+    },
+  ];
 }
 
 /** Whether every check is `ok` or `not-needed`, which the System check step says plainly. */

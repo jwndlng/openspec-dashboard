@@ -11,6 +11,7 @@ import {
   consoleSave,
   customAgentProblem,
   customAgentRef,
+  doneCards,
   defaultAgentOptions,
   expandHome,
   initiallyChecked,
@@ -261,6 +262,8 @@ test("the Done step names what was saved and what is left", () => {
     agentSessions: true,
     defaultAgent: "Claude Code",
     consoleAgent: undefined,
+    agents: 1,
+    checked: true,
     remaining: ["GitHub CLI"],
   });
   const withConsole: Config = { ...config, agentSessions: { ...config.agentSessions, agents: [CLAUDE_PROFILE, CODEX_PROFILE], consoleAgent: "codex" } };
@@ -268,6 +271,28 @@ test("the Done step names what was saved and what is left", () => {
   expect(allInPlace(report)).toBe(false);
   expect(allInPlace({ ...report, checks: report.checks.filter((c) => c.status !== "warning") })).toBe(true);
   expect(allInPlace(undefined)).toBe(false);
+});
+
+test("the Done step's cards say how each step came out; only the System check can need attention", () => {
+  const base = { ...NOTHING_SAVED, rootsAdded: ["/w/acme"], tracked: 2, agentsAdded: ["Codex"], agentSessions: true, defaultAgent: "Claude Code", agents: 2, checked: true, remaining: [] };
+  expect(doneCards(base).map((c) => [c.step, c.mark, c.outcome])).toEqual([
+    ["Workspace", "done", "2 projects"],
+    ["Agents", "done", "2 agents"],
+    ["Console", "done", "Claude Code"],
+    ["Project settings", "unchanged", "No change"],
+    ["System check", "done", "All in place"],
+  ]);
+  expect(doneCards(base)[0].detail).toBe("Tracked, from /w/acme");
+  expect(doneCards({ ...base, rootsAdded: ["/home/demo/Workspace"] }, "/home/demo")[0].detail).toBe("Tracked, from ~/Workspace");
+  expect(doneCards(base)[1].detail).toBe("Sessions on, Claude Code by default; added Codex");
+  const left = doneCards({ ...base, remaining: ["GitHub CLI"], consoleAgent: "Codex", projectsChanged: 1 });
+  expect(left[4]).toMatchObject({ mark: "attention", outcome: "1 to fix" });
+  expect(left[4].detail).toContain("GitHub CLI");
+  expect(left[2]).toMatchObject({ outcome: "Codex", detail: "Chosen for the console" });
+  expect(left[3]).toMatchObject({ mark: "done", outcome: "1 project" });
+  const nothing = doneCards({ ...NOTHING_SAVED, agentSessions: false, agents: 1, checked: false, remaining: [] });
+  expect(nothing.map((c) => c.mark)).toEqual(["unchanged", "unchanged", "unchanged", "unchanged", "attention"]);
+  expect(nothing[2].detail).toBe("Available once agent sessions are on");
 });
 
 test("the demo turns the wizard's auto-open off, as it does the tour's", async () => {

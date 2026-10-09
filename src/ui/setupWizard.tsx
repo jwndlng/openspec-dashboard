@@ -19,6 +19,9 @@ import {
   allInPlace,
   type CustomAgent,
   consoleSave,
+  DONE_MARK_LABEL,
+  type DoneCard,
+  doneCards,
   customAgentProblem,
   defaultAgentOptions,
   expandHome,
@@ -751,38 +754,56 @@ export function SystemCheckStep({ report, loading, error, onRecheck }: { report?
   );
 }
 
-const count = (n: number, one: string, many: string) => (n === 1 ? `One ${one}` : `${n} ${many}`);
+/** The icon of each step, as the Welcome diagram shows it, so the Done step's cards echo the way in. */
+const STEP_ICON = Object.fromEntries(WELCOME_FLOW.map(({ name, Icon }) => [name, Icon])) as Record<DoneCard["step"], (typeof WELCOME_FLOW)[number]["Icon"]>;
 
-export function DoneStep({ summary }: { summary: SetupSummary }) {
+/**
+ * The ending: a headline with a large check mark, one card per step with its icon, outcome and mark, and what comes
+ * next. `firstStart` adds that the tour follows.
+ */
+export function DoneStep({ summary, firstStart = false, home }: { summary: SetupSummary; firstStart?: boolean; home?: string }) {
+  const cards = doneCards(summary, home);
+  const left = summary.remaining.length;
   return (
-    <div class="setup-step">
-      <ul class="setup-summary">
-        <li>
-          {summary.rootsAdded.length === 0 ? (
-            "No workspace folder was added."
-          ) : (
-            <>
-              Workspace {summary.rootsAdded.length === 1 ? "folder" : "folders"} added: {summary.rootsAdded.map((r, i) => (
-                <span key={r}>
-                  {i > 0 && ", "}
-                  <code>{r}</code>
+    <div class="setup-step setup-done">
+      <div class={`setup-done-hero ${left > 0 ? "attention" : ""}`}>
+        <span class="setup-done-badge" aria-hidden="true">
+          <IconCheck size={34} />
+        </span>
+        <div>
+          <p class="setup-done-title">{left > 0 ? `Setup is complete — ${left === 1 ? "one thing is" : `${left} things are`} left to fix` : "You're all set"}</p>
+          <p class="setup-done-sub">
+            {summary.tracked > 0
+              ? `Spec Control is ready for your ${summary.tracked === 1 ? "project" : `${summary.tracked} projects`}.`
+              : "Spec Control is ready; track your projects on the projects overview whenever you like."}
+          </p>
+        </div>
+      </div>
+      <ul class="setup-done-cards" aria-label="What setup did">
+        {cards.map((card) => {
+          const Icon = STEP_ICON[card.step];
+          return (
+            <li key={card.step} class={`setup-done-card ${card.mark}`}>
+              <div class="setup-done-card-head">
+                <span class="setup-done-icon" aria-hidden="true">
+                  <Icon size={18} />
                 </span>
-              ))}
-            </>
-          )}
-        </li>
-        <li>{summary.tracked === 0 ? "No project was tracked." : `${count(summary.tracked, "project is", "projects are")} tracked.`}</li>
-        <li>{summary.agentSessions ? `Agent sessions are on, with ${summary.defaultAgent ?? "the default agent"} as the default agent.` : "Agent sessions are off."}</li>
-        <li>{summary.agentsAdded.length === 0 ? "No agent was added." : `${summary.agentsAdded.length === 1 ? "Agent" : "Agents"} added: ${summary.agentsAdded.join(", ")}.`}</li>
-        <li>{summary.consoleAgent ? `The console runs ${summary.consoleAgent}.` : `The console runs the default agent${summary.defaultAgent ? `, ${summary.defaultAgent}` : ""}.`}</li>
-        <li>{summary.projectsChanged === 0 ? "No project's settings were changed." : `The settings of ${summary.projectsChanged === 1 ? "one project were" : `${summary.projectsChanged} projects were`} saved.`}</li>
+                <span class="setup-done-name">{card.step}</span>
+                <span class={`setup-done-mark ${card.mark}`}>
+                  {card.mark !== "unchanged" && (card.mark === "done" ? <IconCheck size={12} /> : <span aria-hidden="true">!</span>)}
+                  {DONE_MARK_LABEL[card.mark]}
+                </span>
+              </div>
+              <strong class="setup-done-outcome">{card.outcome}</strong>
+              <span class="setup-done-detail">{card.detail}</span>
+            </li>
+          );
+        })}
       </ul>
-      {summary.remaining.length > 0 ? (
-        <p class="notice warn">Still needing attention: {summary.remaining.join(", ")}. Settings → Environment shows how to fix them.</p>
-      ) : (
-        <p class="hint">Nothing in the system check needs attention.</p>
-      )}
-      <p class="hint">Change any of this in Settings and on the projects overview. Run setup again from Help.</p>
+      <p class="setup-done-next">
+        <strong>What's next:</strong> Finish opens the projects overview{firstStart ? ", and the first time a short tour of the board" : ""}. Change any of this later in
+        Settings or behind a project's gear, or run setup again from Help.
+      </p>
     </div>
   );
 }
@@ -1249,7 +1270,7 @@ export function SetupWizard({ config, snapshot, onSaved, onClose }: { config: Co
   }
   return (
     <WizardFrame {...frame} onContinue={() => void finish()} continueLabel="Finish">
-      <DoneStep summary={setupSummary(config, saved, report)} />
+      <DoneStep summary={setupSummary(config, saved, report)} firstStart={info?.pending === true} home={info?.home} />
     </WizardFrame>
   );
 }

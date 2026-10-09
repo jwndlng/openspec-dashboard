@@ -327,15 +327,27 @@ test("all in place is said plainly, and Re-check shows that it works", () => {
   expect(textOf(SystemCheckStep({ loading: false, error: "offline", onRecheck: noop }))).toContain("could not be checked");
 });
 
-test("Done says what was saved and what is left", () => {
-  const summary = { ...NOTHING_SAVED, rootsAdded: ["/w/acme"], tracked: 2, agentsAdded: ["Codex", "Antigravity"], projectsChanged: 3, agentSessions: true, defaultAgent: "Codex", remaining: ["GitHub CLI"] };
-  const text = textOf(DoneStep({ summary }));
-  expect(text).toContain("/w/acme");
-  expect(text).toContain("2 projects are tracked");
-  expect(text).toContain("Codex as the default agent");
-  expect(text).toContain("Agents added: Codex, Antigravity.");
-  expect(text).toContain("The console runs the default agent, Codex.");
-  expect(text).toContain("The settings of 3 projects were saved.");
-  expect(text).toContain("GitHub CLI");
-  expect(textOf(DoneStep({ summary: { ...summary, consoleAgent: "Claude Code" } }))).toContain("The console runs Claude Code.");
+test("Done is a visual ending: a headline, one card per step with its icon and mark, and what comes next", () => {
+  const summary = { ...NOTHING_SAVED, rootsAdded: ["/w/acme"], tracked: 2, agentsAdded: ["Codex", "Antigravity"], projectsChanged: 3, agentSessions: true, defaultAgent: "Codex", agents: 3, checked: true, remaining: [] };
+  const done = DoneStep({ summary, firstStart: true });
+  expect(textOf(done)).toContain("You're all set");
+  expect(textOf(done)).toContain("ready for your 2 projects");
+  const list = byTag(done, "ul").find((el) => el.props["aria-label"] === "What setup did");
+  const cards = byTag(list, "li");
+  expect(cards.map((li) => textOf(byTag(li, "span").find((el) => el.props.class === "setup-done-name")))).toEqual(["Workspace", "Agents", "Console", "Project settings", "System check"]);
+  for (const card of cards) expect(byTag(card, "svg").length).toBeGreaterThan(0);
+  expect(cards.map((li) => String(li.props.class).replace("setup-done-card ", ""))).toEqual(["done", "done", "done", "done", "done"]);
+  expect(textOf(cards[1])).toContain("added Codex and Antigravity");
+  expect(textOf(cards[2])).toContain("Codex");
+  expect(textOf(cards[3])).toContain("3 projects");
+  expect(textOf(done)).toContain("short tour");
+  expect(textOf(DoneStep({ summary }))).not.toContain("short tour");
+
+  const left = DoneStep({ summary: { ...summary, remaining: ["GitHub CLI"] } });
+  expect(textOf(left)).toContain("one thing is left to fix");
+  const system = byTag(byTag(left, "ul")[0], "li")[4];
+  expect(String(system.props.class)).toContain("attention");
+  expect(textOf(system)).toContain("Needs attention");
+  expect(textOf(system)).toContain("GitHub CLI");
 });
+

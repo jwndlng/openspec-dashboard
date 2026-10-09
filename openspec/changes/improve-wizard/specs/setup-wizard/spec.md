@@ -184,8 +184,15 @@ If the user unchecked the switch, checked nothing new and chose the current defa
 ### Requirement: The Done step summarises and ends setup
 The Done step SHALL summarise what setup saved: the roots added, the number of projects tracked, whether agent
 sessions are on, the agents added, the default agent, the console agent and the number of projects whose settings were
-changed. It SHALL also say what is left, naming the checks that are still `problem` or `warning`. It SHALL offer
-**Finish**. Finishing, and **Skip setup** at any step, SHALL mark setup as done on the server and close the wizard,
+changed. It SHALL also say what is left, naming the checks that are still `problem` or `warning`. It SHALL present this
+visually: a headline that setup is complete, with a large check mark — or, when checks still need attention, that setup
+is complete with something left to fix — followed by one card per step from Workspace to System check, in the wizard's
+order, each with that step's icon from the Welcome diagram, its name, its outcome in a word or a number and a line of
+detail, and a mark in text and colour of whether it is **done**, **needs attention** or had **nothing changed**. A card
+SHALL need attention only for the System check, when a check is `problem` or `warning`. Below the cards it SHALL say
+what comes next: the projects overview, and the tour on a first start. The cards SHALL be exposed to assistive
+technology as a list, each read as its name, mark and outcome, and the headline's animation, if any, SHALL not play when
+the user prefers reduced motion. It SHALL offer **Finish**. Finishing, and **Skip setup** at any step, SHALL mark setup as done on the server and close the wizard,
 keeping everything earlier steps saved. If marking setup as done fails, the wizard SHALL close anyway and open by itself
 again on the next page load. After the wizard closed on a first start, the onboarding tour SHALL start under its own
 rules.
@@ -193,6 +200,14 @@ rules.
 #### Scenario: Finish
 - **WHEN** the user activates **Finish**
 - **THEN** the wizard closes, the configuration no longer has `setup: "pending"`, and on reload the wizard does not open
+
+#### Scenario: A visual ending
+- **WHEN** the user added `/w/acme`, tracked two projects, added Codex, kept the console on the default agent, changed no project setting, and every check is `ok`
+- **THEN** the Done step's headline says setup is complete beside a large check mark, and it shows five cards — Workspace "2 projects" done, Agents "2 agents" done, Console "Claude Code" done, Project settings nothing changed, System check "All in place" done — each with its step's icon
+
+#### Scenario: Something left to fix
+- **WHEN** the GitHub CLI check is `warning` on the Done step
+- **THEN** the headline says something is left to fix, and the System check card is marked as needing attention and names the GitHub CLI
 
 #### Scenario: Summary of agents and projects
 - **WHEN** the user added Codex and Antigravity, kept the console on the default agent and changed the auto fetch of three projects
