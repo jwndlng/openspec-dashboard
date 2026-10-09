@@ -16,7 +16,8 @@ steps after it SHALL show neither. Every step except Welcome SHALL offer **Back*
 **Skip setup**. While the wizard is open the page behind it SHALL NOT receive clicks or keyboard focus, and it SHALL be
 exposed to assistive technology as a dialog named as the setup. Pressing Escape SHALL act as **Skip setup**, after a
 confirmation when the user has entered something the wizard has not saved yet. While a native folder picker opened by
-the Workspace step is open, Escape in the page SHALL NOT end setup. The wizard SHALL work at a viewport width of 400px
+the Workspace step is open, Escape in the page SHALL NOT end setup, and while a setting's help overlay is open, Escape
+SHALL close that overlay and SHALL NOT end setup. The wizard SHALL work at a viewport width of 400px
 without horizontal scrolling.
 
 #### Scenario: Position shown
@@ -282,7 +283,12 @@ project's agent sessions are enabled, and **PR titles**, **Docs auto-merge** and
 repository. Whether a project is a git repository SHALL be taken from its latest scan; while a covered project has not
 been scanned yet, as one tracked a moment ago, the step SHALL say that it is reading the projects and offer its
 settings once every covered project has a scan result, with **Continue** and **Skip setup** still available. The step
-SHALL say for each setting what its default is.
+SHALL say for each setting what its default is. A setting's explanation SHALL NOT be shown inline: beside the
+setting's name the step SHALL offer a help control, an icon whose accessible name names the setting, which shows the
+explanation in an overlay next to it and reports itself to assistive technology as expanded while it does. At most one
+overlay SHALL be open; it SHALL close when its help control is activated again, when another one is opened, on a click
+outside it, on Escape, and when the step or the project shown changes. The default, and how many projects a setting
+applies to, SHALL stay visible without opening it.
 
 In **Same settings for all projects** the step SHALL show one form. Each setting SHALL show the value all the projects
 it applies to share, which for a fresh project is the default, and, when they differ, SHALL read **Keep each project's
@@ -304,6 +310,14 @@ name, labels or enabled state, and SHALL NOT change any setting outside these fi
 #### Scenario: Defaults shown for fresh projects
 - **WHEN** the user tracked `alpha-infra` and `demo-ops`, both git repositories, in the Workspace step and switched agent sessions on
 - **THEN** the Project settings step shows **Same settings for all projects** with Agent sessions Enabled, PR titles No convention, Docs auto-merge Off and Auto fetch Every minute, each saying it is the default
+
+#### Scenario: A setting's explanation in an overlay
+- **WHEN** the Project settings step shows Auto fetch
+- **THEN** its explanation is not shown inline, its default "Every minute" is, and activating the help icon beside "Auto fetch" shows the explanation — that the dashboard only fetches and never updates the checkout — in an overlay, with the icon reported as expanded
+
+#### Scenario: Closing the overlay
+- **WHEN** the Auto fetch overlay is open and the user presses Escape
+- **THEN** the overlay closes, focus is on its help icon, and the wizard stays open on the Project settings step
 
 #### Scenario: One change for all projects
 - **WHEN** in **Same settings for all projects** the user picks **Conventional Commits** under PR titles and continues

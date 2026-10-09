@@ -968,7 +968,16 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: 
 .setup-settings { gap: 0; padding: 4px 20px; border: 1px solid var(--border-light); border-radius: var(--radius); }
 .setup-setting { display: grid; grid-template-columns: 180px minmax(0, 1fr); gap: 8px 20px; align-items: start; padding: 18px 0; border-top: 1px solid var(--border-light); }
 .setup-settings > .setup-setting:first-child, .setup-project-head + .setup-setting { border-top: none; }
-.setup-setting-label { padding-top: 9px; font-weight: 600; color: var(--fg-heading); }
+.setup-setting-label { padding-top: 6px; font-weight: 600; color: var(--fg-heading); }
+/* A setting's name with its help icon; the explanation opens in an overlay below it rather than inline. */
+.setup-help { position: relative; display: flex; align-items: center; gap: 4px; align-self: start; }
+.setup-wizard .btn.setup-help-btn { min-height: 28px; height: 28px; width: 28px; padding: 0; color: var(--fg-subtle); }
+.setup-wizard .btn.setup-help-btn[aria-expanded="true"] { color: var(--brand-fg); background: var(--brand-softer); border-color: var(--brand-soft); }
+.setup-help-overlay {
+  position: absolute; top: calc(100% + 6px); left: 0; z-index: 30; width: min(360px, calc(100vw - 64px));
+  padding: 12px 14px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-raised); box-shadow: var(--shadow-lg);
+  font-size: 13px; font-weight: 400; line-height: 1.5; color: var(--fg-body);
+}
 .setup-setting-control { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; min-width: 0; }
 /* The dialog's compact pickers, at the wizard's size; one higher in specificity than their own rule. */
 .setup-setting-control .input, .setup-setting-control .input.agent-picker, .setup-setting-control .input.pr-titles-picker, .setup-setting-control .input.auto-fetch-picker {

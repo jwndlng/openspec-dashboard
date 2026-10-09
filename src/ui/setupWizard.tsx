@@ -10,7 +10,7 @@ import { AgentSessionsStatement } from "./agentSettings.tsx";
 import { api } from "./api.ts";
 import { CommandSteps } from "./commandSteps.tsx";
 import { ENVIRONMENT_STATUS_BADGE, ENVIRONMENT_STATUS_LABEL } from "./environmentState.ts";
-import { IconCheck, IconFolderGit, IconMonitor, IconRefresh, IconScan, IconSettings, IconTerminal } from "./icons.tsx";
+import { IconCheck, IconFolderGit, IconHelp, IconMonitor, IconRefresh, IconScan, IconSettings, IconTerminal } from "./icons.tsx";
 import { AgentSelect, AUTO_FETCH_TITLE, AUTO_MERGE_HINT, AutoFetchSelect, autoFetchLabel, KEEP_EACH, KEEP_EACH_LABEL, PR_TITLES_TITLE, PrTitlesSelect } from "./projectSettings.tsx";
 import {
   type AgentChoice,
@@ -525,15 +525,51 @@ export function SettingControl({
   );
 }
 
-/** One labelled setting line of the step: the control, its explanation and its default. */
-function SettingRow({ setting, note, children }: { setting: ProjectSetting; note?: string; children: preact.ComponentChildren }) {
+/** The help control's id for a setting, so focus can return to it when its overlay closes. */
+export const helpButtonId = (setting: ProjectSetting) => `setup-help-${setting}`;
+
+/**
+ * One labelled setting line of the step: its name with a help control, the control, and its default. The explanation
+ * lives in an overlay the help control opens, so a row reads as name, value and default.
+ */
+function SettingRow({
+  setting,
+  note,
+  help,
+  children,
+}: {
+  setting: ProjectSetting;
+  note?: string;
+  help: { open: boolean; onToggle: (setting: ProjectSetting) => void };
+  children: preact.ComponentChildren;
+}) {
+  const overlay = `${helpButtonId(setting)}-text`;
   return (
     <div class="setup-setting">
-      <span class="setup-setting-label">{SETTING_LABELS[setting]}</span>
+      <span class="setup-setting-label setup-help">
+        {SETTING_LABELS[setting]}
+        <button
+          type="button"
+          id={helpButtonId(setting)}
+          class="btn ghost icon-only setup-help-btn"
+          aria-label={`About ${SETTING_LABELS[setting]}`}
+          title={`About ${SETTING_LABELS[setting]}`}
+          aria-expanded={help.open}
+          aria-controls={help.open ? overlay : undefined}
+          onClick={() => help.onToggle(setting)}
+        >
+          <IconHelp size={15} />
+        </button>
+        {help.open && (
+          <span id={overlay} class="setup-help-overlay">
+            {SETTING_HINTS[setting]}
+          </span>
+        )}
+      </span>
       <div class="setup-setting-control">
         {children}
         <span class="hint">
-          {SETTING_HINTS[setting]} Default: {settingValueLabel(setting, SETTING_DEFAULTS[setting])}.{note ? ` ${note}` : ""}
+          Default: {settingValueLabel(setting, SETTING_DEFAULTS[setting])}.{note ? ` ${note}` : ""}
         </span>
       </div>
     </div>
@@ -550,6 +586,8 @@ export interface ProjectSettingsView {
   each: ReadonlyMap<string, SettingsDraft>;
   /** The project shown in "individual" mode. */
   index: number;
+  /** The setting whose help overlay is open. */
+  help?: ProjectSetting;
   saveError?: string;
 }
 
@@ -558,9 +596,11 @@ export interface ProjectSettingsHandlers {
   /** `repoId` absent: the shared form. */
   onChange: (setting: ProjectSetting, value: string, repoId?: string) => void;
   onIndex: (index: number) => void;
+  /** Opens a setting's help overlay, or closes it when it is the open one. */
+  onHelp: (setting: ProjectSetting) => void;
 }
 
-export function ProjectSettingsStep({ view, onMode, onChange, onIndex }: { view: ProjectSettingsView } & ProjectSettingsHandlers) {
+export function ProjectSettingsStep({ view, onMode, onChange, onIndex, onHelp }: { view: ProjectSettingsView } & ProjectSettingsHandlers) {
   const { config, projects } = view;
   if (projects.length === 0) {
     return (
@@ -603,14 +643,14 @@ export function ProjectSettingsStep({ view, onMode, onChange, onIndex }: { view:
             const count = shared.applies < projects.length ? `Applies to ${shared.applies} of ${projects.length} projects.` : undefined;
             const note = [count, setting === "agentSessions" ? sessionsOffNote : undefined].filter(Boolean).join(" ") || undefined;
             return (
-              <SettingRow key={setting} setting={setting} note={note}>
+              <SettingRow key={setting} setting={setting} note={note} help={{ open: view.help === setting, onToggle: onHelp }}>
                 <SettingControl setting={setting} value={value} keep={shared.value === undefined} label={`${SETTING_LABELS[setting]} for all projects`} agents={agents} onChange={(v) => onChange(setting, v)} />
               </SettingRow>
             );
           })}
         </section>
       ) : (
-        <IndividualProject view={view} isGit={isGit} sessionsOffNote={sessionsOffNote} onChange={onChange} onIndex={onIndex} />
+        <IndividualProject view={view} isGit={isGit} sessionsOffNote={sessionsOffNote} onChange={onChange} onIndex={onIndex} onHelp={onHelp} />
       )}
       {view.saveError && <p class="notice danger">Could not save: {view.saveError}</p>}
     </div>
@@ -623,12 +663,14 @@ function IndividualProject({
   sessionsOffNote,
   onChange,
   onIndex,
+  onHelp,
 }: {
   view: ProjectSettingsView;
   isGit: (id: string) => boolean;
   sessionsOffNote?: string;
   onChange: ProjectSettingsHandlers["onChange"];
   onIndex: (index: number) => void;
+  onHelp: ProjectSettingsHandlers["onHelp"];
 }) {
   const { config, projects } = view;
   const index = Math.min(view.index, projects.length - 1);
@@ -645,7 +687,7 @@ function IndividualProject({
         <code class="hint">{repo.path}</code>
       </div>
       {PROJECT_SETTINGS.filter((setting) => settingApplies(setting, shown, config, isGit(repo.id))).map((setting) => (
-        <SettingRow key={setting} setting={setting} note={setting === "agentSessions" ? sessionsOffNote : undefined}>
+        <SettingRow key={setting} setting={setting} note={setting === "agentSessions" ? sessionsOffNote : undefined} help={{ open: view.help === setting, onToggle: onHelp }}>
           <SettingControl
             setting={setting}
             value={draft[setting] ?? settingValue(repo, setting)}
@@ -789,6 +831,28 @@ export function SetupWizard({ config, snapshot, onSaved, onClose }: { config: Co
   const [eachDraft, setEachDraft] = useState<Map<string, SettingsDraft>>(new Map());
   const [projectIndex, setProjectIndex] = useState(0);
   const [projectsError, setProjectsError] = useState<string>();
+  const [help, setHelp] = useState<ProjectSetting>();
+  // An overlay belongs to the rows shown: moving to another step, project or mode closes it.
+  useEffect(() => setHelp(undefined), [step, mode, projectIndex]);
+  const closeHelp = useCallback((refocus: boolean) => {
+    setHelp((open) => {
+      if (open && refocus) document.getElementById(helpButtonId(open))?.focus();
+      return undefined;
+    });
+  }, []);
+  // The step scrolls inside the dialog: bring an overlay opened near its bottom edge into view.
+  useEffect(() => {
+    if (help) document.getElementById(`${helpButtonId(help)}-text`)?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }, [help]);
+  // A click outside the open overlay and its help control closes it.
+  useEffect(() => {
+    if (!help) return;
+    const onDown = (e: PointerEvent) => {
+      if (!(e.target instanceof Element) || !e.target.closest(".setup-help")) closeHelp(false);
+    };
+    document.addEventListener("pointerdown", onDown, true);
+    return () => document.removeEventListener("pointerdown", onDown, true);
+  }, [help, closeHelp]);
 
   // System check.
   const [report, setReport] = useState<EnvironmentReport>();
@@ -908,12 +972,17 @@ export function SetupWizard({ config, snapshot, onSaved, onClose }: { config: Co
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape" || busy || picking) return;
       e.stopPropagation();
+      // Escape closes an open help overlay first, and does not end setup.
+      if (help) {
+        closeHelp(true);
+        return;
+      }
       if (confirmingSkip) setConfirmingSkip(false);
       else requestSkip();
     };
     document.addEventListener("keydown", onKey, true);
     return () => document.removeEventListener("keydown", onKey, true);
-  }, [busy, picking, confirmingSkip, requestSkip]);
+  }, [busy, picking, help, closeHelp, confirmingSkip, requestSkip]);
 
   const enterRoot = (root: string) => {
     if (!entered.includes(root) && !configuredRoots.includes(root)) setEntered((was) => (was.includes(root) ? was : [...was, root]));
@@ -1154,10 +1223,10 @@ export function SetupWizard({ config, snapshot, onSaved, onClose }: { config: Co
     );
   }
   if (step === STEP.projects && config) {
-    const view: ProjectSettingsView = { config, projects, isGit, mode, all: allDraft, each: eachDraft, index: projectIndex, saveError: projectsError };
+    const view: ProjectSettingsView = { config, projects, isGit, mode, all: allDraft, each: eachDraft, index: projectIndex, help, saveError: projectsError };
     return (
       <WizardFrame {...frame} onContinue={() => void continueProjects()}>
-        <ProjectSettingsStep view={view} onMode={setMode} onChange={changeSetting} onIndex={setProjectIndex} />
+        <ProjectSettingsStep view={view} onMode={setMode} onChange={changeSetting} onIndex={setProjectIndex} onHelp={(setting) => setHelp((open) => (open === setting ? undefined : setting))} />
       </WizardFrame>
     );
   }

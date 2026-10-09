@@ -222,7 +222,7 @@ function settingsView(patch: Partial<ProjectSettingsView> = {}): ProjectSettings
   config.repos = projects;
   return { config, projects, isGit: (id) => id !== projects[2].id, mode: "all", all: {}, each: new Map(), index: 0, ...patch };
 }
-const settingsHandlers = { onMode: noop, onChange: noop, onIndex: noop };
+const settingsHandlers = { onMode: noop, onChange: noop, onIndex: noop, onHelp: noop };
 const labelsOf = (node: unknown) => byTag(node as never, "select").map((el) => String(el.props["aria-label"]));
 
 test("Same settings for all projects shows every setting with its default and how many projects it applies to", () => {
@@ -234,6 +234,29 @@ test("Same settings for all projects shows every setting with its default and ho
   expect(text).toContain("Applies to 2 of 3 projects.");
   expect(text).not.toContain("saved at once");
   expect(byTag(step, "input").filter((el) => el.props.type === "radio").map((el) => el.props.checked)).toEqual([true, false]);
+});
+
+test("each setting's explanation is behind a help icon, in an overlay", () => {
+  const closed = ProjectSettingsStep({ view: settingsView(), ...settingsHandlers });
+  // Not inline: only the default and the count are shown.
+  expect(textOf(closed)).not.toContain("only fetches");
+  const helpButtons = byTag(closed, "button").filter((el) => String(el.props["aria-label"]).startsWith("About "));
+  expect(helpButtons.map((el) => [el.props["aria-label"], el.props["aria-expanded"]])).toEqual([
+    ["About Agent sessions", false],
+    ["About Agent", false],
+    ["About PR titles", false],
+    ["About Docs auto-merge", false],
+    ["About Auto fetch", false],
+  ]);
+  const toggled: string[] = [];
+  const open = ProjectSettingsStep({ view: settingsView({ help: "autoFetch" }), ...settingsHandlers, onHelp: (s) => toggled.push(s) });
+  const button = byTag(open, "button").find((el) => el.props["aria-label"] === "About Auto fetch");
+  expect(button?.props["aria-expanded"]).toBe(true);
+  const overlay = byTag(open, "span").find((el) => el.props.id === button?.props["aria-controls"]);
+  expect(textOf(overlay)).toContain("only fetches");
+  expect(byTag(open, "span").filter((el) => el.props.class === "setup-help-overlay")).toHaveLength(1);
+  (button!.props.onClick as () => void)();
+  expect(toggled).toEqual(["autoFetch"]);
 });
 
 test("a mixed value reads Keep each project's setting", () => {
@@ -249,7 +272,9 @@ test("Individual settings walks through the projects one at a time", () => {
   const step = ProjectSettingsStep({ view, ...settingsHandlers });
   expect(textOf(step)).toContain("Project 2 of 3");
   expect(textOf(step)).toContain("demo-ops");
-  const buttons = byTag(step, "button").map((el) => [textOf(el), el.props.disabled]);
+  const buttons = byTag(step, "button")
+    .filter((el) => !String(el.props["aria-label"] ?? "").startsWith("About "))
+    .map((el) => [textOf(el), el.props.disabled]);
   expect(buttons).toEqual([
     ["Previous project", false],
     ["Next project", false],
