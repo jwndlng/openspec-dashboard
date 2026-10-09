@@ -8,4 +8,4 @@
 
 ## 2. Release
 
-- [~] 2.1 After merging, publish the next draft release and confirm the run attaches the four binaries, `Spec-Control-<tag>-darwin-arm64.dmg` and `SHA256SUMS`; decide what to do with the empty `v0.7.0` release
+- [x] 2.1 After merging, publish the next draft release and confirm the run attaches the four binaries, `Spec-Control-<tag>-darwin-arm64.dmg` and `SHA256SUMS`; decide what to do with the empty `v0.7.0` release
