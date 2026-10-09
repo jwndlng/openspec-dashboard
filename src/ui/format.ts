@@ -44,6 +44,14 @@ export function splitBranchLabel(name: string, tailLength = 16, nudge = 4): { he
   return { head: name.slice(0, start), tail: name.slice(start) };
 }
 
+/** A path split for a head-clipped badge: everything up to the last separator, and the last segment that always shows. */
+export function splitPathLabel(path: string): { head: string; tail: string } {
+  const trimmed = path.replace(/\/+$/, "");
+  const cut = trimmed.lastIndexOf("/");
+  if (cut <= 0) return { head: trimmed, tail: "" };
+  return { head: trimmed.slice(0, cut + 1), tail: trimmed.slice(cut + 1) };
+}
+
 /**
  * Tooltip for a card's branch badge: where the change's data comes from, and which other checkouts hold a copy that
  * is at a different point.
