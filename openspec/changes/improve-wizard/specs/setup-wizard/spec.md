@@ -119,7 +119,9 @@ entries. Continuing with nothing entered and nothing checked SHALL save nothing.
 The Agents step SHALL state, as the Agent sessions section of Settings does, that enabling agent sessions lets the
 dashboard start the chosen programs on this machine, that an agent can change files and run commands as the user allows
 it to, that each session works in its own worktree under the dashboard home, and that it applies to every tracked
-repository unless switched off for a project. It SHALL offer a switch for agent sessions, showing the saved value.
+repository unless switched off for a project. It SHALL offer a switch for agent sessions, switched on by default:
+while agent sessions are off in the saved configuration it SHALL start checked, so that **Continue** switches them on
+unless the user unchecks it; while they are on it SHALL show them on and SHALL NOT switch them off.
 
 It SHALL list the configured profiles and every preset not configured yet, each with a checkbox and marked found or not
 found on this machine, found ones first. Configured profiles SHALL be shown checked and SHALL NOT be uncheckable, since
@@ -137,11 +139,10 @@ The step SHALL offer a choice of the **default agent** among the checked agents.
 preselected when it is checked and its executable is found, otherwise the first checked agent that is found, otherwise
 the configured default.
 
-**Continue** SHALL save: agent sessions switched on if the user switched them on; every checked preset and every custom
+**Continue** SHALL save: agent sessions switched on unless the user unchecked the switch; every checked preset and every custom
 agent that is not configured yet added as a profile, in the order listed; and the chosen agent as the default. It
 SHALL NOT switch agent sessions off, remove or edit a configured profile, or change any repository's agent settings.
-If the user left agent sessions off, checked nothing new and chose the current default, **Continue** SHALL save
-nothing.
+If the user unchecked the switch, checked nothing new and chose the current default, **Continue** SHALL save nothing.
 
 #### Scenario: Several agents installed
 - **WHEN** `claude` and `codex` are found, `agy` is not, agent sessions are off and only the Claude Code profile is configured
@@ -149,10 +150,10 @@ nothing.
 
 #### Scenario: Switching on with an installed preset
 - **WHEN** `codex` is found, `claude` is not, agent sessions are off and only the Claude Code profile is configured
-- **THEN** Codex is checked and preselected as the default agent; switching agent sessions on and continuing saves agent sessions enabled, the Codex profile added and made the default, and the Claude Code profile kept
+- **THEN** Codex is checked and preselected as the default agent; continuing with agent sessions switched on saves agent sessions enabled, the Codex profile added and made the default, and the Claude Code profile kept
 
 #### Scenario: Adding two agents
-- **WHEN** the user keeps Codex checked, also checks Antigravity, switches agent sessions on, chooses Codex as the default and continues
+- **WHEN** the user keeps Codex checked, also checks Antigravity, keeps agent sessions switched on, chooses Codex as the default and continues
 - **THEN** the saved configuration has agent sessions enabled, the profiles Claude Code, Codex and Antigravity, Codex as the default agent, and every repository's agent settings unchanged
 
 #### Scenario: A custom agent
@@ -171,8 +172,12 @@ nothing.
 - **WHEN** the Agents step is shown
 - **THEN** it says that an agent can change files and run commands as the user allows it to, and that sessions work in their own worktree
 
+#### Scenario: On by default
+- **WHEN** agent sessions are off in the saved configuration and the Agents step is shown
+- **THEN** **Turn agent sessions on** is checked, and continuing without touching it saves agent sessions enabled
+
 #### Scenario: Leaving it off
-- **WHEN** the user continues from the Agents step without switching agent sessions on, without checking a new agent and without changing the default agent
+- **WHEN** the user unchecks **Turn agent sessions on** and continues without checking a new agent and without changing the default agent
 - **THEN** no configuration is saved by the step
 
 ### Requirement: The Done step summarises and ends setup

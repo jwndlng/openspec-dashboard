@@ -30,6 +30,7 @@
 - [x] 4.6 Welcome: show the five steps as a connected diagram (numbered nodes with icon, name and one line, then a "Ready" node), across on wide viewports and down on narrow ones, an ordered list for assistive technology with connectors and icons hidden. Verify with a view test of the list and in headless Chrome at 1440px and 400px, light and dark
 - [x] 4.7 Step list: every step before the current one green with a check mark and announced as done (`, done`, visually hidden). Verify with the frame view test and in headless Chrome on the Console step, light and dark
 - [x] 4.8 Automatic fetch waits for setup: `AutoFetcher` arms no timer and skips a due fetch while `setup` is pending, and `POST /api/setup/done` re-plans it; `repository-pull` delta and CLAUDE.md invariant 1 updated. Verify with `test/autoFetch.test.ts` ("nothing is fetched while setup is pending…")
+- [x] 4.9 Agents: **Turn agent sessions on** starts checked while sessions are off (the configuration default stays off); the wizard's selects draw their own chevron inset from the right edge; the step title keeps its line and the step list wraps below it. Verify in headless Chrome (the box is checked on a fresh home; chevrons and header at 1440px and 400px, light and dark)
 
 ## 5. Layout
 

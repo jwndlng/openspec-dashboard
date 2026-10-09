@@ -771,7 +771,8 @@ export function SetupWizard({ config, snapshot, onSaved, onClose }: { config: Co
 
   // Agents.
   const [availability, setAvailability] = useState<{ agents: AgentAvailability[]; presets: AgentAvailability[] }>();
-  const [enable, setEnable] = useState(false);
+  // Switched on by default: continuing past the Agents step, which states what sessions may do, turns them on.
+  const [enable, setEnable] = useState(true);
   const [checked, setChecked] = useState<string[]>();
   const [custom, setCustom] = useState<CustomAgent[]>([]);
   const [defaultAgent, setDefaultAgent] = useState<string>();

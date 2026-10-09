@@ -89,7 +89,8 @@ your own, and choose the default; choose the agent the top-bar **console** runs;
 Docs auto-merge, auto fetch and more), the same for all of them or one project at a time; and check the tools Spec
 Control relies on, with the command to install whatever is missing — shown for you to copy, never run. Every step can
 be skipped and changed later in **Settings** or on **Projects**, and **Help → Run setup again** opens it once more.
-Agent sessions stay off unless you turn them on.
+Agent sessions are off until you turn them on; setup offers that switched on, so continuing past its Agents
+step turns them on unless you uncheck it.
 
 **From source.** Needs [Bun](https://bun.sh) ≥ 1.4.
 

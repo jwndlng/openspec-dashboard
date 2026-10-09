@@ -883,7 +883,9 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: 
 .modal.setup-wizard { width: min(960px, 100%); height: min(720px, 100%); }
 .setup-head { flex-wrap: wrap; align-items: flex-end; gap: 12px 24px; padding: 24px 32px 20px; }
 .setup-position { margin: 0 0 4px; font-size: 12px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--brand-fg); }
-.setup-head h2 { font-size: 22px; }
+.setup-head h2 { font-size: 22px; white-space: nowrap; }
+/* The title keeps its line; the step list wraps below it when both do not fit. */
+.setup-head .modal-title { flex: 1 0 auto; }
 .setup-head h2:focus { outline: none; }
 .setup-steps { display: flex; flex-wrap: wrap; gap: 6px 8px; margin: 0; padding: 0; list-style: none; font-size: 13px; }
 .setup-steps li { display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--border-light); color: var(--fg-subtle); }
@@ -933,7 +935,13 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: 
 .setup-wizard .btn { padding: 8px 16px; justify-content: center; }
 .setup-wizard .btn.sm { padding: 6px 12px; }
 .setup-wizard .input { padding: 8px 12px; }
-.setup-wizard select.input { padding-right: 28px; }
+/* The wizard's selects draw their own chevron, in the text colour and inset from the right edge, instead of the
+   browser's arrow pressed against the border. */
+.setup-wizard select.input {
+  appearance: none; -webkit-appearance: none; padding-right: 40px; cursor: pointer;
+  background-image: linear-gradient(45deg, transparent 50%, var(--fg-subtle) 50%), linear-gradient(135deg, var(--fg-subtle) 50%, transparent 50%);
+  background-position: calc(100% - 21px) 50%, calc(100% - 16px) 50%; background-size: 5px 5px; background-repeat: no-repeat;
+}
 .setup-wizard textarea.input { min-height: 64px; }
 .setup-wizard .check { gap: 10px; min-height: 32px; }
 .setup-wizard .check input { width: 18px; height: 18px; flex: none; }
@@ -964,7 +972,7 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: 
 .setup-setting-control { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; min-width: 0; }
 /* The dialog's compact pickers, at the wizard's size; one higher in specificity than their own rule. */
 .setup-setting-control .input, .setup-setting-control .input.agent-picker, .setup-setting-control .input.pr-titles-picker, .setup-setting-control .input.auto-fetch-picker {
-  width: min(320px, 100%); max-width: none; height: 40px; padding: 8px 28px 8px 12px; font-size: 14px;
+  width: min(320px, 100%); max-width: none; height: 40px; padding: 8px 40px 8px 12px; font-size: 14px;
 }
 .setup-project-head { display: grid; gap: 2px; padding: 18px 0 6px; }
 .setup-project-head h3 { margin: 0; font-size: 18px; color: var(--fg-heading); }

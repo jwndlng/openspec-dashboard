@@ -22,6 +22,9 @@ project's settings, all in a larger, roomier dialog.
   default. The user can also add a custom agent with a name and a command. The user picks the **default agent** among
   the checked ones. Continue adds every checked preset and custom agent as a profile. As before, the wizard never
   removes or edits a profile and never switches agent sessions off.
+- **Agent sessions switched on by default in the wizard.** The Agents step's **Turn agent sessions on** starts checked,
+  next to the statement of what sessions may do; continuing turns them on unless the user unchecks it. The
+  configuration's own default stays off, so nothing changes for a user who skips setup or upgrades.
 - **New step, Console.** It explains the main console: an agent with no change and no repository, run in the console
   folder, opened from the top bar, for questions and work across projects. When more than one profile is configured
   the user chooses the **console agent** there: the default agent, or any configured profile.
