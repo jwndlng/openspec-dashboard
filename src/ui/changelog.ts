@@ -15,6 +15,13 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    id: "2026-10-09-update-notice",
+    date: "2026-10-09",
+    title: "Know when a new version is out",
+    summary:
+      "A banner at the top now tells you when a newer Spec Control is released, with its release notes and how to update — in the browser and in the macOS app. It asks github.com once a day, sending only the version you run. Turn it off, or **Check now**, in **Settings → Updates**.",
+  },
+  {
     id: "2026-10-09-activity-charts",
     date: "2026-10-09",
     title: "Activity in charts",

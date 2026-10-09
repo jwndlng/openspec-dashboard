@@ -3,7 +3,7 @@ import { currentSection, navOffset, parseSection, rowScrollLeft, SECTION_IDS, se
 import { hrefWithQuery } from "../src/ui/url.ts";
 
 test("Settings lists no repository section", () => {
-  expect([...SECTION_IDS]).toEqual(["roots", "scanning", "agents", "shared-config", "environment"]);
+  expect([...SECTION_IDS]).toEqual(["roots", "scanning", "agents", "shared-config", "updates", "environment"]);
 });
 
 test("parseSection accepts known ids only", () => {
@@ -41,12 +41,12 @@ test("a section becomes current when its start reaches the top of the view", () 
 });
 
 test("at the end of the scroll range the last section is current, however short it is", () => {
-  expect(currentSection(rects(-1500, -1300, -400, 300, 420), true)).toBe("environment");
+  expect(currentSection(rects(-1500, -1300, -400, 300, 360, 420), true)).toBe("environment");
 });
 
 test("reaching the end does not move the navigation: the last entry is marked, the section at the top places it", () => {
-  // Shared OpenSpec config fills the top of the view; the short Environment section is below it, at the end.
-  const atTheEnd = rects(-1500, -1300, -400, -40, 420);
+  // Shared OpenSpec config fills the top of the view; the short Updates and Environment sections are below it, at the end.
+  const atTheEnd = rects(-1500, -1300, -400, -40, 300, 420);
   expect(currentSection(atTheEnd, true)).toBe("environment");
   // What useSectionNav reports as the anchor the wide navigation is placed by.
   expect(currentSection(atTheEnd, false)).toBe("shared-config");

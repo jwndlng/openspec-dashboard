@@ -59,6 +59,11 @@ export function activityLogPath(): string {
   return join(dashboardHome(), "activity.jsonl");
 }
 
+/** The last update check's time and outcome (openspec/specs/update-notice). A cache: missing means never checked. */
+export function updateCheckPath(): string {
+  return join(dashboardHome(), "update-check.json");
+}
+
 export function cachePath(): string {
   return join(dashboardHome(), "cache", "snapshot.json");
 }

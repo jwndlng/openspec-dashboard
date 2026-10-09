@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "preact/hooks";
-import type { Config, DiscoveredRepo, DiscoverResult, IntegratableRepo, Snapshot } from "../shared/types.ts";
+import type { Config, DiscoveredRepo, DiscoverResult, IntegratableRepo, Snapshot, UpdateStatus } from "../shared/types.ts";
+import { isReleaseVersion } from "../shared/versions.ts";
 import { AgentSettings } from "./agentSettings.tsx";
 import { api, ApiError } from "./api.ts";
 import { EnvironmentPanel } from "./environment.tsx";
@@ -7,6 +8,7 @@ import { environmentAttention, environmentCount, type EnvironmentState } from ".
 import { type NavSection, SectionList, SectionNav, type SectionPage, useSectionNav } from "./sectionNav.tsx";
 import { SECTION_IDS } from "./settingsSections.ts";
 import { SharedConfigPanel } from "./sharedConfig.tsx";
+import { releaseUrl } from "./updateBanner.tsx";
 import { followInApp, href } from "./url.ts";
 
 export const SETTINGS_PAGE: SectionPage = {
@@ -29,9 +31,13 @@ interface Props {
   environment: EnvironmentState;
   /** **Re-check**: asks for a fresh report. Nothing about it belongs to the page's draft. */
   onRecheckEnvironment: () => void;
+  /** What the server last learned about newer releases, owned by the app shell: the banner reads the same one. */
+  update: UpdateStatus | undefined;
+  /** **Check now** answered: the shell keeps the new status, so the banner follows at once. */
+  onUpdate: (status: UpdateStatus) => void;
 }
 
-export function Settings({ config, snapshot, onSaved, onRescan, environment, onRecheckEnvironment }: Props) {
+export function Settings({ config, snapshot, onSaved, onRescan, environment, onRecheckEnvironment, update: updateStatus, onUpdate }: Props) {
   const [draft, setDraft] = useState<Config | null>(config);
   const [dirty, setDirty] = useState(false);
   const [newRoot, setNewRoot] = useState("");
@@ -44,6 +50,8 @@ export function Settings({ config, snapshot, onSaved, onRescan, environment, onR
   const [discoverErrors, setDiscoverErrors] = useState<DiscoverResult["errors"]>([]);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ kind: "ok" | "danger"; text: string; issues?: string[] } | null>(null);
+  const [checkingUpdate, setCheckingUpdate] = useState(false);
+  const [updateError, setUpdateError] = useState<string>();
 
   useEffect(() => {
     if (config && !dirty) setDraft(config);
@@ -88,7 +96,7 @@ export function Settings({ config, snapshot, onSaved, onRescan, environment, onR
 
   // Hooks first: the ids are all the hook needs, and they are known before the draft is.
   const scroller = useRef<HTMLDivElement>(null);
-  const sectionIds = draft ? ["roots", "scanning", "agents", ...(config ? ["shared-config"] : []), "environment"] : [];
+  const sectionIds = draft ? ["roots", "scanning", "agents", ...(config ? ["shared-config"] : []), "updates", "environment"] : [];
   const nav = useSectionNav(scroller, sectionIds, SETTINGS_PAGE);
 
   if (!draft) return <div class="settings">Loading…</div>;
@@ -138,6 +146,19 @@ export function Settings({ config, snapshot, onSaved, onRescan, environment, onR
       setMessage({ kind: "danger", text: err instanceof Error ? err.message : String(err), issues: err instanceof ApiError ? err.issues : [] });
     } finally {
       setSaving(false);
+    }
+  };
+
+  /** **Check now**: outside the draft, like Re-check; the answer goes to the shell, which the banner reads. */
+  const checkForUpdate = async () => {
+    setCheckingUpdate(true);
+    setUpdateError(undefined);
+    try {
+      onUpdate(await api.checkForUpdate());
+    } catch (err) {
+      setUpdateError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setCheckingUpdate(false);
     }
   };
 
@@ -228,6 +249,20 @@ export function Settings({ config, snapshot, onSaved, onRescan, environment, onR
     { id: "agents", label: "Agent sessions", content: <AgentSettings draft={draft} update={update} /> },
     // Works on the saved config, not the draft above: it has its own save and only ever targets tracked repositories.
     ...(config ? [{ id: "shared-config", label: "Shared OpenSpec config", content: <SharedConfigPanel config={config} snapshot={snapshot} onApplied={onRescan} /> }] : []),
+    {
+      id: "updates",
+      label: "Updates",
+      content: (
+        <UpdatesPanel
+          status={updateStatus}
+          on={draft.updateCheck !== false}
+          onToggle={(on) => update({ updateCheck: on ? undefined : false })}
+          checking={checkingUpdate}
+          error={updateError}
+          onCheck={() => void checkForUpdate()}
+        />
+      ),
+    },
     // Last: it configures nothing, and it is where the hero's environment indicator links to. Outside the draft, so
     // re-checking never marks the page as having unsaved changes.
     {
@@ -294,5 +329,64 @@ export function FoundSummary({ candidates, integratable }: { candidates: number;
       </a>
       . Save first if you changed the roots.
     </>
+  );
+}
+
+/** Why Check now cannot run, in words; undefined when it can. `on` is the switch as drafted, saved or not. */
+export function updateCheckBlocked(status: UpdateStatus | undefined, on: boolean): string | undefined {
+  if (status && !isReleaseVersion(status.current)) {
+    return status.current === "dev" ? "Development builds do not check for new versions." : status.current === "demo" ? "The demo does not check for new versions." : "This build does not check for new versions.";
+  }
+  if (!on) return "Turned off: nothing is requested.";
+  if (status && !status.enabled) return "Save to turn checking on.";
+  return undefined;
+}
+
+/** The last check in words: when, and what came of it. */
+export function lastCheckText(status: UpdateStatus): string {
+  if (status.outcome === "never" || status.checkedAt === undefined) return "Not checked yet.";
+  const when = new Date(status.checkedAt).toLocaleString();
+  if (status.outcome === "failed") return `The last check, ${when}, failed${status.latest ? ` — the latest release known is ${status.latest}` : ""}.`;
+  return status.available ? `Checked ${when}: ${status.latest} is available.` : `Checked ${when}: up to date.`;
+}
+
+/** The Updates section (openspec/specs/update-notice). Hook-free: the switch belongs to the draft, the status to the shell. */
+export function UpdatesPanel({ status, on, onToggle, checking, error, onCheck }: { status: UpdateStatus | undefined; on: boolean; onToggle: (on: boolean) => void; checking: boolean; error: string | undefined; onCheck: () => void }) {
+  const blocked = updateCheckBlocked(status, on);
+  return (
+    <section class="panel">
+      <h2>Updates</h2>
+      <p class="hint">
+        Once a day Spec Control asks github.com for the tag of its latest release: one request that carries only the version you run, nothing about you, this machine or your
+        projects. When a newer release exists, a banner at the top says so. Nothing is downloaded or installed.
+      </p>
+      <label class="check">
+        <input type="checkbox" checked={on} onChange={(e) => onToggle(e.currentTarget.checked)} />
+        Check for new versions
+      </label>
+      <div class="row">
+        <span>
+          Running <code>{status?.current ?? "…"}</code>
+        </span>
+        <button type="button" class="btn sm" onClick={onCheck} disabled={checking || blocked !== undefined || status === undefined}>
+          {checking ? "Checking…" : "Check now"}
+        </button>
+        {blocked !== undefined && <span class="hint">{blocked}</span>}
+      </div>
+      {status && isReleaseVersion(status.current) && (
+        <p class="hint" aria-live="polite">
+          {lastCheckText(status)}
+          {status.available && status.latest && (
+            <>
+              {" "}
+              <a href={releaseUrl(status.latest)} target="_blank" rel="noopener noreferrer">
+                Release notes
+              </a>
+            </>
+          )}
+        </p>
+      )}
+      {error !== undefined && <div class="notice danger">The check could not run: {error}</div>}
+    </section>
   );
 }

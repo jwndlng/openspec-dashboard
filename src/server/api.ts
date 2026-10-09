@@ -3,7 +3,7 @@ import { availableName } from "../shared/nameHints.ts";
 import { labelKey } from "../shared/labels.ts";
 import { MAX_PAGE, type ActivityLog, type PageQuery } from "./activity/log.ts";
 import { isTimeZone, pageEvents } from "../shared/activity.ts";
-import type { AutoFetchSeconds, CleanupSelection, Config, DiscoverResult, PullBlockingFile, PullRequestsResponse, PullResult, PullResolve, RepoConfig, RepoSnapshot, ScanTriggerResult, SharedConfigApplyResult, SharedConfigAssignment, SharedConfigPreview } from "../shared/types.ts";
+import type { AutoFetchSeconds, CleanupSelection, Config, DiscoverResult, PullBlockingFile, PullRequestsResponse, PullResult, PullResolve, RepoConfig, RepoSnapshot, ScanTriggerResult, SharedConfigApplyResult, SharedConfigAssignment, SharedConfigPreview, UpdateStatus } from "../shared/types.ts";
 import type { AutoFetcher } from "./autoFetch.ts";
 import { applyCleanup, CleanupBusyError, previewCleanup } from "./cleanup.ts";
 import { changeDirFor, listArtifactFiles, readArtifactFile } from "./artifacts.ts";
@@ -23,6 +23,7 @@ import { applyTo, EMPTY_SHARED_CONFIG, loadSharedConfig, previewFor, SharedConfi
 import { SessionError, type SessionManager } from "./sessions/manager.ts";
 import { LocalRepoSource } from "./source.ts";
 import { frameworkById } from "./frameworks/registry.ts";
+import type { UpdateChecker } from "./updateCheck.ts";
 import { VERSION } from "./version.ts";
 
 export interface AppState {
@@ -38,6 +39,8 @@ export interface AppState {
   issues?: Issues;
   /** The auto-fetch schedule. Absent in contexts that never fetch on their own (tests, unless they bring one). */
   autoFetcher?: AutoFetcher;
+  /** The update check (openspec/specs/update-notice). Absent in contexts that never check; the endpoints then report it off. */
+  updateChecker?: UpdateChecker;
 }
 
 /** The part of Bun's server object the handler needs: upgrading the terminal request to a WebSocket. */
@@ -103,6 +106,8 @@ function afterConfigChange(state: AppState, previous: Config): void {
   state.pullRequests?.forgetOrigins();
   // An auto-fetch setting, or the set of enabled repositories, may have changed: re-arm at once, without fetching.
   state.autoFetcher?.plan();
+  // Check for new versions may have been turned off (cancel the planned check at once) or on (plan the next one).
+  state.updateChecker?.plan();
   if (state.config.pollIntervalSeconds !== previous.pollIntervalSeconds) {
     state.scanner.start(); // reschedules and kicks off a scan
   } else if (enabledIds(state.config) !== enabledIds(previous)) {
@@ -996,6 +1001,18 @@ async function postWorktreeRemove(state: AppState, req: Request): Promise<Respon
   }
 }
 
+/** What `GET /api/update` answers: the last check's outcome, without a request. Off where no checker runs. */
+function updateStatus(state: AppState): UpdateStatus {
+  return state.updateChecker?.status() ?? { enabled: false, current: VERSION, outcome: "never", available: false };
+}
+
+/** Check now: joins a check already running; refused while checks are off or the build is not a release. */
+async function postUpdateCheck(state: AppState): Promise<Response> {
+  const checker = state.updateChecker;
+  if (!checker?.enabled()) return json({ error: "checking for new versions is turned off", ...updateStatus(state) }, 409);
+  return json(await checker.check());
+}
+
 export function createFetchHandler({ state, indexHtml }: AppOptions): (req: Request, server?: ServerLike) => Promise<Response> {
   return async (req, server) => {
     const url = new URL(req.url);
@@ -1022,6 +1039,8 @@ export function createFetchHandler({ state, indexHtml }: AppOptions): (req: Requ
         return json(await environmentReport(state.config, state.scanner.snapshot, { force: url.searchParams.get("force") === "1" }));
       }
       if (req.method === "GET" && pathname === "/api/activity") return getActivity(state, url);
+      if (req.method === "GET" && pathname === "/api/update") return json(updateStatus(state));
+      if (req.method === "POST" && pathname === "/api/update/check") return postUpdateCheck(state);
       if (req.method === "GET" && pathname === "/api/config") return json(state.config);
       if (req.method === "PUT" && pathname === "/api/config") return putConfig(state, req);
       if (req.method === "POST" && pathname === "/api/discover") return postDiscover(state, req);

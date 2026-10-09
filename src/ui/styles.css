@@ -983,6 +983,19 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: 
 .app-notice { display: flex; align-items: center; gap: 8px; margin: 8px 16px 0; background: var(--bg-section); }
 .app-notice span { flex: 1; min-width: 0; }
 
+/* ---- Update banner (openspec/specs/update-notice): one thin line above the header, wrapping on a narrow screen ---- */
+.update-banner-region { flex: none; }
+.update-banner {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 4px var(--gap-2);
+  padding: 4px var(--gap-2); font-size: 12px; line-height: 1.4;
+  background: var(--brand-softer); color: var(--brand-fg); border-bottom: 1px solid var(--brand-soft);
+}
+.update-banner-text { min-width: 0; overflow-wrap: anywhere; }
+.update-banner strong { font-weight: 600; color: var(--fg-heading); }
+.update-banner a { color: var(--brand-fg); text-decoration: underline; text-underline-offset: 2px; }
+.update-banner a:hover { color: var(--fg-heading); }
+.update-banner .update-banner-dismiss { color: var(--brand-fg); padding: 0 6px; min-height: 0; }
+
 /* ---- Empty / notices ---- */
 .empty {
   margin: var(--gap-4) auto; max-width: 480px; text-align: center; padding: var(--gap-3);
