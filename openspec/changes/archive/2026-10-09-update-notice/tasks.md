@@ -22,7 +22,7 @@
 
 - [x] 4.1 Add `updateStatus()` and `checkForUpdate()` to `src/ui/api.ts` and the matching answers to `src/ui/demo/demoApi.ts` (`enabled: false`, `current: "demo"`, check refused); verify with the demo API test that no request leaves the page
 - [x] 4.2 Build `src/ui/updateBanner.tsx` with a pure `bannerVersion(status, dismissed)` helper, mounted above the header in `src/ui/app.tsx`: text, Release notes and How to update links (new tab), dismiss stored under `spec-control.updateDismissed` with try/catch, polite live region, keyboard reachable, re-read on load and hourly; verify with UI tests for available, dismissed, newer-than-dismissed, disabled and not-available cases
-- [~] 4.3 Style the banner in `src/ui/styles.css` for light and dark themes and narrow screens; verify by running the dashboard with a stubbed status and checking a 360 px wide window has no horizontal scroll
+- [x] 4.3 Style the banner in `src/ui/styles.css` for light and dark themes and narrow screens; verify by running the dashboard with a stubbed status and checking a 360 px wide window has no horizontal scroll
 - [x] 4.4 Add `"updates"` before `"environment"` in `SECTION_IDS` and the Updates section in `src/ui/settings.tsx`: the Check for new versions switch in the draft, the running version, last check and outcome, Check now (disabled while off, while the draft turns it off, and for `dev` with the reason shown), and a re-read of the banner after a save that changes the setting; verify with settings tests for the section order, the `?section=updates` deep link and the disabled states
 - [x] 4.5 Explain the update notice, what it sends and how to turn it off in `src/ui/helpContent.tsx`; verify the help page renders the new text
 
@@ -33,5 +33,5 @@
 
 ## 6. Verification and What's new
 
-- [~] 6.1 Run `bun run check` and `bun run build`, start `dist/spec-control` built with `SPEC_CONTROL_VERSION=v0.0.1`, and confirm `GET /api/update` reports a check about a minute later and the banner appears; confirm a plain `bun run build` (`dev`) makes no request
+- [x] 6.1 Run `bun run check` and `bun run build`, start `dist/spec-control` built with `SPEC_CONTROL_VERSION=v0.0.1`, and confirm `GET /api/update` reports a check about a minute later and the banner appears; confirm a plain `bun run build` (`dev`) makes no request
 - [x] 6.2 Add a What's new entry at the top of `src/ui/changelog.ts` announcing the update notice and the Settings → Updates switch; verify the What's new dialog shows it
