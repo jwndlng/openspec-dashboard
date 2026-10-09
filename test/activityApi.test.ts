@@ -103,6 +103,13 @@ test("paging, filters and validation", async () => {
   expect(onlyTasks.summary).toEqual({ ...NO_FIGURES, tasksCompleted: 1 });
   expect((await page("?repos=unknown")).summary).toEqual(NO_FIGURES);
   expect(onlyTasks.metrics?.repos.map((r) => r.repoId)).toEqual([repoId]);
+  // The charts' breakdowns follow the filters too: only the tasks group, on the day and in the hour it happened.
+  expect(onlyTasks.metrics?.repos[0].groups).toEqual({ changes: 0, tasks: 1, sessions: 0, repositories: 0 });
+  const totals = (p: ActivityPage) => p.metrics?.days.reduce((n, d) => n + d.groups.tasks + d.groups.changes + d.groups.sessions + d.groups.repositories, 0);
+  expect(totals(onlyTasks)).toBe(1);
+  expect(onlyTasks.metrics?.days.reduce((n, d) => n + d.hours.reduce((a, b) => a + b, 0), 0)).toBe(1);
+  expect(onlyTasks.metrics?.days.reduce((n, d) => n + d.figures.tasksCompleted, 0)).toBe(1);
+  expect(totals(first)).toBe(3);
   expect((await page("?repos=unknown")).metrics).toEqual(QUIET);
   // Days are the client's: the last one is today where the client is, also when that differs from UTC.
   const zurich = await page("?tz=Europe/Zurich");

@@ -15,6 +15,13 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    id: "2026-10-09-activity-charts",
+    date: "2026-10-09",
+    title: "Activity in charts",
+    summary:
+      "**Activity** now opens with tiles that show each figure's trend over the week, events per day stacked by kind, a heatmap of the hours you worked and each project's activity by kind. Hover or focus a chart for its numbers, or switch to **Table** to read them all.",
+  },
+  {
     id: "2026-10-08-styled-dmg-installer",
     date: "2026-10-08",
     title: "The Mac app's disk image shows how to install it",

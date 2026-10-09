@@ -27,6 +27,7 @@ const moved = (atMs: number, change: string, from: string, to: string, repoId?: 
 const progress = (atMs: number, change: string, from: number, to: number, total = 12): ActivityEvent => ({ ...base(atMs), kind: "tasks-progress", change, column: "Implementing", from: { done: from, total }, to: { done: to, total } });
 const started = (atMs: number, change: string): ActivityEvent => ({ ...base(atMs), kind: "session-started", change, action: "implement", agentName: "Fake Agent" });
 const NO_FIGURES = { created: 0, moved: 0, archived: 0, tasksCompleted: 0, sessions: 0, attention: 0 };
+const NO_GROUPS = { changes: 0, tasks: 0, sessions: 0, repositories: 0 };
 /** Metrics of nothing: the days of the window are still listed, each at zero. */
 const QUIET = expect.objectContaining({ events: 0, changes: 0, repos: [] });
 const file = (name: string) => join(dir, name, "activity.jsonl");
@@ -293,9 +294,11 @@ test("a week per day: every day of the window, quiet ones at zero, events and di
   const thursday = Array.from({ length: 40 }, (_, i) => progress(Date.parse("2026-10-01T08:00:00.000Z") + i * MIN, `c${i % 9}`, 0, 1));
   const m = measure([...thursday, ...today], now, "UTC");
   expect(m.days.map((d) => d.day)).toEqual(["2026-09-30", "2026-10-01", "2026-10-02", "2026-10-03", "2026-10-04", "2026-10-05", "2026-10-06", "2026-10-07"]);
-  expect(m.days[1]).toEqual({ day: "2026-10-01", events: 40, changes: 9 });
-  expect(m.days[6]).toEqual({ day: "2026-10-06", events: 0, changes: 0 });
-  expect(m.days[7]).toEqual({ day: "2026-10-07", events: 12, changes: 3 });
+  expect(m.days[1]).toMatchObject({ day: "2026-10-01", events: 40, changes: 9, groups: { changes: 0, tasks: 40, sessions: 0, repositories: 0 } });
+  expect(m.days[1].figures.tasksCompleted).toBe(40);
+  expect(m.days[6]).toEqual({ day: "2026-10-06", events: 0, changes: 0, groups: NO_GROUPS, figures: NO_FIGURES, hours: new Array(24).fill(0) });
+  expect(m.days[7]).toMatchObject({ day: "2026-10-07", events: 12, changes: 3, groups: { changes: 12, tasks: 0, sessions: 0, repositories: 0 } });
+  expect(m.days[7].figures.moved).toBe(12);
   expect(m.events).toBe(52);
   expect(m.changes).toBe(12);
 });
@@ -307,6 +310,21 @@ test("local days: an event counts on the day of its time in the requested zone",
   expect(count("Europe/Zurich")["2026-10-07"]).toBe(1);
   expect(count("Europe/Zurich")["2026-10-06"]).toBe(0);
   expect(count("UTC")["2026-10-06"]).toBe(1);
+  const hour = (tz: string) => measure([late], now, tz).days.flatMap((d) => d.hours.map((n, h) => (n ? `${d.day} ${h}` : ""))).filter(Boolean);
+  expect(hour("Europe/Zurich")).toEqual(["2026-10-07 1"]);
+  expect(hour("UTC")).toEqual(["2026-10-06 23"]);
+});
+
+test("breakdown of a day: per kind group, its own figures and its events per hour", () => {
+  const now = Date.parse("2026-10-07T18:00:00.000Z");
+  const created: ActivityEvent = { ...base(Date.parse("2026-10-07T09:10:00.000Z")), kind: "change-created", change: "a", to: "Drafts" };
+  const ticks = progress(Date.parse("2026-10-07T14:05:00.000Z"), "a", 1, 3, 4);
+  const session = started(Date.parse("2026-10-07T14:40:00.000Z"), "a");
+  const today = measure([created, ticks, session], now, "UTC").days.at(-1);
+  expect(today?.groups).toEqual({ changes: 1, tasks: 1, sessions: 1, repositories: 0 });
+  expect(today?.figures).toEqual({ ...NO_FIGURES, created: 1, tasksCompleted: 2, sessions: 1 });
+  expect(today?.hours.flatMap((n, h) => (n ? [[h, n]] : []))).toEqual([[9, 1], [14, 2]]);
+  expect(today?.hours).toHaveLength(24);
 });
 
 test("a daylight-saving week skips and repeats no day", () => {
@@ -328,9 +346,9 @@ test("per project: busiest first, distinct changes, repository events count as e
     tracked(T0 + MIN, "r3", "beta-soc"),
   ];
   expect(measure(events, now).repos).toEqual([
-    { repoId: "r1", repoName: "demo-ops", events: 30, changes: 4 },
-    { repoId: "r2", repoName: "alpha-infra", events: 13, changes: 5 },
-    { repoId: "r3", repoName: "beta-soc", events: 2, changes: 0 },
+    { repoId: "r1", repoName: "demo-ops", events: 30, changes: 4, groups: { ...NO_GROUPS, changes: 30 } },
+    { repoId: "r2", repoName: "alpha-infra", events: 13, changes: 5, groups: { ...NO_GROUPS, changes: 13 } },
+    { repoId: "r3", repoName: "beta-soc", events: 2, changes: 0, groups: { ...NO_GROUPS, repositories: 2 } },
   ]);
   const ties = [tracked(T0, "r9", "zeta"), tracked(T0, "r8", "eta")];
   expect(measure(ties, now).repos.map((r) => r.repoName)).toEqual(["eta", "zeta"]);
@@ -346,7 +364,7 @@ test("metrics count recorded events, follow the filters and come with the first 
   const page = pageEvents(ticks, {}, T0 + DAY);
   expect(page.events).toHaveLength(1);
   expect(page.metrics?.events).toBe(3);
-  expect(page.metrics?.repos).toEqual([{ repoId: "r1", repoName: "demo-ops", events: 3, changes: 1 }]);
+  expect(page.metrics?.repos).toEqual([{ repoId: "r1", repoName: "demo-ops", events: 3, changes: 1, groups: { ...NO_GROUPS, tasks: 3 } }]);
 
   const many = Array.from({ length: 350 }, (_, i) => moved(T0 + i * MIN, `m${i}`, "Drafts", "Ready", i % 2 ? "r2" : "r1"));
   const first = pageEvents(many, { limit: 100 }, T0 + DAY);

@@ -78,6 +78,16 @@
   --label-c: 0.1;
   --label-mix: 14%;
   --label-border-mix: 45%;
+  /* Activity charts (refactor-metrics-activity): the kind groups are identity, a fixed categorical order validated for
+     colour-vision deficiency against this theme's panel; the heatmap is magnitude, one blue ramp, brighter for more. */
+  --chart-changes: #3987e5;
+  --chart-tasks: #d95926;
+  --chart-sessions: #199e70;
+  --chart-repositories: #c98500;
+  --heat-1: #1c5cab;
+  --heat-2: #2a78d6;
+  --heat-3: #5598e7;
+  --heat-4: #9ec5f4;
 
   /* Rounder the larger the element: controls and badges, cards and fields, columns, panels and dialogs. */
   --radius-sm: 6px;
@@ -153,6 +163,14 @@
   --label-c: 0.12;
   --label-mix: 10%;
   --label-border-mix: 40%;
+  --chart-changes: #2a78d6;
+  --chart-tasks: #eb6834;
+  --chart-sessions: #1baf7a;
+  --chart-repositories: #eda100;
+  --heat-1: #6da7ec;
+  --heat-2: #2a78d6;
+  --heat-3: #1c5cab;
+  --heat-4: #0d366b;
 }
 
 *, *::before, *::after { box-sizing: border-box; }
@@ -1190,18 +1208,132 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: 
 .activity-entry.tone-danger .words { color: var(--danger); }
 .activity-entry.tone-ok .words { color: var(--success); }
 .activity-empty { max-width: 560px; padding: var(--gap-3) 0; }
-/* The summary strip scrolls away with the feed, so it never competes with the sticky day headings. */
-.activity-summary { width: 100%; max-width: 980px; display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--gap-1) var(--gap-3); padding: 10px 14px; background: var(--bg-section); border: 1px solid var(--border-light); border-radius: var(--radius-lg); }
-.activity-summary-span { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--fg-subtle); }
-.activity-figure { display: flex; align-items: baseline; gap: 6px; white-space: nowrap; }
-.activity-figure strong { font-family: var(--font-mono); font-size: 16px; font-weight: 600; color: var(--fg-heading); }
-.activity-figure span { font-size: 12px; color: var(--fg-body); }
-.activity-figure.danger strong, .activity-figure.danger span { color: var(--danger); }
+/* The summary tiles scroll away with the feed, so they never compete with the sticky day headings. */
+.activity-summary { width: 100%; max-width: 980px; display: flex; flex-direction: column; gap: 10px; }
+.activity-summary-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gap-1); min-height: 30px; }
+.activity-summary-span { flex: 1; font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--fg-subtle); }
+.segmented.sm { height: 28px; padding: 2px; }
+.segmented.sm button { padding: 0 10px; }
+.activity-tiles { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; }
+.activity-tile {
+  display: grid; grid-template-columns: 1fr auto; grid-template-areas: "label label" "value trend"; align-items: end; gap: 6px 10px;
+  padding: 12px 14px; background: var(--bg-section); border: 1px solid var(--border-light); border-radius: var(--radius-lg);
+}
+.activity-tile-label { grid-area: label; font-size: 12px; color: var(--fg-subtle); }
+.activity-tile-value { grid-area: value; font-size: 26px; line-height: 1; font-weight: 600; color: var(--fg-heading); }
+.activity-tile.danger { border-color: var(--danger-border); background: var(--danger-bg); }
+.activity-tile.danger .activity-tile-label, .activity-tile.danger .activity-tile-value { color: var(--danger); }
+/* A figure per day: thin columns in the recessive ink, today in the accent. */
+.activity-trend { grid-area: trend; display: flex; align-items: flex-end; gap: 2px; height: 26px; }
+.activity-trend-mark { display: flex; align-items: flex-end; width: 5px; height: 100%; border-bottom: 1px solid var(--border); }
+.activity-trend-mark > span { display: block; width: 100%; border-radius: 2px 2px 0 0; background: var(--fg-disabled); }
+.activity-trend-mark.today > span { background: var(--brand); }
+.activity-tile.danger .activity-trend-mark.today > span { background: var(--danger); }
+
+/* Charts: Per day and When side by side where there is room, Per project across. */
+.activity-metrics { width: 100%; max-width: 980px; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 400px), 1fr)); gap: 10px; }
+.activity-panel { min-width: 0; display: flex; flex-direction: column; gap: 10px; padding: 14px; background: var(--bg-section); border: 1px solid var(--border-light); border-radius: var(--radius-lg); }
+.activity-panel.wide { grid-column: 1 / -1; }
+.activity-panel h3 { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; margin: 0; font-size: 13px; font-weight: 600; color: var(--fg-heading); }
+.activity-panel h3 span { font-size: 12px; font-weight: 400; color: var(--fg-subtle); }
+.activity-panel .activity-more { align-self: flex-start; margin-top: 0; }
+
+.chart-legend { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 11px; color: var(--fg-body); }
+.chart-legend li { display: inline-flex; align-items: center; gap: 6px; }
+.chart-key { width: 10px; height: 10px; border-radius: 3px; }
+.group-changes { --group-color: var(--chart-changes); }
+.group-tasks { --group-color: var(--chart-tasks); }
+.group-sessions { --group-color: var(--chart-sessions); }
+.group-repositories { --group-color: var(--chart-repositories); }
+.chart-key, .chart-seg, .chart-line { background: var(--group-color); }
+
+/* Stacked columns: a 2px panel-coloured gap between segments, a rounded data end, square at the baseline. */
+.chart-columns { --plot-h: 150px; display: flex; flex-direction: column; gap: 6px; padding-left: 28px; }
+.chart-plot { position: relative; height: var(--plot-h); margin-top: 16px; }
+.chart-grid { list-style: none; margin: 0; padding: 0; position: absolute; inset: 0; }
+.chart-grid li { position: absolute; left: 0; right: 0; border-top: 1px solid var(--border-light); }
+.chart-grid li:first-child { border-top-color: var(--border); }
+.chart-grid span { position: absolute; right: calc(100% + 6px); top: -7px; font-family: var(--font-mono); font-size: 10px; font-variant-numeric: tabular-nums; color: var(--fg-subtle); }
+.chart-cols { list-style: none; margin: 0; padding: 0; position: absolute; inset: 0; display: grid; grid-template-columns: repeat(var(--days, 8), 1fr); }
+.chart-col { position: relative; display: flex; align-items: flex-end; justify-content: center; height: 100%; outline: none; cursor: default; }
+.chart-col:hover, .chart-col:focus-visible { background: color-mix(in oklch, var(--fg-heading) 5%, transparent); border-radius: var(--radius-sm); }
+.chart-col:focus-visible { box-shadow: inset 0 0 0 2px var(--brand); }
+.chart-col-bar { position: relative; display: flex; width: min(24px, 60%); }
+.chart-col-stack { display: flex; flex-direction: column-reverse; gap: 2px; width: 100%; height: 100%; overflow: hidden; border-radius: 4px 4px 0 0; }
+.chart-seg { display: block; min-height: 2px; }
+.chart-seg.empty { background: transparent; }
+.chart-cap { position: absolute; bottom: calc(100% + 3px); left: 50%; transform: translateX(-50%); font-family: var(--font-mono); font-size: 10px; color: var(--fg-body); white-space: nowrap; }
+.chart-col.today .chart-cap { color: var(--fg-heading); font-weight: 600; }
+.chart-x { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(var(--days, 8), 1fr); font-size: 10px; color: var(--fg-subtle); text-align: center; }
+.chart-x li { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* One readout per mark, on hover and keyboard focus: the value leads, a short line keys the group. */
+.chart-tip {
+  display: none; position: absolute; z-index: 3; bottom: calc(100% + 6px); min-width: 150px; padding: 8px 10px; flex-direction: column; gap: 3px;
+  font-size: 11px; color: var(--fg-body); background: var(--bg-raised); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow-sm);
+  pointer-events: none; white-space: nowrap;
+}
+.chart-col.left .chart-tip { left: 0; }
+.chart-col.right .chart-tip { right: 0; }
+.chart-col .chart-tip { bottom: auto; top: 0; }
+.chart-tip strong { font-weight: 600; color: var(--fg-heading); }
+.chart-tip-row { display: flex; align-items: center; gap: 6px; }
+.chart-tip-row b { font-family: var(--font-mono); font-weight: 600; color: var(--fg-heading); }
+.chart-tip-row.total { padding-top: 3px; border-top: 1px solid var(--border-light); color: var(--fg-subtle); }
+.chart-line { width: 10px; height: 2px; border-radius: 1px; }
+.chart-col:hover .chart-tip, .chart-col:focus-visible .chart-tip, .activity-repo-track:hover .chart-tip, .activity-repo-track:focus-visible .chart-tip { display: flex; }
+
+/* When: the window's days by hour, one hue from fewer to more; an empty hour is the raised surface. */
+.heat { display: flex; flex-direction: column; gap: 2px; }
+.heat-row { display: grid; grid-template-columns: 44px repeat(24, minmax(0, 1fr)); gap: 2px; align-items: center; }
+.heat-day { font-size: 10px; color: var(--fg-subtle); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.heat-cell { display: block; height: 14px; border-radius: 2px; background: var(--bg-surface); }
+.heat .heat-cell.on { outline: 2px solid var(--fg-heading); outline-offset: -1px; }
+.heat-cell.step-1 { background: var(--heat-1); }
+.heat-cell.step-2 { background: var(--heat-2); }
+.heat-cell.step-3 { background: var(--heat-3); }
+.heat-cell.step-4 { background: var(--heat-4); }
+.heat-hours span { font-family: var(--font-mono); font-size: 10px; color: var(--fg-subtle); overflow: visible; white-space: nowrap; }
+.heat-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 12px; font-size: 11px; color: var(--fg-subtle); }
+.heat-readout { min-height: 1em; }
+.heat-scale { display: inline-flex; align-items: center; gap: 3px; }
+.heat-scale .heat-cell { width: 12px; height: 12px; }
+
+/* Per project: the name, a bar stacked by kind against the busiest project, the counts. */
+.activity-repo-bars { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.activity-repo-row { display: grid; grid-template-columns: minmax(110px, 200px) 1fr auto; align-items: center; gap: 12px; }
+.activity-repo-name { min-width: 0; padding: 2px 4px; margin: -2px -4px; font: inherit; text-align: left; color: inherit; background: none; border: 0; border-radius: var(--radius-sm); }
+button.activity-repo-name { cursor: pointer; }
+button.activity-repo-name:hover { background: var(--bg-surface); }
+button.activity-repo-name:focus-visible { outline: 2px solid var(--brand); }
+.activity-repo-name .repo { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: 12px; color: var(--fg-body); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.activity-repo-name .repo.is-untracked { color: var(--fg-subtle); }
+.activity-repo-name .repo.is-untracked .swatch { background: var(--fg-disabled); }
+.activity-repo-track { position: relative; display: flex; height: 14px; outline: none; }
+.activity-repo-track:focus-visible { box-shadow: 0 0 0 2px var(--brand); border-radius: 4px; }
+.activity-repo-stack { display: flex; gap: 2px; height: 100%; overflow: hidden; border-radius: 0 4px 4px 0; }
+.activity-repo-stack .chart-seg { min-width: 2px; }
+.activity-repo-track .chart-tip { top: calc(100% + 6px); bottom: auto; left: 0; }
+.activity-repo-counts { font-family: var(--font-mono); font-size: 11px; color: var(--fg-subtle); white-space: nowrap; }
+
+/* Table view: the same numbers as the charts, readable without hover or colour. */
+.activity-table-wrap { max-width: 100%; overflow-x: auto; }
+.activity-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.activity-table th, .activity-table td { padding: 5px 8px; text-align: right; border-bottom: 1px solid var(--border-light); white-space: nowrap; }
+.activity-table th:first-child, .activity-table td.text { text-align: left; }
+.activity-table td.text { white-space: normal; }
+.activity-table thead th { font-size: 11px; font-weight: 500; color: var(--fg-subtle); }
+.activity-table tbody th { font-weight: 500; color: var(--fg-body); }
+.activity-table td { font-family: var(--font-mono); font-variant-numeric: tabular-nums; color: var(--fg-heading); }
 .activity-more { margin-top: 6px; }
 
 @media (max-width: 720px) {
   .activity-entry { grid-template-columns: 44px 1fr; }
   .activity-entry .what { grid-column: 1 / -1; }
+  .activity-repo-row { grid-template-columns: minmax(0, 1fr) auto; gap: 4px 12px; }
+  .activity-repo-track { grid-column: 1 / -1; grid-row: 2; }
+  .heat-row { grid-template-columns: 34px repeat(24, minmax(0, 1fr)); gap: 1px; }
+  .heat-cell { height: 12px; }
 }
 
 /* Change detail: an overlay over the board it belongs to. Above the topbar menu, below the end-session dialog — which

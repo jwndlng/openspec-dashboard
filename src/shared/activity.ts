@@ -1,5 +1,5 @@
 // Activity helpers shared by the server (serving the feed) and the UI. Pure.
-import type { ActivityDayCount, ActivityEvent, ActivityKind, ActivityMetrics, ActivityPage, ActivityRepoCount, ActivitySummary } from "./types.ts";
+import { ACTIVITY_GROUPS, type ActivityDayCount, type ActivityEvent, type ActivityGroupCounts, type ActivityGroupName, type ActivityKind, type ActivityMetrics, type ActivityPage, type ActivityRepoCount, type ActivitySummary } from "./types.ts";
 
 /** Task ticks of one change this close together are shown as one entry. */
 export const COLLAPSE_WINDOW_MS = 60 * 60 * 1000;
@@ -79,11 +79,14 @@ export function summarize(events: readonly ActivityEvent[]): ActivitySummary {
 const DAY_MS = 24 * 60 * 60 * 1000;
 const dayFormats = new Map<string, Intl.DateTimeFormat>();
 
-/** The formatter that names a calendar day in `timeZone`; throws a `RangeError` for a zone this runtime does not know. */
+/**
+ * The formatter that names a calendar day and its hour in `timeZone`; throws a `RangeError` for a zone this runtime
+ * does not know. One formatter for both, so an event's day and hour always agree (refactor-metrics-activity D1).
+ */
 function dayFormat(timeZone: string): Intl.DateTimeFormat {
   let format = dayFormats.get(timeZone);
   if (!format) {
-    format = new Intl.DateTimeFormat("en-US", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" });
+    format = new Intl.DateTimeFormat("en-US", { timeZone, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", hourCycle: "h23" });
     dayFormats.set(timeZone, format);
   }
   return format;
@@ -99,11 +102,27 @@ export function isTimeZone(timeZone: string): boolean {
   }
 }
 
+const dayParts = (ms: number, timeZone: string) => Object.fromEntries(dayFormat(timeZone).formatToParts(ms).map((p) => [p.type, p.value]));
+
 /** `YYYY-MM-DD` of the calendar day `ms` falls on in `timeZone`. */
 export function dayIn(ms: number, timeZone: string): string {
-  const parts = Object.fromEntries(dayFormat(timeZone).formatToParts(ms).map((p) => [p.type, p.value]));
+  const parts = dayParts(ms, timeZone);
   return `${parts.year}-${parts.month}-${parts.day}`;
 }
+
+/** The calendar day and the hour (0–23) `ms` falls on in `timeZone`. */
+export function dayHourIn(ms: number, timeZone: string): { day: string; hour: number } {
+  const parts = dayParts(ms, timeZone);
+  // Some runtimes spell midnight "24" even with h23.
+  return { day: `${parts.year}-${parts.month}-${parts.day}`, hour: Number(parts.hour) % 24 };
+}
+
+/** Which kind group, the view's filter groups, an event belongs to. */
+const GROUP_OF = new Map<ActivityKind, ActivityGroupName>(
+  (Object.entries(ACTIVITY_GROUPS) as [ActivityGroupName, readonly ActivityKind[]][]).flatMap(([group, kinds]) => kinds.map((k) => [k, group] as const)),
+);
+
+const noGroups = (): ActivityGroupCounts => ({ changes: 0, tasks: 0, sessions: 0, repositories: 0 });
 
 /** The calendar day after `key`, stepped at noon UTC so no day is skipped or repeated (design D2). */
 function nextDay(key: string): string {
@@ -112,42 +131,56 @@ function nextDay(key: string): string {
 }
 
 /**
- * The per-day and per-project metrics (design D1–D3): counted on recorded events, before task progress is collapsed.
- * Days run from the one holding the start of the retention window to the one holding `nowMs`, in `timeZone`.
+ * The per-day, per-hour and per-project metrics (add-metrics-to-activity D1–D3, refactor-metrics-activity D1):
+ * counted on recorded events, before task progress is collapsed. Days run from the one holding the start of the
+ * retention window to the one holding `nowMs`, in `timeZone`; each carries its events per kind group, its own summary
+ * figures and its events per local hour.
  */
 export function measure(events: readonly ActivityEvent[], nowMs: number, timeZone = "UTC"): ActivityMetrics {
   const changeKey = (e: ActivityEvent) => ("change" in e ? `${e.repoId}\n${e.change}` : undefined);
-  const days = new Map<string, { events: number; changes: Set<string> }>();
+  const days = new Map<string, { events: ActivityEvent[]; changes: Set<string>; groups: ActivityGroupCounts; hours: number[] }>();
   const last = dayIn(nowMs, timeZone);
   for (let day = dayIn(nowMs - RETENTION_MS, timeZone); ; day = nextDay(day)) {
-    days.set(day, { events: 0, changes: new Set() });
+    days.set(day, { events: [], changes: new Set(), groups: noGroups(), hours: new Array(24).fill(0) });
     if (day >= last) break;
   }
-  const repos = new Map<string, { repoName: string; newestAt: string; events: number; changes: Set<string> }>();
+  const repos = new Map<string, { repoName: string; newestAt: string; events: number; changes: Set<string>; groups: ActivityGroupCounts }>();
   const changes = new Set<string>();
   for (const event of events) {
     const key = changeKey(event);
+    const group = GROUP_OF.get(event.kind);
     if (key) changes.add(key);
     const at = Date.parse(event.at);
-    const day = Number.isNaN(at) ? undefined : days.get(dayIn(at, timeZone));
-    if (day) {
-      day.events += 1;
+    const when = Number.isNaN(at) ? undefined : dayHourIn(at, timeZone);
+    const day = when && days.get(when.day);
+    if (when && day) {
+      day.events.push(event);
+      day.hours[when.hour] += 1;
+      if (group) day.groups[group] += 1;
       if (key) day.changes.add(key);
     }
     let repo = repos.get(event.repoId);
     if (!repo) {
-      repo = { repoName: event.repoName, newestAt: event.at, events: 0, changes: new Set() };
+      repo = { repoName: event.repoName, newestAt: event.at, events: 0, changes: new Set(), groups: noGroups() };
       repos.set(event.repoId, repo);
     } else if (event.at >= repo.newestAt) {
       repo.repoName = event.repoName;
       repo.newestAt = event.at;
     }
     repo.events += 1;
+    if (group) repo.groups[group] += 1;
     if (key) repo.changes.add(key);
   }
-  const dayCounts: ActivityDayCount[] = [...days].map(([day, c]) => ({ day, events: c.events, changes: c.changes.size }));
+  const dayCounts: ActivityDayCount[] = [...days].map(([day, c]) => ({
+    day,
+    events: c.events.length,
+    changes: c.changes.size,
+    groups: c.groups,
+    figures: summarize(c.events),
+    hours: c.hours,
+  }));
   const repoCounts: ActivityRepoCount[] = [...repos]
-    .map(([repoId, r]) => ({ repoId, repoName: r.repoName, events: r.events, changes: r.changes.size }))
+    .map(([repoId, r]) => ({ repoId, repoName: r.repoName, events: r.events, changes: r.changes.size, groups: r.groups }))
     .sort((a, b) => b.events - a.events || a.repoName.localeCompare(b.repoName) || (a.repoId < b.repoId ? -1 : a.repoId > b.repoId ? 1 : 0));
   return { events: events.length, changes: changes.size, days: dayCounts, repos: repoCounts };
 }

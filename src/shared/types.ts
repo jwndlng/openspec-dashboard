@@ -925,8 +925,10 @@ export const ACTIVITY_KINDS: readonly ActivityKind[] = [
   "session-auto-ended",
 ];
 
-/** The filter groups of the Activity view. */
-export const ACTIVITY_GROUPS: Readonly<Record<"changes" | "tasks" | "sessions" | "repositories", readonly ActivityKind[]>> = {
+export type ActivityGroupName = "changes" | "tasks" | "sessions" | "repositories";
+
+/** The filter groups of the Activity view, which its charts also stack by. */
+export const ACTIVITY_GROUPS: Readonly<Record<ActivityGroupName, readonly ActivityKind[]>> = {
   changes: ["change-created", "change-moved", "change-archived", "change-removed"],
   tasks: ["tasks-progress"],
   sessions: ["session-started", "session-ended", "session-shipped", "session-conflicts-resolve", "session-auto-ended"],
@@ -980,7 +982,15 @@ export interface ActivityDayCount {
   day: string;
   events: number;
   changes: number;
+  /** Events per kind group. */
+  groups: ActivityGroupCounts;
+  /** The summary figures of that day alone. */
+  figures: ActivitySummary;
+  /** 24 counts: the events whose time falls in each hour 00–23 of the day, in the requested time zone. */
+  hours: number[];
 }
+
+export type ActivityGroupCounts = Record<ActivityGroupName, number>;
 
 export interface ActivityRepoCount {
   repoId: string;
@@ -988,6 +998,8 @@ export interface ActivityRepoCount {
   repoName: string;
   events: number;
   changes: number;
+  /** Events per kind group. */
+  groups: ActivityGroupCounts;
 }
 
 /**
