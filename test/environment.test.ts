@@ -345,6 +345,14 @@ test("an agent a tracked repository selects is a problem too", async () => {
   expect(byId(result, "agent:aider").status).toBe("problem");
 });
 
+test("the agent the main console runs is a problem too", async () => {
+  const base = withAgents();
+  const aider = { id: "aider", name: "Aider", command: ["aider"], prompts: { implement: "do {change}" } };
+  const config: Config = { ...base, agentSessions: { ...base.agentSessions, agents: [...base.agentSessions.agents, aider], consoleAgent: "aider" } };
+  const result = await report((await machine(["git", "openspec", "gh", "claude"])).bin, config);
+  expect(byId(result, "agent:aider").status).toBe("problem");
+});
+
 test("missing git is a problem with a git repository tracked and a warning without", async () => {
   const bin = (await machine(["openspec", "gh", "claude"])).bin;
   const config: Config = { ...defaultConfig(), repos: [{ id: "r1", path: "/w/acme/demo-ops", name: "demo-ops", enabled: true }] };

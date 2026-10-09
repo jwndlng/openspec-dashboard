@@ -44,3 +44,10 @@ test("a starter on a card stays on the board, one in the Console tab shows the s
   expect(startShowsConsole("card")).toBe(false);
   expect(startShowsConsole("console")).toBe(true);
 });
+
+test("the overlay calls its agent the console agent, never the default agent", async () => {
+  // ConsoleView uses hooks, so its text is read from its source.
+  const source = await Bun.file(new URL("../src/ui/console.tsx", import.meta.url)).text();
+  expect(source).toContain("Your console agent, outside every change");
+  expect(source).not.toContain("Your default agent");
+});

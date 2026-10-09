@@ -159,7 +159,8 @@ export const HELP_SECTIONS: readonly HelpSection[] = [
           </li>
           <li>
             The <strong>Console</strong> button in the top bar opens your agent outside every change, in a console folder of its
-            own.
+            own. Which agent that is — your default agent unless you pick another — is set under Settings → Agent sessions →
+            Console.
           </li>
           <li>
             Each project's <strong>console</strong> button — on its overview row or tile and on its board — opens its agent

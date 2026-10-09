@@ -111,9 +111,14 @@ export function launchCommand(agent: AgentProfile, prompt: string): Launch {
   return { argv: agent.command.map((arg) => (arg === "{prompt}" ? prompt : arg.replaceAll("{prompt}", prompt))) };
 }
 
-/** The main console's agent: the default profile, whatever repository settings say. */
+/** The default profile, whatever repository settings say: what Integrate and New project start. */
 export function defaultAgentOf(config: Config): AgentProfile | undefined {
   return config.agentSessions.agents.find((a) => a.id === config.agentSessions.defaultAgent);
+}
+
+/** The main console's agent: the profile chosen for it, else the default — as a project's agent falls back. */
+export function consoleAgentOf(config: Config): AgentProfile | undefined {
+  return config.agentSessions.agents.find((a) => a.id === config.agentSessions.consoleAgent) ?? defaultAgentOf(config);
 }
 
 /** The console has no opening prompt: every argument that would carry one is left out, and nothing is typed. */

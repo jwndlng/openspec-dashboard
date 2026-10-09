@@ -233,6 +233,8 @@ async function checkGithubCli(relevance: Relevance): Promise<EnvironmentCheck> {
 function checkAgents(config: Config, enabled: boolean): EnvironmentCheck[] {
   const used = new Set<string>();
   if (config.agentSessions.defaultAgent) used.add(config.agentSessions.defaultAgent);
+  // The main console runs its own agent when one is chosen (else the default, already in the set).
+  if (config.agentSessions.consoleAgent) used.add(config.agentSessions.consoleAgent);
   for (const repo of config.repos) {
     // Absent agent settings mean "included", so such a repository uses the default agent, which is already in the set.
     if (repo.enabled && repo.agent?.enabled !== false && repo.agent?.agentId) used.add(repo.agent.agentId);

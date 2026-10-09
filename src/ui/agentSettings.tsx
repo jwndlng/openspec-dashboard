@@ -280,6 +280,34 @@ export function ShortcutEditor({ shortcuts, onChange }: { shortcuts: Shortcut[];
 }
 
 /** Where the per-project switch and agent went: each project's row or tile on Projects (agent-sessions). */
+/**
+ * Settings without one profile. The console goes back to the default agent here, in the draft; repositories that chose
+ * it do so when Settings saves (`withLatestRepos`), because they are not part of this draft.
+ */
+export function withoutAgent(settings: AgentSessionsConfig, id: string): AgentSessionsConfig {
+  const agents = settings.agents.filter((a) => a.id !== id);
+  const { consoleAgent, ...rest } = settings;
+  return { ...rest, agents, defaultAgent: settings.defaultAgent === id ? agents[0].id : settings.defaultAgent, ...(consoleAgent && consoleAgent !== id ? { consoleAgent } : {}) };
+}
+
+/** Which agent the main console runs: only offered with a choice to make. "default agent" is stored as no choice. */
+export function ConsoleAgentPicker({ settings, onChange }: { settings: AgentSessionsConfig; onChange: (consoleAgent: string | undefined) => void }) {
+  if (settings.agents.length < 2) return null;
+  return (
+    <label class="agent-tools">
+      <span class="hint">The agent the console starts. A running console keeps its own until you end it.</span>
+      <select class="input" aria-label="Console agent" value={settings.consoleAgent ?? ""} onChange={(e) => onChange(e.currentTarget.value || undefined)}>
+        <option value="">default agent</option>
+        {settings.agents.map((a) => (
+          <option key={a.id} value={a.id}>
+            {a.name}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
 export function PerProjectNote() {
   return (
     <>
@@ -328,11 +356,7 @@ export function AgentSettings({ draft, update }: Props) {
     const id = slugId("agent", settings.agents.map((a) => a.id));
     addProfile({ id, name: "New agent", command: ["my-agent-cli", "{prompt}"], prompts: { implement: "Implement the OpenSpec change {change}: run `openspec instructions apply --change {change}` and follow it." } });
   };
-  const removeAgent = (id: string) => {
-    const agents = settings.agents.filter((a) => a.id !== id);
-    // Repositories that chose it go back to the default agent when Settings saves (`withLatestRepos`).
-    set({ agents, defaultAgent: settings.defaultAgent === id ? agents[0].id : settings.defaultAgent });
-  };
+  const removeAgent = (id: string) => update({ agentSessions: withoutAgent(settings, id) });
 
   return (
     <section class="panel">
@@ -397,7 +421,8 @@ export function AgentSettings({ draft, update }: Props) {
         <h3>Console</h3>
         <label class="agent-tools">
           <span class="hint">
-            The console button in the top bar opens your default agent in this folder, outside every change and without a prompt. Empty uses{" "}
+            The console button in the top bar opens the agent chosen here — your default agent unless you pick another — in this folder, outside every change and
+            without a prompt. Empty uses{" "}
             <code>~/.spec-control/console/</code>. A folder above your repositories lets it reach them; a folder inside a tracked repository is refused, so it never runs in
             a main checkout. What the agent does there is up to its own permission prompts.
           </span>
@@ -409,6 +434,7 @@ export function AgentSettings({ draft, update }: Props) {
             onInput={(e) => set({ consoleDir: e.currentTarget.value.trim() || undefined })}
           />
         </label>
+        <ConsoleAgentPicker settings={settings} onChange={(consoleAgent) => set({ consoleAgent })} />
 
         <PerProjectNote />
       </fieldset>

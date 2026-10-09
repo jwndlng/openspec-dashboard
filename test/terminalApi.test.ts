@@ -242,6 +242,15 @@ test("saving a console folder inside a tracked repository is refused; a folder a
   expect((await above.json()).agentSessions.consoleDir).toBe(h.repoPath.replace(/\/demo-ops$/, ""));
 });
 
+test("saving a console agent that names no profile is refused and changes nothing", async () => {
+  const h = await harness();
+  const { http } = await serve(h);
+  const res = await fetch(`${http}/api/config`, { method: "PUT", headers: JSON_HEADERS, body: JSON.stringify({ ...h.config, agentSessions: { ...h.config.agentSessions, consoleAgent: "nope" } }) });
+  expect(res.status).toBe(400);
+  expect((await res.json()).error).toContain("agentSessions.consoleAgent");
+  expect(h.config.agentSessions.consoleAgent).toBeUndefined();
+});
+
 test("the resolve-conflicts route answers each refusal with its own status, and only for a same-origin request", async () => {
   const h = await harness();
   const { http } = await serve(h);

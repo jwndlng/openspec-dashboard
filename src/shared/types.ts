@@ -343,6 +343,8 @@ export interface AgentSessionsConfig {
   defaultAgent: string;
   /** Where the main console's agent runs; absent means `~/.spec-control/console/`. Never inside a tracked repository. */
   consoleDir?: string;
+  /** The profile the main console runs; absent means the default agent, which it then follows when the default changes. */
+  consoleAgent?: string;
   /** The console's shortcuts, in the order they are offered. Empty means no shortcuts are offered at all. */
   shortcuts: Shortcut[];
   /** Whether Fast-forward asks for confirmation first; absent means it does. */
