@@ -8,14 +8,14 @@
 ## 2. Styling step
 
 - [x] 2.1 Add `desktop/scripts/style-dmg.ts` (D1–D6): skip for a Developer ID build or a non-macOS build; require exactly one `.dmg` in `ELECTROBUN_ARTIFACT_DIR`; refuse when `/Volumes/Spec Control` exists; copy the app out with `ditto`; stage the `Applications` link and the 1x+2x background TIFF; create the writable image; set the volume icon; lay out with Finder (three attempts, wait for `.DS_Store`); convert to the original format in place; mount the result and check the app, `Applications`, background, `.DS_Store` and `codesign --verify --deep --strict`; detach every image it attached, also on failure. Verify by running it on a copy of a built image
-- [~] 2.2 Register it as `postPackage` in `desktop/electrobun.config.ts`; verify `bun run build:desktop` on an Apple silicon Mac ends with `style-dmg: styled …` and the image under `desktop/artifacts/` opens as the laid-out window
+- [x] 2.2 Register it as `postPackage` in `desktop/electrobun.config.ts`; verify `bun run build:desktop` on an Apple silicon Mac ends with `style-dmg: styled …` and the image under `desktop/artifacts/` opens as the laid-out window
 - [~] 2.3 Check by eye in Finder, in both Light and Dark Mode: icons and arrow line up, the instruction line is readable, the volume shows the app icon, and dragging to Applications installs an app that launches; adjust the background colours if the labels are hard to read
 - [x] 2.4 Verify the app is unchanged: the app copied out of the styled image and the one in Electrobun's original image compare equal (`diff -r`) and both pass `codesign --verify --deep --strict`
 
 ## 3. Release workflow
 
 - [x] 3.1 In `.github/workflows/release.yml`, make the `desktop` job's smoke test also require `.DS_Store` and `.background/background.tiff` in the mounted image (D6, release-publishing); verify the YAML parses and the step fails on an unstyled image (Electrobun's original)
-- [~] 3.2 Verify on GitHub's `macos-latest` before merging: a throwaway workflow on this branch runs `bun run build:desktop` and uploads the `.dmg`; it succeeds, and the downloaded image opens laid out. Remove the throwaway workflow before merging
+- [x] 3.2 Verify on GitHub's `macos-latest` before merging: a throwaway workflow on this branch runs `bun run build:desktop` and uploads the `.dmg`; it succeeds, and the downloaded image opens laid out. Remove the throwaway workflow before merging
 
 ## 4. Documentation
 
