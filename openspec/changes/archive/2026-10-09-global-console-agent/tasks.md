@@ -20,4 +20,4 @@
 ## 4. Verification and What's new
 
 - [x] 4.1 Add a What's new entry at the top of `src/ui/changelog.ts` saying that the console can run a different agent, chosen in Settings → Agent sessions → Console; verify the What's new dialog shows it
-- [~] 4.2 Run `bun run check`. Then run `bun run dev` with two profiles, choose the second as the console agent, and confirm that the top-bar console starts it while change sessions keep the default agent
+- [x] 4.2 Run `bun run check`. Then run `bun run dev` with two profiles, choose the second as the console agent, and confirm that the top-bar console starts it while change sessions keep the default agent
