@@ -29,8 +29,11 @@ test("the wizard is a dialog named as the setup, showing its position and every 
   const text = textOf(frame);
   expect(text).toContain("4 of 7");
   const steps = byTag(byTag(frame, "ol")[0], "li");
-  expect(steps.map(textOf)).toEqual(["Welcome", "Workspace", "Agents", "Console", "Project settings", "System check", "Done"]);
+  expect(steps.map(textOf)).toEqual(["Welcome, done", "Workspace, done", "Agents, done", "Console", "Project settings", "System check", "Done"]);
   expect(steps.filter((li) => li.props["aria-current"] === "step").map(textOf)).toEqual(["Console"]);
+  // Steps passed are done: green (the `past` class) with a check mark; the current and later ones are not.
+  expect(steps.map((li) => li.props.class)).toEqual(["past", "past", "past", "current", "", "", ""]);
+  expect(steps.map((li) => byTag(li, "svg").length)).toEqual([1, 1, 1, 0, 0, 0, 0]);
   expect(byTag(frame, "button").map(textOf)).toEqual(["Skip setup", "Back", "Continue"]);
 });
 

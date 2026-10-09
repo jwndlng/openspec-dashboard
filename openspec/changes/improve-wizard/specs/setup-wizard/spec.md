@@ -10,7 +10,9 @@
 ### Requirement: The wizard has seven steps in a fixed order
 The wizard SHALL be a modal dialog with the steps **Welcome**, **Workspace**, **Agents**, **Console**, **Project
 settings**, **System check** and **Done**, in this order, showing the current step's position as "n of 7" and the
-names of all steps. Every step except Welcome SHALL offer **Back**; every step except Done SHALL offer **Continue** and
+names of all steps. Every step before the current one SHALL be marked as done, in green with a check mark beside its
+name, and SHALL be announced as done to assistive technology; the current step SHALL be marked as current, and the
+steps after it SHALL show neither. Every step except Welcome SHALL offer **Back**; every step except Done SHALL offer **Continue** and
 **Skip setup**. While the wizard is open the page behind it SHALL NOT receive clicks or keyboard focus, and it SHALL be
 exposed to assistive technology as a dialog named as the setup. Pressing Escape SHALL act as **Skip setup**, after a
 confirmation when the user has entered something the wizard has not saved yet. While a native folder picker opened by
@@ -20,6 +22,14 @@ without horizontal scrolling.
 #### Scenario: Position shown
 - **WHEN** the wizard shows the Console step
 - **THEN** it reads "4 of 7" and lists Welcome, Workspace, Agents, Console, Project settings, System check and Done with Console marked current
+
+#### Scenario: Steps passed are done
+- **WHEN** the user continues from the Agents step to the Console step
+- **THEN** Welcome, Workspace and Agents are shown green with a check mark and announced as done, Console is marked current, and Project settings, System check and Done are shown plain
+
+#### Scenario: Back unmarks
+- **WHEN** the user then activates **Back**
+- **THEN** Agents is marked current again and only Welcome and Workspace are shown as done
 
 #### Scenario: Back keeps entries
 - **WHEN** the user enters a workspace root, continues to Agents and activates **Back**

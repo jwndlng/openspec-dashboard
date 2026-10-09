@@ -85,7 +85,9 @@ export function WizardFrame({
           <ol class="setup-steps" aria-label="Setup steps">
             {SETUP_STEPS.map((name, i) => (
               <li key={name} class={i === step ? "current" : i < step ? "past" : ""} aria-current={i === step ? "step" : undefined}>
+                {i < step && <IconCheck size={12} />}
                 {name}
+                {i < step && <span class="visually-hidden">, done</span>}
               </li>
             ))}
           </ol>

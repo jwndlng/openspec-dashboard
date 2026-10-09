@@ -886,8 +886,9 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: 
 .setup-head h2 { font-size: 22px; }
 .setup-head h2:focus { outline: none; }
 .setup-steps { display: flex; flex-wrap: wrap; gap: 6px 8px; margin: 0; padding: 0; list-style: none; font-size: 13px; }
-.setup-steps li { padding: 3px 10px; border-radius: 999px; border: 1px solid var(--border-light); color: var(--fg-subtle); }
-.setup-steps li.past { color: var(--fg-body); }
+.setup-steps li { display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--border-light); color: var(--fg-subtle); }
+/* A step passed is done: green, with its check mark. */
+.setup-steps li.past { color: var(--success); border-color: var(--success); background: var(--success-bg); font-weight: 600; }
 .setup-steps li.current { color: var(--fg-heading); font-weight: 600; border-color: var(--brand); background: var(--brand-softer); }
 .setup-body { flex: 1; padding: 28px 32px 32px; }
 .setup-step { display: flex; flex-direction: column; gap: var(--gap-3); max-width: 760px; font-size: 15px; line-height: 1.6; overflow-wrap: anywhere; }

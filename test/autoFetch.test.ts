@@ -283,3 +283,23 @@ test("stop clears every timer", () => {
   h.fetcher.plan();
   expect(h.time.pending()).toBe(0);
 });
+
+test("nothing is fetched while setup is pending, and fetching starts once it is done", async () => {
+  const { time, state, fetched, fetcher } = harness([repo("alpha-infra")], [scanned("alpha-infra")]);
+  state.config = { ...state.config, setup: "pending" };
+  fetcher.plan();
+  expect(time.pending()).toBe(0);
+  await time.advance(5 * MINUTE);
+  expect(fetched).toEqual([]);
+  const { setup: _, ...done } = state.config;
+  state.config = done;
+  fetcher.plan();
+  expect(time.pending()).toBe(1);
+  await time.advance(MINUTE);
+  expect(fetched).toEqual(["alpha-infra"]);
+  // A timer armed before setup became pending again (Run setup again never sets it, but a reset does) fetches nothing.
+  state.config = { ...state.config, setup: "pending" };
+  await time.advance(MINUTE);
+  expect(fetched).toEqual(["alpha-infra"]);
+  fetcher.stop();
+});

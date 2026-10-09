@@ -3,7 +3,8 @@
 // switched off, fetch only").
 //
 // One timer per eligible repository and none otherwise, so a dashboard whose projects are all switched off, not git or
-// without a remote schedules nothing at all.
+// without a remote schedules nothing at all — and none at all while setup is pending: the projects the setup wizard
+// tracks are not fetched before the user had the chance to choose their Auto fetch (setup-wizard).
 // `plan()` is re-run after every config write and every scan; it keeps a timer whose interval did not change, so a
 // rescan never postpones a fetch. A timer that fires re-checks eligibility first, then re-arms one interval later,
 // whatever came of the fetch: a failing remote is tried again at the next interval, never sooner, and a repository
@@ -42,6 +43,7 @@ export class AutoFetcher {
 
   /** The interval, in seconds, a repository is fetched at right now, or undefined when it is not fetched automatically. */
   private dueSeconds(repo: RepoConfig, scanned: RepoSnapshot | undefined): number | undefined {
+    if (this.deps.getConfig().setup === "pending") return undefined;
     const seconds = autoFetchInterval(repo);
     if (!repo.enabled || seconds === undefined) return undefined;
     // Skipped without running git: not scanned yet, scan failed, not git, or nothing to fetch from.

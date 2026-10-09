@@ -1049,7 +1049,12 @@ export function createFetchHandler({ state, indexHtml }: AppOptions): (req: Requ
       if (req.method === "GET" && pathname === "/api/update") return json(updateStatus(state));
       if (req.method === "POST" && pathname === "/api/update/check") return postUpdateCheck(state);
       if (req.method === "GET" && pathname === "/api/setup") return json(await setupState(state.config, undefined, state.folderPicker));
-      if (req.method === "POST" && pathname === "/api/setup/done") return json(await markSetupDone(state));
+      if (req.method === "POST" && pathname === "/api/setup/done") {
+        const saved = await markSetupDone(state);
+        // Automatic fetch waited for setup to end; arm it now rather than at the next scan.
+        state.autoFetcher?.plan();
+        return json(saved);
+      }
       // A POST because it starts a process (the system's folder dialog); the body is never read.
       if (req.method === "POST" && pathname === "/api/setup/folder") return postSetupFolder(state);
       if (req.method === "GET" && pathname === "/api/config") return json(state.config);

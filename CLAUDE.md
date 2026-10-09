@@ -68,7 +68,8 @@ bun test test/scanner.test.ts   # a single test file
    from the index with `git rm --cached` (never `-f`), then retrying the fast-forward and, if it is still refused,
    writing them back and re-staging them with `git add -- <those paths>` (`src/server/pull.ts`, the only place that
    contacts a remote or changes a main checkout); the **automatic fetch** — for every enabled git project with a remote
-   unless the user switched its auto fetch off (`autoFetchSeconds`: every minute when absent, `0` for off), exactly the
+   unless the user switched its auto fetch off (`autoFetchSeconds`: every minute when absent, `0` for off) and never while
+   setup is still pending (`setup: "pending"`, so the setup wizard's projects wait for the user's choice), exactly the
    pull action's `git fetch` and nothing after it, on that interval (`fetchRepository` in `src/server/pull.ts`, scheduled by `src/server/autoFetch.ts`): remote-tracking
    refs, `FETCH_HEAD` and objects only, never a fast-forward, merge, prune or anything in a working tree or index, never
    overlapping a pull of the same project or itself, and never in the demo — the per-project setting, which the user can

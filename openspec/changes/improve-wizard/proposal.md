@@ -36,6 +36,11 @@ project's settings, all in a larger, roomier dialog.
   Welcome and Done cover the new topics: agents added, the console agent, and how many projects' settings were saved.
 - **A bigger, roomier wizard.** A wider and taller dialog with a steady height between steps, more padding and space
   between groups, larger text and larger form controls. The 400px viewport rule is unchanged.
+- **Automatic fetch waits for setup.** While setup is pending, no project is fetched automatically, so the projects
+  the Workspace step tracks are not fetched before the user chose their Auto fetch in Project settings. Fetching starts
+  under each project's setting once setup is finished or skipped. Defaults and existing installations are unchanged.
+- **Steps passed turn green.** In the step list at the top, every step before the current one is shown green with a
+  check, and announced as done.
 - **New `POST /api/setup/folder`.** The server opens the native folder picker and answers with the chosen path or
   `cancelled`. It is a mutating route under the same-origin guard, because it starts a process. The script is a
   constant, and nothing from the request reaches the command line. One picker runs at a time. `GET /api/setup` gains
@@ -52,6 +57,7 @@ project's settings, all in a larger, roomier dialog.
   writes" rule are updated (the folder picker is the one process the wizard may start), and the dialog's size and
   spacing are specified.
 - `dashboard-api`: `GET /api/setup` gains `folderPicker`, and the new `POST /api/setup/folder` is added.
+- `repository-pull`: no automatic fetch while setup is pending; fetching starts once setup is done.
 
 ## Impact
 
@@ -71,6 +77,8 @@ project's settings, all in a larger, roomier dialog.
 - Tests: the picker route (guard, cancel, one at a time, the command chosen per platform, nothing from the body on the
   command line) using a fake picker on `PATH`. The step logic: multi-agent save, console agent save, project settings
   in both modes with only changed fields written, applicability per project. The step list.
+- `src/server/autoFetch.ts` (no timer while setup is pending), `src/server/api.ts` (`POST /api/setup/done` re-plans
+  the automatic fetch), `CLAUDE.md` (invariant 1's automatic fetch never runs while setup is pending).
 - Invariants: no write to a tracked repository beyond what the existing config and tracking routes already allow, and
   no network. The folder picker is a local process that shows a dialog and reads nothing but the user's choice; it
   cannot modify a repository, so invariant 1 is unchanged, and it opens no connection, so invariant 4 is unchanged.
