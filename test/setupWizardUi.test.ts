@@ -101,6 +101,8 @@ test("Choose folder… opens the dialog, waits while it is open, and is not offe
   expect(byTag(none, "input").some((el) => el.props["aria-label"] === "Folder to add")).toBe(true);
   const failed = WorkspaceStep({ view: workspace({ pickError: "no display." }), onInput: noop, onAdd: noop, onRemove: noop, onToggle: noop, onPick: noop });
   expect(textOf(failed)).toContain("type the path instead");
+  const again = WorkspaceStep({ view: workspace({ pickedAgain: "/w/acme" }), onInput: noop, onAdd: noop, onRemove: noop, onToggle: noop, onPick: noop });
+  expect(textOf(again)).toContain("/w/acme is already listed");
 });
 
 const agentHandlers = { onEnable: noop, onCheck: noop, onAddCustom: noop, onCustomChange: noop, onRemoveCustom: noop, onDefault: noop };

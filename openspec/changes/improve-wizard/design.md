@@ -77,18 +77,20 @@ mode a `Map<repoId, Partial<ProjectSettings>>`, where `ProjectSettings` is
 `{ agentEnabled, agentId, prTitleConvention, autoMergeDocs, autoFetchSeconds }`. Only touched fields are in the draft,
 which is what "only what the user changed" means. Switching modes keeps both drafts, and Continue saves the visible
 mode's draft. `projectSettingsSave(current, mode, edits, isGit)` maps each edit onto each applicable repo through
-small pure setters. Those setters are extracted from the `Tracking` handlers in `projectSettings.tsx` (for example
-`withAutoFetch(repo, seconds)`, which drops the key for the default, and `withAgent(repo, patch)`), so the dialog and
-the wizard store values identically. Applicability (`settingApplies(setting, repo, config, isGit)`) is extracted the
+small pure setters. Those setters are extracted from the server's per-setting routes, where the dialog's values are stored,
+into `src/shared/repoSettings.ts` (for example `withAutoFetch(repo, seconds)`, which drops the key for the default, and
+`withRepoAgent(repo, patch)`), so the routes and the wizard store values identically. Applicability (`settingApplies(setting, repo, config, isGit)`) is extracted the
 same way from the dialog's visibility rules. The "shared value or Keep each project's setting" display is
 `commonValue(repos, setting)`. Editing a "Keep each project's setting" field and setting it back to that option removes
 the edit.
 
-`isGit` per repo comes from the app's latest snapshot, which the wizard receives as a prop and which the app keeps
+`isGit` per repo comes from the latest snapshot, which the wizard receives as a prop and which the app keeps
 current as scans finish. Discovery candidates carry no `isGit`, and adding it would change `repo-discovery` for one
 consumer. So while a covered repo has no snapshot entry yet (tracked a moment ago, its first scan running), the step
-shows "Reading projects…" and renders the form once every covered repo has one. Tracking triggers that scan, and a scan
-of a fresh project takes moments.
+shows "Reading projects…" and renders the form once every covered repo has one. Tracking triggers a scan, but a
+scan asked for while another runs is dropped, so a second project tracked right after the first would wait for the
+next poll. While it waits, the step asks for a scan (`POST /api/scan`, read-only, a no-op while one runs) and reads
+`GET /api/state` every 1.5 seconds.
 
 The form controls are the dialog's controls, rendered controlled (value plus `onChange`) instead of saving
 immediately. The pickers in `projectSettings.tsx` are split into a presentational part (labels, options, tooltips,

@@ -130,7 +130,8 @@ test("POST /api/setup/folder: guarded, one at a time, the body never reaches the
 
     state.folderPicker = context("wait");
     const first = post("{}");
-    await Bun.sleep(150);
+    // The fake records itself as it starts: wait for that rather than for a fixed time, so a busy machine cannot race it.
+    for (let i = 0; i < 100 && !(await Bun.file(record).exists()); i++) await Bun.sleep(20);
     expect((await post("{}")).status).toBe(409);
     state.folderPicker = context("chosen");
     expect(((await (await first).json()) as FolderPickResult).status).toBe("cancelled");

@@ -177,6 +177,8 @@ export interface WorkspaceView {
   /** The folder dialog is open. */
   picking: boolean;
   pickError?: string;
+  /** The folder last chosen in the dialog was already listed, so nothing was added. */
+  pickedAgain?: string;
 }
 
 export function WorkspaceStep({
@@ -230,6 +232,11 @@ export function WorkspaceStep({
             </button>
             <span class="hint">{view.picking ? "Pick a folder in the dialog that opened, or cancel it." : "Opens your system's folder dialog."}</span>
           </div>
+        )}
+        {view.pickedAgain && (
+          <p class="hint" aria-live="polite">
+            <code>{view.pickedAgain}</code> is already listed.
+          </p>
         )}
         {view.pickError && <p class="notice danger">The folder dialog failed: {view.pickError} You can type the path instead.</p>}
         <form
@@ -738,6 +745,7 @@ export function SetupWizard({ config, snapshot, onSaved, onClose }: { config: Co
   const [workspaceError, setWorkspaceError] = useState<string>();
   const [picking, setPicking] = useState(false);
   const [pickError, setPickError] = useState<string>();
+  const [pickedAgain, setPickedAgain] = useState<string>();
   const discoverySeq = useRef(0);
 
   // Agents.
@@ -812,10 +820,26 @@ export function SetupWizard({ config, snapshot, onSaved, onClose }: { config: Co
   const storedConsole = config?.agentSessions.consoleAgent;
   const consoleAgent = consoleChoice === null ? storedConsole : consoleChoice;
 
-  // Which projects are git repositories, from the latest scan; a project without an entry is still being scanned.
-  const scanned = new Map((snapshot?.repos ?? []).map((r) => [r.id, r.isGit]));
+  // Which projects are git repositories, from the latest scan; a project without an entry is still being scanned. The
+  // app refreshes its snapshot only on its poll interval, and a scan asked for while another runs is dropped, so while
+  // the step waits it asks for a scan (read-only; a no-op while one runs) and reads the state itself.
+  const [ownSnapshot, setOwnSnapshot] = useState<Snapshot>();
+  const latest = ownSnapshot && (!snapshot || ownSnapshot.generatedAt > snapshot.generatedAt) ? ownSnapshot : snapshot;
+  const scanned = new Map((latest?.repos ?? []).map((r) => [r.id, r.isGit]));
   const isGit = (id: string) => scanned.get(id);
   const projects = config ? settingsProjects(config) : [];
+  const waiting = step === STEP.projects && projects.some((r) => !scanned.has(r.id));
+  useEffect(() => {
+    if (!waiting) return;
+    const timer = setInterval(() => {
+      void api
+        .scan()
+        .catch(() => undefined)
+        .then(() => api.state())
+        .then(setOwnSnapshot, () => undefined);
+    }, 1500);
+    return () => clearInterval(timer);
+  }, [waiting]);
   const projectsDirty = mode === "all" ? Object.keys(allDraft).length > 0 : [...eachDraft.values()].some((d) => Object.keys(d).length > 0);
 
   /** Something entered on the current step that its Continue has not saved. */
@@ -887,9 +911,13 @@ export function SetupWizard({ config, snapshot, onSaved, onClose }: { config: Co
   const pickRoot = async () => {
     setPicking(true);
     setPickError(undefined);
+    setPickedAgain(undefined);
     try {
       const result = await api.pickFolder();
-      if (result.status === "chosen") enterRoot(result.path);
+      if (result.status === "chosen") {
+        if (entered.includes(result.path) || configuredRoots.includes(result.path)) setPickedAgain(result.path);
+        else enterRoot(result.path);
+      }
       else if (result.status === "failed") setPickError(result.reason);
     } catch (err) {
       setPickError(message(err));
@@ -1037,6 +1065,7 @@ export function SetupWizard({ config, snapshot, onSaved, onClose }: { config: Co
       picker: info?.folderPicker === true,
       picking,
       pickError,
+      pickedAgain,
     };
     return (
       <WizardFrame {...frame} onContinue={() => void continueWorkspace()}>

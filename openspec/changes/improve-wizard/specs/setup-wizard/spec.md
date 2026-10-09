@@ -47,7 +47,7 @@ home directory that are not configured yet. It SHALL let the user remove roots a
 SHALL be offered only while the server reports a folder picker as available, SHALL show that it is waiting while the
 dialog is open and SHALL not be activatable again until it closes; cancelling the dialog SHALL add nothing and show no
 error, and a failure SHALL be shown in the step with the typed path still available. A chosen folder that is already a
-configured or entered root SHALL not be added twice. Whenever the entered roots change, discovery SHALL run against
+configured or entered root SHALL not be added twice, and the step SHALL say that it is already listed. Whenever the entered roots change, discovery SHALL run against
 the configured and entered roots and the configured ignore paths without saving anything, and the step SHALL list the
 OpenSpec projects found that are not tracked yet, each with a checkbox, all checked by default, and say how many git
 repositories without OpenSpec were found, adding that they can be integrated from the projects overview. A root that
@@ -199,8 +199,8 @@ dialog and adds the demo's own workspace folder.
 - **THEN** the wizard opens at its first step
 
 #### Scenario: Demo folder choice
-- **WHEN** a demo visitor activates **Choose folder…** on the Workspace step
-- **THEN** no dialog opens and the demo's workspace folder is added as an entered root
+- **WHEN** a demo visitor who removed the demo's workspace folder as a root activates **Choose folder…** on the Workspace step
+- **THEN** no dialog opens and the demo's workspace folder is added as an entered root; while it is still a root, the step says that it is already listed
 
 ## ADDED Requirements
 

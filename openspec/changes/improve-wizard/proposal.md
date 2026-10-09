@@ -60,7 +60,10 @@ project's settings, all in a larger, roomier dialog.
 - `src/server/setup.ts`: the folder picker. Per platform it runs one fixed command (`osascript` on macOS; `zenity` or
   else `kdialog` on Linux; PowerShell on Windows) with no shell, and reports whether a picker exists.
   `src/server/api.ts`: the new route and `folderPicker`.
-- `src/shared/types.ts` (`SetupState.folderPicker`, the picker result).
+- `src/shared/types.ts` (`SetupState.folderPicker`, the picker result). `src/shared/repoSettings.ts` (new): how a
+  project's settings are stored and when they apply, extracted from the per-setting routes in `src/server/api.ts` so
+  that the routes and the wizard share them. `src/ui/sessionState.ts`, `src/ui/agentSettings.tsx`: the profile a new
+  agent gets, shared by Settings and the wizard.
 - `src/ui/setupWizard.tsx`, `src/ui/setupState.ts` (several agents, custom agent, console agent, project settings saves
   and the "only what changed" rule), `src/ui/projectSettings.tsx` (its controls are reused or factored so that the
   wizard shows the same wording), `src/ui/api.ts`, `src/ui/styles.css`, `src/ui/demo/demoApi.ts` (the picker answers

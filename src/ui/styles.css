@@ -878,39 +878,84 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: 
 .modal-title p { margin: 2px 0 0; font-size: 12px; color: var(--fg-subtle); }
 .modal-title p .mono { font-size: 11px; }
 .modal-body { min-height: 0; overflow: auto; }
-/* The setup wizard (setupWizard.tsx): a modal with the step list in its head and its controls in a footer. */
-.setup-head { flex-wrap: wrap; align-items: flex-end; }
-.setup-position { margin: 0 0 2px; font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--brand-fg); }
+/* The setup wizard (setupWizard.tsx): a large modal of one steady size, the step list in its head, its controls in a
+   footer and the step scrolling between them. Larger text, 40px controls and groups set apart, for a first start. */
+.modal.setup-wizard { width: min(960px, 100%); height: min(720px, 100%); }
+.setup-head { flex-wrap: wrap; align-items: flex-end; gap: 12px 24px; padding: 24px 32px 20px; }
+.setup-position { margin: 0 0 4px; font-size: 12px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--brand-fg); }
+.setup-head h2 { font-size: 22px; }
 .setup-head h2:focus { outline: none; }
-.setup-steps { display: flex; flex-wrap: wrap; gap: 4px 6px; margin: 0; padding: 0; list-style: none; font-size: 12px; }
-.setup-steps li { padding: 2px 8px; border-radius: 999px; border: 1px solid var(--border-light); color: var(--fg-subtle); }
+.setup-steps { display: flex; flex-wrap: wrap; gap: 6px 8px; margin: 0; padding: 0; list-style: none; font-size: 13px; }
+.setup-steps li { padding: 3px 10px; border-radius: 999px; border: 1px solid var(--border-light); color: var(--fg-subtle); }
 .setup-steps li.past { color: var(--fg-body); }
 .setup-steps li.current { color: var(--fg-heading); font-weight: 600; border-color: var(--brand); background: var(--brand-softer); }
-.setup-body { padding: 18px 24px 20px; }
-.setup-step { display: flex; flex-direction: column; gap: 12px; font-size: 14px; line-height: 1.55; overflow-wrap: anywhere; }
+.setup-body { flex: 1; padding: 28px 32px 32px; }
+.setup-step { display: flex; flex-direction: column; gap: var(--gap-3); max-width: 760px; font-size: 15px; line-height: 1.6; overflow-wrap: anywhere; }
 .setup-step p, .setup-step ul { margin: 0; }
-.setup-step ul { padding-left: 20px; }
-.setup-roots, .setup-candidates, .setup-checks, .setup-summary { display: grid; gap: 6px; }
+.setup-step ul { padding-left: 22px; }
+.setup-step .hint { font-size: 13px; }
+.setup-lead { font-size: 16px; color: var(--fg-heading); }
+.setup-topics { display: grid; gap: 10px; }
+.setup-group { display: flex; flex-direction: column; gap: 14px; }
+.setup-wizard .btn, .setup-wizard .input { min-height: 40px; font-size: 14px; }
+.setup-wizard .btn { padding: 8px 16px; justify-content: center; }
+.setup-wizard .btn.sm { padding: 6px 12px; }
+.setup-wizard .input { padding: 8px 12px; }
+.setup-wizard select.input { padding-right: 28px; }
+.setup-wizard textarea.input { min-height: 64px; }
+.setup-wizard .check { gap: 10px; min-height: 32px; }
+.setup-wizard .check input { width: 18px; height: 18px; flex: none; }
+.setup-step .field { flex-direction: column; align-items: stretch; gap: 6px; font-size: 14px; color: var(--fg-heading); }
+.setup-step .field > span:first-child { font-weight: 600; }
+.setup-roots, .setup-candidates, .setup-checks, .setup-summary { display: grid; gap: 10px; }
 .setup-roots { list-style: none; padding: 0 !important; }
-.setup-roots li { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; min-width: 0; }
+.setup-roots li { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; min-width: 0; }
+.setup-pick { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
+.setup-add-root { gap: var(--gap-1); }
 .setup-add-root .input { flex: 1; min-width: 0; }
-.setup-suggestions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.setup-suggestions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.setup-found { padding: 18px 20px; border: 1px solid var(--border-light); border-radius: var(--radius); background: var(--bg-section); }
 .setup-candidates { list-style: none; padding: 0 !important; }
-.setup-candidates .check { flex-wrap: wrap; gap: 4px 8px; }
-.setup-agents { display: grid; gap: 8px; margin: 0; padding: 10px 12px; border: 1px solid var(--border-light); border-radius: var(--radius-sm); }
-.setup-agents legend { padding: 0 4px; font-size: 12px; color: var(--fg-subtle); }
+.setup-candidates .check { flex-wrap: wrap; gap: 4px 10px; }
+.setup-agents, .setup-modes { display: grid; gap: 12px; margin: 0; padding: 18px 20px 20px; border: 1px solid var(--border-light); border-radius: var(--radius); }
+.setup-agents legend, .setup-modes legend { padding: 0 6px; font-size: 13px; font-weight: 600; color: var(--fg-subtle); }
 .setup-agents .check { flex-wrap: wrap; }
-.setup-install { display: grid; gap: 6px; padding: 10px 12px; border: 1px solid var(--warning-border); border-radius: var(--radius-sm); background: var(--warning-bg); }
+.setup-modes { display: flex; flex-wrap: wrap; gap: 8px 28px; padding: 14px 20px; }
+.setup-custom-agent { display: grid; gap: 12px; padding: 16px; border: 1px dashed var(--border); border-radius: var(--radius-sm); background: var(--bg-section); }
+.setup-custom-agent .row { justify-content: space-between; flex-wrap: wrap; gap: var(--gap-1); }
+.setup-default-agent .input, .setup-step .field select.input { max-width: 420px; }
+.setup-install { display: grid; gap: 8px; padding: 14px 16px; border: 1px solid var(--warning-border); border-radius: var(--radius-sm); background: var(--warning-bg); }
+.setup-settings { gap: 0; padding: 4px 20px; border: 1px solid var(--border-light); border-radius: var(--radius); }
+.setup-setting { display: grid; grid-template-columns: 180px minmax(0, 1fr); gap: 8px 20px; align-items: start; padding: 18px 0; border-top: 1px solid var(--border-light); }
+.setup-settings > .setup-setting:first-child, .setup-project-head + .setup-setting { border-top: none; }
+.setup-setting-label { padding-top: 9px; font-weight: 600; color: var(--fg-heading); }
+.setup-setting-control { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; min-width: 0; }
+/* The dialog's compact pickers, at the wizard's size; one higher in specificity than their own rule. */
+.setup-setting-control .input, .setup-setting-control .input.agent-picker, .setup-setting-control .input.pr-titles-picker, .setup-setting-control .input.auto-fetch-picker {
+  width: min(320px, 100%); max-width: none; height: 40px; padding: 8px 28px 8px 12px; font-size: 14px;
+}
+.setup-project-head { display: grid; gap: 2px; padding: 18px 0 6px; }
+.setup-project-head h3 { margin: 0; font-size: 18px; color: var(--fg-heading); }
+.setup-project-nav { justify-content: space-between; padding: 18px 0; border-top: 1px solid var(--border-light); }
 .setup-checks { list-style: none; padding: 0 !important; }
-.setup-checks li { padding: 8px 0; border-top: 1px solid var(--border-light); }
+.setup-checks li { padding: 12px 0; border-top: 1px solid var(--border-light); }
 .setup-checks li.muted { opacity: 0.72; }
 .setup-check-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; min-width: 0; }
-.setup-actions { flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: var(--gap-1); padding: 12px 24px; background: var(--bg-section); border-top: 1px solid var(--border-light); }
+.setup-actions { flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: var(--gap-1); padding: 16px 32px; background: var(--bg-section); border-top: 1px solid var(--border-light); }
 .setup-actions-end { margin-left: auto; display: flex; flex-wrap: wrap; gap: var(--gap-1); }
 @media (max-width: 720px) {
-  .setup-body { padding: 14px 16px 16px; }
-  .setup-actions { padding: 10px 16px; }
+  .setup-setting { grid-template-columns: minmax(0, 1fr); padding: 14px 0; }
+  .setup-setting-label { padding-top: 0; }
+}
+@media (max-width: 560px) {
+  .modal.setup-wizard { height: 100%; }
   .modal-head.setup-head { padding: 14px 16px 12px; }
+  .setup-head h2 { font-size: 18px; }
+  .setup-body { padding: 16px 16px 20px; }
+  .setup-step { gap: var(--gap-2); font-size: 14px; }
+  .setup-lead { font-size: 15px; }
+  .setup-found, .setup-agents, .setup-modes, .setup-settings { padding-left: 14px; padding-right: 14px; }
+  .setup-actions { padding: 10px 16px; }
 }
 /* What's new (whatsNew.tsx): the top-corner button with its unseen count, and the dialog's entries by month. */
 .whats-new-btn .whats-new-count {
