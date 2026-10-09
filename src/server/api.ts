@@ -1,6 +1,7 @@
-import { ACTIVITY_KINDS, AUTO_FETCH_SECONDS, type ActivityKind, DEFAULT_AUTO_FETCH_SECONDS } from "../shared/types.ts";
+import { ACTIVITY_KINDS, AUTO_FETCH_SECONDS, type ActivityKind } from "../shared/types.ts";
 import { availableName } from "../shared/nameHints.ts";
 import { labelKey } from "../shared/labels.ts";
+import { withAutoFetch, withPrTitleConvention, withRepoAgent } from "../shared/repoSettings.ts";
 import { MAX_PAGE, type ActivityLog, type PageQuery } from "./activity/log.ts";
 import { isTimeZone, pageEvents } from "../shared/activity.ts";
 import type { AutoFetchSeconds, CleanupSelection, Config, DiscoverResult, PullBlockingFile, PullRequestsResponse, PullResult, PullResolve, RepoConfig, RepoSnapshot, ScanTriggerResult, SharedConfigApplyResult, SharedConfigAssignment, SharedConfigPreview, UpdateStatus } from "../shared/types.ts";
@@ -8,7 +9,7 @@ import type { AutoFetcher } from "./autoFetch.ts";
 import { applyCleanup, CleanupBusyError, previewCleanup } from "./cleanup.ts";
 import { changeDirFor, listArtifactFiles, readArtifactFile } from "./artifacts.ts";
 import { consoleFolderProblem } from "./sessions/consoleFolder.ts";
-import { markSetupDone, setupState } from "./setup.ts";
+import { type FolderPickerContext, FolderPickerBusyError, folderPickerContext, markSetupDone, pickFolder, setupState } from "./setup.ts";
 import { ConfigValidationError, newRepoConfig, repoId, updateConfig, validateConfig, validateIgnorePaths, validateScanRoots } from "./config.ts";
 import { createChange } from "./createChange.ts";
 import { createProject, CreateProjectError } from "./createProject.ts";
@@ -42,6 +43,8 @@ export interface AppState {
   autoFetcher?: AutoFetcher;
   /** The update check (openspec/specs/update-notice). Absent in contexts that never check; the endpoints then report it off. */
   updateChecker?: UpdateChecker;
+  /** Where the setup's folder dialog is looked up; absent means this machine's. Tests point it at a fake picker. */
+  folderPicker?: FolderPickerContext;
 }
 
 /** The part of Bun's server object the handler needs: upgrading the terminal request to a WebSocket. */
@@ -217,14 +220,7 @@ async function postRepoAgent(state: AppState, req: Request, id: string): Promise
   if (autoMergeDocs !== undefined && typeof autoMergeDocs !== "boolean") return json({ error: "autoMergeDocs must be true or false" }, 400);
   return updateRepo(state, id, (repo) => {
     if (typeof agentId === "string" && !state.config.agentSessions.agents.some((a) => a.id === agentId)) throw new TrackingError(400, `unknown agent ${agentId}`);
-    const agent: NonNullable<RepoConfig["agent"]> = { enabled: true, ...repo.agent };
-    if (typeof enabled === "boolean") agent.enabled = enabled;
-    if (agentId === null) delete agent.agentId;
-    else if (typeof agentId === "string") agent.agentId = agentId;
-    // Off is the absence of the key, so a configuration never carries `autoMergeDocs: false`.
-    if (autoMergeDocs === true) agent.autoMergeDocs = true;
-    else if (autoMergeDocs === false) delete agent.autoMergeDocs;
-    return { ...repo, agent };
+    return withRepoAgent(repo, { enabled, agentId, autoMergeDocs });
   });
 }
 
@@ -232,7 +228,7 @@ async function postRepoAgent(state: AppState, req: Request, id: string): Promise
 async function postRepoPrTitleConvention(state: AppState, req: Request, id: string): Promise<Response> {
   const { convention } = await readJson(req);
   if (convention !== null && convention !== "conventional-commits") return json({ error: "convention must be conventional-commits or null" }, 400);
-  return updateRepo(state, id, ({ prTitleConvention: _old, ...repo }) => (convention ? { ...repo, prTitleConvention: convention } : repo));
+  return updateRepo(state, id, (repo) => withPrTitleConvention(repo, convention));
 }
 
 /**
@@ -242,8 +238,7 @@ async function postRepoPrTitleConvention(state: AppState, req: Request, id: stri
 async function postRepoAutoFetch(state: AppState, req: Request, id: string): Promise<Response> {
   const { seconds } = await readJson(req);
   if (seconds !== 0 && !AUTO_FETCH_SECONDS.includes(seconds as AutoFetchSeconds)) return json({ error: `seconds must be one of ${AUTO_FETCH_SECONDS.join(", ")} or 0 for off` }, 400);
-  const value = seconds as AutoFetchSeconds | 0;
-  return updateRepo(state, id, ({ autoFetchSeconds: _old, ...repo }) => (value === DEFAULT_AUTO_FETCH_SECONDS ? repo : { ...repo, autoFetchSeconds: value }));
+  return updateRepo(state, id, (repo) => withAutoFetch(repo, seconds as AutoFetchSeconds | 0));
 }
 
 /** The project's labels dialog on the overview: either list replaced, an empty one removed, validated as in a `PUT`. */
@@ -1015,6 +1010,16 @@ async function postUpdateCheck(state: AppState): Promise<Response> {
   return json(await checker.check());
 }
 
+/** The setup's folder dialog (setup-wizard): waits for the user's choice; one dialog at a time. */
+async function postSetupFolder(state: AppState): Promise<Response> {
+  try {
+    return json(await pickFolder(state.folderPicker ?? folderPickerContext()));
+  } catch (err) {
+    if (err instanceof FolderPickerBusyError) return json({ error: err.message }, 409);
+    throw err;
+  }
+}
+
 export function createFetchHandler({ state, indexHtml }: AppOptions): (req: Request, server?: ServerLike) => Promise<Response> {
   return async (req, server) => {
     const url = new URL(req.url);
@@ -1043,8 +1048,10 @@ export function createFetchHandler({ state, indexHtml }: AppOptions): (req: Requ
       if (req.method === "GET" && pathname === "/api/activity") return getActivity(state, url);
       if (req.method === "GET" && pathname === "/api/update") return json(updateStatus(state));
       if (req.method === "POST" && pathname === "/api/update/check") return postUpdateCheck(state);
-      if (req.method === "GET" && pathname === "/api/setup") return json(await setupState(state.config));
+      if (req.method === "GET" && pathname === "/api/setup") return json(await setupState(state.config, undefined, state.folderPicker));
       if (req.method === "POST" && pathname === "/api/setup/done") return json(await markSetupDone(state));
+      // A POST because it starts a process (the system's folder dialog); the body is never read.
+      if (req.method === "POST" && pathname === "/api/setup/folder") return postSetupFolder(state);
       if (req.method === "GET" && pathname === "/api/config") return json(state.config);
       if (req.method === "PUT" && pathname === "/api/config") return putConfig(state, req);
       if (req.method === "POST" && pathname === "/api/discover") return postDiscover(state, req);

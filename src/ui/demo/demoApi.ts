@@ -4,7 +4,7 @@ import { labelKey, labelProblem, MAX_LABEL_COLORS } from "../../shared/labels.ts
 import { availableName } from "../../shared/nameHints.ts";
 import { summarizeWorkInProgress } from "../../shared/workInProgress.ts";
 import { AUTO_FETCH_SECONDS, DEFAULT_AUTO_FETCH_SECONDS } from "../../shared/types.ts";
-import type { ChangeSnapshot, Config, DismissFile, DismissPreview, PullBlockingFile, PullResult, RepoConfig, RepoSharedConfig, RepoSnapshot, SharedConfigApplyResult, SharedConfigPreview, SharedProfile, Snapshot, UpdateStatus } from "../../shared/types.ts";
+import type { ChangeSnapshot, Config, DismissFile, DismissPreview, FolderPickResult, PullBlockingFile, PullResult, RepoConfig, RepoSharedConfig, RepoSnapshot, SharedConfigApplyResult, SharedConfigPreview, SharedProfile, Snapshot, UpdateStatus } from "../../shared/types.ts";
 import { ApiError, type Api, labelLists } from "../api.ts";
 import { demoApply, demoPreview, newCleanupState, remainingWorktrees } from "./demoCleanup.ts";
 import { createDemoSessions } from "./demoSessions.ts";
@@ -312,7 +312,9 @@ export function createDemoApi({ now = Date.now, latencyMs = 150, clock }: DemoAp
     // Fixed sample data, derived from the config the visitor is looking at: no process, no PATH, no file, no connection.
     environment: () => reply(demoEnvironment(config, now())),
     // Setup is done in the demo; the sample workspace is suggested again once the visitor removed it as a root.
-    setup: () => reply({ pending: false, home: DEMO_HOME, platform: "linux" as const, suggestedRoots: config.scanRoots.includes(DEMO_ROOT) ? [] : [DEMO_ROOT] }),
+    setup: () => reply({ pending: false, home: DEMO_HOME, platform: "linux" as const, suggestedRoots: config.scanRoots.includes(DEMO_ROOT) ? [] : [DEMO_ROOT], folderPicker: true }),
+    // No dialog in a web page: Choose folder… adds the sample workspace, so the visitor sees the button work.
+    pickFolder: () => reply<FolderPickResult>({ status: "chosen", path: DEMO_ROOT }),
     markSetupDone: () => {
       const { setup: _, ...rest } = config;
       config = rest;

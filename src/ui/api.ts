@@ -1,5 +1,6 @@
 import type { ActivityQuery } from "../shared/activity.ts";
-import type { ActivityPage, AutoMergePromptResult, ConsoleSession, ProjectConsoleLike, CleanupPreview, CleanupResult, CleanupSelection, ChangeIssueRef, CreateChangeResponse, DismissPreview, DismissResult, EnvironmentReport, PromptResult, PullRequestsResponse, PullResolve, PullResult, RepoIssues, SetupState, ShipResult, StartResult, UpdateStatus, WorkStatus } from "../shared/types.ts";
+import type { RepoAgentPatch } from "../shared/repoSettings.ts";
+import type { ActivityPage, AutoMergePromptResult, ConsoleSession, ProjectConsoleLike, CleanupPreview, CleanupResult, CleanupSelection, ChangeIssueRef, CreateChangeResponse, DismissPreview, DismissResult, EnvironmentReport, FolderPickResult, PromptResult, PullRequestsResponse, PullResolve, PullResult, RepoIssues, SetupState, ShipResult, StartResult, UpdateStatus, WorkStatus } from "../shared/types.ts";
 import type { AgentAvailability, AutoFetchSeconds, ArtifactFileContent, ChangeArtifacts, Config, CreateProjectResponse, DiscoverResult, IntegrationSession, PrTitleConvention, RepoConfig, ScanTriggerResult, Session, SessionAction, SessionWorktree, SharedConfig, SharedConfigApplyResult, SharedConfigAssignment, SharedConfigPreview, Snapshot } from "../shared/types.ts";
 import { socketOrigin } from "./url.ts";
 
@@ -28,11 +29,7 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
 
 /** Everything the UI asks of a backend. The demo build implements it in memory, so a new operation needs both. */
 /** What the agent toggle and picker change; `agentId: null` clears the project's own choice. */
-export interface RepoAgentPatch {
-  enabled?: boolean;
-  agentId?: string | null;
-  autoMergeDocs?: boolean;
-}
+export type { RepoAgentPatch } from "../shared/repoSettings.ts";
 
 /**
  * The labels editor reports "no labels left" as a key set to `undefined` (a config never stores an empty list); on the
@@ -89,6 +86,8 @@ export interface Api {
   environment(force?: boolean): Promise<EnvironmentReport>;
   /** Whether the setup wizard is pending, and the home folders worth offering as roots (setup-wizard). Read-only. */
   setup(): Promise<SetupState>;
+  /** Opens the system's folder dialog on the server's machine and waits for the user's choice; saves nothing. */
+  pickFolder(): Promise<FolderPickResult>;
   /** Finish or Skip setup: clears the pending flag and returns the saved configuration. */
   markSetupDone(): Promise<Config>;
   /** What the server last learned about newer releases (openspec/specs/update-notice). Contacts no network. */
@@ -254,6 +253,7 @@ export const httpApi: Api = {
   scan: () => call<ScanTriggerResult>("/api/scan", { method: "POST" }),
   environment: (force) => call<EnvironmentReport>(`/api/environment${force ? "?force=1" : ""}`),
   setup: () => call<SetupState>("/api/setup"),
+  pickFolder: () => call<FolderPickResult>("/api/setup/folder", { method: "POST", body: "{}" }),
   markSetupDone: () => call<Config>("/api/setup/done", { method: "POST", body: "{}" }),
   updateStatus: () => call<UpdateStatus>("/api/update"),
   checkForUpdate: () => call<UpdateStatus>("/api/update/check", { method: "POST" }),
@@ -344,6 +344,7 @@ export const api: Api = {
   scan: () => current.scan(),
   environment: (force) => current.environment(force),
   setup: () => current.setup(),
+  pickFolder: () => current.pickFolder(),
   markSetupDone: () => current.markSetupDone(),
   updateStatus: () => current.updateStatus(),
   checkForUpdate: () => current.checkForUpdate(),

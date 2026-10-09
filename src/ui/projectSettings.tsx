@@ -6,6 +6,7 @@
 // tile that holds one never opens the repository's board because of it.
 import type { ComponentChildren } from "preact";
 import { AUTO_FETCH_SECONDS, type AutoFetchSeconds, autoFetchInterval, CONVENTIONAL_COMMITS_SHIP_SENTENCE, repoAgentEnabled, type Config, type DetectedLabel, type PrTitleConvention, type RepoConfig } from "../shared/types.ts";
+import { settingApplies } from "../shared/repoSettings.ts";
 import { IconPencil, IconSettings, IconTag } from "./icons.tsx";
 import { labelSuggestions, RepoLabelsEditor } from "./labels.tsx";
 import { Modal } from "./modal.tsx";
@@ -71,7 +72,7 @@ export const AUTO_MERGE_HINT =
  * `AgentToggle`. `short` drops the setting's name from the visible text, for a place that names it already.
  */
 export function AutoMergeToggle({ repo, config, isGit, tracking, short = false }: { repo: RepoConfig; config: Config; isGit: boolean; tracking: Tracking; short?: boolean }) {
-  if (!isGit || !repoAgentEnabled(repo)) return null;
+  if (!settingApplies("autoMergeDocs", repo, config, isGit)) return null;
   const on = repo.agent?.autoMergeDocs === true;
   const state = on ? "On" : "Off";
   // The settings dialog names the setting on its line, so the switch there reads just On or Off.
@@ -114,20 +115,30 @@ export function AutoMergeToggle({ repo, config, isGit, tracking, short = false }
   );
 }
 
-/** Which agent the project's sessions start: only offered with a choice to make and sessions on for the project. */
-export function AgentPicker({ repo, config, tracking }: { repo: RepoConfig; config: Config; tracking: Tracking }) {
-  const agents = config.agentSessions.agents;
-  if (agents.length < 2 || !config.agentSessions.enabled || !repoAgentEnabled(repo)) return null;
+/** The option the setup wizard adds when the projects it sets at once disagree: leave each project's value as it is. */
+export const KEEP_EACH = "keep";
+export const KEEP_EACH_LABEL = "Keep each project's setting";
+
+function KeepOption({ keep }: { keep?: boolean }) {
+  return keep ? <option value={KEEP_EACH}>{KEEP_EACH_LABEL}</option> : null;
+}
+
+/** The control a setting is shown with: its value, its accessible name and what a change does. Saving is the caller's. */
+interface SelectProps {
+  value: string;
+  label: string;
+  title?: string;
+  disabled?: boolean;
+  /** Offer {@link KEEP_EACH} first. */
+  keep?: boolean;
+  onChange: (value: string) => void;
+}
+
+/** "default agent" or a configured profile; the value `""` is the default agent. */
+export function AgentSelect({ agents, value, label, title, disabled, keep, onChange }: SelectProps & { agents: Config["agentSessions"]["agents"] }) {
   return (
-    <select
-      class="input agent-picker"
-      aria-label={`Agent for ${repo.name}`}
-      title="The agent this project's sessions start, saved at once"
-      value={repo.agent?.agentId ?? ""}
-      disabled={tracking.busy[repo.id] !== undefined}
-      onClick={stop}
-      onChange={(e) => tracking.setAgent(repo.id, { agentId: e.currentTarget.value || null })}
-    >
+    <select class="input agent-picker" aria-label={label} title={title} value={value} disabled={disabled} onClick={stop} onChange={(e) => onChange(e.currentTarget.value)}>
+      <KeepOption keep={keep} />
       <option value="">default agent</option>
       {agents.map((a) => (
         <option key={a.id} value={a.id}>
@@ -135,6 +146,47 @@ export function AgentPicker({ repo, config, tracking }: { repo: RepoConfig; conf
         </option>
       ))}
     </select>
+  );
+}
+
+/** No convention (`""`) or Conventional Commits. */
+export function PrTitlesSelect({ value, label, title = PR_TITLES_TITLE, disabled, keep, onChange }: SelectProps) {
+  return (
+    <select class="input pr-titles-picker" aria-label={label} title={title} value={value} disabled={disabled} onClick={stop} onChange={(e) => onChange(e.currentTarget.value)}>
+      <KeepOption keep={keep} />
+      <option value="">No convention</option>
+      <option value="conventional-commits">Conventional Commits</option>
+    </select>
+  );
+}
+
+/** Off (`"0"`) or one of the offered intervals, in seconds. */
+export function AutoFetchSelect({ value, label, title = AUTO_FETCH_TITLE, disabled, keep, onChange }: SelectProps) {
+  return (
+    <select class="input auto-fetch-picker" aria-label={label} title={title} value={value} disabled={disabled} onClick={stop} onChange={(e) => onChange(e.currentTarget.value)}>
+      <KeepOption keep={keep} />
+      <option value="0">Off</option>
+      {AUTO_FETCH_SECONDS.map((s) => (
+        <option key={s} value={String(s)}>
+          {autoFetchLabel(s)}
+        </option>
+      ))}
+    </select>
+  );
+}
+
+/** Which agent the project's sessions start: only offered with a choice to make and sessions on for the project. */
+export function AgentPicker({ repo, config, tracking }: { repo: RepoConfig; config: Config; tracking: Tracking }) {
+  if (!settingApplies("agent", repo, config, false)) return null;
+  return (
+    <AgentSelect
+      agents={config.agentSessions.agents}
+      label={`Agent for ${repo.name}`}
+      title="The agent this project's sessions start, saved at once"
+      value={repo.agent?.agentId ?? ""}
+      disabled={tracking.busy[repo.id] !== undefined}
+      onChange={(value) => tracking.setAgent(repo.id, { agentId: value || null })}
+    />
   );
 }
 
@@ -147,18 +199,12 @@ export const PR_TITLES_TITLE = `PR titles: how Ship asks the agent to title this
 export function PrTitlesPicker({ repo, isGit, tracking }: { repo: RepoConfig; isGit: boolean; tracking: Tracking }) {
   if (!isGit) return null;
   return (
-    <select
-      class="input pr-titles-picker"
-      aria-label={`PR titles for ${repo.name}`}
-      title={PR_TITLES_TITLE}
+    <PrTitlesSelect
+      label={`PR titles for ${repo.name}`}
       value={repo.prTitleConvention ?? ""}
       disabled={tracking.busy[repo.id] !== undefined}
-      onClick={stop}
-      onChange={(e) => tracking.setPrTitleConvention(repo.id, (e.currentTarget.value || null) as PrTitleConvention | null)}
-    >
-      <option value="">No convention</option>
-      <option value="conventional-commits">Conventional Commits</option>
-    </select>
+      onChange={(value) => tracking.setPrTitleConvention(repo.id, (value || null) as PrTitleConvention | null)}
+    />
   );
 }
 
@@ -174,24 +220,12 @@ export const autoFetchLabel = (seconds: AutoFetchSeconds) => `E${autoFetchEvery(
 export function AutoFetchPicker({ repo, isGit, tracking }: { repo: RepoConfig; isGit: boolean; tracking: Tracking }) {
   if (!isGit) return null;
   return (
-    <select
-      class="input auto-fetch-picker"
-      aria-label={`Auto fetch for ${repo.name}`}
-      title={AUTO_FETCH_TITLE}
+    <AutoFetchSelect
+      label={`Auto fetch for ${repo.name}`}
       value={String(autoFetchInterval(repo) ?? 0)}
       disabled={tracking.busy[repo.id] !== undefined}
-      onClick={stop}
-      onChange={(e) => {
-        tracking.setAutoFetch(repo.id, Number(e.currentTarget.value) as AutoFetchSeconds | 0);
-      }}
-    >
-      <option value="0">Off</option>
-      {AUTO_FETCH_SECONDS.map((s) => (
-        <option key={s} value={String(s)}>
-          {autoFetchLabel(s)}
-        </option>
-      ))}
-    </select>
+      onChange={(value) => tracking.setAutoFetch(repo.id, Number(value) as AutoFetchSeconds | 0)}
+    />
   );
 }
 

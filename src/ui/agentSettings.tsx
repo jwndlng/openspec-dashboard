@@ -6,7 +6,7 @@ import { AGENT_PRESETS } from "../shared/agentDefaults.ts";
 import { DEFAULT_INTEGRATE_PROMPT, DEFAULT_RESOLVE_CONFLICTS_PROMPT, DEFAULT_SHIP_PROMPT, STARTER_PROMPT_KEYS, type AgentAvailability, type AgentProfile, type AgentSessionsConfig, type Config, type PromptKey, type Shortcut, type StarterPromptKey } from "../shared/types.ts";
 import { api } from "./api.ts";
 import { addShortcut, moveShortcut, removeShortcut, restoredShortcuts } from "./quickReplies.ts";
-import { parseArgLines, slugId } from "./sessionState.ts";
+import { newAgentProfile, parseArgLines } from "./sessionState.ts";
 import { followInApp, href } from "./url.ts";
 
 interface Props {
@@ -353,8 +353,7 @@ export function AgentSettings({ draft, update }: Props) {
     setExpanded((was) => new Set([...was, profile.id]));
   };
   const addAgent = () => {
-    const id = slugId("agent", settings.agents.map((a) => a.id));
-    addProfile({ id, name: "New agent", command: ["my-agent-cli", "{prompt}"], prompts: { implement: "Implement the OpenSpec change {change}: run `openspec instructions apply --change {change}` and follow it." } });
+    addProfile(newAgentProfile({ name: "New agent", command: ["my-agent-cli", "{prompt}"], taken: settings.agents.map((a) => a.id), idBase: "agent" }));
   };
   const removeAgent = (id: string) => update({ agentSessions: withoutAgent(settings, id) });
 

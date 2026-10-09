@@ -375,7 +375,12 @@ export interface SetupState {
   suggestedRoots: string[];
   /** The platform the server runs on, which decides the install instructions shown (`darwin`, `linux` or `win32`). */
   platform: "darwin" | "linux" | "win32";
+  /** Whether `POST /api/setup/folder` can open the system's folder dialog on this machine. */
+  folderPicker: boolean;
 }
+
+/** What `POST /api/setup/folder` answers: the folder the user chose in the system's dialog, or why there is none. */
+export type FolderPickResult = { status: "chosen"; path: string } | { status: "cancelled" } | { status: "failed"; reason: string };
 
 /**
  * What the server last learned about newer releases (`GET /api/update`). `enabled` is false when the user turned the

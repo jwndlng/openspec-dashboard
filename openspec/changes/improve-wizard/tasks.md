@@ -2,23 +2,23 @@
 
 ## 1. Folder picker (server)
 
-- [ ] 1.1 In `src/server/setup.ts`, add the constant picker command per platform (`osascript`; `zenity`, else `kdialog`, only with `DISPLAY`/`WAYLAND_DISPLAY`; PowerShell `FolderBrowserDialog`) and `folderPickerAvailable()` via `Bun.which`. Verify with a test that picks the command per platform and env, starting no process
-- [ ] 1.2 Implement `pickFolder()`: spawn without a shell, `cwd` the dashboard home, parse chosen / cancelled / failed, canonicalise and require an existing directory, one at a time, kill after ten minutes. Verify with tests using a fake picker on `PATH` (chosen, cancelled, non-directory, second request while open, timeout with a shortened limit, request body never in argv/env/stdin)
-- [ ] 1.3 Add `folderPicker` to `SetupState` in `src/shared/types.ts` and to `GET /api/setup`, add `POST /api/setup/folder` in `src/server/api.ts` behind `crossSiteRefusal`, and add `api.pickFolder` in `src/ui/api.ts`. Verify with API tests: `403` cross-site with no process started, `409` while open, `failed` without a picker
+- [x] 1.1 In `src/server/setup.ts`, add the constant picker command per platform (`osascript`; `zenity`, else `kdialog`, only with `DISPLAY`/`WAYLAND_DISPLAY`; PowerShell `FolderBrowserDialog`) and `folderPickerAvailable()` via `Bun.which`. Verify with a test that picks the command per platform and env, starting no process
+- [x] 1.2 Implement `pickFolder()`: spawn without a shell, `cwd` the dashboard home, parse chosen / cancelled / failed, canonicalise and require an existing directory, one at a time, kill after ten minutes. Verify with tests using a fake picker on `PATH` (chosen, cancelled, non-directory, second request while open, timeout with a shortened limit, request body never in argv/env/stdin)
+- [x] 1.3 Add `folderPicker` to `SetupState` in `src/shared/types.ts` and to `GET /api/setup`, add `POST /api/setup/folder` in `src/server/api.ts` behind `crossSiteRefusal`, and add `api.pickFolder` in `src/ui/api.ts`. Verify with API tests: `403` cross-site with no process started, `409` while open, `failed` without a picker
 
 ## 2. Shared pieces for the wizard
 
-- [ ] 2.1 Extract `newAgentProfile(name, command)` and `slugId` from `src/ui/agentSettings.tsx` into a shared helper, and use it for Settings' **+ Add agent**. Verify that the existing agent settings tests pass unchanged
-- [ ] 2.2 Extract the project-settings setters (`withAgentEnabled`, `withAgentId`, `withPrTitles`, `withAutoMergeDocs`, `withAutoFetch`) and `settingApplies` from `src/ui/projectSettings.tsx` as pure functions, and have the `Tracking` handlers use them. Verify with unit tests for each setter (the default clears the key) and that the overview tests pass unchanged
-- [ ] 2.3 Split the dialog's controls (Agent sessions, Agent, PR titles, Docs auto-merge, Auto fetch) into presentational components that take `value`/`onChange`, keeping labels, options, tooltips and accessible names. The dialog wraps them with `Tracking`. Verify that the project settings dialog renders and behaves as before (existing tests)
+- [x] 2.1 Extract `newAgentProfile(name, command)` (next to `slugId` in `src/ui/sessionState.ts`), and use it for Settings' **+ Add agent**. Verify that the existing agent settings tests pass unchanged
+- [x] 2.2 Extract the project-settings setters (`withRepoAgent`, `withPrTitleConvention`, `withAutoFetch`) from the server's per-setting routes and `settingApplies` from `src/ui/projectSettings.tsx` into `src/shared/repoSettings.ts` as pure functions, and have the routes and the dialog use them. Verify with unit tests for each setter (the default clears the key) and that the overview tests pass unchanged
+- [x] 2.3 Split the dialog's controls (Agent sessions, Agent, PR titles, Docs auto-merge, Auto fetch) into presentational components that take `value`/`onChange` (the selects; the switches' tooltips and states are exported for the wizard's Enabled/Disabled and On/Off selects, which need a "Keep each project's setting" option), keeping labels, options, tooltips and accessible names. The dialog wraps them with `Tracking`. Verify that the project settings dialog renders and behaves as before (existing tests)
 
 ## 3. Step logic (`src/ui/setupState.ts`)
 
-- [ ] 3.1 Grow `SETUP_STEPS` to Welcome, Workspace, Agents, Console, Project settings, System check, Done. Verify with a test of the order and of "n of 7"
-- [ ] 3.2 Multi-agent model: `agentChoices` marks configured profiles locked, found presets are checked by default, custom agents are validated (name, first argument), the default agent is offered among checked ones with the preselection rule, and `agentsSave` appends checked presets and valid custom agents in order and sets the default. Verify with tests for every Agents scenario in the spec, including "save nothing"
-- [ ] 3.3 `consoleSave(current, choice)`: only `consoleAgent` changes, **Default agent** clears it, `null` when unchanged. Verify with tests
-- [ ] 3.4 Project settings: `commonValue`, the per-setting applicable count, edits drafts for both modes, and `projectSettingsSave(current, mode, edits, isGitById)` writing only touched fields to applicable projects, one config, `null` when nothing changed. Verify with tests for every Project settings scenario (all mode, mixed values kept, individual walk-through, folder without git, default clears, nothing changed)
-- [ ] 3.5 Extend `setupSummary` with agents added, console agent and projects changed. Verify with a test of the Done scenario
+- [x] 3.1 Grow `SETUP_STEPS` to Welcome, Workspace, Agents, Console, Project settings, System check, Done. Verify with a test of the order and of "n of 7"
+- [x] 3.2 Multi-agent model: `agentChoices` marks configured profiles locked, found presets are checked by default, custom agents are validated (name, first argument), the default agent is offered among checked ones with the preselection rule, and `agentsSave` appends checked presets and valid custom agents in order and sets the default. Verify with tests for every Agents scenario in the spec, including "save nothing"
+- [x] 3.3 `consoleSave(current, choice)`: only `consoleAgent` changes, **Default agent** clears it, `null` when unchanged. Verify with tests
+- [x] 3.4 Project settings: `commonValue`, the per-setting applicable count, edits drafts for both modes, and `projectSettingsSave(current, mode, edits, isGitById)` writing only touched fields to applicable projects, one config, `null` when nothing changed. Verify with tests for every Project settings scenario (all mode, mixed values kept, individual walk-through, folder without git, default clears, nothing changed)
+- [x] 3.5 Extend `setupSummary` with agents added, console agent and projects changed. Verify with a test of the Done scenario
 
 ## 4. Wizard views (`src/ui/setupWizard.tsx`)
 
