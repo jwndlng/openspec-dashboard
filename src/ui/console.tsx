@@ -1,6 +1,6 @@
 // The main console: one agent session that belongs to no repository and no change, opened from the top bar. It runs
-// the default agent without a prompt in the console folder; the user says what it is for. Everything change-related —
-// Ship, work status, next steps, worktree removal, pull — is absent on purpose.
+// the console agent (chosen in Settings, else the default agent) without a prompt in the console folder; the user says
+// what it is for. Everything change-related — Ship, work status, next steps, worktree removal, pull — is absent on purpose.
 import { useEffect, useRef, useState } from "preact/hooks";
 import type { ConsoleSession } from "../shared/types.ts";
 import { api } from "./api.ts";
@@ -102,7 +102,7 @@ function ConsoleView({ onClose }: { onClose: () => void }) {
           </h1>
           <CloseButton onClose={onClose} />
         </div>
-        <p class="hint">Your default agent, outside every change — ask it anything, or have it spin off new work.</p>
+        <p class="hint">Your console agent, outside every change — ask it anything, or have it spin off new work.</p>
       </div>
       <section class="console-pane main-console" aria-label="Agent console">
         <header class="session-head">

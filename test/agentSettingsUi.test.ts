@@ -1,7 +1,8 @@
 import { expect, test } from "bun:test";
 import { AGENT_PRESETS, ANTIGRAVITY_PROFILE, CLAUDE_PROFILE } from "../src/shared/agentDefaults.ts";
-import type { AgentAvailability, AgentProfile, PromptKey } from "../src/shared/types.ts";
-import { AgentEditor, PerProjectNote, PresetPicker, ShortcutEditor } from "../src/ui/agentSettings.tsx";
+import type { AgentAvailability, AgentProfile, AgentSessionsConfig, PromptKey } from "../src/shared/types.ts";
+import { defaultConfig, validateConfig } from "../src/server/config.ts";
+import { AgentEditor, ConsoleAgentPicker, PerProjectNote, PresetPicker, ShortcutEditor, withoutAgent } from "../src/ui/agentSettings.tsx";
 import { byTag, elements, textOf } from "./vnode.ts";
 
 const profile = (patch: Partial<AgentProfile> = {}): AgentProfile => ({ id: "fake", name: "Fake Agent", command: ["fake", "{prompt}"], prompts: { implement: "implement {change}" }, ...patch });
@@ -203,4 +204,56 @@ test("Fast-forward has no prompt field of its own, and its warning is a setting 
   const source = await Bun.file(new URL("../src/ui/agentSettings.tsx", import.meta.url)).text();
   expect(source).toContain("checked={settings.confirmFastForward !== false}");
   expect(source).toContain("Warn before fast-forwarding");
+});
+
+const sessions = (patch: Partial<AgentSessionsConfig> = {}): AgentSessionsConfig => ({
+  enabled: true,
+  agents: [CLAUDE_PROFILE, ANTIGRAVITY_PROFILE],
+  defaultAgent: CLAUDE_PROFILE.id,
+  shortcuts: [],
+  ...patch,
+});
+
+test("the console agent is offered only with a choice to make, with the default agent first", () => {
+  expect(ConsoleAgentPicker({ settings: sessions({ agents: [CLAUDE_PROFILE] }), onChange: () => {} })).toBeNull();
+  const tree = ConsoleAgentPicker({ settings: sessions(), onChange: () => {} });
+  const select = byTag(tree, "select")[0];
+  expect(select.props["aria-label"]).toBe("Console agent");
+  expect(select.props.value).toBe(""); // no choice reads as the default agent
+  expect(byTag(tree, "option").map((o) => [o.props.value, textOf(o)])).toEqual([
+    ["", "default agent"],
+    [CLAUDE_PROFILE.id, CLAUDE_PROFILE.name],
+    [ANTIGRAVITY_PROFILE.id, ANTIGRAVITY_PROFILE.name],
+  ]);
+  expect(byTag(ConsoleAgentPicker({ settings: sessions({ consoleAgent: ANTIGRAVITY_PROFILE.id }), onChange: () => {} }), "select")[0].props.value).toBe(ANTIGRAVITY_PROFILE.id);
+});
+
+test("choosing a profile stores it; choosing the default agent stores no choice", () => {
+  const chosen: (string | undefined)[] = [];
+  const select = byTag(ConsoleAgentPicker({ settings: sessions(), onChange: (v) => chosen.push(v) }), "select")[0];
+  const pick = (value: string) => (select.props.onChange as (e: { currentTarget: { value: string } }) => void)({ currentTarget: { value } });
+  pick(ANTIGRAVITY_PROFILE.id);
+  pick("");
+  expect(chosen).toEqual([ANTIGRAVITY_PROFILE.id, undefined]);
+});
+
+test("removing the console's profile sends the console back to the default agent, and the result saves", () => {
+  const after = withoutAgent(sessions({ consoleAgent: ANTIGRAVITY_PROFILE.id }), ANTIGRAVITY_PROFILE.id);
+  expect(after.agents.map((a) => a.id)).toEqual([CLAUDE_PROFILE.id]);
+  expect("consoleAgent" in after).toBe(false);
+  expect(() => validateConfig({ ...defaultConfig(), agentSessions: after })).not.toThrow();
+  // Removing another profile keeps the choice; removing the default picks a new default.
+  const three = sessions({ agents: [CLAUDE_PROFILE, ANTIGRAVITY_PROFILE, profile()], consoleAgent: ANTIGRAVITY_PROFILE.id });
+  expect(withoutAgent(three, "fake").consoleAgent).toBe(ANTIGRAVITY_PROFILE.id);
+  expect(withoutAgent(three, CLAUDE_PROFILE.id)).toMatchObject({ defaultAgent: ANTIGRAVITY_PROFILE.id, consoleAgent: ANTIGRAVITY_PROFILE.id });
+});
+
+test("the Console group offers the agent picker after the folder and says which agent the console starts", async () => {
+  const source = await Bun.file(new URL("../src/ui/agentSettings.tsx", import.meta.url)).text();
+  const body = source.slice(source.indexOf("export function AgentSettings"));
+  const at = ["<h3>Console</h3>", 'aria-label="Console folder"', "<ConsoleAgentPicker", "<PerProjectNote"].map((s) => body.indexOf(s));
+  expect(at.every((i) => i >= 0)).toBe(true);
+  expect([...at].sort((a, b) => a - b)).toEqual(at);
+  expect(body).toContain("opens the agent chosen here");
+  expect(body).not.toContain("opens your default agent");
 });

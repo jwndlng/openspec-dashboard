@@ -363,6 +363,15 @@ test("a saved console folder that no longer exists still loads; its shape is sti
   expect(validateConfig(base).agentSessions.consoleDir).toBeUndefined();
 });
 
+test("the console agent is optional, kept when it names a profile, and refused when it names none", () => {
+  const base = defaultConfig();
+  const second = { ...CLAUDE_PROFILE, id: "my-agent", name: "My Agent", command: ["my-agent-cli", "{prompt}"] };
+  const two = { ...base.agentSessions, agents: [CLAUDE_PROFILE, second] };
+  expect(validateConfig({ ...base, agentSessions: two }).agentSessions.consoleAgent).toBeUndefined();
+  expect(validateConfig({ ...base, agentSessions: { ...two, consoleAgent: "my-agent" } }).agentSessions.consoleAgent).toBe("my-agent");
+  expect(() => validateConfig({ ...base, agentSessions: { ...two, consoleAgent: "nope" } })).toThrow(/agentSessions\.consoleAgent: unknown agent/);
+});
+
 test("the Resolve conflicts prompt and its suffix survive a round trip, like Ship's", () => {
   // Without this the key is silently stripped on load, and a configured prompt quietly stops being used.
   const agent = {

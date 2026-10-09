@@ -1144,6 +1144,7 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: 
 }
 .agent-tools { display: flex; flex-direction: column; gap: 4px; }
 .agent-tools textarea { resize: vertical; }
+.agent-tools select.input { align-self: flex-start; min-width: 12rem; max-width: 100%; }
 .open-work { position: relative; }
 .btn.attention { color: var(--warning); border-color: var(--warning-border); }
 .open-work-list {

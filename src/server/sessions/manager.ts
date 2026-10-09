@@ -12,7 +12,7 @@ import { isCleaningUp } from "../cleanup.ts";
 import { isDismissing } from "../dismissChange.ts";
 import { canonicalPath, worktreesDir } from "../paths.ts";
 import { CHANGE_NAME } from "../source.ts";
-import { agentEnv, agentFor, availability, defaultAgentOf, presetAvailability, integratePrompt, launchCommand, launchWithoutPrompt, openingPrompt, resolveConflictsPrompt, shipPrompt } from "./agents.ts";
+import { agentEnv, agentFor, availability, consoleAgentOf, defaultAgentOf, presetAvailability, integratePrompt, launchCommand, launchWithoutPrompt, openingPrompt, resolveConflictsPrompt, shipPrompt } from "./agents.ts";
 import { consoleFolderProblem, prepareConsoleFolder } from "./consoleFolder.ts";
 import type { SessionActivity } from "../activity/events.ts";
 import { readReport, STATE_FILE_ENV, terminalRepliesOnly, type Report } from "./reportedState.ts";
@@ -261,15 +261,16 @@ export class SessionManager {
   }
 
   /**
-   * The main console: the default agent, without a prompt, in the console folder — no repository, no change, no
-   * worktree, no git. One at a time: while one runs, it is returned instead of starting another.
+   * The main console: the console agent (the profile chosen for it, else the default), without a prompt, in the console
+   * folder — no repository, no change, no worktree, no git. One at a time: while one runs, it is returned instead of
+   * starting another.
    */
   async openConsole(): Promise<{ session: ConsoleSession; created: boolean }> {
     const config = this.deps.getConfig();
     if (!config.agentSessions.enabled) throw new SessionError(403, "agent sessions are disabled");
     const running = this.list().find((s): s is ConsoleSession => isConsole(s) && s.state === "running");
     if (running) return { session: running, created: false };
-    const agent = defaultAgentOf(config);
+    const agent = consoleAgentOf(config);
     if (!agent) throw new SessionError(503, "no agent is configured");
     if (!Bun.which(agent.command[0])) throw new SessionError(503, `${agent.name} was not found (${agent.command[0]}); install it or change its command in Settings`);
     let prepared: ReturnType<typeof prepareConsoleFolder>;

@@ -136,6 +136,8 @@ const agentSessionsSchema = z
     defaultAgent: z.string().default(() => defaultAgentSessions().defaultAgent),
     // Shape only: a config whose console folder was deleted since must still load. Saving checks the folder itself.
     consoleDir: absolutePath.optional(),
+    // Absent means the default agent; Settings stores "default agent" that way so the console follows the default.
+    consoleAgent: z.string().optional(),
     // Absent means a config saved before shortcuts were configurable: it carries the shipped ones. An empty list is the
     // user's own decision and is kept — the dashboard never adds a shortcut back.
     shortcuts: z.array(shortcutSchema).default(() => defaultAgentSessions().shortcuts),
@@ -147,6 +149,7 @@ const agentSessionsSchema = z
     const ids = cfg.agents.map((a) => a.id);
     if (new Set(ids).size !== ids.length) ctx.addIssue({ code: "custom", path: ["agents"], message: "agent ids must be unique" });
     if (!ids.includes(cfg.defaultAgent)) ctx.addIssue({ code: "custom", path: ["defaultAgent"], message: "must be the id of a configured agent" });
+    if (cfg.consoleAgent !== undefined && !ids.includes(cfg.consoleAgent)) ctx.addIssue({ code: "custom", path: ["consoleAgent"], message: "unknown agent" });
     const shortcutIds = cfg.shortcuts.map((s) => s.id);
     if (new Set(shortcutIds).size !== shortcutIds.length) ctx.addIssue({ code: "custom", path: ["shortcuts"], message: "shortcut ids must be unique" });
   });

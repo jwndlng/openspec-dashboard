@@ -8,7 +8,7 @@ import { consoleFolderProblem } from "../src/server/sessions/consoleFolder.ts";
 import type { SessionManager } from "../src/server/sessions/manager.ts";
 import type { ChangeSession } from "../src/shared/types.ts";
 import { tempDir, useTempHome } from "./helpers.ts";
-import { fakeProfile, harness, waitFor, watch } from "./sessionHelpers.ts";
+import { FAKE_AGENT, fakeProfile, harness, waitFor, watch } from "./sessionHelpers.ts";
 
 // Real processes in pseudo-terminals; slow CI runners need more than the 5 s default.
 setDefaultTimeout(30_000);
@@ -92,6 +92,55 @@ test("resumes in the same folder and starts a new console after the previous one
   expect(manager.get(session.id).state).toBe("exited");
   // Resuming the ended one now would make two consoles run.
   await expect(manager.resume(session.id)).rejects.toMatchObject({ status: 409 });
+});
+
+test("runs the console agent when one is chosen, and the default agent otherwise", async () => {
+  const h = await harness();
+  const manager = track(h.manager);
+  h.config.agentSessions.agents.push(fakeProfile({ id: "second", name: "Second Agent", command: [FAKE_AGENT, "--second", "--task={prompt}"] }));
+  h.config.agentSessions.consoleAgent = "second";
+  const { session } = await manager.openConsole();
+  expect(session).toMatchObject({ agentId: "second", agentName: "Second Agent" });
+  const view = await watch(manager, session.id);
+  await waitFor(() => view.text().includes("fake-agent ready"), "agent start");
+  expect(view.text()).toContain('args=["--second"]');
+  view.detach();
+  // Change sessions of a project without an agent of its own still start the default.
+  const change = (await manager.open({ repoId: h.repoId, change: "cache-api-calls", action: "implement" })) as ChangeSession;
+  expect(change.agentId).toBe("fake");
+  await manager.close(session.id);
+
+  h.config.agentSessions.consoleAgent = undefined;
+  expect((await manager.openConsole()).session.agentId).toBe("fake");
+});
+
+test("a chosen console agent that is not installed is refused by its name", async () => {
+  const h = await harness();
+  const manager = track(h.manager);
+  h.config.agentSessions.agents.push(fakeProfile({ id: "absent", name: "Absent Agent", command: ["no-such-agent-osd", "{prompt}"] }));
+  h.config.agentSessions.consoleAgent = "absent";
+  await expect(manager.openConsole()).rejects.toMatchObject({ status: 503, message: expect.stringContaining("Absent Agent was not found (no-such-agent-osd)") });
+  expect(manager.list()).toEqual([]);
+});
+
+test("a running console keeps its agent, and Resume continues with it after the choice changed", async () => {
+  const h = await harness();
+  const manager = track(h.manager);
+  h.config.agentSessions.agents.push(fakeProfile({ id: "second", name: "Second Agent", command: [FAKE_AGENT, "--second", "{prompt}"], resumeCommand: [FAKE_AGENT, "--second-resumed"] }));
+  const { session } = await manager.openConsole();
+  expect(session.agentId).toBe("fake");
+  h.config.agentSessions.consoleAgent = "second";
+  // Still the same console, with the agent it was started with.
+  expect((await manager.openConsole())).toMatchObject({ session: { id: session.id, agentId: "fake" }, created: false });
+  await manager.close(session.id);
+  const resumed = await manager.resume(session.id);
+  expect(resumed.agentId).toBe("fake");
+  const view = await watch(manager, session.id);
+  await waitFor(() => view.text().includes('args=["--resumed"]'), "the original agent's resume command");
+  view.detach();
+  await manager.close(session.id);
+  // The choice applies to the next console started.
+  expect((await manager.openConsole()).session.agentId).toBe("second");
 });
 
 test("runs next to change sessions without touching them", async () => {

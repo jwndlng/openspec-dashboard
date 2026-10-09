@@ -15,6 +15,13 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    id: "2026-10-09-console-agent",
+    date: "2026-10-09",
+    title: "Pick the console's agent",
+    summary:
+      "The top-bar **console** can now run a different agent from your default — Codex or Antigravity for questions, say, while Claude Code keeps doing your changes. Choose it under **Settings → Agent sessions → Console**.",
+  },
+  {
     id: "2026-10-09-update-notice",
     date: "2026-10-09",
     title: "Know when a new version is out",
