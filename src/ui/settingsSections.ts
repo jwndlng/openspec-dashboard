@@ -1,6 +1,6 @@
 // Settings sections: ids are part of the deep-link contract (?section=<id>). Pure helpers, no DOM access.
 
-export const SECTION_IDS = ["roots", "scanning", "agents", "shared-config", "environment"] as const;
+export const SECTION_IDS = ["roots", "scanning", "agents", "shared-config", "updates", "environment"] as const;
 export type SectionId = (typeof SECTION_IDS)[number];
 
 const PARAM = "section";

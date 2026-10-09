@@ -360,6 +360,23 @@ export interface Config {
   agentSessions: AgentSessionsConfig;
   /** The colour the user chose per label, by lower-case label name, as a hue in degrees; absent when none was chosen. */
   labelColors?: Record<string, number>;
+  /** `false` when the user turned Check for new versions off; absent means on (openspec/specs/update-notice). */
+  updateCheck?: false;
+}
+
+/**
+ * What the server last learned about newer releases (`GET /api/update`). `enabled` is false when the user turned the
+ * check off or the build is `dev`; `available` is true only when it is enabled and `latest` is newer than `current`.
+ */
+export interface UpdateStatus {
+  enabled: boolean;
+  /** The running version, exactly as `GET /api/version` reports it. */
+  current: string;
+  /** The last release tag learned, kept across failed checks. */
+  latest?: string;
+  checkedAt?: string;
+  outcome: "never" | "ok" | "failed";
+  available: boolean;
 }
 
 /**

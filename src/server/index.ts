@@ -12,6 +12,7 @@ import { Scanner } from "./scanner.ts";
 import { confirmIntegration } from "./integration.ts";
 import { SessionManager } from "./sessions/manager.ts";
 import { pruneMergeScratch } from "./sessions/workStatus.ts";
+import { UpdateChecker } from "./updateCheck.ts";
 import { VERSION } from "./version.ts";
 
 // With `type: "text"` Bun hands us the file contents; bun-types only knows the HTMLBundle shape.
@@ -119,6 +120,10 @@ async function main(): Promise<void> {
     },
   });
   state.autoFetcher.plan();
+  // About a minute from now, then at most daily; never for `dev` or with Check for new versions off.
+  state.updateChecker = new UpdateChecker({ getConfig: () => state.config, version: VERSION });
+  await state.updateChecker.load();
+  state.updateChecker.plan();
   state.scanner.start();
 
   server.reload({
@@ -132,6 +137,7 @@ async function main(): Promise<void> {
   const shutdown = () => {
     state.scanner.stop();
     state.autoFetcher?.stop();
+    state.updateChecker?.stop();
     // Children must not outlive the dashboard; sessions in flight become `interrupted` and can be resumed.
     void (state.sessions?.shutdown() ?? Promise.resolve()).finally(() => {
       server.stop(true);

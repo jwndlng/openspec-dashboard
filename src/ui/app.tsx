@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import type { ComponentChildren } from "preact";
-import type { Config, Snapshot } from "../shared/types.ts";
+import type { Config, Snapshot, UpdateStatus } from "../shared/types.ts";
 import { Activity } from "./activity.tsx";
 import { loadSeen, saveSeen, unseenLabel } from "./activityState.ts";
 import { api } from "./api.ts";
@@ -25,6 +25,7 @@ import { applyTheme, loadPreference, nextPreference, resolveTheme, savePreferenc
 import { Help } from "./help.tsx";
 import { IconActivity, IconChevronDown, IconClock, IconGitPullRequest, IconHelp, IconKanban, IconLayoutGrid, IconMonitor, IconMoon, IconRefresh, IconSettings, IconSun } from "./icons.tsx";
 import { HeroHomeMark, HeroHomeTitle } from "./heroHome.tsx";
+import { loadDismissed, saveDismissed, UPDATE_REREAD_MS, UpdateBanner } from "./updateBanner.tsx";
 import { WhatsNew } from "./whatsNew.tsx";
 import { Tour } from "./tour.tsx";
 import { loadTourSeen, saveTourSeen, shouldAutoStart, TOUR_ANCHOR, type TourAnchor, tourAutoStarts } from "./tourState.ts";
@@ -57,6 +58,10 @@ export function App() {
   const [projectConsoleRepoId, showProjectConsole] = useState<string>();
   /** What this machine is missing. Owned here because both Settings and the hero read the same report. */
   const [environment, setEnvironment] = useState<EnvironmentState>({ loading: true });
+  /** What the server last learned about newer releases; read here because the banner and Settings both show it. */
+  const [update, setUpdate] = useState<UpdateStatus>();
+  /** The release version whose banner was dismissed in this browser. */
+  const [updateDismissed, setUpdateDismissed] = useState<string | undefined>(loadDismissed);
   /** The configuration request has answered, either way: until then the Console control may still appear. */
   const [configSettled, setConfigSettled] = useState(false);
   // The first-visit tour. Not in the route, like the console: it explains the page without changing it.
@@ -143,6 +148,27 @@ export function App() {
   useEffect(() => {
     void loadEnvironment();
   }, [loadEnvironment]);
+
+  /**
+   * Reads the update status: on load, after a save, and once an hour while the page stays open. The server does the
+   * checking (at most daily); this only asks it what it knows. A failed read keeps what was shown.
+   */
+  const loadUpdate = useCallback(async () => {
+    try {
+      setUpdate(await api.updateStatus());
+    } catch {
+      // An older server or a brief outage: no banner is better than a wrong one, and the next read tries again.
+    }
+  }, []);
+  useEffect(() => {
+    void loadUpdate();
+    const reread = setInterval(() => void loadUpdate(), UPDATE_REREAD_MS);
+    return () => clearInterval(reread);
+  }, [loadUpdate]);
+  const dismissUpdate = (version: string) => {
+    saveDismissed(version);
+    setUpdateDismissed(version);
+  };
 
   // Re-fetch on the configured poll interval, and re-render the relative ages every minute.
   useEffect(() => {
@@ -285,6 +311,7 @@ export function App() {
     <SessionProvider config={config} snapshot={shown} consoleOpen={consoleShown} showConsole={showConsole} integrationId={integrationShown ? integrationId : undefined} showIntegration={showIntegration} projectConsoleRepoId={projectConsoleShown ? projectConsoleRepoId : undefined} showProjectConsole={showProjectConsole} onConfig={setConfig}>
     {/* Everything but the detail overlay: inert while it is open, so the board behind it takes no focus and no clicks. */}
     <div class="app" inert={overlayOpen} aria-hidden={overlayOpen ? "true" : undefined}>
+      <UpdateBanner status={update} dismissed={updateDismissed} onDismiss={dismissUpdate} />
       {/* The hero: the product's name, big, over a soft accent glow; below it the navigation, and — continuing the same
           ground — the current view's own header band and filter bar. The status and actions keep their corner. */}
       <header class="topbar hero">
@@ -422,6 +449,9 @@ export function App() {
             snapshot={shown}
             onSaved={(c) => {
               setConfig(c);
+              // Turned off: the banner goes at once, before the server's answer confirms it.
+              if (c.updateCheck === false) setUpdate((was) => was && { ...was, enabled: false, available: false });
+              void loadUpdate();
               void loadState();
               // The configuration decides which checks are needed at all, so a fresh report is asked for.
               void loadEnvironment();
@@ -429,6 +459,8 @@ export function App() {
             onRescan={reloadSoon}
             environment={environment}
             onRecheckEnvironment={() => void loadEnvironment(true)}
+            update={update}
+            onUpdate={setUpdate}
           />
         ) : route.view === "help" ? (
           <Help onTour={startTour} />

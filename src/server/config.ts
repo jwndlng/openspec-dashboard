@@ -213,6 +213,11 @@ export const configSchema = z
     port: z.number().int().min(1024).max(65535),
     agentSessions: agentSessionsSchema,
     labelColors: labelColorsSchema,
+    // Only `false` is stored: on is the default and is written as no key at all.
+    updateCheck: z
+      .boolean()
+      .optional()
+      .transform((on) => (on === false ? (false as const) : undefined)),
   })
   .superRefine((cfg, ctx) => {
     const colored = Object.keys(cfg.labelColors ?? {});

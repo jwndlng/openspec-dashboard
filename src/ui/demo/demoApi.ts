@@ -4,7 +4,7 @@ import { labelKey, labelProblem, MAX_LABEL_COLORS } from "../../shared/labels.ts
 import { availableName } from "../../shared/nameHints.ts";
 import { summarizeWorkInProgress } from "../../shared/workInProgress.ts";
 import { AUTO_FETCH_SECONDS, DEFAULT_AUTO_FETCH_SECONDS } from "../../shared/types.ts";
-import type { ChangeSnapshot, Config, DismissFile, DismissPreview, PullBlockingFile, PullResult, RepoConfig, RepoSharedConfig, RepoSnapshot, SharedConfigApplyResult, SharedConfigPreview, SharedProfile, Snapshot } from "../../shared/types.ts";
+import type { ChangeSnapshot, Config, DismissFile, DismissPreview, PullBlockingFile, PullResult, RepoConfig, RepoSharedConfig, RepoSnapshot, SharedConfigApplyResult, SharedConfigPreview, SharedProfile, Snapshot, UpdateStatus } from "../../shared/types.ts";
 import { ApiError, type Api, labelLists } from "../api.ts";
 import { demoApply, demoPreview, newCleanupState, remainingWorktrees } from "./demoCleanup.ts";
 import { createDemoSessions } from "./demoSessions.ts";
@@ -12,6 +12,9 @@ import { sampleArtifactFiles } from "./sampleArtifacts.ts";
 import { buildActivity, buildIssues, buildPullRequests, buildSample, DEMO_CARRIED, demoEnvironment, DEMO_PROFILES, DEMO_ROOT } from "./sampleData.ts";
 import type { Clock } from "./transcripts.ts";
 
+
+/** The demo checks for nothing: a version that is no release, so the page explains that this build does not check. */
+export const DEMO_UPDATE_STATUS: UpdateStatus = { enabled: false, current: "demo", outcome: "never", available: false };
 
 // ---------------------------------------------------------------------------------------------------------------------
 // One sample repository's first pull is blocked by the dashboard's own leftovers, so the visitor can try Resolve and
@@ -305,6 +308,12 @@ export function createDemoApi({ now = Date.now, latencyMs = 150, clock }: DemoAp
     config: () => reply(config),
     // Fixed sample data, derived from the config the visitor is looking at: no process, no PATH, no file, no connection.
     environment: () => reply(demoEnvironment(config, now())),
+    // The demo never checks for new versions: nothing to announce, and Check now is refused as when turned off.
+    updateStatus: () => reply(DEMO_UPDATE_STATUS),
+    checkForUpdate: () =>
+      attempt((): UpdateStatus => {
+        throw new ApiError(409, "the demo does not check for new versions");
+      }),
     saveConfig: (next) => {
       config = structuredClone(next);
       return reply(config);

@@ -1,5 +1,5 @@
 import type { ActivityQuery } from "../shared/activity.ts";
-import type { ActivityPage, AutoMergePromptResult, ConsoleSession, ProjectConsoleLike, CleanupPreview, CleanupResult, CleanupSelection, ChangeIssueRef, CreateChangeResponse, DismissPreview, DismissResult, EnvironmentReport, PromptResult, PullRequestsResponse, PullResolve, PullResult, RepoIssues, ShipResult, StartResult, WorkStatus } from "../shared/types.ts";
+import type { ActivityPage, AutoMergePromptResult, ConsoleSession, ProjectConsoleLike, CleanupPreview, CleanupResult, CleanupSelection, ChangeIssueRef, CreateChangeResponse, DismissPreview, DismissResult, EnvironmentReport, PromptResult, PullRequestsResponse, PullResolve, PullResult, RepoIssues, ShipResult, StartResult, UpdateStatus, WorkStatus } from "../shared/types.ts";
 import type { AgentAvailability, AutoFetchSeconds, ArtifactFileContent, ChangeArtifacts, Config, CreateProjectResponse, DiscoverResult, IntegrationSession, PrTitleConvention, RepoConfig, ScanTriggerResult, Session, SessionAction, SessionWorktree, SharedConfig, SharedConfigApplyResult, SharedConfigAssignment, SharedConfigPreview, Snapshot } from "../shared/types.ts";
 import { socketOrigin } from "./url.ts";
 
@@ -87,6 +87,10 @@ export interface Api {
    * reads nothing in a tracked repository, so a configured credential is never proved to be valid.
    */
   environment(force?: boolean): Promise<EnvironmentReport>;
+  /** What the server last learned about newer releases (openspec/specs/update-notice). Contacts no network. */
+  updateStatus(): Promise<UpdateStatus>;
+  /** **Check now**: the server asks for the latest release and answers the new status. `ApiError` 409 while checks are off. */
+  checkForUpdate(): Promise<UpdateStatus>;
   /**
    * Creates a new change directory in the repository: `openspec/changes/<name>/` with the schema marker and, when a
    * non-empty prompt is given, `prompt.md`, with dependencies `depends-on.yaml`, and for an imported issue `issue.yaml`.
@@ -245,6 +249,8 @@ export const httpApi: Api = {
     call<DiscoverResult>("/api/discover", { method: "POST", body: scanRoots || ignorePaths ? JSON.stringify({ scanRoots, ignorePaths }) : undefined }),
   scan: () => call<ScanTriggerResult>("/api/scan", { method: "POST" }),
   environment: (force) => call<EnvironmentReport>(`/api/environment${force ? "?force=1" : ""}`),
+  updateStatus: () => call<UpdateStatus>("/api/update"),
+  checkForUpdate: () => call<UpdateStatus>("/api/update/check", { method: "POST" }),
   createChange: (repoId, name, prompt, dependsOn, issue) =>
     call<CreateChangeResponse>(`/api/repos/${encodeURIComponent(repoId)}/changes`, {
       method: "POST",
@@ -331,6 +337,8 @@ export const api: Api = {
   discover: (scanRoots, ignorePaths) => current.discover(scanRoots, ignorePaths),
   scan: () => current.scan(),
   environment: (force) => current.environment(force),
+  updateStatus: () => current.updateStatus(),
+  checkForUpdate: () => current.checkForUpdate(),
   createChange: (...args) => current.createChange(...args),
   listIssues: (repoId) => current.listIssues(repoId),
   pullRepo: (repoId) => current.pullRepo(repoId),

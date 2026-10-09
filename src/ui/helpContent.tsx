@@ -246,6 +246,12 @@ export const HELP_SECTIONS: readonly HelpSection[] = [
           Its own state — configuration, activity history, session records — lives in <code>~/.spec-control/</code>. It
           listens on <code>127.0.0.1</code> only. Theme, auto-refresh and whether you saw the tour are kept in this browser.
         </p>
+        <p>
+          Once a day it asks github.com for the tag of its own latest release — one request carrying only the version you
+          run — and shows a banner when a newer one exists. Nothing is downloaded or installed: to update, replace the
+          binary or the app, and your settings and sessions stay. Turn it off in{" "}
+          <AppLink path="/settings" query="?section=updates">Settings → Updates</AppLink>.
+        </p>
       </>
     ),
   },

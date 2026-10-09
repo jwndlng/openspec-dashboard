@@ -28,7 +28,8 @@ bun test test/scanner.test.ts   # a single test file
   `package.json` and lockfile. It runs the bundled `spec-control` binary as a child process with `--no-open` and shows
   `http://127.0.0.1:<port>/` in its window — no bridge, no injected script, no server of its own — or attaches to a
   Spec Control already on the port. It adds no network access: its own process requests only `127.0.0.1`, links to other
-  hosts open in the default browser, and there is no updater, so invariant 4 is unchanged. Its testable decisions live
+  hosts open in the default browser, and there is no updater, so invariant 4 is unchanged: a new version is noticed
+  through the server's update check, whose banner the window shows like any other page. Its testable decisions live
   in `desktop/src/logic/` (no Electrobun import), tested by `test/desktop/` in the root `bun test`; `src/main.ts` is the
   Electrobun wiring only and is not part of the root typecheck. `bun run build:desktop` builds it.
 - `test/fixtures/` — synthetic `openspec/` trees written for the tests (see `test/fixtures/README.md`). Tests assert on
@@ -156,10 +157,11 @@ bun test test/scanner.test.ts   # a single test file
    Do not call the library's `resolveSchema`/`loadChangeContext`: they locate files via `import.meta.url`, which does not exist inside the
    compiled binary. The adapter embeds the schema at build time. Anything that works under `bun run` but reads files
    relative to a module path must also be verified in `dist/spec-control`.
-4. **No network at runtime, except the pull action, the automatic fetch and the pull-request and issue queries.** The UI is one HTML file with inlined
+4. **No network at runtime, except the pull action, the automatic fetch, the pull-request and issue queries and the
+   update check.** The UI is one HTML file with inlined
    JS, CSS and fonts; do not add CDN links, remote fonts or fetches to other hosts — the links to github.com in the
-   Pull requests view, the Import from issues dialog, on cards and in the detail header are links the user follows, not requests the page makes. The server reaches a network in exactly
-   two places, both on the user's own action or setting: when git does, inside the pull action or a project's automatic fetch of invariant 1 (on unless switched off), and when `gh` does,
+   Pull requests view, the Import from issues dialog, on cards, in the detail header and in the update banner are links the user follows, not requests the page makes. The server reaches a network in exactly
+   three places, each on the user's own action or setting: when git does, inside the pull action or a project's automatic fetch of invariant 1 (on unless switched off), and when `gh` does,
    inside the pull-request or issue query of invariant 1 (`src/server/pullRequests.ts`, `src/server/issues.ts`) — for
    issues, the user opened Import from issues or pressed its Refresh; for pull requests, the user activated Refresh, or opened
    the Pull requests view, a repository's pull-request dialog or a Kanban board (whose cards link to their change's pull
@@ -169,6 +171,13 @@ bun test test/scanner.test.ts   # a single test file
    tool's own credentials: the dashboard never sees, stores or asks for them, never prompts, and masks credentials in
    any error text it passes on. Without `gh`, or without it being signed in, the feature reports itself unavailable and
    nothing else changes.
+   The third is the **update check** (`src/server/updateCheck.ts`, `openspec/specs/update-notice/spec.md`): the server's
+   own `fetch` of one unauthenticated `HEAD` to `https://github.com/jwndlng/spec-control/releases/latest`, redirects not
+   followed and only `Location` read, carrying nothing but `User-Agent: spec-control/<version>` — no git, no `gh`, no
+   credential, nothing about the user, a path or a repository. It runs about a minute after start and then at most once
+   every 24 hours (remembered in `~/.spec-control/update-check.json`), or when the user presses **Check now**; never for
+   a build whose version is not a release tag (`dev`), never while the user turned **Check for new versions** off
+   (`updateCheck: false`), and never in the demo. Its URL is a constant: do not make it configurable.
 5. **The repository is the source of truth.** The dashboard indexes; everything it shows about the *current state* of a
    change is derived from the repositories. The one thing it keeps that cannot be re-derived is history: the activity
    log (`~/.spec-control/activity.jsonl`, `src/server/activity/`) records what the dashboard observed and when.

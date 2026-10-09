@@ -66,8 +66,8 @@ System Settings → Privacy & Security after the first attempt.
 The app runs the same `spec-control` binary in its own window, uses the same `~/.spec-control/` and, if a
 `spec-control` you started in a terminal is already running, shows that one instead of starting another. Closing the
 window keeps the server and your agent sessions running (the app stays in the menu bar); **Quit** stops them, asking
-first while sessions run. The app makes no network request of its own and does not update itself: to update, choose
-**Releases Page** in its menu and download the new `.dmg`.
+first while sessions run. The app makes no network request of its own and does not update itself; see
+[Updating](#updating).
 
 **On an Intel Mac or Linux, use the binary.**
 
@@ -95,6 +95,26 @@ bun run build:desktop          # → the macOS app under desktop/build (Apple si
 bun run dev                    # or run from source on http://127.0.0.1:4711
 ```
 
+## Updating
+
+**Knowing there is a new version.** Once a day Spec Control asks github.com for the tag of its latest release and,
+when it is newer than yours, shows a banner at the top of every page, in the browser and in the app. That is one
+`HEAD` request to `github.com/jwndlng/spec-control/releases/latest`; it carries the version you run (as its user
+agent) and nothing else — nothing about you, this machine or your projects. Development builds never check. Turn it
+off in **Settings → Updates** (**Check for new versions**), or with `"updateCheck": false` in
+`~/.spec-control/config.json`; the same section has **Check now**. Nothing is downloaded or installed for you.
+
+**Installing it.** Your settings, sessions, worktrees and history live in `~/.spec-control/`, so replacing the
+program loses nothing:
+
+- **The app:** quit Spec Control (menu bar → **Quit Spec Control**), download the new `.dmg` from the
+  [releases page](https://github.com/jwndlng/spec-control/releases), drag **Spec Control** over the old one in
+  Applications and open it — allowing it once more as described under [Run](#run).
+- **The binary:** stop it (`Ctrl+C`), download and verify the new `spec-control-<tag>-<platform>` as under
+  [Run](#run), replace the old file with it, `chmod +x` it and start it again.
+
+Agent sessions that were running when you quit end as resumable and can be resumed after the update.
+
 ## What it touches
 
 - It listens on `127.0.0.1` only.
@@ -103,8 +123,9 @@ bun run dev                    # or run from source on http://127.0.0.1:4711
   or starting and ending an agent session's worktree — plus **Auto fetch**, which fetches each project's remote every
   minute (refs only, never your files) unless you switch it off in the project's settings. It never commits or pushes;
   your agent does that, under its own permission prompts.
-- It uses the network only for **Pull** and **Auto fetch** (through git) and to read pull requests (through `gh`), with
-  those tools' own sign-ins. It never sees your credentials and never changes anything on GitHub.
+- It uses the network only for **Pull** and **Auto fetch** (through git), to read pull requests and issues (through
+  `gh`), with those tools' own sign-ins, and for the daily [update check](#updating) unless you turn it off. It never
+  sees your credentials and never changes anything on GitHub.
 - Its own state lives in `~/.spec-control/`.
 
 The complete list is in the [dashboard-api spec](openspec/specs/dashboard-api/spec.md).
