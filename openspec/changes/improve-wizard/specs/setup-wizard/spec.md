@@ -32,12 +32,28 @@ without horizontal scrolling.
 ### Requirement: The Welcome step says what setup covers
 The Welcome step SHALL say in a few sentences what the dashboard is for, and that setup covers where the user's
 projects live, the agent CLIs the user works with, the main console, the settings of the user's projects and a check of
-the tools the dashboard relies on. It SHALL say that every step can be skipped and changed later, in Settings or in a
-project's settings, and that setup can be run again from Help.
+the tools the dashboard relies on. It SHALL show these five topics as a diagram of the steps ahead: one node per step,
+in the order the wizard takes them and connected in that order, each node with the step's number, its name and one line
+on what it sets up, ending in a node for being ready to work. The diagram SHALL run across on a wide viewport and down
+on a narrow one, SHALL fit a 400px viewport without horizontal scrolling, and SHALL be exposed to assistive technology
+as an ordered list of the steps, with its connectors and icons hidden. It SHALL say that every step can be skipped and
+changed later, in Settings or in a project's settings, and that setup can be run again from Help.
 
 #### Scenario: Welcome
 - **WHEN** the wizard opens
 - **THEN** the Welcome step names the five topics, says that every step can be skipped and changed later, and says setup can be run again from Help
+
+#### Scenario: The steps as a diagram
+- **WHEN** the Welcome step is shown in a 1440px wide viewport
+- **THEN** it shows Workspace, Agents, Console, Project settings and System check as numbered nodes from 1 to 5 in one row, connected in that order and followed by a node for being ready, each with one line on what it sets up
+
+#### Scenario: The diagram on a narrow window
+- **WHEN** the Welcome step is shown in a 400px wide viewport
+- **THEN** the nodes run from top to bottom, connected in the same order, without scrolling sideways
+
+#### Scenario: The diagram for a screen reader
+- **WHEN** a screen reader user reaches the diagram
+- **THEN** it is announced as a list of five steps in order, each read as its name and its line, without the connectors
 
 ### Requirement: The Workspace step adds roots and tracks projects
 The Workspace step SHALL list the configured workspace roots and let the user add roots in three ways: with

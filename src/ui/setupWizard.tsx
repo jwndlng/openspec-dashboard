@@ -10,7 +10,7 @@ import { AgentSessionsStatement } from "./agentSettings.tsx";
 import { api } from "./api.ts";
 import { CommandSteps } from "./commandSteps.tsx";
 import { ENVIRONMENT_STATUS_BADGE, ENVIRONMENT_STATUS_LABEL } from "./environmentState.ts";
-import { IconRefresh } from "./icons.tsx";
+import { IconCheck, IconFolderGit, IconMonitor, IconRefresh, IconScan, IconSettings, IconTerminal } from "./icons.tsx";
 import { AgentSelect, AUTO_FETCH_TITLE, AUTO_MERGE_HINT, AutoFetchSelect, autoFetchLabel, KEEP_EACH, KEEP_EACH_LABEL, PR_TITLES_TITLE, PrTitlesSelect } from "./projectSettings.tsx";
 import {
   type AgentChoice,
@@ -129,30 +129,49 @@ export function WizardFrame({
   );
 }
 
+/** The steps ahead, as the Welcome diagram shows them: its node's icon, the step's name and one line on what it sets up. */
+export const WELCOME_FLOW = [
+  { name: "Workspace", Icon: IconFolderGit, line: "where your projects live, so Spec Control can find them." },
+  { name: "Agents", Icon: IconTerminal, line: "the agent CLIs you work with, and which one starts by default." },
+  { name: "Console", Icon: IconMonitor, line: "the agent you talk to about anything that is not one change, across all your projects." },
+  { name: "Project settings", Icon: IconSettings, line: "how each project's sessions behave: pull request titles, auto-merge for docs and how often it is fetched." },
+  { name: "System check", Icon: IconScan, line: "whether the tools it relies on are installed, and how to install what is missing." },
+] as const;
+
 export function WelcomeStep() {
   return (
-    <div class="setup-step">
+    <div class="setup-step setup-welcome">
       <p class="setup-lead">
         Spec Control shows the OpenSpec changes of the repositories on this machine on one board, and can start your coding agents on any of them. A few things decide whether
         it is useful from the start:
       </p>
-      <ul class="setup-topics">
-        <li>
-          <strong>Workspace</strong> — where your projects live, so Spec Control can find them.
-        </li>
-        <li>
-          <strong>Agents</strong> — the agent CLIs you work with, and which one starts by default.
-        </li>
-        <li>
-          <strong>Console</strong> — the agent you talk to about anything that is not one change, across all your projects.
-        </li>
-        <li>
-          <strong>Project settings</strong> — how each project's sessions behave: pull request titles, auto-merge for docs and how often it is fetched.
-        </li>
-        <li>
-          <strong>System check</strong> — whether the tools it relies on are installed, and how to install what is missing.
-        </li>
-      </ul>
+      <div class="setup-flow">
+        <ol class="setup-flow-steps" aria-label="What setup covers">
+          {WELCOME_FLOW.map(({ name, Icon, line }, i) => (
+            <li key={name} class="setup-flow-node">
+              <span class="setup-flow-mark" aria-hidden="true">
+                <span class="setup-flow-number">{i + 1}</span>
+                <Icon size={18} />
+              </span>
+              <span class="setup-flow-text">
+                <strong>{name}</strong>
+                <span class="setup-flow-sep"> — </span>
+                <span class="setup-flow-line">{line}</span>
+              </span>
+            </li>
+          ))}
+        </ol>
+        <div class="setup-flow-node setup-flow-end" aria-hidden="true">
+          <span class="setup-flow-mark">
+            <IconCheck size={18} />
+          </span>
+          <span class="setup-flow-text">
+            <strong>Ready</strong>
+            <span class="setup-flow-sep"> — </span>
+            <span class="setup-flow-line">your projects on one board.</span>
+          </span>
+        </div>
+      </div>
       <p class="hint">Every step can be skipped and changed later, in Settings or in a project's settings. You can run setup again from Help.</p>
     </div>
   );

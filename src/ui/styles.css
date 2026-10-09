@@ -896,6 +896,37 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: 
 .setup-step .hint { font-size: 13px; }
 .setup-lead { font-size: 16px; color: var(--fg-heading); }
 .setup-topics { display: grid; gap: 10px; }
+/* The Welcome step's diagram of the steps ahead: numbered nodes joined by a line, across on a wide dialog and down on a
+   narrow one. The list is what assistive technology reads; the line, the icons and the Ready node are decoration. */
+.setup-welcome { max-width: none; }
+.setup-flow { display: grid; grid-template-columns: 5fr 1fr; padding: 22px 8px 18px; border: 1px solid var(--border-light); border-radius: var(--radius); background: var(--bg-section); }
+.setup-flow-steps { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); margin: 0; padding: 0 !important; list-style: none; }
+.setup-flow-node { position: relative; display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 0 8px; text-align: center; }
+.setup-flow-node:not(.setup-flow-end)::after {
+  content: ""; position: absolute; top: 23px; left: calc(50% + 30px); right: calc(-50% + 30px); height: 2px;
+  border-radius: 1px; background: linear-gradient(90deg, var(--brand), var(--brand-soft));
+}
+.setup-flow-mark {
+  position: relative; display: inline-flex; align-items: center; justify-content: center; width: 48px; height: 48px; flex: none;
+  border-radius: 50%; color: var(--brand-fg); background: var(--brand-softer); border: 2px solid var(--brand);
+}
+.setup-flow-number {
+  position: absolute; top: -6px; right: -8px; min-width: 20px; height: 20px; padding: 0 5px; border-radius: 999px;
+  font-size: 11px; font-weight: 700; line-height: 20px; color: var(--on-brand); background: var(--brand-strong); box-shadow: 0 0 0 2px var(--bg-section);
+}
+.setup-flow-end .setup-flow-mark { color: var(--success); border-color: var(--success); border-style: dashed; background: transparent; }
+.setup-flow-text { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.setup-flow-text strong { font-size: 14px; color: var(--fg-heading); }
+.setup-flow-line { font-size: 12.5px; line-height: 1.45; color: var(--fg-subtle); }
+.setup-flow-sep { display: none; }
+@media (max-width: 720px) {
+  .setup-flow { display: block; padding: 18px 16px 4px; }
+  .setup-flow-steps { display: block; }
+  .setup-flow-node { flex-direction: row; align-items: flex-start; gap: 14px; padding: 0 0 18px; text-align: left; }
+  .setup-flow-node:not(.setup-flow-end)::after { top: 52px; bottom: 2px; left: 23px; right: auto; width: 2px; height: auto; background: linear-gradient(180deg, var(--brand), var(--brand-soft)); }
+  .setup-flow-text { padding-top: 4px; }
+  .setup-flow-mark { width: 48px; height: 48px; }
+}
 .setup-group { display: flex; flex-direction: column; gap: 14px; }
 .setup-wizard .btn, .setup-wizard .input { min-height: 40px; font-size: 14px; }
 .setup-wizard .btn { padding: 8px 16px; justify-content: center; }

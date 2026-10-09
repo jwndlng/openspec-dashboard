@@ -47,6 +47,18 @@ test("Welcome names the five topics, that steps can be skipped, and Help", () =>
   for (const word of ["Workspace", "Agents", "Console", "Project settings", "System check", "skipped", "Settings", "Help"]) expect(text).toContain(word);
 });
 
+test("Welcome shows the steps as an ordered list, the connectors and the Ready node hidden", () => {
+  const step = WelcomeStep();
+  const list = byTag(step, "ol").find((el) => el.props["aria-label"] === "What setup covers");
+  const items = byTag(list, "li");
+  expect(items.map((li) => textOf(byTag(li, "strong")[0]))).toEqual(["Workspace", "Agents", "Console", "Project settings", "System check"]);
+  expect(items.map((li) => textOf(li).slice(0, 1))).toEqual(["1", "2", "3", "4", "5"]);
+  for (const li of items) expect(byTag(li, "span").find((el) => el.props.class === "setup-flow-mark")?.props["aria-hidden"]).toBe("true");
+  const ready = byTag(step, "div").find((el) => String(el.props.class).includes("setup-flow-end"));
+  expect(ready?.props["aria-hidden"]).toBe("true");
+  expect(textOf(ready)).toContain("Ready");
+});
+
 const workspace = (patch: Partial<WorkspaceView> = {}): WorkspaceView => ({
   configuredRoots: [],
   entered: ["/w/acme"],

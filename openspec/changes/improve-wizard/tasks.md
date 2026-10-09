@@ -27,6 +27,7 @@
 - [x] 4.3 Console step: the explanation, the choice only with two or more profiles, the "sessions off" note. Wire `consoleSave` on Continue. Verify with view tests
 - [x] 4.4 Project settings step: modes, "Keep each project's setting", the applicable counts, defaults named, "Project n of N" with Previous/Next project, "Reading projects…" until every covered project has a scan entry (pass the snapshot from `app.tsx`, and while waiting trigger a scan and read `GET /api/state`, since a scan asked for during another is dropped), the empty state, errors kept on a failed save. Verify with view tests and in `bun run dev` against fixture projects
 - [x] 4.5 Update Welcome (five topics) and Done (new summary lines). Verify with view tests
+- [x] 4.6 Welcome: show the five steps as a connected diagram (numbered nodes with icon, name and one line, then a "Ready" node), across on wide viewports and down on narrow ones, an ordered list for assistive technology with connectors and icons hidden. Verify with a view test of the list and in headless Chrome at 1440px and 400px, light and dark
 
 ## 5. Layout
 
