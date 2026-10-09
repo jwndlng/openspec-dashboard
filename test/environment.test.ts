@@ -73,12 +73,17 @@ afterEach(async () => {
 });
 
 /** Runs the report with `bin` as the whole PATH and the dashboard home in a temp directory. */
-async function report(bin: string, config: Config = defaultConfig(), snapshot: Snapshot = { generatedAt: "2026-09-30T10:00:00.000Z", repos: [] }): Promise<EnvironmentReport> {
+async function report(
+  bin: string,
+  config: Config = defaultConfig(),
+  snapshot: Snapshot = { generatedAt: "2026-09-30T10:00:00.000Z", repos: [] },
+  platform?: string,
+): Promise<EnvironmentReport> {
   const home = await useTempHome();
   cleanups.push(home.cleanup);
   process.env.PATH = bin;
   resetEnvironmentCache();
-  return environmentReport(config, snapshot);
+  return environmentReport(config, snapshot, { platform });
 }
 
 function byId(result: EnvironmentReport, id: string): EnvironmentCheck {
@@ -103,6 +108,7 @@ test("a fully equipped machine yields ok, in a stable order", async () => {
   expect(result.status).toBe("ok");
   expect(result.checks.map((c) => c.id)).toEqual(["dashboard-home", "git", "git-identity", "openspec-cli", "agent:claude", "github-cli"]);
   for (const check of result.checks) expect(check.remedy).toBeUndefined();
+  for (const check of result.checks) expect(check.instructions).toBeUndefined();
   expect(Date.parse(result.checkedAt)).toBeGreaterThan(0);
 });
 
@@ -424,3 +430,63 @@ async function treeOf(root: string): Promise<string> {
   await visit(root);
   return lines.join("\n");
 }
+
+// Instructions (setup-wizard): every check that is not ok says how, for the platform the server runs on.
+test("every check that is not ok carries instructions on every platform", async () => {
+  for (const platform of ["darwin", "linux", "win32"]) {
+    const { bin } = await machine([], {});
+    const config = withAgents({ ...defaultConfig(), agentSessions: { ...withAgents().agentSessions, agents: [...defaultConfig().agentSessions.agents, { id: "my-agent", name: "My agent", command: ["my-agent-cli", "{prompt}"], prompts: {} }] } });
+    const result = await report(bin, config, undefined, platform);
+    for (const check of result.checks) {
+      if (check.status === "ok" || check.status === "not-needed") expect(check.instructions).toBeUndefined();
+      else expect([platform, check.id, (check.instructions ?? []).length > 0]).toEqual([platform, check.id, true]);
+    }
+  }
+});
+
+test("openspec missing on macOS names an install command", async () => {
+  const { bin } = await machine(["git"]);
+  const check = byId(await report(bin, defaultConfig(), undefined, "darwin"), "openspec-cli");
+  expect(check.instructions?.some((step) => step.command?.includes("@fission-ai/openspec"))).toBe(true);
+});
+
+test("missing git gets the platform's install route", async () => {
+  const { bin } = await machine(["openspec"]);
+  expect(byId(await report(bin, defaultConfig(), undefined, "darwin"), "git").instructions?.[0].command).toBe("xcode-select --install");
+  expect(byId(await report(bin, defaultConfig(), undefined, "win32"), "git").instructions?.[0].command).toContain("winget");
+});
+
+test("gh without credentials asks for gh auth login and no install", async () => {
+  const { bin } = await machine();
+  const check = byId(await report(bin, withAgents(), undefined, "darwin"), "github-cli");
+  expect(check.instructions?.map((step) => step.command)).toEqual(["gh auth login"]);
+});
+
+test("gh not installed names the install before the login", async () => {
+  const { bin } = await machine(["git", "openspec", "claude"]);
+  const check = byId(await report(bin, withAgents(), undefined, "darwin"), "github-cli");
+  expect(check.instructions?.map((step) => step.command)).toEqual(["brew install gh", "gh auth login"]);
+});
+
+test("identity instructions name only the missing key", async () => {
+  const { bin } = await machine(TOOLS, { email: "demo@example.invalid" });
+  const check = byId(await report(bin, withAgents()), "git-identity");
+  expect(check.instructions?.map((step) => step.command)).toEqual(['git config --global user.name "Your Name"']);
+});
+
+test("a missing preset agent gets its preset's command, a custom one the generic advice", async () => {
+  const { bin } = await machine(["git", "openspec"]);
+  const config = withAgents({
+    ...defaultConfig(),
+    agentSessions: {
+      ...defaultConfig().agentSessions,
+      agents: [...defaultConfig().agentSessions.agents, { id: "codex", name: "Codex", command: ["codex", "{prompt}"], prompts: {} }, { id: "my-agent", name: "My agent", command: ["my-agent-cli", "{prompt}"], prompts: {} }],
+    },
+  });
+  const result = await report(bin, config, undefined, "linux");
+  expect(byId(result, "agent:codex").instructions?.[0].command).toBe("npm install -g @openai/codex");
+  const custom = byId(result, "agent:my-agent").instructions ?? [];
+  expect(custom).toHaveLength(1);
+  expect(custom[0].text).toContain("my-agent-cli");
+  expect(custom[0].command).toBeUndefined();
+});

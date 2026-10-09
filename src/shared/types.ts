@@ -364,6 +364,17 @@ export interface Config {
   labelColors?: Record<string, number>;
   /** `false` when the user turned Check for new versions off; absent means on (openspec/specs/update-notice). */
   updateCheck?: false;
+  /** Only on a configuration created on first start or after a reset: the setup wizard has not been finished or skipped. */
+  setup?: "pending";
+}
+
+/** What `GET /api/setup` answers (setup-wizard): whether setup is pending, and folders worth offering as roots. */
+export interface SetupState {
+  pending: boolean;
+  home: string;
+  suggestedRoots: string[];
+  /** The platform the server runs on, which decides the install instructions shown (`darwin`, `linux` or `win32`). */
+  platform: "darwin" | "linux" | "win32";
 }
 
 /**
@@ -1191,6 +1202,14 @@ export interface EnvironmentCheck {
   found: string;
   /** How to fix it, in one line; absent when the status is `ok` or `not-needed`. */
   remedy?: string;
+  /** Steps for the platform the server runs on, each with a command the user may copy; never run by the dashboard. */
+  instructions?: InstructionStep[];
+}
+
+/** One step of a check's instructions: what to do, and optionally the one command to run for it. */
+export interface InstructionStep {
+  text: string;
+  command?: string;
 }
 
 export interface EnvironmentReport {

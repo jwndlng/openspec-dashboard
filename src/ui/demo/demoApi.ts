@@ -20,6 +20,9 @@ export const DEMO_UPDATE_STATUS: UpdateStatus = { enabled: false, current: "demo
 // One sample repository's first pull is blocked by the dashboard's own leftovers, so the visitor can try Resolve and
 // pull: `.openspec.yaml` is the same on both sides, `prompt.md` is not, and everything here is made up.
 // ---------------------------------------------------------------------------------------------------------------------
+/** The demo visitor's home directory, as `GET /api/setup` reports it. */
+const DEMO_HOME = "/home/demo";
+
 const BLOCKED_REPO = "2f86b0cd"; // quill-docs
 const BLOCKED_CHANGE = "add-import-redirects";
 const BLOCKED_UPSTREAM = "4f19b7ce0a2d5168b3c47ae90d1f6825bb3c07ea";
@@ -308,6 +311,13 @@ export function createDemoApi({ now = Date.now, latencyMs = 150, clock }: DemoAp
     config: () => reply(config),
     // Fixed sample data, derived from the config the visitor is looking at: no process, no PATH, no file, no connection.
     environment: () => reply(demoEnvironment(config, now())),
+    // Setup is done in the demo; the sample workspace is suggested again once the visitor removed it as a root.
+    setup: () => reply({ pending: false, home: DEMO_HOME, platform: "linux" as const, suggestedRoots: config.scanRoots.includes(DEMO_ROOT) ? [] : [DEMO_ROOT] }),
+    markSetupDone: () => {
+      const { setup: _, ...rest } = config;
+      config = rest;
+      return reply(config);
+    },
     // The demo never checks for new versions: nothing to announce, and Check now is refused as when turned off.
     updateStatus: () => reply(DEMO_UPDATE_STATUS),
     checkForUpdate: () =>

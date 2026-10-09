@@ -8,6 +8,7 @@ import type { AutoFetcher } from "./autoFetch.ts";
 import { applyCleanup, CleanupBusyError, previewCleanup } from "./cleanup.ts";
 import { changeDirFor, listArtifactFiles, readArtifactFile } from "./artifacts.ts";
 import { consoleFolderProblem } from "./sessions/consoleFolder.ts";
+import { markSetupDone, setupState } from "./setup.ts";
 import { ConfigValidationError, newRepoConfig, repoId, updateConfig, validateConfig, validateIgnorePaths, validateScanRoots } from "./config.ts";
 import { createChange } from "./createChange.ts";
 import { createProject, CreateProjectError } from "./createProject.ts";
@@ -95,7 +96,8 @@ async function putConfig(state: AppState, req: Request): Promise<Response> {
   // Checked on save only (loading must survive a folder deleted since); opening the console checks it again.
   const consoleProblem = next.agentSessions.consoleDir ? consoleFolderProblem(next.agentSessions.consoleDir, next) : undefined;
   if (consoleProblem) return json({ error: `invalid config: agentSessions.consoleDir: ${consoleProblem}`, issues: [`agentSessions.consoleDir: ${consoleProblem}`] }, 400);
-  const { previous, saved } = await updateConfig(state, () => next);
+  // `setup` is the server's, not the client's: a Settings tab holding an older copy can neither end nor restart setup.
+  const { previous, saved } = await updateConfig(state, (current) => ({ ...next, setup: current.setup }));
   afterConfigChange(state, previous);
   return json(saved);
 }
@@ -1041,6 +1043,8 @@ export function createFetchHandler({ state, indexHtml }: AppOptions): (req: Requ
       if (req.method === "GET" && pathname === "/api/activity") return getActivity(state, url);
       if (req.method === "GET" && pathname === "/api/update") return json(updateStatus(state));
       if (req.method === "POST" && pathname === "/api/update/check") return postUpdateCheck(state);
+      if (req.method === "GET" && pathname === "/api/setup") return json(await setupState(state.config));
+      if (req.method === "POST" && pathname === "/api/setup/done") return json(await markSetupDone(state));
       if (req.method === "GET" && pathname === "/api/config") return json(state.config);
       if (req.method === "PUT" && pathname === "/api/config") return putConfig(state, req);
       if (req.method === "POST" && pathname === "/api/discover") return postDiscover(state, req);

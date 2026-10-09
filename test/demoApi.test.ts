@@ -397,3 +397,15 @@ test("the demo's activity carries metrics in the visitor's time zone: several pr
   // A zone this runtime cannot name counts in UTC instead of failing the feed.
   expect((await api.activity({ limit: 1, tz: "Mars/Olympus" })).metrics?.events).toBe(page.metrics?.events);
 });
+
+test("setup is done in the demo, and Run setup again works on the page's own config", async () => {
+  const { api } = demo();
+  const setup = await api.setup();
+  expect(setup.pending).toBe(false);
+  // The sample workspace is configured, so nothing is suggested until the visitor removes it.
+  expect(setup.suggestedRoots).toEqual([]);
+  const config = await api.config();
+  await api.saveConfig({ ...config, scanRoots: [] });
+  expect((await api.setup()).suggestedRoots).toEqual(config.scanRoots);
+  expect((await api.markSetupDone()).setup).toBeUndefined();
+});

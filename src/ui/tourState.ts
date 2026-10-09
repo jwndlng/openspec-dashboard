@@ -156,7 +156,10 @@ export function tourAutoStarts(): boolean {
   return autoStart;
 }
 
-/** Whether the tour starts by itself now: once per load, in a browser that has not seen it, with no overlay in the way. */
-export function shouldAutoStart(state: { enabled: boolean; seen: boolean; alreadyStarted: boolean; ready: boolean; overlayOpen: boolean }): boolean {
-  return state.enabled && !state.seen && !state.alreadyStarted && state.ready && !state.overlayOpen;
+/**
+ * Whether the tour starts by itself now: once per load, in a browser that has not seen it, with no overlay in the way
+ * and setup no longer pending — on a fresh installation the setup wizard comes first, and the tour follows it.
+ */
+export function shouldAutoStart(state: { enabled: boolean; seen: boolean; alreadyStarted: boolean; ready: boolean; overlayOpen: boolean; setupPending: boolean }): boolean {
+  return state.enabled && !state.seen && !state.alreadyStarted && state.ready && !state.overlayOpen && !state.setupPending;
 }

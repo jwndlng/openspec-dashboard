@@ -1,5 +1,6 @@
 // The Environment section of Settings (openspec/specs/environment-check): every check the report made, in its order,
 // with what was found and how to fix it. Hook-free on purpose — the app shell owns the report, so this renders one.
+import { CommandSteps } from "./commandSteps.tsx";
 import { IconRefresh } from "./icons.tsx";
 import { ENVIRONMENT_STATUS_BADGE, ENVIRONMENT_STATUS_LABEL, environmentCount, type EnvironmentState } from "./environmentState.ts";
 
@@ -34,6 +35,7 @@ export function EnvironmentPanel({ state, onRecheck }: { state: EnvironmentState
                 {check.found}
               </span>
               {check.remedy !== undefined && <span class="hint remedy">{check.remedy}</span>}
+              {check.instructions !== undefined && check.instructions.length > 0 && <CommandSteps steps={check.instructions} />}
             </div>
           ))}
         </div>

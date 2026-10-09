@@ -78,14 +78,21 @@ test("the seen record: exact marker only, and a refusing storage is 'not seen' w
 afterEach(() => setTourAutoStart(true));
 
 test("the tour starts by itself once, unseen, when ready and nothing else is open", () => {
-  const base = { enabled: true, seen: false, alreadyStarted: false, ready: true, overlayOpen: false };
+  const base = { enabled: true, seen: false, alreadyStarted: false, ready: true, overlayOpen: false, setupPending: false };
   expect(shouldAutoStart(base)).toBe(true);
   expect(shouldAutoStart({ ...base, seen: true })).toBe(false);
   expect(shouldAutoStart({ ...base, alreadyStarted: true })).toBe(false);
   expect(shouldAutoStart({ ...base, ready: false })).toBe(false);
   expect(shouldAutoStart({ ...base, overlayOpen: true })).toBe(false);
   expect(shouldAutoStart({ ...base, enabled: false })).toBe(false);
+  // Setup comes first: pending setup holds the tour back, and the wizard itself counts as an overlay.
+  expect(shouldAutoStart({ ...base, setupPending: true })).toBe(false);
   expect(tourAutoStarts()).toBe(true);
   setTourAutoStart(false);
   expect(tourAutoStarts()).toBe(false);
+});
+
+test("running setup again does not replay a tour that was seen", () => {
+  const afterRerun = { enabled: true, seen: true, alreadyStarted: false, ready: true, overlayOpen: false, setupPending: false };
+  expect(shouldAutoStart(afterRerun)).toBe(false);
 });

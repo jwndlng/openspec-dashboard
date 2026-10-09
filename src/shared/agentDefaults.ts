@@ -1,4 +1,4 @@
-import type { AgentProfile, AgentSessionsConfig, PromptKey, Shortcut } from "./types.ts";
+import type { AgentProfile, AgentSessionsConfig, InstructionStep, PromptKey, Shortcut } from "./types.ts";
 
 // Each prompt is one line: it may be typed into a terminal (`submit.ts`). Together they carry the meaning of the
 // `- [~]` task marker, which OpenSpec itself does not define — see the agent-sessions spec. The meaning is written once
@@ -28,6 +28,15 @@ export interface AgentPreset {
   formerPrompts: Readonly<Partial<Record<PromptKey, readonly string[]>>>;
   /** Earlier commands of the preset: a saved profile with the preset's id that has one verbatim gets the current one. */
   formerCommands?: readonly (readonly string[])[];
+  /** How to install the agent on each platform: shown by the environment report and the setup wizard, never run. */
+  install: Readonly<Record<InstallPlatform, readonly InstructionStep[]>>;
+}
+
+/** The platforms install instructions are written for; any other one reads as `linux`. */
+export type InstallPlatform = "darwin" | "linux" | "win32";
+
+export function installPlatform(platform: string): InstallPlatform {
+  return platform === "darwin" || platform === "win32" ? platform : "linux";
 }
 
 /** Preconfigured. Ship, Resolve conflicts and Integrate use the agent-neutral defaults, as they do for every preset. */
@@ -68,6 +77,22 @@ export const ANTIGRAVITY_PROFILE: AgentProfile = {
   resumeCommand: ["agy", "--continue"],
 };
 
+// Each vendor's own documented install route; verify against its install page when one changes.
+const CLAUDE_INSTALL: AgentPreset["install"] = {
+  darwin: [{ text: "Install Claude Code with its native installer, then sign in by running `claude` once.", command: "curl -fsSL https://claude.ai/install.sh | bash" }],
+  linux: [{ text: "Install Claude Code with its native installer, then sign in by running `claude` once.", command: "curl -fsSL https://claude.ai/install.sh | bash" }],
+  win32: [{ text: "Install Claude Code from PowerShell, then sign in by running `claude` once.", command: "irm https://claude.ai/install.ps1 | iex" }],
+};
+
+const CODEX_STEPS = [{ text: "Install the Codex CLI with npm, then sign in by running `codex` once.", command: "npm install -g @openai/codex" }];
+const CODEX_INSTALL: AgentPreset["install"] = { darwin: CODEX_STEPS, linux: CODEX_STEPS, win32: CODEX_STEPS };
+
+const ANTIGRAVITY_INSTALL: AgentPreset["install"] = {
+  darwin: [{ text: "Install the Antigravity CLI, then check that `agy --version` works in a new terminal.", command: "curl -fsSL https://antigravity.google/install.sh | bash" }],
+  linux: [{ text: "Install the Antigravity CLI, then check that `agy --version` works in a new terminal.", command: "curl -fsSL https://antigravity.google/install.sh | bash" }],
+  win32: [{ text: "Install the Antigravity CLI, then check that `agy --version` works in a new terminal.", command: "winget install Google.AntigravityCLI" }],
+};
+
 /** Every preset, in the order Settings offers them. Only the first is configured by default. */
 export const AGENT_PRESETS: readonly AgentPreset[] = [
   {
@@ -79,11 +104,19 @@ export const AGENT_PRESETS: readonly AgentPreset[] = [
         "/opsx:archive {change} — sync the delta specs into openspec/specs first without asking me whether to sync, then archive; if they are already in sync, archive right away.",
       ],
     },
+    install: CLAUDE_INSTALL,
   },
-  { profile: CODEX_PROFILE, formerPrompts: {} },
+  { profile: CODEX_PROFILE, formerPrompts: {}, install: CODEX_INSTALL },
   // `agy -i {prompt}` left a console with `agy -i`, an option without its value.
-  { profile: ANTIGRAVITY_PROFILE, formerPrompts: {}, formerCommands: [["agy", "-i", "{prompt}"]] },
+  { profile: ANTIGRAVITY_PROFILE, formerPrompts: {}, formerCommands: [["agy", "-i", "{prompt}"]], install: ANTIGRAVITY_INSTALL },
 ];
+
+/** How to install an agent: its preset's steps when its id is a preset's, else the generic advice for its command. */
+export function agentInstallSteps(agent: Pick<AgentProfile, "id" | "name" | "command">, platform: string): InstructionStep[] {
+  const preset = AGENT_PRESETS.find(({ profile }) => profile.id === agent.id);
+  if (preset) return [...preset.install[installPlatform(platform)]];
+  return [{ text: `Install the program \`${agent.command[0]}\` so that it is on the PATH, or change ${agent.name}'s command in Settings → Agent sessions.` }];
+}
 
 /** The Claude Code preset's former prompts. */
 export const FORMER_PROMPTS = AGENT_PRESETS[0].formerPrompts;

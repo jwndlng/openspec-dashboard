@@ -56,6 +56,11 @@ export const HELP_SECTIONS: readonly HelpSection[] = [
           Spec Control shows the OpenSpec changes of the repositories on this machine. It finds them under the folders you
           tell it about, and reads them; it does not need a server, an account or a network.
         </p>
+        <p>
+          On the first start, <strong>setup</strong> walks you through the essentials: where your projects live, which agent
+          to use, and a check of the tools Spec Control relies on, with the commands to install whatever is missing. Every
+          step can be skipped, and <strong>Run setup again</strong> above opens it once more. By hand, it comes down to this:
+        </p>
         <ol>
           <li>
             In <AppLink path="/settings" query="?section=roots">Settings → Workspace roots</AppLink>, add the folder your
