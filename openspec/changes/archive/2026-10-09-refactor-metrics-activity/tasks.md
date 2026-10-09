@@ -15,7 +15,7 @@
 - [x] 3.1 Add chart colour tokens for both themes and the chart, tile, heatmap and table styles in `src/ui/styles.css`, with a phone-width layout; verify `bun run lint` passes
 - [x] 3.2 Build `src/ui/activityCharts.tsx`: summary tiles with trend, stacked per-day columns with axis, legend and tooltip, the **When** heatmap, stacked per-project bars, and their table views; verify `bun run typecheck` passes
 - [x] 3.3 Wire them into `src/ui/activity.tsx` (tiles replace the strip, Chart/Table switch next to Hide details, filters and hiding as before); verify `bun run check` passes
-- [~] 3.4 Look at the Activity view in the dark and the light theme and at phone width (`bun run build:demo`, or `bun run dev`): tiles, stacked columns, heatmap, per-project bars, tooltips on hover and focus, table view, nothing scrolling sideways — needs the user's eye
+- [x] 3.4 Look at the Activity view in the dark and the light theme and at phone width (`bun run build:demo`, or `bun run dev`): tiles, stacked columns, heatmap, per-project bars, tooltips on hover and focus, table view, nothing scrolling sideways — needs the user's eye
 
 ## 4. Release
 
