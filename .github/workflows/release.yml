@@ -107,19 +107,9 @@ jobs:
           bun install --frozen-lockfile
           bun run build
 
-      # The binary inside the app must be the tag's, and the app's ad-hoc signature must verify.
+      # The binary inside the app in the disk image must be the tag's, and the app's ad-hoc signature must verify.
       - name: Smoke test the app
         run: |
-          bundled="$(find desktop/build -type f -path '*/bin/spec-control' | head -n 1)"
-          if [ -z "$bundled" ]; then
-            echo "::error::no bundled spec-control binary under desktop/build"
-            exit 1
-          fi
-          version="$("$bundled" --version)"
-          if [ "$version" != "$TAG" ]; then
-            echo "::error::the bundled binary printed '$version', expected '$TAG'"
-            exit 1
-          fi
           dmg="$(find desktop/artifacts -maxdepth 1 -name '*.dmg' | head -n 1)"
           if [ -z "$dmg" ]; then
             echo "::error::no .dmg under desktop/artifacts"
@@ -140,8 +130,26 @@ jobs:
               styled=false
             fi
           done
+          # The app in the image is Electrobun's self-extracting wrapper: the app with the bundled binary is the zstd
+          # tarball in its Resources. Bun unpacks it, since macOS's tar needs a zstd program the runner may not have.
+          payload="$(find "$mount/Spec Control.app/Contents/Resources" -maxdepth 1 -name '*.tar.zst' | head -n 1)"
+          unpacked="$RUNNER_TEMP/app"
+          mkdir -p "$unpacked"
+          if [ -n "$payload" ]; then
+            PAYLOAD="$payload" bun -e 'await Bun.write(Bun.stdout, Bun.zstdDecompressSync(await Bun.file(process.env.PAYLOAD).bytes()))' | tar -x -C "$unpacked"
+          fi
           hdiutil detach "$mount"
           if [ "$styled" != true ]; then
+            exit 1
+          fi
+          bundled="$(find "$unpacked" -type f -path '*/bin/spec-control' | head -n 1)"
+          if [ -z "$bundled" ]; then
+            echo "::error::the app in the disk image bundles no spec-control binary"
+            exit 1
+          fi
+          version="$("$bundled" --version)"
+          if [ "$version" != "$TAG" ]; then
+            echo "::error::the bundled binary printed '$version', expected '$TAG'"
             exit 1
           fi
           mkdir -p release

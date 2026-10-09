@@ -1,0 +1,45 @@
+name: desktop-smoke-check
+
+# Throwaway (fix-release-flow, task 1.2): builds the binary and the macOS app on macos-latest like the release
+# workflow's `desktop` job, then runs that job's own "Smoke test the app" step, read from release.yml. Removed before
+# merging.
+on:
+  push:
+    branches: [feat/fix-release-flow]
+
+permissions:
+  contents: read
+
+jobs:
+  desktop:
+    runs-on: macos-latest
+    timeout-minutes: 30
+    env:
+      TAG: v0.0.0-smoke
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: .bun-version
+
+      - name: Build the binary
+        run: |
+          bun install --frozen-lockfile
+          SPEC_CONTROL_VERSION="$TAG" bun run build
+
+      - name: Build the app
+        working-directory: desktop
+        env:
+          SPEC_CONTROL_VERSION: ${{ env.TAG }}
+        run: |
+          bun install --frozen-lockfile
+          bun run build
+
+      - name: Run the release workflow's smoke test
+        run: |
+          bun -e 'const w = Bun.YAML.parse(await Bun.file(".github/workflows/release.yml").text()); process.stdout.write(w.jobs.desktop.steps.find((s) => s.name === "Smoke test the app").run)' > "$RUNNER_TEMP/smoke.sh"
+          bash -e "$RUNNER_TEMP/smoke.sh"
+          ls -l release
