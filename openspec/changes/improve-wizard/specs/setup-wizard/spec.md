@@ -381,13 +381,24 @@ name, labels or enabled state, and SHALL NOT change any setting outside these fi
 ### Requirement: The wizard is a large, roomy dialog
 On a viewport wide enough for it, the wizard SHALL be wider and taller than the other dialogs of the dashboard, and it
 SHALL keep the same size from step to step, scrolling a step's content inside the dialog when it does not fit, with the
-step list and the controls always in view. Its text SHALL be larger than the dashboard's body text, its form controls
-SHALL be at least 40px high, and its groups of controls SHALL be visibly set apart from one another. On a narrow
-viewport it SHALL fill the width available within the page margin, under the 400px rule above.
+step list and the controls always in view. Its text SHALL have one size for body text and one for secondary text, the
+same on every step and at every viewport width; only headings differ. Its form controls SHALL be at least 40px high,
+and its groups of controls SHALL be visibly set apart from one another. On a 1280 by 800 viewport, every step SHALL fit
+without scrolling with up to five projects found or configured, three agents and the System check's usual checks —
+only content the user adds, such as a custom agent's form, or longer lists MAY make a step scroll. On a narrow viewport
+it SHALL fill the width available within the page margin, under the 400px rule above.
 
 #### Scenario: Steady size
 - **WHEN** on a 1440 by 900 viewport the user moves from the Welcome step to the Project settings step
 - **THEN** the dialog's width and height are the same on both steps and wider than the project settings dialog
+
+#### Scenario: Steps fit without scrolling
+- **WHEN** on a 1280 by 800 viewport a user with three projects and three agents goes through every step without adding a custom agent
+- **THEN** no step's content needs scrolling
+
+#### Scenario: One text size
+- **WHEN** the user moves from the Welcome step through every step to Done, on a wide and on a narrow viewport
+- **THEN** body text has the same size on every step, and secondary text has the same size on every step
 
 #### Scenario: Long content scrolls inside
 - **WHEN** the Workspace step lists more projects than fit in the dialog

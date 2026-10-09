@@ -306,7 +306,9 @@ export function WorkspaceStep({
                     <label class="check">
                       <input type="checkbox" checked={!view.unchecked.has(c.path)} onChange={() => onToggle(c.path)} />
                       <span>{c.name}</span>
-                      <code class="hint">{c.path}</code>
+                      <code class="hint" title={c.path}>
+                        {c.path}
+                      </code>
                     </label>
                   </li>
                 ))}
@@ -362,14 +364,16 @@ export function AgentsStep({ view, ...on }: { view: AgentsView } & AgentsHandler
       <fieldset class="setup-agents">
         <legend>Agents you use</legend>
         <p class="hint">Check every agent CLI you work with. Agents already configured stay; anything checked here is added when you continue.</p>
-        {view.choices.map((c) => (
-          <label key={c.id} class="check">
+        <div class="setup-agent-list">
+          {view.choices.map((c) => (
+            <label key={c.id} class="check">
             <input type="checkbox" checked={c.configured || view.checked.includes(c.id)} disabled={c.configured} onChange={(e) => on.onCheck(c.id, e.currentTarget.checked)} />
             <span>{c.name}</span>
             <span class={`badge ${c.available ? "success" : "warning"}`}>{c.available ? "found" : "not found"}</span>
-            {c.configured ? <span class="hint">configured</span> : view.checked.includes(c.id) && <span class="hint">added when you continue</span>}
-          </label>
-        ))}
+              {c.configured ? <span class="hint">configured</span> : view.checked.includes(c.id) && <span class="hint">added when you continue</span>}
+            </label>
+          ))}
+        </div>
         {view.custom.map((agent) => {
           const problem = customAgentProblem(agent);
           return (
@@ -686,11 +690,23 @@ function IndividualProject({
   return (
     <section class="setup-group setup-settings" aria-label={`Settings of ${repo.name}`}>
       <div class="setup-project-head">
-        <p class="setup-position">
-          Project {index + 1} of {projects.length}
-        </p>
-        <h3>{repo.name}</h3>
-        <code class="hint">{repo.path}</code>
+        <div class="setup-project-title">
+          <p class="setup-position">
+            Project {index + 1} of {projects.length}
+          </p>
+          <h3>{repo.name}</h3>
+          <code class="hint" title={repo.path}>
+            {repo.path}
+          </code>
+        </div>
+        <div class="row setup-project-nav">
+          <button type="button" class="btn" onClick={() => onIndex(index - 1)} disabled={index === 0}>
+            Previous project
+          </button>
+          <button type="button" class="btn" onClick={() => onIndex(index + 1)} disabled={index === projects.length - 1}>
+            Next project
+          </button>
+        </div>
       </div>
       {PROJECT_SETTINGS.filter((setting) => settingApplies(setting, shown, config, isGit(repo.id))).map((setting) => (
         <SettingRow key={setting} setting={setting} note={setting === "agentSessions" ? sessionsOffNote : undefined} help={{ open: view.help === setting, onToggle: onHelp }}>
@@ -704,14 +720,6 @@ function IndividualProject({
           />
         </SettingRow>
       ))}
-      <div class="row setup-project-nav">
-        <button type="button" class="btn" onClick={() => onIndex(index - 1)} disabled={index === 0}>
-          Previous project
-        </button>
-        <button type="button" class="btn" onClick={() => onIndex(index + 1)} disabled={index === projects.length - 1}>
-          Next project
-        </button>
-      </div>
     </section>
   );
 }

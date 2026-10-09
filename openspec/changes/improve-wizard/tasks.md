@@ -35,6 +35,7 @@
 - [x] 4.11 Project settings: PR titles, Docs auto-merge and Auto fetch read "Requires a git repository" in small text below their name, in both modes. Verify with the view test "the settings that need git are marked as such" and in headless Chrome at 1440px and 400px
 - [x] 4.12 Same settings for all projects: instead of "Applies to n of m projects", name the projects a setting is not set for and why — not a git repository, or agent sessions disabled — at most three per reason plus a count (`skippedNote`). Verify with the `setupState` and view tests and in headless Chrome
 - [x] 4.13 Done step as a visual ending: a headline with a large check (amber with what is left to fix), one card per step with the Welcome diagram's icon, an outcome, a detail line and a Done / Needs attention / Nothing changed mark (`doneCards`), laid out three then two, a "What's next" line naming the tour on a first start, and an entrance animation only without reduced motion. Verify with the `setupState` and view tests and in headless Chrome at 1440px light and dark and 400px
+- [x] 4.14 One text size (14px body, 13px secondary, on every step and viewport) and a compact layout so that every step fits without scrolling at 1280×800 and 1440×900 (full-width steps, agents in columns, a setting's default beside its control, project navigation beside its name, one-line paths, dialog up to 760px high). Verify by measuring each step's overflow in headless Chrome at both sizes: 0 everywhere but the Agents step with a custom agent's form open
 
 ## 5. Layout
 

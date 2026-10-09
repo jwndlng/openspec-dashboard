@@ -99,9 +99,12 @@ and option lists stay single-sourced.
 
 ### Steps and layout
 `SETUP_STEPS` grows to seven, and the frame already derives "n of N" from it. The dialog gets its own size class rather
-than `.modal.wide`: `width: min(960px, 100% - 32px)`, `height: min(720px, 100dvh - 48px)`, a flex column with the body
-`overflow: auto` between a fixed head and footer, so the size is steady across steps. The body uses 32px horizontal
-padding, 24px between groups, 15–16px text, and form controls of at least 40px. Under 560px the dialog falls back to
+than `.modal.wide`: `width: min(960px, 100%)`, `height: min(760px, 100%)` inside the overlay's margin, a flex column with
+the body `overflow: auto` between a fixed head and footer, so the size is steady across steps. The body uses 28px
+horizontal padding and 16px between groups, one text size (14px body, 13px secondary) on every step, and form controls
+of at least 40px. Each step is laid out to fit 1280×800 without scrolling: steps take the full width, agents sit in
+columns, a setting's default sits beside its control, a project's navigation beside its name, and long paths are cut to
+one line with the full path as the tooltip. Under 560px the dialog falls back to
 the full width minus the page margin, with the current tighter padding. The tokens already in `styles.css` (`--gap-*`,
 `--radius-*`) are used, with no new colours.
 

@@ -38,7 +38,7 @@ project's settings, all in a larger, roomier dialog.
 - The steps become **Welcome, Workspace, Agents, Console, Project settings, System check, Done**, shown as "n of 7".
   Welcome and Done cover the new topics: agents added, the console agent, and how many projects' settings were saved.
 - **A bigger, roomier wizard.** A wider and taller dialog with a steady height between steps, more padding and space
-  between groups, larger text and larger form controls. The 400px viewport rule is unchanged.
+  between groups, one text size on every step, larger form controls, and steps that fit without scrolling at 1280×800. The 400px viewport rule is unchanged.
 - **Automatic fetch waits for setup.** While setup is pending, no project is fetched automatically, so the projects
   the Workspace step tracks are not fetched before the user chose their Auto fetch in Project settings. Fetching starts
   under each project's setting once setup is finished or skipped. Defaults and existing installations are unchanged.
