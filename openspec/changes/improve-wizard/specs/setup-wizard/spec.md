@@ -288,7 +288,9 @@ setting's name the step SHALL offer a help control, an icon whose accessible nam
 explanation in an overlay next to it and reports itself to assistive technology as expanded while it does. At most one
 overlay SHALL be open; it SHALL close when its help control is activated again, when another one is opened, on a click
 outside it, on Escape, and when the step or the project shown changes. The default, and how many projects a setting
-applies to, SHALL stay visible without opening it.
+applies to, SHALL stay visible without opening it. **PR titles**, **Docs auto-merge** and **Auto fetch**, the settings
+that apply only to a git repository, SHALL each read "Requires a git repository" in small text below their name, in
+both modes.
 
 In **Same settings for all projects** the step SHALL show one form. Each setting SHALL show the value all the projects
 it applies to share, which for a fresh project is the default, and, when they differ, SHALL read **Keep each project's
@@ -314,6 +316,10 @@ name, labels or enabled state, and SHALL NOT change any setting outside these fi
 #### Scenario: A setting's explanation in an overlay
 - **WHEN** the Project settings step shows Auto fetch
 - **THEN** its explanation is not shown inline, its default "Every minute" is, and activating the help icon beside "Auto fetch" shows the explanation — that the dashboard only fetches and never updates the checkout — in an overlay, with the icon reported as expanded
+
+#### Scenario: Settings that need git are marked
+- **WHEN** the Project settings step shows its settings
+- **THEN** PR titles, Docs auto-merge and Auto fetch each read "Requires a git repository" below their name, and Agent sessions and Agent do not
 
 #### Scenario: Closing the overlay
 - **WHEN** the Auto fetch overlay is open and the user presses Escape

@@ -970,7 +970,8 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: 
 .setup-settings > .setup-setting:first-child, .setup-project-head + .setup-setting { border-top: none; }
 .setup-setting-label { padding-top: 6px; font-weight: 600; color: var(--fg-heading); }
 /* A setting's name with its help icon; the explanation opens in an overlay below it rather than inline. */
-.setup-help { position: relative; display: flex; align-items: center; gap: 4px; align-self: start; }
+.setup-help { position: relative; display: flex; flex-wrap: wrap; align-items: center; gap: 4px; align-self: start; }
+.setup-setting-requires { flex-basis: 100%; font-size: 12px; font-weight: 400; color: var(--fg-subtle); }
 .setup-wizard .btn.setup-help-btn { min-height: 28px; height: 28px; width: 28px; padding: 0; color: var(--fg-subtle); }
 .setup-wizard .btn.setup-help-btn[aria-expanded="true"] { color: var(--brand-fg); background: var(--brand-softer); border-color: var(--brand-soft); }
 .setup-help-overlay {

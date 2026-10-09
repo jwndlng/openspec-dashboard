@@ -525,6 +525,9 @@ export function SettingControl({
   );
 }
 
+/** The settings that apply only to a git repository (`settingApplies`), which the step marks as such. */
+const GIT_ONLY: ReadonlySet<ProjectSetting> = new Set(["prTitles", "autoMergeDocs", "autoFetch"]);
+
 /** The help control's id for a setting, so focus can return to it when its overlay closes. */
 export const helpButtonId = (setting: ProjectSetting) => `setup-help-${setting}`;
 
@@ -565,6 +568,7 @@ function SettingRow({
             {SETTING_HINTS[setting]}
           </span>
         )}
+        {GIT_ONLY.has(setting) && <span class="setup-setting-requires">Requires a git repository</span>}
       </span>
       <div class="setup-setting-control">
         {children}

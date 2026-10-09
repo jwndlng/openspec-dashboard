@@ -259,6 +259,12 @@ test("each setting's explanation is behind a help icon, in an overlay", () => {
   expect(toggled).toEqual(["autoFetch"]);
 });
 
+test("the settings that need git are marked as such", () => {
+  const rows = byTag(ProjectSettingsStep({ view: settingsView(), ...settingsHandlers }), "div").filter((el) => el.props.class === "setup-setting");
+  const marked = rows.map((row) => textOf(row).includes("Requires a git repository"));
+  expect(marked).toEqual([false, false, true, true, true]);
+});
+
 test("a mixed value reads Keep each project's setting", () => {
   const view = settingsView();
   view.projects = [repoAt("/w/acme/alpha-infra", { autoFetchSeconds: 300 }), ...view.projects.slice(1)];
