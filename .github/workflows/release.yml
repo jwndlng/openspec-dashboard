@@ -128,7 +128,22 @@ jobs:
           mount="$RUNNER_TEMP/dmg"
           hdiutil attach -nobrowse -readonly -mountpoint "$mount" "$dmg"
           codesign --verify --deep --strict --verbose=2 "$mount/Spec Control.app"
+          # The installer layout desktop/scripts/style-dmg.ts made: the Applications link, the background and Finder's layout file.
+          styled=true
+          if [ "$(readlink "$mount/Applications")" != "/Applications" ]; then
+            echo "::error::the disk image has no Applications link"
+            styled=false
+          fi
+          for file in .background/background.tiff .DS_Store; do
+            if [ ! -f "$mount/$file" ]; then
+              echo "::error::the disk image has no $file, so it is not laid out as an installer window"
+              styled=false
+            fi
+          done
           hdiutil detach "$mount"
+          if [ "$styled" != true ]; then
+            exit 1
+          fi
           mkdir -p release
           cp "$dmg" "release/Spec-Control-$TAG-darwin-arm64.dmg"
 

@@ -15,6 +15,13 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    id: "2026-10-08-styled-dmg-installer",
+    date: "2026-10-08",
+    title: "The Mac app's disk image shows how to install it",
+    summary:
+      "Opening the macOS app's `.dmg` now shows **Spec Control** and your **Applications** folder side by side, with an arrow between them: drag the app onto Applications to install it.",
+  },
+  {
     id: "2026-10-08-auto-fetch-by-default",
     date: "2026-10-08",
     title: "Auto fetch is on, every minute",

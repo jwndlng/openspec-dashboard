@@ -99,12 +99,19 @@ Releases are drafted from pull request titles; publishing the draft is the only 
 - **Publishing also builds the macOS app** (Apple silicon only; Intel Macs use the `darwin-x64` binary). The `desktop`
   job in the same workflow bundles the verified `darwin-arm64` binary into `Spec Control.app` with Electrobun
   (`desktop/`), ad-hoc signs it (`desktop/scripts/adhoc-sign.ts`), checks that the bundled binary's `--version` is the
-  tag and that `codesign --verify --deep --strict` accepts the app in the disk image, and hands
+  tag and that `codesign --verify --deep --strict` accepts the app in the disk image, checks that the disk image is
+  laid out as an installer window (its `Applications` link, `.background/background.tiff` and Finder's `.DS_Store`,
+  made by `desktop/scripts/style-dmg.ts`), and hands
   `Spec-Control-<tag>-darwin-arm64.dmg` to the publish job, which attaches it with the binaries. The app is not
   notarised, like the binaries, so the job needs no Apple account and no secrets. Electrobun still signs with a
   Developer ID and notarises when `ELECTROBUN_DEVELOPER_ID` and the App Store Connect key are set, but releases do not.
 - **Building the app locally**: `bun run build:desktop` on an Apple silicon Mac builds the binary, then the app under
-  `desktop/build/` and a `.dmg` under `desktop/artifacts/`. It is ad-hoc signed, like a release.
+  `desktop/build/` and a `.dmg` under `desktop/artifacts/`. It is ad-hoc signed, like a release, and its disk image is
+  laid out like a release's: `desktop/scripts/style-dmg.ts`, Electrobun's `postPackage` hook, copies the app out of
+  Electrobun's image unchanged and has Finder lay out a new image around it, so Finder briefly opens a window. The first
+  build asks to let the terminal control Finder (System Settings → Privacy & Security → Automation); keep the screen
+  unlocked while it runs. It refuses while a volume named `Spec Control` is mounted, typically an image you opened:
+  eject it and build again. A build with `ELECTROBUN_DEVELOPER_ID` keeps Electrobun's signed image unstyled.
   `desktop/` has its own `package.json` and lockfile; the Electrobun toolchain (Hutch) is pinned in
   `desktop/hutch.config.ts` and upgraded only in a change of its own.
 - A local `bun run build` reports `dev`; set `SPEC_CONTROL_VERSION=v1.2.3` to build as a given version.
