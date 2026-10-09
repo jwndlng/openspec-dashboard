@@ -331,6 +331,11 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: 
 .badge.warning { color: var(--warning); border-color: var(--warning-border); background: var(--warning-bg); }
 .badge.danger { color: var(--danger); border-color: var(--danger-border); background: var(--danger-bg); }
 .badge.mono { font-family: var(--font-mono); font-weight: 400; }
+/* The change's worktree path in the detail header: a quiet badge that copies the path (change-detail). */
+button.badge.worktree-path { cursor: pointer; font: inherit; font-family: var(--font-mono); font-size: 11px; line-height: 16px; font-weight: 400; }
+button.badge.worktree-path:hover { color: var(--fg-heading); border-color: var(--border-strong); }
+button.badge.worktree-path:focus-visible { outline: 2px solid var(--brand); outline-offset: 1px; }
+button.badge.worktree-path.done { color: var(--success); }
 /* Text that may be longer than its container: the head clips with an ellipsis, the tail always shows. */
 .badge.truncate { max-width: 100%; min-width: 0; }
 .badge.truncate > [aria-hidden]:first-child { flex: none; }

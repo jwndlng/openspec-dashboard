@@ -9,16 +9,17 @@ import { CopyButton, CopyRefButton, Meter } from "./kanban.tsx";
 import { renderMarkdown } from "./markdown.tsx";
 import { backTarget, CONSOLE_TAB, changePath, type DetailQuery, parseDetailQuery, repoPath, serializeDetailQuery } from "./routes.ts";
 import { ConsolePanel, ConsoleSessionList } from "./sessionPanel.tsx";
-import { consoleAvailable, consoleSession, consoleSessions, consoleTabAvailable } from "./sessionState.ts";
+import { changeWorktreePath, consoleAvailable, consoleSession, consoleSessions, consoleTabAvailable } from "./sessionState.ts";
 import { useSessionUi, WorkStatus } from "./sessions.tsx";
 import { isComplete } from "../shared/columns.ts";
 import { promptBody } from "./boardMarks.ts";
 import { BranchBadge } from "./checkout.tsx";
+import { IconCheck, IconFolder } from "./icons.tsx";
 import { SourceIssueLink } from "./importIssues.tsx";
 import { type DetailPr, DetailPullRequest, detailPullRequest, usePullRequests } from "./pullRequests.tsx";
 import { DismissDialog } from "./dismissChange.tsx";
 import { dismissedNotice, dismissOffer } from "./dismissState.ts";
-import { checkoutHint, daysSince, leftoverHint, pendingArchiveHint, relTime } from "./format.ts";
+import { checkoutHint, daysSince, leftoverHint, pendingArchiveHint, relTime, splitPathLabel } from "./format.ts";
 import { currentQuery, followInApp, href, navigate, replaceQuery } from "./url.ts";
 
 export function artifactLabel(id: string): string {
@@ -275,6 +276,7 @@ function ChangeFacts({ change, pullRequest, now = Date.now() }: { change: Change
           </span>
         )}
         {change.branchMatch && <BranchBadge branch={change.branchMatch} hint={checkoutHint(change)} />}
+        <WorktreePath change={change} />
         {change.sourceIssue && <SourceIssueLink issue={change.sourceIssue} place="detail" />}
         {pullRequest && <DetailPullRequest info={pullRequest} />}
         <WorkStatus repoId={change.repoId} name={change.name} />
@@ -286,6 +288,37 @@ function ChangeFacts({ change, pullRequest, now = Date.now() }: { change: Change
         </div>
       )}
     </>
+  );
+}
+
+/**
+ * The change's worktree path, copied on activation (change-detail: "The detail header shows and copies the change's
+ * worktree path"). The path's parent is clipped, its last segment — the worktree's own name — always shows; it confirms
+ * only once the clipboard took the text.
+ */
+export function WorktreePath({ change }: { change: Pick<ChangeSnapshot, "repoId" | "name" | "checkout"> }) {
+  const ui = useSessionUi();
+  const path = changeWorktreePath(change, ui.worktrees);
+  const [done, setDone] = useState(false);
+  useEffect(() => {
+    if (!done) return;
+    const t = setTimeout(() => setDone(false), 1500);
+    return () => clearTimeout(t);
+  }, [done]);
+  if (!path) return null;
+  const { head, tail } = splitPathLabel(path);
+  const label = done ? "Copied" : `Copy worktree path ${path}`;
+  return (
+    <button type="button" class={`badge worktree-path mono truncate ${done ? "done" : ""}`} title={done ? "Copied" : `${path} — click to copy`} aria-label={label} onClick={() => navigator.clipboard.writeText(path).then(() => setDone(true), () => {})}>
+      <span aria-hidden="true">{done ? <IconCheck size={11} /> : <IconFolder size={11} />}</span>
+      <span class="text" aria-hidden="true">
+        <span class="head">{head}</span>
+        {tail && <span class="tail">{tail}</span>}
+      </span>
+      <span class="visually-hidden" aria-live="polite">
+        {done ? "Copied" : ""}
+      </span>
+    </button>
   );
 }
 
