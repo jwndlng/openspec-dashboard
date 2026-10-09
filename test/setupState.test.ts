@@ -23,6 +23,7 @@ import {
   setupSummary,
   sharedSetting,
   shouldOpenSetup,
+  skippedNote,
   workspaceSave,
 } from "../src/ui/setupState.ts";
 
@@ -177,20 +178,32 @@ function projects(): Config {
 const gitIds = (config: Config) => new Set(config.repos.filter((r) => !r.path.endsWith("beta-notes")).map((r) => r.id));
 const none = new Map();
 
-test("the shared form shows the defaults, a mixed value as undefined, and how many projects a setting applies to", () => {
+test("the shared form shows the defaults, a mixed value as undefined, and which projects a setting skips", () => {
   const config = projects();
   const enabled = config.repos.filter((r) => r.enabled);
   const git = gitIds(config);
   const isGit = (id: string) => git.has(id);
-  expect(sharedSetting(enabled, "agentSessions", {}, config, isGit)).toEqual({ applies: 3, value: "enabled" });
-  expect(sharedSetting(enabled, "prTitles", {}, config, isGit)).toEqual({ applies: 2, value: "" });
-  expect(sharedSetting(enabled, "autoMergeDocs", {}, config, isGit)).toEqual({ applies: 2, value: "off" });
-  expect(sharedSetting(enabled, "autoFetch", {}, config, isGit)).toEqual({ applies: 2, value: undefined });
+  expect(sharedSetting(enabled, "agentSessions", {}, config, isGit)).toMatchObject({ applies: 3, value: "enabled" });
+  expect(sharedSetting(enabled, "prTitles", {}, config, isGit)).toMatchObject({ applies: 2, value: "" });
+  expect(sharedSetting(enabled, "autoMergeDocs", {}, config, isGit)).toMatchObject({ applies: 2, value: "off" });
+  expect(sharedSetting(enabled, "autoFetch", {}, config, isGit)).toMatchObject({ applies: 2, value: undefined });
   expect(sharedSetting(enabled, "agent", {}, config, isGit).applies).toBe(0);
   // Switching sessions off in the same form hides Docs auto-merge.
   expect(sharedSetting(enabled, "autoMergeDocs", { agentSessions: "disabled" }, config, isGit).applies).toBe(0);
   expect(settingValue(config.repos[0], "autoFetch")).toBe("300");
+  expect(sharedSetting(enabled, "autoFetch", {}, config, isGit).skipped).toEqual([{ name: "beta-notes", reason: "no-git" }]);
+  expect(sharedSetting(enabled, "autoMergeDocs", { agentSessions: "disabled" }, config, isGit).skipped.map((s) => s.reason)).toEqual(["sessions-off", "sessions-off", "no-git"]);
 });
+test("the skipped projects are named with the reason, at most three per reason", () => {
+  expect(skippedNote([])).toBeUndefined();
+  expect(skippedNote([{ name: "beta-notes", reason: "no-git" }])).toBe("Not set for beta-notes, which is not a git repository.");
+  const many = ["a", "b", "c", "d", "e"].map((name) => ({ name, reason: "no-git" as const }));
+  expect(skippedNote(many)).toBe("Not set for a, b, c and 2 more, which are not git repositories.");
+  expect(skippedNote([{ name: "beta-notes", reason: "no-git" }, { name: "demo-ops", reason: "sessions-off" }, { name: "alpha-infra", reason: "sessions-off" }])).toBe(
+    "Not set for beta-notes, which is not a git repository. Not set for demo-ops and alpha-infra, whose agent sessions are disabled.",
+  );
+});
+
 
 test("one change for all projects is written where it applies, and nothing else changes", () => {
   const config = projects();

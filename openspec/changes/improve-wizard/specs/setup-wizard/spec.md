@@ -287,15 +287,17 @@ SHALL say for each setting what its default is. A setting's explanation SHALL NO
 setting's name the step SHALL offer a help control, an icon whose accessible name names the setting, which shows the
 explanation in an overlay next to it and reports itself to assistive technology as expanded while it does. At most one
 overlay SHALL be open; it SHALL close when its help control is activated again, when another one is opened, on a click
-outside it, on Escape, and when the step or the project shown changes. The default, and how many projects a setting
-applies to, SHALL stay visible without opening it. **PR titles**, **Docs auto-merge** and **Auto fetch**, the settings
+outside it, on Escape, and when the step or the project shown changes. The default, and which projects a setting is
+not set for, SHALL stay visible without opening it. **PR titles**, **Docs auto-merge** and **Auto fetch**, the settings
 that apply only to a git repository, SHALL each read "Requires a git repository" in small text below their name, in
 both modes.
 
 In **Same settings for all projects** the step SHALL show one form. Each setting SHALL show the value all the projects
 it applies to share, which for a fresh project is the default, and, when they differ, SHALL read **Keep each project's
-setting**. A setting applies to the projects that would show it in their settings dialog; the form SHALL say how many
-projects each setting applies to when that is not all of them.
+setting**. A setting applies to the projects that would show it in their settings dialog. When a setting does not apply to every
+project, the form SHALL name the projects it is not set for and say why — that they are not git repositories, or that
+their agent sessions are disabled — naming at most three and counting the rest ("Not set for beta-notes, which is not
+a git repository."); it SHALL NOT state a bare count.
 
 In **Individual settings** the step SHALL show one project at a time with its name and its position as "Project n of
 N", prefilled with that project's own values, with **Previous project** and **Next project**. Values entered for a
@@ -328,6 +330,10 @@ name, labels or enabled state, and SHALL NOT change any setting outside these fi
 #### Scenario: One change for all projects
 - **WHEN** in **Same settings for all projects** the user picks **Conventional Commits** under PR titles and continues
 - **THEN** every enabled git project has `prTitleConvention: conventional-commits`, and each project's other settings are unchanged
+
+#### Scenario: Which projects a setting skips
+- **WHEN** 13 projects are enabled, `beta-notes` is a folder without git, and the shared form shows Auto fetch
+- **THEN** it reads "Not set for beta-notes, which is not a git repository." and not a count such as "Applies to 12 of 13 projects"
 
 #### Scenario: Mixed values are kept
 - **WHEN** `alpha-infra` fetches every 5 minutes and `demo-ops` every minute, and the user continues without touching Auto fetch

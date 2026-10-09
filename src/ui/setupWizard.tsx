@@ -33,10 +33,12 @@ import {
   type SettingsDraft,
   type SetupSaved,
   type SetupSummary,
+  GIT_ONLY_SETTINGS,
   settingsProjects,
   settingValue,
   setupSummary,
   sharedSetting,
+  skippedNote,
   withDraft,
   workspaceSave,
 } from "./setupState.ts";
@@ -525,9 +527,6 @@ export function SettingControl({
   );
 }
 
-/** The settings that apply only to a git repository (`settingApplies`), which the step marks as such. */
-const GIT_ONLY: ReadonlySet<ProjectSetting> = new Set(["prTitles", "autoMergeDocs", "autoFetch"]);
-
 /** The help control's id for a setting, so focus can return to it when its overlay closes. */
 export const helpButtonId = (setting: ProjectSetting) => `setup-help-${setting}`;
 
@@ -568,7 +567,7 @@ function SettingRow({
             {SETTING_HINTS[setting]}
           </span>
         )}
-        {GIT_ONLY.has(setting) && <span class="setup-setting-requires">Requires a git repository</span>}
+        {GIT_ONLY_SETTINGS.has(setting) && <span class="setup-setting-requires">Requires a git repository</span>}
       </span>
       <div class="setup-setting-control">
         {children}
@@ -644,7 +643,7 @@ export function ProjectSettingsStep({ view, onMode, onChange, onIndex, onHelp }:
             if (shared.applies === 0) return null;
             const touched = view.all[setting];
             const value = touched ?? shared.value ?? KEEP_EACH;
-            const count = shared.applies < projects.length ? `Applies to ${shared.applies} of ${projects.length} projects.` : undefined;
+            const count = skippedNote(shared.skipped);
             const note = [count, setting === "agentSessions" ? sessionsOffNote : undefined].filter(Boolean).join(" ") || undefined;
             return (
               <SettingRow key={setting} setting={setting} note={note} help={{ open: view.help === setting, onToggle: onHelp }}>

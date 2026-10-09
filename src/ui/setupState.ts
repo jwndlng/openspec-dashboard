@@ -221,20 +221,55 @@ export function settingsProjects(config: Config): RepoConfig[] {
   return config.repos.filter((r) => r.enabled);
 }
 
+/** Why a setting is not set for a project in the shared form: it is not a git repository, or its sessions are off. */
+export type SkipReason = "no-git" | "sessions-off";
+
 /**
  * For the one form of "Same settings for all projects": the projects `setting` applies to (with the draft's earlier
- * settings applied, so switching sessions off hides Docs auto-merge) and the value they share, `undefined` when they
- * disagree.
+ * settings applied, so switching sessions off hides Docs auto-merge), the value they share — `undefined` when they
+ * disagree — and the projects it is not set for, with the reason.
  */
-export function sharedSetting(projects: readonly RepoConfig[], setting: ProjectSetting, draft: SettingsDraft, config: Config, isGit: (id: string) => boolean): { applies: number; value?: string } {
+export function sharedSetting(
+  projects: readonly RepoConfig[],
+  setting: ProjectSetting,
+  draft: SettingsDraft,
+  config: Config,
+  isGit: (id: string) => boolean,
+): { applies: number; value?: string; skipped: { name: string; reason: SkipReason }[] } {
   const before: SettingsDraft = {};
   for (const s of PROJECT_SETTINGS) {
     if (s === setting) break;
     if (draft[s] !== undefined) before[s] = draft[s];
   }
-  const values = projects.map((r) => withDraft(r, before, config, isGit(r.id))).filter((r) => settingApplies(setting, r, config, isGit(r.id))).map((r) => settingValue(r, setting));
+  const values: string[] = [];
+  const skipped: { name: string; reason: SkipReason }[] = [];
+  for (const project of projects) {
+    const repo = withDraft(project, before, config, isGit(project.id));
+    if (settingApplies(setting, repo, config, isGit(repo.id))) values.push(settingValue(repo, setting));
+    else skipped.push({ name: repo.name, reason: GIT_ONLY_SETTINGS.has(setting) && !isGit(repo.id) ? "no-git" : "sessions-off" });
+  }
   const value = values.length > 0 && values.every((v) => v === values[0]) ? values[0] : undefined;
-  return { applies: values.length, value };
+  return { applies: values.length, value, skipped };
+}
+
+/** The settings that apply only to a git repository (`settingApplies`). */
+export const GIT_ONLY_SETTINGS: ReadonlySet<ProjectSetting> = new Set(["prTitles", "autoMergeDocs", "autoFetch"]);
+
+/**
+ * Which projects a shared setting is not set for, and why: at most three names per reason and a count of the rest.
+ * `undefined` when it is set for every project.
+ */
+export function skippedNote(skipped: readonly { name: string; reason: SkipReason }[]): string | undefined {
+  if (skipped.length === 0) return undefined;
+  const sentence = (reason: SkipReason) => {
+    const names = skipped.filter((s) => s.reason === reason).map((s) => s.name);
+    if (names.length === 0) return undefined;
+    const shown = names.length > 3 ? [...names.slice(0, 3), `${names.length - 3} more`] : names;
+    const list = shown.length === 1 ? shown[0] : `${shown.slice(0, -1).join(", ")} and ${shown.at(-1)}`;
+    if (reason === "no-git") return names.length === 1 ? `Not set for ${list}, which is not a git repository.` : `Not set for ${list}, which are not git repositories.`;
+    return `Not set for ${list}, whose agent sessions are disabled.`;
+  };
+  return [sentence("no-git"), sentence("sessions-off")].filter(Boolean).join(" ");
 }
 
 /**

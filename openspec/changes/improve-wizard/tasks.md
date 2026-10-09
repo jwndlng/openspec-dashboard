@@ -33,6 +33,7 @@
 - [x] 4.9 Agents: **Turn agent sessions on** starts checked while sessions are off (the configuration default stays off); the wizard's selects draw their own chevron inset from the right edge; the step title keeps its line and the step list wraps below it. Verify in headless Chrome (the box is checked on a fresh home; chevrons and header at 1440px and 400px, light and dark)
 - [x] 4.10 Project settings: each setting's explanation moves from inline text into an overlay behind a help icon beside its name (one open at a time, `aria-expanded`, closed by the icon, another icon, a click outside, Escape — which then does not skip setup and returns focus — or a step, mode or project change; scrolled into view); the default and the applies count stay inline. Verify with the view test "each setting's explanation is behind a help icon" and in headless Chrome at 1440px and 400px (open, Escape)
 - [x] 4.11 Project settings: PR titles, Docs auto-merge and Auto fetch read "Requires a git repository" in small text below their name, in both modes. Verify with the view test "the settings that need git are marked as such" and in headless Chrome at 1440px and 400px
+- [x] 4.12 Same settings for all projects: instead of "Applies to n of m projects", name the projects a setting is not set for and why — not a git repository, or agent sessions disabled — at most three per reason plus a count (`skippedNote`). Verify with the `setupState` and view tests and in headless Chrome
 
 ## 5. Layout
 

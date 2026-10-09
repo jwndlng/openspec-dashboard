@@ -118,7 +118,7 @@ the full width minus the page margin, with the current tighter padding. The toke
   display. On macOS a dialog could appear on a screen nobody watches. It is closed after ten minutes and answered
   `cancelled`, and the typed path is always available.
 - [Applying "same for all" overwrites a project's deliberate value] → only fields the user touched are written, mixed
-  values read **Keep each project's setting**, and the form says how many projects each setting applies to.
+  values read **Keep each project's setting**, and the form names the projects a setting is not set for, and why.
 - [Projects still scanning have no `isGit`] → the step waits for their first scan, saying so, and Continue and Skip
   stay available meanwhile. A scan that fails still yields an entry (`ok: false`, `isGit` as detected), so the wait
   ends.

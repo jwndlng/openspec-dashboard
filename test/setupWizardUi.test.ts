@@ -225,13 +225,14 @@ function settingsView(patch: Partial<ProjectSettingsView> = {}): ProjectSettings
 const settingsHandlers = { onMode: noop, onChange: noop, onIndex: noop, onHelp: noop };
 const labelsOf = (node: unknown) => byTag(node as never, "select").map((el) => String(el.props["aria-label"]));
 
-test("Same settings for all projects shows every setting with its default and how many projects it applies to", () => {
+test("Same settings for all projects shows every setting with its default and which projects it skips", () => {
   const step = ProjectSettingsStep({ view: settingsView(), ...settingsHandlers });
   expect(labelsOf(step)).toEqual(["Agent sessions for all projects", "Agent for all projects", "PR titles for all projects", "Docs auto-merge for all projects", "Auto fetch for all projects"]);
   const text = textOf(step);
   expect(text).toContain("Default: Enabled.");
   expect(text).toContain("Default: Every minute.");
-  expect(text).toContain("Applies to 2 of 3 projects.");
+  expect(text).toContain("Not set for beta-notes, which is not a git repository.");
+  expect(text).not.toContain("Applies to");
   expect(text).not.toContain("saved at once");
   expect(byTag(step, "input").filter((el) => el.props.type === "radio").map((el) => el.props.checked)).toEqual([true, false]);
 });
