@@ -1,0 +1,3 @@
+# Prompt
+
+The current metrics looks very old fashion. We want to have fancy metrics with visualization and graphs, not just list...

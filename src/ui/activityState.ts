@@ -193,6 +193,72 @@ export function dayTitle(key: string): string {
   return localDate(key).toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" });
 }
 
+// ---- charts (refactor-metrics-activity) ----
+
+/** The kind groups a chart draws and names in its legend: those the kind filter lets through, always in this order. */
+export function chartGroups(groups: readonly ActivityGroup[]): ActivityGroup[] {
+  return groups.length === 0 ? [...GROUP_ORDER] : GROUP_ORDER.filter((g) => groups.includes(g));
+}
+
+/**
+ * A value axis that fits `max`: a clean step (1, 2 or 5 × 10ⁿ) giving at most three intervals, and the ticks from 0 to
+ * the top. Nothing at all still gets an axis of one, so an empty week draws a flat baseline, not a division by zero.
+ */
+export function axisTicks(max: number): { top: number; ticks: number[] } {
+  if (!(max > 0)) return { top: 1, ticks: [0, 1] };
+  const rough = max / 3;
+  const power = 10 ** Math.floor(Math.log10(rough));
+  const step = Math.max(1, [1, 2, 5, 10].map((m) => m * power).find((s) => s >= rough) ?? 10 * power);
+  const top = Math.ceil(max / step) * step;
+  const ticks: number[] = [];
+  for (let t = 0; t <= top; t += step) ticks.push(t);
+  return { top, ticks };
+}
+
+/** The heatmap's shading: 0 for no events, else 1–4 by share of the busiest hour (≤¼, ≤½, ≤¾, more). */
+export function heatStep(value: number, max: number): 0 | 1 | 2 | 3 | 4 {
+  if (!(value > 0) || !(max > 0)) return 0;
+  const share = value / max;
+  return share <= 0.25 ? 1 : share <= 0.5 ? 2 : share <= 0.75 ? 3 : 4;
+}
+
+/** The hour of the day (0–23) with the most events across `days`, the earliest on a tie; undefined when there are none. */
+export function busiestHour(days: readonly { hours: readonly number[] }[]): number | undefined {
+  let best: number | undefined;
+  let most = 0;
+  for (let h = 0; h < 24; h++) {
+    const n = days.reduce((sum, d) => sum + (d.hours[h] ?? 0), 0);
+    if (n > most) {
+      most = n;
+      best = h;
+    }
+  }
+  return best;
+}
+
+export const hourLabel = (hour: number) => `${String(hour).padStart(2, "0")}:00`;
+
+export type MetricsView = "chart" | "table";
+export const ACTIVITY_METRICS_VIEW_KEY = storageKey("activity.metricsView");
+
+/** Chart or table; storage that cannot be read shows the charts. */
+export function loadMetricsView(): MetricsView {
+  try {
+    return localStorage.getItem(ACTIVITY_METRICS_VIEW_KEY) === "table" ? "table" : "chart";
+  } catch {
+    return "chart";
+  }
+}
+
+export function saveMetricsView(view: MetricsView): void {
+  try {
+    if (view === "table") localStorage.setItem(ACTIVITY_METRICS_VIEW_KEY, "table");
+    else localStorage.removeItem(ACTIVITY_METRICS_VIEW_KEY);
+  } catch {
+    // Storage unavailable: the choice lasts until the page reloads.
+  }
+}
+
 export const ACTIVITY_METRICS_KEY = storageKey("activity.metrics");
 
 /** Whether the user hid the metrics; storage that cannot be read shows them. */

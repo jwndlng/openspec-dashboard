@@ -1,7 +1,7 @@
 import { afterEach, expect, test } from "bun:test";
 import { needsAttention, pageEvents } from "../src/shared/activity.ts";
 import type { ActivityEvent } from "../src/shared/types.ts";
-import { ACTIVITY_METRICS_KEY, barShare, collapseDay, DAY_SHOWN, dayKey, dayLabel, loadMetricsHidden, REPOS_SHOWN, saveMetricsHidden, visibleRepos, describe, groupByDay, isBusyDay, kindsFor, parseActivityFilters, serializeActivityFilters, timeOfDay, tone, unseenLabel, visibleFigures } from "../src/ui/activityState.ts";
+import { ACTIVITY_METRICS_KEY, ACTIVITY_METRICS_VIEW_KEY, axisTicks, barShare, busiestHour, chartGroups, heatStep, hourLabel, loadMetricsView, saveMetricsView, collapseDay, DAY_SHOWN, dayKey, dayLabel, loadMetricsHidden, REPOS_SHOWN, saveMetricsHidden, visibleRepos, describe, groupByDay, isBusyDay, kindsFor, parseActivityFilters, serializeActivityFilters, timeOfDay, tone, unseenLabel, visibleFigures } from "../src/ui/activityState.ts";
 
 let n = 0;
 const base = (at: Date) => ({ v: 1 as const, id: `id${String(n++).padStart(4, "0")}`, at: at.toISOString(), detectedAt: at.toISOString(), repoId: "r1", repoName: "demo-ops" });
@@ -122,7 +122,7 @@ test("a busy day shows its newest entries until expanded; a quiet day is never c
 
 // ---- metrics (add-metrics-to-activity) ----
 
-const repoCount = (i: number) => ({ repoId: `r${i}`, repoName: `repo-${i}`, events: 20 - i, changes: 1 });
+const repoCount = (i: number) => ({ repoId: `r${i}`, repoName: `repo-${i}`, events: 20 - i, changes: 1, groups: { changes: 20 - i, tasks: 0, sessions: 0, repositories: 0 } });
 
 test("many projects: the 6 busiest, then Show N more; expanded lists all", () => {
   const nine = Array.from({ length: 9 }, (_, i) => repoCount(i));
@@ -175,4 +175,61 @@ test("hiding the metrics is remembered; storage that refuses shows them", () => 
   stubStorage({ throws: true });
   expect(loadMetricsHidden()).toBe(false);
   expect(() => saveMetricsHidden(true)).not.toThrow();
+});
+
+// ---- charts (refactor-metrics-activity) ----
+
+test("the value axis rounds up to a clean step, at most three intervals", () => {
+  expect(axisTicks(0)).toEqual({ top: 1, ticks: [0, 1] });
+  expect(axisTicks(1)).toEqual({ top: 1, ticks: [0, 1] });
+  expect(axisTicks(3)).toEqual({ top: 3, ticks: [0, 1, 2, 3] });
+  expect(axisTicks(7)).toEqual({ top: 10, ticks: [0, 5, 10] });
+  expect(axisTicks(40)).toEqual({ top: 40, ticks: [0, 20, 40] });
+  expect(axisTicks(12)).toEqual({ top: 15, ticks: [0, 5, 10, 15] });
+  expect(axisTicks(350)).toEqual({ top: 400, ticks: [0, 200, 400] });
+  for (const max of [1, 2, 5, 9, 11, 99, 101, 1234]) {
+    const { top, ticks } = axisTicks(max);
+    expect(top).toBeGreaterThanOrEqual(max);
+    expect(ticks.length - 1).toBeLessThanOrEqual(3);
+    expect(ticks.at(-1)).toBe(top);
+  }
+});
+
+test("heat steps: none unshaded, then quarters of the busiest hour", () => {
+  expect(heatStep(0, 6)).toBe(0);
+  expect(heatStep(1, 6)).toBe(1);
+  expect(heatStep(3, 6)).toBe(2);
+  expect(heatStep(4, 6)).toBe(3);
+  expect(heatStep(6, 6)).toBe(4);
+  expect(heatStep(1, 0)).toBe(0);
+});
+
+test("busiest hour across the days, earliest on a tie, none for an empty week", () => {
+  const hours = (pairs: [number, number][]) => {
+    const h = new Array(24).fill(0);
+    for (const [i, n] of pairs) h[i] = n;
+    return { hours: h };
+  };
+  expect(busiestHour([hours([[9, 1], [14, 6]]), hours([[9, 2]])])).toBe(14);
+  expect(busiestHour([hours([[9, 3]]), hours([[14, 3]])])).toBe(9);
+  expect(busiestHour([hours([])])).toBeUndefined();
+  expect(hourLabel(9)).toBe("09:00");
+});
+
+test("charts draw the groups the filter lets through, always in the same order", () => {
+  expect(chartGroups([])).toEqual(["changes", "tasks", "sessions", "repositories"]);
+  expect(chartGroups(["sessions", "changes"])).toEqual(["changes", "sessions"]);
+});
+
+test("the chart or table choice is remembered; storage that refuses shows the charts", () => {
+  const store = stubStorage();
+  expect(loadMetricsView()).toBe("chart");
+  saveMetricsView("table");
+  expect(store.get(ACTIVITY_METRICS_VIEW_KEY)).toBe("table");
+  expect(loadMetricsView()).toBe("table");
+  saveMetricsView("chart");
+  expect(loadMetricsView()).toBe("chart");
+  stubStorage({ throws: true });
+  expect(loadMetricsView()).toBe("chart");
+  expect(() => saveMetricsView("table")).not.toThrow();
 });
