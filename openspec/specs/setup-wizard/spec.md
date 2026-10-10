@@ -106,10 +106,12 @@ changed later, in Settings or in a project's settings, and that setup can be run
 - **THEN** it is announced as a list of five steps in order, each read as its name and its line, without the connectors
 
 ### Requirement: The Workspace step adds roots and tracks projects
-The Workspace step SHALL list the configured workspace roots and let the user add roots in three ways: with
+The Workspace step SHALL ask the user to choose at least one workspace folder for their projects, or to create a new
+one. It SHALL list the configured workspace roots and let the user add roots in three ways: with
 **Choose folder…**, which opens the operating system's own folder dialog and adds the folder the user chose; by typing
 a path, with `~` accepted; and with one-click suggestions of the folders the server reports as existing in the user's
-home directory that are not configured yet. It SHALL let the user remove roots added in this step. **Choose folder…**
+home directory that are not configured yet; when no root is configured and none of those folders exists, it SHALL
+propose creating `~/Workspace`. It SHALL let the user remove roots added in this step. **Choose folder…**
 SHALL be offered only while the server reports a folder picker as available, SHALL show that it is waiting while the
 dialog is open and SHALL not be activatable again until it closes; cancelling the dialog SHALL add nothing and show no
 error, and a failure SHALL be shown in the step with the typed path still available. A chosen folder that is already a
@@ -117,11 +119,24 @@ configured or entered root SHALL not be added twice, and the step SHALL say that
 the configured and entered roots and the configured ignore paths without saving anything, and the step SHALL list the
 OpenSpec projects found that are not tracked yet, each with a checkbox, all checked by default, and say how many git
 repositories without OpenSpec were found, adding that they can be integrated from the projects overview. A root that
-discovery reports as missing SHALL be marked with that error and SHALL NOT be saved. Only the latest discovery result
-SHALL be shown. **Continue** SHALL save the configuration with the entered roots added and then track each checked
-project; it SHALL NOT remove any root, ignore path or repository, and SHALL NOT change any repository's name or enabled
-state other than tracking the checked ones. If saving fails, the step SHALL stay open, show the error and keep the
-entries. Continuing with nothing entered and nothing checked SHALL save nothing.
+discovery reports as missing SHALL be marked as not found and offered **Create folder**; a root marked to be created
+SHALL be created on **Continue** as specified in "A new workspace folder can be created" and then saved, and a missing
+root not marked to be created SHALL NOT be saved. Only the latest discovery result
+SHALL be shown. The step SHALL also offer **Add from GitHub**, opening the dialog of the `github-repositories`
+capability with the configured and entered roots to choose from, in which confirming adds the chosen repositories to a
+**GitHub repositories** list in the step instead of cloning them at once; each listed repository SHALL show the path it
+will be cloned into and can be removed again before **Continue**. **Continue** SHALL be unavailable, saying why, while no
+workspace root is configured, entered or marked to be created. **Continue** SHALL create each root marked to be created,
+save the configuration with the entered roots added, track each checked project, and then clone each listed GitHub
+repository under the rules of that capability, at most two at a time, showing each one's progress and outcome; a clone
+holding `openspec/config.yaml` is tracked, and one without it is reported as cloned without OpenSpec, to be integrated
+from the projects overview. When every clone succeeded the wizard SHALL move to the next step; when any failed, the step
+SHALL stay open showing each failure with its reason and offering to retry it, and activating **Continue** again SHALL
+move on without cloning what already succeeded. **Continue** SHALL NOT remove any root, ignore path or repository, and
+SHALL NOT change any repository's name or enabled state other than tracking the checked projects and the cloned
+repositories that use OpenSpec. If saving fails, the step SHALL stay open, show the error and keep the
+entries. Continuing with a configured root and nothing entered, checked or listed SHALL save nothing, create nothing and clone
+nothing.
 
 #### Scenario: Choosing a folder in Finder
 - **WHEN** the server runs on macOS and the user activates **Choose folder…** and picks `/w/acme` in the dialog
@@ -144,16 +159,32 @@ entries. Continuing with nothing entered and nothing checked SHALL save nothing.
 - **THEN** the saved configuration has `/w/acme` as a root, `alpha-infra` is tracked and enabled, `demo-ops` is not in the configuration, and the step had said that one repository without OpenSpec can be integrated from the overview
 
 #### Scenario: Nothing is saved before Continue
-- **WHEN** the user adds a root and discovery lists projects, and the user then activates **Skip setup**
-- **THEN** the saved configuration's roots and repositories are unchanged
+- **WHEN** the user marks `~/Workspace` to be created, adds a root, discovery lists projects, the user lists `acme/beta-soc` under GitHub repositories, and then activates **Skip setup**
+- **THEN** the saved configuration's roots and repositories are unchanged, `~/Workspace` does not exist and nothing was cloned
 
 #### Scenario: A missing folder
-- **WHEN** the user enters `~/does-not-exist`
-- **THEN** the root is marked as not found and is not saved on **Continue**
+- **WHEN** the user enters `~/does-not-exist` and does not activate **Create folder**
+- **THEN** the root is marked as not found, **Create folder** is offered, and the root is not saved on **Continue**
 
 #### Scenario: Existing roots are kept
 - **WHEN** setup is run again with two configured roots and the user adds a third and continues
 - **THEN** the saved configuration has all three roots
+
+#### Scenario: Creating a workspace folder
+- **WHEN** no root is configured, `~/Workspace` does not exist, and the user accepts the proposal to create it and continues
+- **THEN** `~/Workspace` exists as an empty folder and is saved as a workspace root
+
+#### Scenario: A root is required
+- **WHEN** no root is configured and the user has entered none
+- **THEN** **Continue** is inactive and says that a workspace folder is needed, and **Skip setup** is still available
+
+#### Scenario: GitHub repositories into a new workspace
+- **WHEN** no root is configured, the user marks `~/Workspace` to be created, lists `acme/beta-soc`, which uses OpenSpec, and `acme/chat-groups`, which does not, and continues
+- **THEN** `~/Workspace` is created and saved as a root, both are cloned into it, `beta-soc` is tracked and enabled, `chat-groups` is reported as cloned without OpenSpec, and the wizard moves to the Agents step
+
+#### Scenario: A clone fails
+- **WHEN** the user lists `acme/beta-soc` and `acme/missing-repo`, continues, and the clone of `acme/missing-repo` fails
+- **THEN** the step stays open, shows `acme/beta-soc` as tracked and `acme/missing-repo` with its reason and a retry, and activating **Continue** again moves to the Agents step without cloning `acme/beta-soc` a second time
 
 ### Requirement: The Agents step can switch agent sessions on with a chosen default agent
 The Agents step SHALL state, as the Agent sessions section of Settings does, that enabling agent sessions lets the
@@ -268,14 +299,17 @@ command shown in the instructions.
 - **THEN** the step says that everything needed is in place
 
 ### Requirement: The Done step summarises and ends setup
-The Done step SHALL summarise what setup saved: the roots added, the number of projects tracked, whether agent
+The Done step SHALL summarise what setup saved: the roots added and which of them it created, the number of projects
+tracked, the GitHub repositories cloned, whether agent
 sessions are on, the agents added, the default agent, the console agent and the number of projects whose settings were
-changed. It SHALL also say what is left, naming the checks that are still `problem` or `warning`. It SHALL present this
+changed. It SHALL also say what is left, naming the checks of a setup-view report requested when the Done step is shown that are
+still `problem` or `warning`, and each checked agent whose executable the Agents step last found missing. It SHALL present this
 visually: a headline that setup is complete, with a large check mark — or, when checks still need attention, that setup
-is complete with something left to fix — followed by one card per step from Workspace to System check, in the wizard's
+is complete with something left to fix — followed by one card per step from System check to Project settings, in the wizard's
 order, each with that step's icon from the Welcome diagram, its name, its outcome in a word or a number and a line of
 detail, and a mark in text and colour of whether it is **done**, **needs attention** or had **nothing changed**. A card
-SHALL need attention only for the System check, when a check is `problem` or `warning`. Below the cards it SHALL say
+SHALL need attention only for the System check, when a check is `problem` or `warning`, and for Agents, when a checked
+agent is not found. Below the cards it SHALL say
 what comes next: the projects overview, and the tour on a first start. The cards SHALL be exposed to assistive
 technology as a list, each read as its name, mark and outcome, and the headline's animation, if any, SHALL not play when
 the user prefers reduced motion. It SHALL offer **Finish**. Finishing, and **Skip setup** at any step, SHALL mark setup as done on the server and close the wizard,
@@ -289,7 +323,7 @@ rules.
 
 #### Scenario: A visual ending
 - **WHEN** the user added `/w/acme`, tracked two projects, added Codex, kept the console on the default agent, changed no project setting, and every check is `ok`
-- **THEN** the Done step's headline says setup is complete beside a large check mark, and it shows five cards — Workspace "2 projects" done, Agents "2 agents" done, Console "Claude Code" done, Project settings nothing changed, System check "All in place" done — each with its step's icon
+- **THEN** the Done step's headline says setup is complete beside a large check mark, and it shows five cards — System check "All in place" done, Workspace "2 projects" done, Agents "2 agents" done, Console "Claude Code" done, Project settings nothing changed — each with its step's icon
 
 #### Scenario: Something left to fix
 - **WHEN** the GitHub CLI check is `warning` on the Done step
@@ -307,6 +341,10 @@ rules.
 - **WHEN** a first-time user finishes the wizard in a browser that has not seen the tour
 - **THEN** the onboarding tour starts at its first step
 
+#### Scenario: An agent still missing
+- **WHEN** the user checked Antigravity, `agy` is still not found, and every check of the setup view is `ok`
+- **THEN** the Agents card is marked as needing attention and names Antigravity, and the System check card is done
+
 ### Requirement: Setup can be run again
 Running setup again from Help SHALL open the wizard at its first step whether or not setup is pending, with the current
 configuration prefilled, under the same rules for steps, saving and finishing. It SHALL NOT start the onboarding tour
@@ -317,15 +355,24 @@ when it closes.
 - **THEN** the wizard opens at Welcome and the Workspace step lists the configured roots
 
 ### Requirement: The wizard reads and writes only through existing rules
-The wizard SHALL save only through the configuration, tracking and setup endpoints, and MUST NOT write to a tracked
-repository, start an agent or contact a network. The only process it may cause to be started is the operating
-system's folder dialog, through the setup folder endpoint, and only when the user activates **Choose folder…**. Its
+The wizard SHALL save only through the configuration, tracking, setup, workspace-folder and GitHub clone endpoints, and
+MUST NOT write to a tracked repository or start an agent. Beyond the configuration, the only things it writes are a new
+workspace folder the user marked to be created and the GitHub clones the user listed. The processes it may cause to be
+started are the operating system's folder dialog, through the setup folder endpoint, only when the user activates
+**Choose folder…**; the environment report's `git config --get`; and, under the `github-repositories` capability, the
+read-only `gh repo list` and `gh api user` when the user opens the Add from GitHub dialog, changes its owner or refreshes
+it, and the `git clone` of each GitHub repository the user listed, when the user activates **Continue** or a retry. Only
+those last two contact a network. Its
 workspace suggestions SHALL come from a fixed list of folder names checked directly in the user's home directory,
 without listing the home directory or descending into any folder.
 
 #### Scenario: No process started
-- **WHEN** the user steps through the whole wizard, switches agent sessions on, adds two agents and changes the settings of every project
-- **THEN** no agent was started, no repository file was created, modified or deleted, and no process was started other than any folder dialog the user opened
+- **WHEN** the user steps through the whole wizard with an existing root and without opening Add from GitHub, switches agent sessions on, adds two agents and changes the settings of every project
+- **THEN** no agent was started, no repository file was created, modified or deleted, no network was contacted, and no process was started other than any folder dialog the user opened and the environment report's `git config --get`
+
+#### Scenario: Only what the user asked for
+- **WHEN** the user opens Add from GitHub in the Workspace step, lists one repository and continues
+- **THEN** the only processes started besides the environment report's were the `gh` listing and one `git clone` of that repository, and no agent was started
 
 ### Requirement: The demo does not open the wizard by itself
 In the demo build the wizard SHALL NOT open by itself. **Run setup again** on the demo's Help page SHALL open it against
@@ -496,3 +543,24 @@ it SHALL fill the width available within the page margin, under the 400px rule a
 #### Scenario: Long content scrolls inside
 - **WHEN** the Workspace step lists more projects than fit in the dialog
 - **THEN** the list scrolls inside the dialog, and the step list, **Back**, **Continue** and **Skip setup** stay in view
+
+### Requirement: A new workspace folder can be created
+A folder the Workspace step marks to be created SHALL be created on **Continue** by the server, before the configuration
+is saved, as exactly one new, empty directory made with a non-recursive, exclusive create, and nothing else: no file in
+it, no git command, no other folder. The path MUST be absolute after `~` expansion, its parent MUST exist and be a
+directory, and the path MUST NOT exist in any form — file, directory or symbolic link — and MUST NOT lie in or below a
+tracked repository's folder, an ignore path or the dashboard's home directory. A refusal SHALL be shown on that root
+with its reason, SHALL leave the file system unchanged, and SHALL keep the step open with the entries kept; nothing is
+saved when any creation was refused. The folder SHALL NOT be deleted afterwards, whatever later steps do.
+
+#### Scenario: Parent missing
+- **WHEN** the user marks `~/missing-parent/Workspace` to be created and `~/missing-parent` does not exist
+- **THEN** **Continue** shows on that root that its parent folder does not exist, nothing is created and nothing is saved
+
+#### Scenario: Inside a tracked repository
+- **WHEN** the user marks `/w/acme/demo-ops/projects` to be created and `/w/acme/demo-ops` is tracked
+- **THEN** it is refused with a reason that names the repository and nothing is created
+
+#### Scenario: Appeared in the meantime
+- **WHEN** the folder marked to be created exists by the time the user continues
+- **THEN** it is not created again; the step marks it as found and it is saved as a root on the next **Continue**
