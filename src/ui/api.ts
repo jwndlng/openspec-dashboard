@@ -1,6 +1,6 @@
 import type { ActivityQuery } from "../shared/activity.ts";
 import type { RepoAgentPatch } from "../shared/repoSettings.ts";
-import type { ActivityPage, AutoMergePromptResult, ConsoleSession, ProjectConsoleLike, CleanupPreview, CleanupResult, CleanupSelection, ChangeIssueRef, CreateChangeResponse, DismissPreview, DismissResult, EnvironmentReport, FolderPickResult, PromptResult, PullRequestsResponse, PullResolve, PullResult, RepoIssues, SetupState, ShipResult, StartResult, UpdateStatus, WorkStatus } from "../shared/types.ts";
+import type { ActivityPage, AutoMergePromptResult, ConsoleSession, ProjectConsoleLike, CleanupPreview, CleanupResult, CleanupSelection, ChangeIssueRef, CreateChangeResponse, DismissPreview, DismissResult, EnvironmentReport, EnvironmentView, FolderPickResult, PromptResult, PullRequestsResponse, PullResolve, PullResult, RepoIssues, SetupState, ShipResult, StartResult, UpdateStatus, WorkStatus } from "../shared/types.ts";
 import type { AgentAvailability, AutoFetchSeconds, ArtifactFileContent, ChangeArtifacts, Config, CreateProjectResponse, DiscoverResult, IntegrationSession, PrTitleConvention, RepoConfig, ScanTriggerResult, Session, SessionAction, SessionWorktree, SharedConfig, SharedConfigApplyResult, SharedConfigAssignment, SharedConfigPreview, Snapshot } from "../shared/types.ts";
 import { socketOrigin } from "./url.ts";
 
@@ -81,9 +81,10 @@ export interface Api {
   scan(): Promise<ScanTriggerResult>;
   /**
    * What this machine is missing (openspec/specs/environment-check). Read-only and local: it contacts no network and
-   * reads nothing in a tracked repository, so a configured credential is never proved to be valid.
+   * reads nothing in a tracked repository, so a configured credential is never proved to be valid. `view: "setup"` is
+   * the setup wizard's view: no per-agent checks and fixed setup verdicts.
    */
-  environment(force?: boolean): Promise<EnvironmentReport>;
+  environment(force?: boolean, view?: EnvironmentView): Promise<EnvironmentReport>;
   /** Whether the setup wizard is pending, and the home folders worth offering as roots (setup-wizard). Read-only. */
   setup(): Promise<SetupState>;
   /** Opens the system's folder dialog on the server's machine and waits for the user's choice; saves nothing. */
@@ -251,7 +252,13 @@ export const httpApi: Api = {
   discover: (scanRoots, ignorePaths) =>
     call<DiscoverResult>("/api/discover", { method: "POST", body: scanRoots || ignorePaths ? JSON.stringify({ scanRoots, ignorePaths }) : undefined }),
   scan: () => call<ScanTriggerResult>("/api/scan", { method: "POST" }),
-  environment: (force) => call<EnvironmentReport>(`/api/environment${force ? "?force=1" : ""}`),
+  environment: (force, view) => {
+    const params = new URLSearchParams();
+    if (force) params.set("force", "1");
+    if (view && view !== "settings") params.set("view", view);
+    const query = params.toString();
+    return call<EnvironmentReport>(`/api/environment${query ? `?${query}` : ""}`);
+  },
   setup: () => call<SetupState>("/api/setup"),
   pickFolder: () => call<FolderPickResult>("/api/setup/folder", { method: "POST", body: "{}" }),
   markSetupDone: () => call<Config>("/api/setup/done", { method: "POST", body: "{}" }),
@@ -342,7 +349,7 @@ export const api: Api = {
   forgetRepo: (repoId) => current.forgetRepo(repoId),
   discover: (scanRoots, ignorePaths) => current.discover(scanRoots, ignorePaths),
   scan: () => current.scan(),
-  environment: (force) => current.environment(force),
+  environment: (force, view) => current.environment(force, view),
   setup: () => current.setup(),
   pickFolder: () => current.pickFolder(),
   markSetupDone: () => current.markSetupDone(),

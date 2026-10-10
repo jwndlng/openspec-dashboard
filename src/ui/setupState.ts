@@ -6,7 +6,7 @@ import { PROJECT_SETTINGS, type ProjectSetting, settingApplies, withAutoFetch, w
 import { type AgentAvailability, type AutoFetchSeconds, autoFetchInterval, type Config, type EnvironmentReport, type PrTitleConvention, type RepoConfig, repoAgentEnabled } from "../shared/types.ts";
 import { newAgentProfile, parseArgLines } from "./sessionState.ts";
 
-export const SETUP_STEPS = ["Welcome", "Workspace", "Agents", "Console", "Project settings", "System check", "Done"] as const;
+export const SETUP_STEPS = ["Welcome", "System check", "Workspace", "Agents", "Console", "Project settings", "Done"] as const;
 export type SetupStep = (typeof SETUP_STEPS)[number];
 
 let autoOpen = true;
@@ -339,7 +339,7 @@ export interface SetupSaved {
 
 export const NOTHING_SAVED: SetupSaved = { rootsAdded: [], tracked: 0, agentsAdded: [], projectsChanged: 0 };
 
-/** What the Done step reports: what setup saved, and the checks still needing attention. */
+/** What the Done step reports: what setup saved, and the checks and agents still needing attention. */
 export interface SetupSummary extends SetupSaved {
   agentSessions: boolean;
   defaultAgent?: string;
@@ -349,10 +349,13 @@ export interface SetupSummary extends SetupSaved {
   agents: number;
   /** Whether the System check had a report to judge by. */
   checked: boolean;
+  /** Labels of the setup view's checks that are `problem` or `warning`. */
   remaining: string[];
+  /** Names of the checked agents whose executable the Agents step last found missing. */
+  agentsMissing: string[];
 }
 
-export function setupSummary(config: Config | null, saved: SetupSaved, report?: EnvironmentReport): SetupSummary {
+export function setupSummary(config: Config | null, saved: SetupSaved, report?: EnvironmentReport, agentsMissing: readonly string[] = []): SetupSummary {
   const sessions = config?.agentSessions;
   return {
     rootsAdded: [...saved.rootsAdded],
@@ -365,6 +368,7 @@ export function setupSummary(config: Config | null, saved: SetupSaved, report?: 
     agents: sessions?.agents.length ?? 0,
     checked: report !== undefined,
     remaining: (report?.checks ?? []).filter((c) => c.status === "problem" || c.status === "warning").map((c) => c.label),
+    agentsMissing: [...agentsMissing],
   };
 }
 
@@ -383,13 +387,32 @@ export interface DoneCard {
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 const listed = (names: readonly string[]) => (names.length <= 1 ? (names[0] ?? "") : `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`);
 
-/** The Done step's cards, one per step from Workspace to System check. Only the System check can need attention. */
+/** What is left to fix: the checks still failing, then the checked agents not found. */
+export function leftToFix(summary: SetupSummary): number {
+  return summary.remaining.length + summary.agentsMissing.length;
+}
+
+/**
+ * The Done step's cards, one per step from System check to Project settings, in the wizard's order. Only the System
+ * check, for a failing check, and Agents, for a checked agent not found, can need attention.
+ */
 export function doneCards(summary: SetupSummary, home?: string): DoneCard[] {
   // `~/Workspace` reads better on a card than the full path; anything outside the home folder is shown as it is.
   const short = (path: string) => (home && (path === home || path.startsWith(`${home}/`)) ? `~${path.slice(home.length)}` : path);
   const workspaceChanged = summary.rootsAdded.length > 0 || summary.tracked > 0;
   const defaultName = summary.defaultAgent ?? "the default agent";
   return [
+    {
+      step: "System check",
+      mark: summary.remaining.length > 0 || !summary.checked ? "attention" : "done",
+      outcome: summary.remaining.length > 0 ? `${summary.remaining.length} to fix` : summary.checked ? "All in place" : "Not checked",
+      detail:
+        summary.remaining.length > 0
+          ? `${listed(summary.remaining)} — Settings → Environment shows how`
+          : summary.checked
+            ? "Every tool Spec Control relies on is installed"
+            : "Settings → Environment checks this machine",
+    },
     {
       step: "Workspace",
       mark: workspaceChanged ? "done" : "unchanged",
@@ -403,9 +426,13 @@ export function doneCards(summary: SetupSummary, home?: string): DoneCard[] {
     },
     {
       step: "Agents",
-      mark: summary.agentSessions || summary.agentsAdded.length > 0 ? "done" : "unchanged",
+      mark: summary.agentsMissing.length > 0 ? "attention" : summary.agentSessions || summary.agentsAdded.length > 0 ? "done" : "unchanged",
       outcome: plural(summary.agents, "agent", "agents"),
-      detail: [summary.agentSessions ? `Sessions on, ${defaultName} by default` : "Sessions off", summary.agentsAdded.length > 0 ? `added ${listed(summary.agentsAdded)}` : ""]
+      detail: [
+        summary.agentsMissing.length > 0 ? `${listed(summary.agentsMissing)} not found — install ${summary.agentsMissing.length === 1 ? "it" : "them"} to start sessions` : "",
+        summary.agentSessions ? `Sessions on, ${defaultName} by default` : "Sessions off",
+        summary.agentsAdded.length > 0 ? `added ${listed(summary.agentsAdded)}` : "",
+      ]
         .filter(Boolean)
         .join("; "),
     },
@@ -420,17 +447,6 @@ export function doneCards(summary: SetupSummary, home?: string): DoneCard[] {
       mark: summary.projectsChanged > 0 ? "done" : "unchanged",
       outcome: summary.projectsChanged > 0 ? plural(summary.projectsChanged, "project", "projects") : "No change",
       detail: summary.projectsChanged > 0 ? "Their settings were saved" : "Each project keeps its own settings",
-    },
-    {
-      step: "System check",
-      mark: summary.remaining.length > 0 || !summary.checked ? "attention" : "done",
-      outcome: summary.remaining.length > 0 ? `${summary.remaining.length} to fix` : summary.checked ? "All in place" : "Not checked",
-      detail:
-        summary.remaining.length > 0
-          ? `${listed(summary.remaining)} — Settings → Environment shows how`
-          : summary.checked
-            ? "Every tool Spec Control relies on is installed"
-            : "Settings → Environment checks this machine",
     },
   ];
 }

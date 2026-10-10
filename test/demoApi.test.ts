@@ -409,3 +409,10 @@ test("setup is done in the demo, and Run setup again works on the page's own con
   expect((await api.setup()).suggestedRoots).toEqual(config.scanRoots);
   expect((await api.markSetupDone()).setup).toBeUndefined();
 });
+
+test("the demo's setup view leaves the agents out and judges nothing not needed", async () => {
+  const { api } = demo();
+  const report = await api.environment(false, "setup");
+  expect(report.checks.some((c) => c.id.startsWith("agent:"))).toBe(false);
+  expect(report.checks.some((c) => c.status === "not-needed")).toBe(false);
+});

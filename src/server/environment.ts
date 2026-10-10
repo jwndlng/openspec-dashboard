@@ -5,7 +5,7 @@ import { mkdir, rm, stat, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { join, sep } from "node:path";
 import { agentInstallSteps, type InstallPlatform, installPlatform } from "../shared/agentDefaults.ts";
-import { ENVIRONMENT_STATUS_ORDER, type Config, type EnvironmentCheck, type EnvironmentReport, type EnvironmentStatus, type InstructionStep, type Snapshot } from "../shared/types.ts";
+import { ENVIRONMENT_STATUS_ORDER, type Config, type EnvironmentCheck, type EnvironmentReport, type EnvironmentStatus, type EnvironmentView, type InstructionStep, type Snapshot } from "../shared/types.ts";
 import { describeStep, migrationOutcome } from "./homeMigration.ts";
 import { dashboardHome, whichOnPath } from "./paths.ts";
 import { availability } from "./sessions/agents.ts";
@@ -314,7 +314,8 @@ function worst(checks: readonly EnvironmentCheck[]): EnvironmentStatus {
   return "ok";
 }
 
-async function compute(config: Config, snapshot: Snapshot, platform: InstallPlatform): Promise<EnvironmentReport> {
+async function compute(config: Config, snapshot: Snapshot, platform: InstallPlatform, view: EnvironmentView): Promise<EnvironmentReport> {
+  if (view === "setup") return computeSetup(config, platform);
   const sessions = config.agentSessions.enabled;
   const enabledIds = new Set(config.repos.filter((repo) => repo.enabled).map((repo) => repo.id));
   // From the scan, never from letting a git command fail — the same rule in-place sessions are decided by.
@@ -337,10 +338,22 @@ async function compute(config: Config, snapshot: Snapshot, platform: InstallPlat
   };
 }
 
+/** Fixed setup verdicts: git is a problem because every session's worktree needs it; the rest are warnings. */
+async function computeSetup(config: Config, platform: InstallPlatform): Promise<EnvironmentReport> {
+  const home = await checkDashboardHome();
+  const git = checkGit({ missing: "problem" }, platform);
+  const identity = await checkGitIdentity({ missing: "warning" }, config, platform);
+  const openspec = checkOpenspecCli({ missing: "warning" }, platform);
+  const github = await checkGithubCli({ missing: "warning" }, platform);
+  const checks = [home, git, identity, openspec, github];
+  return { checkedAt: new Date().toISOString(), status: worst(checks), checks, caveat: CAVEAT };
+}
+
 /** Everything the cached report was computed from; a saved configuration is therefore always reflected by the next one. */
-function cacheKey(config: Config, snapshot: Snapshot, platform: InstallPlatform): string {
+function cacheKey(config: Config, snapshot: Snapshot, platform: InstallPlatform, view: EnvironmentView): string {
   const repos = config.repos.filter((repo) => repo.enabled);
   return JSON.stringify([
+    view,
     platform,
     config.agentSessions,
     repos.map((repo) => [repo.id, repo.agent?.enabled !== false, repo.agent?.agentId ?? null]),
@@ -348,23 +361,30 @@ function cacheKey(config: Config, snapshot: Snapshot, platform: InstallPlatform)
   ]);
 }
 
-let cached: { key: string; at: number; report: EnvironmentReport } | undefined;
+/** One entry per view, so the wizard's report and Settings' never evict each other. */
+const cached = new Map<EnvironmentView, { key: string; at: number; report: EnvironmentReport }>();
 
 /**
  * The report, recomputed unless an identical one was made in the last {@link CACHE_MS}. Pass `force` for **Re-check**:
  * the user has just changed something on the machine, which no cache key can see.
  */
-export async function environmentReport(config: Config, snapshot: Snapshot, options: { force?: boolean; platform?: string } = {}): Promise<EnvironmentReport> {
+export async function environmentReport(
+  config: Config,
+  snapshot: Snapshot,
+  options: { force?: boolean; platform?: string; view?: EnvironmentView } = {},
+): Promise<EnvironmentReport> {
   // Injectable so tests can ask for another platform's instructions; the server always reports its own.
   const platform = installPlatform(options.platform ?? process.platform);
-  const key = cacheKey(config, snapshot, platform);
-  if (!options.force && cached && cached.key === key && Date.now() - cached.at < CACHE_MS) return cached.report;
-  const report = await compute(config, snapshot, platform);
-  cached = { key, at: Date.now(), report };
+  const view = options.view ?? "settings";
+  const key = cacheKey(config, snapshot, platform, view);
+  const hit = cached.get(view);
+  if (!options.force && hit && hit.key === key && Date.now() - hit.at < CACHE_MS) return hit.report;
+  const report = await compute(config, snapshot, platform, view);
+  cached.set(view, { key, at: Date.now(), report });
   return report;
 }
 
 /** For tests, which change the PATH between reports — something no cache key can observe. */
 export function resetEnvironmentCache(): void {
-  cached = undefined;
+  cached.clear();
 }

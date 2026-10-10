@@ -1,5 +1,5 @@
-// The setup wizard (openspec/specs/setup-wizard): seven steps over the dimmed page — Welcome, Workspace, Agents,
-// Console, Project settings, System check, Done. Each step saves when the user continues, through the routes Settings
+// The setup wizard (openspec/specs/setup-wizard): seven steps over the dimmed page — Welcome, System check, Workspace,
+// Agents, Console, Project settings, Done. Each step saves when the user continues, through the routes Settings
 // and the overview already use, and only adds or changes what the user touched. The step views are hook-free, so tests
 // render them without a DOM; `SetupWizard` holds the state.
 import { useCallback, useEffect, useRef, useState } from "preact/hooks";
@@ -28,6 +28,7 @@ import {
   expandHome,
   initiallyChecked,
   isAbsoluteRoot,
+  leftToFix,
   NOTHING_SAVED,
   type ProjectSettingsMode,
   preselectedAgent,
@@ -168,11 +169,11 @@ export function WizardFrame({
 
 /** The steps ahead, as the Welcome diagram shows them: its node's icon, the step's name and one line on what it sets up. */
 export const WELCOME_FLOW = [
+  { name: "System check", Icon: IconScan, line: "whether the tools it relies on are installed, and how to install what is missing." },
   { name: "Workspace", Icon: IconFolderGit, line: "where your projects live, so Spec Control can find them." },
   { name: "Agents", Icon: IconTerminal, line: "the agent CLIs you work with, and which one starts by default." },
   { name: "Console", Icon: IconMonitor, line: "the agent you talk to about anything that is not one change, across all your projects." },
   { name: "Project settings", Icon: IconSettings, line: "how each project's sessions behave: pull request titles, auto-merge for docs and how often it is fetched." },
-  { name: "System check", Icon: IconScan, line: "whether the tools it relies on are installed, and how to install what is missing." },
 ] as const;
 
 export function WelcomeStep() {
@@ -368,10 +369,14 @@ export interface AgentsView {
   defaultAgent: string;
   /** How to install each checked agent that is not found. */
   installs: readonly { name: string; steps: readonly InstructionStep[] }[];
+  /** **Check again** is looking the executables up. */
+  checking?: boolean;
   saveError?: string;
 }
 
 export interface AgentsHandlers {
+  /** **Check again**: looks each agent's executable up once more. */
+  onRecheck: () => void;
   onEnable: (on: boolean) => void;
   onCheck: (id: string, on: boolean) => void;
   onAddCustom: () => void;
@@ -393,7 +398,13 @@ export function AgentsStep({ view, ...on }: { view: AgentsView } & AgentsHandler
       </section>
       <fieldset class="setup-agents">
         <legend>Agents you use</legend>
-        <p class="hint">Check every agent CLI you work with. Agents already configured stay; anything checked here is added when you continue.</p>
+        <div class="row">
+          <p class="hint grow">Check every agent CLI you work with. Agents already configured stay; anything checked here is added when you continue.</p>
+          <button type="button" class="btn sm" onClick={on.onRecheck} disabled={view.checking}>
+            <IconRefresh size={13} />
+            {view.checking ? "Checking…" : "Check again"}
+          </button>
+        </div>
         <div class="setup-agent-list">
           {view.choices.map((c) => (
             <label key={c.id} class={`check setup-agent ${c.configured || view.checked.includes(c.id) ? "on" : ""}`}>
@@ -459,7 +470,7 @@ export function AgentsStep({ view, ...on }: { view: AgentsView } & AgentsHandler
           <CommandSteps steps={steps} />
         </div>
       ))}
-      {view.installs.length > 0 && <p class="hint">You can continue now and install later; the System check step shows whether each agent is found.</p>}
+      {view.installs.length > 0 && <p class="hint">You can continue now and install later. After installing, use Check again to look for it.</p>}
       {view.saveError && <p class="notice danger">Could not save: {view.saveError}</p>}
     </div>
   );
@@ -766,7 +777,10 @@ export function SystemCheckStep({ report, loading, error, onRecheck }: { report?
   return (
     <div class="setup-step">
       <div class="row">
-        <p class="grow">The tools Spec Control and your agent rely on, checked on this machine. Nothing is installed or run for you.</p>
+        <p class="grow">
+          The tools Spec Control and your agents rely on, checked on this machine before the next steps use them. git gives each agent session its own worktree; the GitHub
+          CLI is used for pull requests and issues. Nothing is installed or run for you.
+        </p>
         <button type="button" class="btn sm" onClick={onRecheck} disabled={loading}>
           <IconRefresh size={13} />
           {loading ? "Checking…" : "Re-check"}
@@ -795,7 +809,7 @@ export function SystemCheckStep({ report, loading, error, onRecheck }: { report?
         </ul>
       )}
       {report?.caveat && <p class="hint">{report.caveat}</p>}
-      <p class="hint">You can continue whatever this says; Settings → Environment shows the same report later.</p>
+      <p class="hint">You can continue whatever this says. Agents are checked in the Agents step; Settings → Environment checks this machine again later.</p>
     </div>
   );
 }
@@ -809,7 +823,7 @@ const STEP_ICON = Object.fromEntries(WELCOME_FLOW.map(({ name, Icon }) => [name,
  */
 export function DoneStep({ summary, firstStart = false, home }: { summary: SetupSummary; firstStart?: boolean; home?: string }) {
   const cards = doneCards(summary, home);
-  const left = summary.remaining.length;
+  const left = leftToFix(summary);
   return (
     <div class="setup-step setup-done">
       <div class={`setup-done-hero ${left > 0 ? "attention" : ""}`}>
@@ -854,7 +868,7 @@ export function DoneStep({ summary, firstStart = false, home }: { summary: Setup
   );
 }
 
-const STEP = { welcome: 0, workspace: 1, agents: 2, console: 3, projects: 4, system: 5, done: 6 } as const;
+const STEP = { welcome: 0, system: 1, workspace: 2, agents: 3, console: 4, projects: 5, done: 6 } as const;
 
 /**
  * The wizard. `onSaved` receives every configuration a step saved; `onClose` is told whether setup could be marked done
@@ -935,13 +949,24 @@ export function SetupWizard({ config, snapshot, onSaved, onClose }: { config: Co
   const [checking, setChecking] = useState(false);
   const [checkError, setCheckError] = useState<string>();
 
+  // The Agents step's executable lookup, run once and again on **Check again**; it keeps what the user checked.
+  const [lookingUp, setLookingUp] = useState(false);
+  const lookUpAgents = useCallback(async () => {
+    setLookingUp(true);
+    try {
+      const s = await api.sessions();
+      setAvailability({ agents: s.agents, presets: s.presets });
+    } catch {
+      setAvailability((was) => was ?? { agents: [], presets: [] });
+    } finally {
+      setLookingUp(false);
+    }
+  }, []);
+
   useEffect(() => {
     api.setup().then(setInfo, () => undefined);
-    api.sessions().then(
-      (s) => setAvailability({ agents: s.agents, presets: s.presets }),
-      () => setAvailability({ agents: [], presets: [] }),
-    );
-  }, []);
+    void lookUpAgents();
+  }, [lookUpAgents]);
 
   // The step's heading takes focus, so a screen reader announces where the user is and Tab starts in the step.
   useEffect(() => heading.current?.focus(), [step]);
@@ -1015,7 +1040,7 @@ export function SetupWizard({ config, snapshot, onSaved, onClose }: { config: Co
   const loadReport = useCallback(async () => {
     setChecking(true);
     try {
-      setReport(await api.environment(true));
+      setReport(await api.environment(true, "setup"));
       setCheckError(undefined);
     } catch (err) {
       setCheckError(message(err));
@@ -1023,8 +1048,9 @@ export function SetupWizard({ config, snapshot, onSaved, onClose }: { config: Co
       setChecking(false);
     }
   }, []);
+  // The Done step asks again: the user may have installed something since the System check ran.
   useEffect(() => {
-    if (step === STEP.system) void loadReport();
+    if (step === STEP.system || step === STEP.done) void loadReport();
   }, [step, loadReport]);
 
   const finish = useCallback(async () => {
@@ -1162,7 +1188,7 @@ export function SetupWizard({ config, snapshot, onSaved, onClose }: { config: Co
     }
   };
 
-  const continueProjects = async (to: number = STEP.system) => {
+  const continueProjects = async (to: number = STEP.done) => {
     setBusy(true);
     setProjectsError(undefined);
     try {
@@ -1228,8 +1254,15 @@ export function SetupWizard({ config, snapshot, onSaved, onClose }: { config: Co
 
   if (step === STEP.welcome) {
     return (
-      <WizardFrame {...frame} onContinue={() => setStep(STEP.workspace)}>
+      <WizardFrame {...frame} onContinue={() => setStep(STEP.system)}>
         <WelcomeStep />
+      </WizardFrame>
+    );
+  }
+  if (step === STEP.system) {
+    return (
+      <WizardFrame {...frame} onContinue={() => setStep(STEP.workspace)}>
+        <SystemCheckStep report={report} loading={checking} error={checkError} onRecheck={() => void loadReport()} />
       </WizardFrame>
     );
   }
@@ -1269,11 +1302,14 @@ export function SetupWizard({ config, snapshot, onSaved, onClose }: { config: Co
       </WizardFrame>
     );
   }
+  // Checked agents the last lookup did not find: the Agents step says how to install them, the Done step names them.
+  const missingAgents = choices.filter((c) => !c.available && (c.configured || checkedIds.includes(c.id)));
   if (step === STEP.agents) {
     const platform = info?.platform ?? "linux";
-    const installs = choices
-      .filter((c) => !c.available && (c.configured || checkedIds.includes(c.id)))
-      .map((c) => ({ name: c.name, steps: agentInstallSteps(config?.agentSessions.agents.find((a) => a.id === c.id) ?? { id: c.id, name: c.name, command: [c.id] }, platform) }));
+    const installs = missingAgents.map((c) => ({
+      name: c.name,
+      steps: agentInstallSteps(config?.agentSessions.agents.find((a) => a.id === c.id) ?? { id: c.id, name: c.name, command: [c.id] }, platform),
+    }));
     const view: AgentsView = {
       savedEnabled,
       enable: savedEnabled || enable,
@@ -1283,12 +1319,14 @@ export function SetupWizard({ config, snapshot, onSaved, onClose }: { config: Co
       defaultOptions,
       defaultAgent: chosenDefault,
       installs,
+      checking: lookingUp,
       saveError: agentsError,
     };
     return (
       <WizardFrame {...frame} onContinue={() => void continueAgents()} continueBlocked={agentsBlocked}>
         <AgentsStep
           view={view}
+          onRecheck={() => void lookUpAgents()}
           onEnable={setEnable}
           onCheck={(id, on) =>
             // From the latest state, not this render's: two quick clicks must not undo each other.
@@ -1331,21 +1369,14 @@ export function SetupWizard({ config, snapshot, onSaved, onClose }: { config: Co
   }
   if (step === STEP.projects) {
     return (
-      <WizardFrame {...frame} onContinue={() => setStep(STEP.system)}>
-        <p class="hint">Loading the configuration…</p>
-      </WizardFrame>
-    );
-  }
-  if (step === STEP.system) {
-    return (
       <WizardFrame {...frame} onContinue={() => setStep(STEP.done)}>
-        <SystemCheckStep report={report} loading={checking} error={checkError} onRecheck={() => void loadReport()} />
+        <p class="hint">Loading the configuration…</p>
       </WizardFrame>
     );
   }
   return (
     <WizardFrame {...frame} onContinue={() => void finish()} continueLabel="Finish">
-      <DoneStep summary={setupSummary(config, saved, report)} firstStart={info?.pending === true} home={info?.home} />
+      <DoneStep summary={setupSummary(config, saved, report, missingAgents.map((c) => c.name))} firstStart={info?.pending === true} home={info?.home} />
     </WizardFrame>
   );
 }
