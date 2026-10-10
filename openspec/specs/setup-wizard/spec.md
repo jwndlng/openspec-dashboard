@@ -31,8 +31,9 @@ SHALL never open the wizard by itself.
 - **THEN** the wizard opens only once the detail view is closed
 
 ### Requirement: The wizard has seven steps in a fixed order
-The wizard SHALL be a modal dialog with the steps **Welcome**, **Workspace**, **Agents**, **Console**, **Project
-settings**, **System check** and **Done**, in this order, showing the current step's position as "n of 7" and the
+The wizard SHALL be a modal dialog with the steps **Welcome**, **System check**, **Workspace**, **Agents**, **Console**,
+**Project settings** and **Done**, in this order, so that the tools the later steps rely on are checked before any of
+them is used, showing the current step's position as "n of 7" and the
 names of all steps. Every step before the current one SHALL be marked as done, in green with a check mark beside its
 name, and SHALL be announced as done to assistive technology; the current step SHALL be marked as current, and the
 steps after it SHALL show neither. The step list SHALL also be a way to move: every step up to the furthest one reached
@@ -49,11 +50,11 @@ without horizontal scrolling.
 
 #### Scenario: Position shown
 - **WHEN** the wizard shows the Console step
-- **THEN** it reads "4 of 7" and lists Welcome, Workspace, Agents, Console, Project settings, System check and Done with Console marked current
+- **THEN** it reads "5 of 7" and lists Welcome, System check, Workspace, Agents, Console, Project settings and Done with Console marked current
 
 #### Scenario: Steps passed are done
 - **WHEN** the user continues from the Agents step to the Console step
-- **THEN** Welcome, Workspace and Agents are shown green with a check mark and announced as done, Console is marked current, and Project settings, System check and Done are shown plain
+- **THEN** Welcome, System check, Workspace and Agents are shown green with a check mark and announced as done, Console is marked current, and Project settings and Done are shown plain
 
 #### Scenario: Jumping back from the step list
 - **WHEN** the user is on the Project settings step and activates Workspace in the step list
@@ -65,11 +66,11 @@ without horizontal scrolling.
 
 #### Scenario: A step not reached yet
 - **WHEN** the user is on the Agents step for the first time
-- **THEN** Console, Project settings, System check and Done cannot be activated from the step list
+- **THEN** Console, Project settings and Done cannot be activated from the step list
 
 #### Scenario: Back unmarks
 - **WHEN** the user then activates **Back**
-- **THEN** Agents is marked current again and only Welcome and Workspace are shown as done
+- **THEN** Agents is marked current again and only Welcome, System check and Workspace are shown as done
 
 #### Scenario: Back keeps entries
 - **WHEN** the user enters a workspace root, continues to Agents and activates **Back**
@@ -80,9 +81,9 @@ without horizontal scrolling.
 - **THEN** every step's content and controls are reachable without scrolling sideways
 
 ### Requirement: The Welcome step says what setup covers
-The Welcome step SHALL say in a few sentences what the dashboard is for, and that setup covers where the user's
-projects live, the agent CLIs the user works with, the main console, the settings of the user's projects and a check of
-the tools the dashboard relies on. It SHALL show these five topics as a diagram of the steps ahead: one node per step,
+The Welcome step SHALL say in a few sentences what the dashboard is for, and that setup covers a check of the tools
+the dashboard relies on, where the user's projects live, the agent CLIs the
+user works with, the main console and the settings of the user's projects. It SHALL show these five topics as a diagram of the steps ahead: one node per step,
 in the order the wizard takes them and connected in that order, each node with the step's number, its name and one line
 on what it sets up, ending in a node for being ready to work. The diagram SHALL run across on a wide viewport and down
 on a narrow one, SHALL fit a 400px viewport without horizontal scrolling, and SHALL be exposed to assistive technology
@@ -95,7 +96,7 @@ changed later, in Settings or in a project's settings, and that setup can be run
 
 #### Scenario: The steps as a diagram
 - **WHEN** the Welcome step is shown in a 1440px wide viewport
-- **THEN** it shows Workspace, Agents, Console, Project settings and System check as numbered nodes from 1 to 5 in one row, connected in that order and followed by a node for being ready, each with one line on what it sets up
+- **THEN** it shows System check, Workspace, Agents, Console and Project settings as numbered nodes from 1 to 5 in one row, connected in that order and followed by a node for being ready, each with one line on what it sets up
 
 #### Scenario: The diagram on a narrow window
 - **WHEN** the Welcome step is shown in a 400px wide viewport
@@ -202,8 +203,11 @@ the wizard never removes a profile the user configured. Agents SHALL NOT come pr
 configuration's agents are exactly what a fresh installation ships — the Claude Code profile, unchanged, as the only
 profile and the default, with no console agent — that profile SHALL NOT count as configured, and Claude Code SHALL be
 offered like any other preset. A preset SHALL be checked by default when its executable is found, and unchecked
-otherwise. For every checked agent whose executable is not found, the step SHALL show how to install it, as the
-`environment-check` capability's instructions specify, and SHALL still allow continuing.
+otherwise. The Agents step is where agents are checked: whether each listed agent's executable is found SHALL be looked up when the
+step is shown and again when the user activates **Check again**, which marks itself as working while it does and then
+updates every mark. For every checked agent whose executable is not found, the step SHALL show how to install it, as the
+`environment-check` capability's instructions specify, with each command copyable with one action, and SHALL still allow
+continuing. It SHALL NOT refer the user to the System check step for agents.
 
 The step SHALL offer **Add another agent**, which asks for a name and a command line, given as one argument per line,
 in which `{prompt}` stands for the opening prompt. A custom agent SHALL need a non-empty name and a non-empty first
@@ -274,17 +278,34 @@ If the user unchecked the switch, checked nothing new and chose the current defa
 - **WHEN** the user unchecks **Turn agent sessions on** and continues without checking a new agent and without changing the default agent
 - **THEN** no configuration is saved by the step
 
+#### Scenario: Checking again after installing
+- **WHEN** `agy` was not found, the user checked Antigravity, installs it and activates **Check again**
+- **THEN** Antigravity is marked found, its install instructions are gone, and no process other than the executable lookup was started
+
 ### Requirement: The System check step shows the environment report with instructions
-The System check step SHALL request a fresh environment report after the earlier steps saved, and show every check in
-the report's order with its label, its status in text, what was found and, for a check that is not `ok` or
-`not-needed`, its remedy and its instructions, each command shown so that it can be copied with one action. It SHALL
-offer **Re-check**, which requests a fresh report and marks itself as working while it does. It SHALL say plainly when
-everything needed is in place, and SHALL allow continuing whatever the report says. The dashboard SHALL NOT run any
-command shown in the instructions.
+The System check step SHALL follow Welcome and SHALL request a fresh environment report in its setup view (the
+`environment-check` capability's "The setup view leaves agents out") when it is shown, and show every check of that view
+in the report's order with its label, its status in text, what was found and, for a check that is not `ok`, its remedy
+and its instructions, each command shown so that it can be copied with one action. It SHALL NOT list a check per agent:
+whether each agent's executable is found is shown in the Agents step. It SHALL say that the GitHub CLI is used for pull requests
+and issues, and that git is needed to give each agent session its own worktree. It SHALL offer **Re-check**, which requests a fresh report and marks itself as working while
+it does. It SHALL say plainly when everything needed is in place, and SHALL allow continuing whatever the report says.
+It SHALL present the report in the same visual language as the Done step: a headline with a large badge — a check mark
+when everything needed is in place, a mark that something needs attention otherwise — saying how many checks are in
+place, with **Re-check** beside it; then one card per check, in the report's order, each with an icon for its tool, its
+label, what was found and its status as a pill in text and colour, the card's edge in the status's colour, and for a
+check that is not `ok` its remedy and instructions inside the card. The cards SHALL be exposed to assistive technology
+as a list, each read as its label, status and what was found, with the icons hidden; any animation SHALL not play when
+the user prefers reduced motion, and the step SHALL fit a 400px viewport without horizontal scrolling.
+The dashboard SHALL NOT run any command shown in the instructions.
 
 #### Scenario: gh is missing
-- **WHEN** agent sessions were switched on in the Agents step and `gh` is not on the PATH
-- **THEN** the GitHub CLI check is listed as `warning` with instructions to install the GitHub CLI and to run `gh auth login`, each with a copy control
+- **WHEN** a fresh installation has agent sessions off and `gh` is not on the PATH
+- **THEN** the System check step, shown second, lists the GitHub CLI check as `warning` with instructions to install the GitHub CLI and to run `gh auth login`, each with a copy control
+
+#### Scenario: No agent checks
+- **WHEN** three agent profiles are configured and the System check step is shown
+- **THEN** it lists no check for any agent
 
 #### Scenario: Re-check after installing
 - **WHEN** the user installs the missing tool and activates **Re-check**
@@ -295,8 +316,12 @@ command shown in the instructions.
 - **THEN** the command is on the clipboard, the control confirms it, and no process was started
 
 #### Scenario: All in place
-- **WHEN** every check is `ok` or `not-needed`
+- **WHEN** every check of the setup view is `ok`
 - **THEN** the step says that everything needed is in place
+
+#### Scenario: A visual report
+- **WHEN** the System check step shows a setup view in which the GitHub CLI check is `warning` and the other four are `ok`
+- **THEN** the headline says four of five checks are in place beside a mark that something needs attention, with **Re-check** beside it, and five cards follow in the report's order, each with its tool's icon and a status pill, the GitHub CLI card in the warning colour holding its install and login commands
 
 ### Requirement: The Done step summarises and ends setup
 The Done step SHALL summarise what setup saved: the roots added and which of them it created, the number of projects

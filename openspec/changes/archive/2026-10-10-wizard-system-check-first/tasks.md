@@ -15,4 +15,4 @@
 
 ## 3. Verification
 
-- [~] 3.1 Run `bun run check` and `bun run build`, then step through the wizard in `dist/spec-control` with `SPEC_CONTROL_HOME` set to a scratch folder and confirm the System check is step 2 with no agent rows
+- [x] 3.1 Run `bun run check` and `bun run build`, then step through the wizard in `dist/spec-control` with `SPEC_CONTROL_HOME` set to a scratch folder and confirm the System check is step 2 with no agent rows
