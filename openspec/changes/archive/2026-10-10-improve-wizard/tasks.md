@@ -22,7 +22,7 @@
 
 ## 4. Wizard views (`src/ui/setupWizard.tsx`)
 
-- [~] 4.1 Workspace: **Choose folder…** shown only with `folderPicker`, busy while open, cancel silent, failure shown, duplicates ignored, chosen folder runs discovery. Escape while the picker is pending does not skip setup. Verify with view tests and in `bun run dev` on macOS that Finder's dialog opens in front and the folder is added
+- [x] 4.1 Workspace: **Choose folder…** shown only with `folderPicker`, busy while open, cancel silent, failure shown, duplicates ignored, chosen folder runs discovery. Escape while the picker is pending does not skip setup. Verify with view tests and in `bun run dev` on macOS that Finder's dialog opens in front and the folder is added
 - [x] 4.2 Agents: checklist with found/not found, locked configured profiles, install steps for each checked agent that is not found, **Add another agent** form with validation and removal, default-agent choice among the checked agents. Verify with view tests
 - [x] 4.3 Console step: the explanation, the choice only with two or more profiles, the "sessions off" note. Wire `consoleSave` on Continue. Verify with view tests
 - [x] 4.4 Project settings step: modes, "Keep each project's setting", the applicable counts, defaults named, "Project n of N" with Previous/Next project, "Reading projects…" until every covered project has a scan entry (pass the snapshot from `app.tsx`, and while waiting trigger a scan and read `GET /api/state`, since a scan asked for during another is dropped), the empty state, errors kept on a failed save. Verify with view tests and in `bun run dev` against fixture projects
@@ -47,5 +47,5 @@
 
 - [x] 6.1 `src/ui/demo/demoApi.ts`: `folderPicker: true` and `POST /api/setup/folder` answering the demo's root. Verify with **Run setup again** in the demo build that **Choose folder…** adds the demo folder without a dialog
 - [x] 6.2 Update `README.md`'s first-run paragraph (folder dialog, several agents, console, project settings). Verify by reading it against the specs
-- [~] 6.3 Run `bun run check`, then `bun run build` and check **Choose folder…** in `dist/spec-control`. Verify that all checks pass and the compiled binary opens the dialog
+- [x] 6.3 Run `bun run check`, then `bun run build` and check **Choose folder…** in `dist/spec-control`. Verify that all checks pass and the compiled binary opens the dialog
 - [x] 6.4 Add a What's new entry at the top of `src/ui/changelog.ts` for the improved setup (folder dialog, several agents, console and project settings steps, roomier wizard). Verify that it shows in the What's new view
