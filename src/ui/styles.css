@@ -891,6 +891,16 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: 
 .setup-steps li { display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--border-light); color: var(--fg-subtle); }
 /* A step passed is done: green, with its check mark. */
 .setup-steps li.past { color: var(--success); border-color: var(--success); background: var(--success-bg); font-weight: 600; }
+/* A step that can be opened from the list: the whole pill is the button. */
+.setup-steps li:has(> .setup-step-link) { padding: 0; }
+.setup-step-link {
+  display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px; border: 0; border-radius: 999px;
+  font: inherit; color: inherit; background: transparent; cursor: pointer;
+}
+.setup-step-link:hover { text-decoration: underline; text-underline-offset: 2px; }
+.setup-step-link:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--brand-ring); }
+.setup-step-link:disabled { cursor: default; text-decoration: none; }
+.setup-steps li.reached { color: var(--fg-body); border-color: var(--border); }
 .setup-steps li.current { color: var(--fg-heading); font-weight: 600; border-color: var(--brand); background: var(--brand-softer); }
 .setup-body { flex: 1; padding: 20px 28px 22px; }
 /* One text size on every step, and one for secondary text: steps differ in content, never in type size. */
@@ -965,7 +975,19 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: 
 .setup-agents legend, .setup-modes legend { padding: 0 6px; font-size: 13px; font-weight: 600; color: var(--fg-subtle); }
 .setup-agents .check { flex-wrap: wrap; }
 /* The agents side by side, a column each, so a list of presets takes one or two rows. */
-.setup-agent-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 6px 16px; }
+.setup-agent-list { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 10px; }
+/* Each agent a tile of the same height: the box, its name and whether it was found on one line, its status below. */
+.setup-wizard .check.setup-agent {
+  display: flex; align-items: flex-start; gap: 10px; min-width: 0; padding: 10px 12px;
+  border: 1px solid var(--border-light); border-radius: var(--radius-sm); background: var(--bg-base);
+}
+.setup-wizard .check.setup-agent.on { border-color: var(--brand-soft); background: var(--brand-softer); }
+.setup-wizard .check.setup-agent input { margin-top: 2px; }
+.setup-agent-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.setup-agent-name { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; font-weight: 600; color: var(--fg-heading); }
+@media (max-width: 720px) {
+  .setup-agent-list { grid-auto-flow: row; grid-auto-columns: auto; grid-template-columns: minmax(0, 1fr); }
+}
 .setup-modes { display: flex; flex-wrap: wrap; gap: 6px 28px; padding: 8px 16px; }
 .setup-custom-agent { display: grid; gap: 10px; padding: 12px 14px; border: 1px dashed var(--border); border-radius: var(--radius-sm); background: var(--bg-section); }
 .setup-custom-agent .row { justify-content: space-between; flex-wrap: wrap; gap: var(--gap-1); }

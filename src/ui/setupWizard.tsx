@@ -51,6 +51,8 @@ const message = (err: unknown) => (err instanceof Error ? err.message : String(e
 /** The frame every step shares: the step list with the current one marked, the step's body, and its controls. */
 export function WizardFrame({
   step,
+  reachable = step,
+  onStep,
   children,
   onBack,
   onContinue,
@@ -63,6 +65,10 @@ export function WizardFrame({
   headingRef,
 }: {
   step: number;
+  /** The furthest step reached; the steps up to it can be opened from the step list. */
+  reachable?: number;
+  /** Opens a step from the step list. Absent: the list only shows where the user is. */
+  onStep?: (step: number) => void;
   children: preact.ComponentChildren;
   onBack?: () => void;
   onContinue: () => void;
@@ -88,13 +94,28 @@ export function WizardFrame({
             </h2>
           </div>
           <ol class="setup-steps" aria-label="Setup steps">
-            {SETUP_STEPS.map((name, i) => (
-              <li key={name} class={i === step ? "current" : i < step ? "past" : ""} aria-current={i === step ? "step" : undefined}>
-                {i < step && <IconCheck size={12} />}
-                {name}
-                {i < step && <span class="visually-hidden">, done</span>}
-              </li>
-            ))}
+            {SETUP_STEPS.map((name, i) => {
+              const label = (
+                <>
+                  {i < step && <IconCheck size={12} />}
+                  {name}
+                  {i < step && <span class="visually-hidden">, done</span>}
+                </>
+              );
+              // Any step up to the furthest one reached can be opened; one not reached yet only through Continue.
+              const open = onStep && i !== step && i <= reachable;
+              return (
+                <li key={name} class={i === step ? "current" : i < step ? "past" : i <= reachable ? "reached" : ""} aria-current={i === step ? "step" : undefined}>
+                  {open ? (
+                    <button type="button" class="setup-step-link" onClick={() => onStep(i)} disabled={busy} title={i < step ? `Back to ${name}` : `Save this step and go to ${name}`}>
+                      {label}
+                    </button>
+                  ) : (
+                    label
+                  )}
+                </li>
+              );
+            })}
           </ol>
         </header>
         <div class="modal-body setup-body">{children}</div>
@@ -366,11 +387,15 @@ export function AgentsStep({ view, ...on }: { view: AgentsView } & AgentsHandler
         <p class="hint">Check every agent CLI you work with. Agents already configured stay; anything checked here is added when you continue.</p>
         <div class="setup-agent-list">
           {view.choices.map((c) => (
-            <label key={c.id} class="check">
-            <input type="checkbox" checked={c.configured || view.checked.includes(c.id)} disabled={c.configured} onChange={(e) => on.onCheck(c.id, e.currentTarget.checked)} />
-            <span>{c.name}</span>
-            <span class={`badge ${c.available ? "success" : "warning"}`}>{c.available ? "found" : "not found"}</span>
-              {c.configured ? <span class="hint">configured</span> : view.checked.includes(c.id) && <span class="hint">added when you continue</span>}
+            <label key={c.id} class={`check setup-agent ${c.configured || view.checked.includes(c.id) ? "on" : ""}`}>
+              <input type="checkbox" checked={c.configured || view.checked.includes(c.id)} disabled={c.configured} onChange={(e) => on.onCheck(c.id, e.currentTarget.checked)} />
+              <span class="setup-agent-text">
+                <span class="setup-agent-name">
+                  <span>{c.name}</span>
+                  <span class={`badge ${c.available ? "success" : "warning"}`}>{c.available ? "found" : "not found"}</span>
+                </span>
+                <span class="hint">{c.configured ? "configured" : view.checked.includes(c.id) ? "added when you continue" : "check to add"}</span>
+              </span>
             </label>
           ))}
         </div>
@@ -824,7 +849,13 @@ const STEP = { welcome: 0, workspace: 1, agents: 2, console: 3, projects: 4, sys
  * git repositories, for the Project settings step.
  */
 export function SetupWizard({ config, snapshot, onSaved, onClose }: { config: Config | null; snapshot?: Snapshot | null; onSaved: (config: Config) => void; onClose: (done: boolean) => void }) {
-  const [step, setStep] = useState(0);
+  const [step, setStepOnly] = useState(0);
+  // The furthest step reached: the step list opens any step up to it.
+  const [furthest, setFurthest] = useState(0);
+  const setStep = useCallback((next: number) => {
+    setStepOnly(next);
+    setFurthest((was) => Math.max(was, next));
+  }, []);
   const [busy, setBusy] = useState(false);
   const [confirmingSkip, setConfirmingSkip] = useState(false);
   const [info, setInfo] = useState<SetupState>();
@@ -1049,7 +1080,7 @@ export function SetupWizard({ config, snapshot, onSaved, onClose }: { config: Co
     }
   };
 
-  const continueWorkspace = async () => {
+  const continueWorkspace = async (to: number = STEP.agents) => {
     setBusy(true);
     setWorkspaceError(undefined);
     try {
@@ -1071,7 +1102,7 @@ export function SetupWizard({ config, snapshot, onSaved, onClose }: { config: Co
       setSaved((was) => ({ ...was, rootsAdded: [...was.rootsAdded, ...added], tracked: was.tracked + tracked }));
       setEntered([]);
       setUnchecked(new Set());
-      setStep(STEP.agents);
+      setStep(to);
     } catch (err) {
       setWorkspaceError(message(err));
     } finally {
@@ -1079,7 +1110,7 @@ export function SetupWizard({ config, snapshot, onSaved, onClose }: { config: Co
     }
   };
 
-  const continueAgents = async () => {
+  const continueAgents = async (to: number = STEP.console) => {
     setBusy(true);
     setAgentsError(undefined);
     try {
@@ -1094,7 +1125,7 @@ export function SetupWizard({ config, snapshot, onSaved, onClose }: { config: Co
         setChecked(undefined);
         setDefaultAgent(undefined);
       }
-      setStep(STEP.console);
+      setStep(to);
     } catch (err) {
       setAgentsError(message(err));
     } finally {
@@ -1102,14 +1133,14 @@ export function SetupWizard({ config, snapshot, onSaved, onClose }: { config: Co
     }
   };
 
-  const continueConsole = async () => {
+  const continueConsole = async (to: number = STEP.projects) => {
     setBusy(true);
     setConsoleError(undefined);
     try {
       const next = consoleSave(await api.config(), consoleAgent);
       if (next) onSaved(await api.saveConfig(next));
       setConsoleChoice(null);
-      setStep(STEP.projects);
+      setStep(to);
     } catch (err) {
       setConsoleError(message(err));
     } finally {
@@ -1117,7 +1148,7 @@ export function SetupWizard({ config, snapshot, onSaved, onClose }: { config: Co
     }
   };
 
-  const continueProjects = async () => {
+  const continueProjects = async (to: number = STEP.system) => {
     setBusy(true);
     setProjectsError(undefined);
     try {
@@ -1128,7 +1159,7 @@ export function SetupWizard({ config, snapshot, onSaved, onClose }: { config: Co
       }
       setAllDraft({});
       setEachDraft(new Map());
-      setStep(STEP.system);
+      setStep(to);
     } catch (err) {
       setProjectsError(message(err));
     } finally {
@@ -1154,8 +1185,24 @@ export function SetupWizard({ config, snapshot, onSaved, onClose }: { config: Co
     });
   };
 
+  /**
+   * The step list: an earlier step opens as Back does, keeping what was entered; a later step already reached first saves
+   * the current step exactly as its Continue would, and stays put when that fails.
+   */
+  const openStep = (target: number) => {
+    if (busy || picking || target === step || target > furthest) return;
+    if (target < step) return setStep(target);
+    if (step === STEP.workspace) return void continueWorkspace(target);
+    if (step === STEP.agents) return void continueAgents(target);
+    if (step === STEP.console) return void continueConsole(target);
+    if (step === STEP.projects && config) return void continueProjects(target);
+    setStep(target);
+  };
+
   const frame = {
     step,
+    reachable: furthest,
+    onStep: openStep,
     busy: busy || picking,
     headingRef: heading,
     onBack: step > 0 ? () => setStep(step - 1) : undefined,

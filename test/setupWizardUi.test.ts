@@ -37,6 +37,23 @@ test("the wizard is a dialog named as the setup, showing its position and every 
   expect(byTag(frame, "button").map(textOf)).toEqual(["Skip setup", "Back", "Continue"]);
 });
 
+test("the step list opens every step up to the furthest one reached, and none beyond it", () => {
+  const opened: number[] = [];
+  const frame = WizardFrame({ step: 3, reachable: 5, onStep: (i) => opened.push(i), onContinue: noop, onBack: noop, onSkip: noop, children: "" });
+  const items = byTag(byTag(frame, "ol")[0], "li");
+  const links = items.map((li) => byTag(li, "button")[0]);
+  expect(links.map((b) => b !== undefined)).toEqual([true, true, true, false, true, true, false]);
+  for (const b of links) if (b) (b.props.onClick as () => void)();
+  expect(opened).toEqual([0, 1, 2, 4, 5]);
+  expect(String(links[4]?.props.title)).toContain("Save this step");
+  expect(String(links[1]?.props.title)).toContain("Back to");
+  // While a step saves, the list cannot be used.
+  const busy = WizardFrame({ step: 3, reachable: 5, onStep: noop, busy: true, onContinue: noop, children: "" });
+  expect(byTag(byTag(busy, "ol")[0], "button").every((b) => b.props.disabled === true)).toBe(true);
+  // Without a handler it only shows where the user is.
+  expect(byTag(byTag(WizardFrame({ step: 3, onContinue: noop, children: "" }), "ol")[0], "button")).toHaveLength(0);
+});
+
 test("Welcome has no Back, Done no Skip, and a pending Skip asks first", () => {
   expect(byTag(WizardFrame({ step: 0, onContinue: noop, onSkip: noop, children: "" }), "button").map(textOf)).toEqual(["Skip setup", "Continue"]);
   expect(byTag(WizardFrame({ step: 6, onContinue: noop, onBack: noop, continueLabel: "Finish", children: "" }), "button").map(textOf)).toEqual(["Back", "Finish"]);

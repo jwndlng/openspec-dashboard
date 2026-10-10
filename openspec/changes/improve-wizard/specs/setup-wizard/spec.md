@@ -12,7 +12,11 @@ The wizard SHALL be a modal dialog with the steps **Welcome**, **Workspace**, **
 settings**, **System check** and **Done**, in this order, showing the current step's position as "n of 7" and the
 names of all steps. Every step before the current one SHALL be marked as done, in green with a check mark beside its
 name, and SHALL be announced as done to assistive technology; the current step SHALL be marked as current, and the
-steps after it SHALL show neither. Every step except Welcome SHALL offer **Back**; every step except Done SHALL offer **Continue** and
+steps after it SHALL show neither. The step list SHALL also be a way to move: every step up to the furthest one reached
+SHALL be activatable from it, while a step not reached yet SHALL NOT be. Activating an earlier step SHALL act as
+**Back**, keeping what was entered and saving nothing; activating a later step already reached SHALL first save the
+current step exactly as its **Continue** would, and SHALL stay on the current step, showing the error, when that save
+fails. While a step saves, the list SHALL NOT be activatable. Every step except Welcome SHALL offer **Back**; every step except Done SHALL offer **Continue** and
 **Skip setup**. While the wizard is open the page behind it SHALL NOT receive clicks or keyboard focus, and it SHALL be
 exposed to assistive technology as a dialog named as the setup. Pressing Escape SHALL act as **Skip setup**, after a
 confirmation when the user has entered something the wizard has not saved yet. While a native folder picker opened by
@@ -27,6 +31,18 @@ without horizontal scrolling.
 #### Scenario: Steps passed are done
 - **WHEN** the user continues from the Agents step to the Console step
 - **THEN** Welcome, Workspace and Agents are shown green with a check mark and announced as done, Console is marked current, and Project settings, System check and Done are shown plain
+
+#### Scenario: Jumping back from the step list
+- **WHEN** the user is on the Project settings step and activates Workspace in the step list
+- **THEN** the Workspace step is shown with what was entered, and nothing was saved by the jump
+
+#### Scenario: Jumping forward again
+- **WHEN** the user went back from Project settings to Agents, checks Codex and activates Project settings in the step list
+- **THEN** the Agents step's save runs — Codex is added — and the Project settings step is shown
+
+#### Scenario: A step not reached yet
+- **WHEN** the user is on the Agents step for the first time
+- **THEN** Console, Project settings, System check and Done cannot be activated from the step list
 
 #### Scenario: Back unmarks
 - **WHEN** the user then activates **Back**
@@ -125,7 +141,9 @@ while agent sessions are off in the saved configuration it SHALL start checked, 
 unless the user unchecks it; while they are on it SHALL show them on and SHALL NOT switch them off.
 
 It SHALL list the configured profiles and every preset not configured yet, each with a checkbox and marked found or not
-found on this machine, found ones first. Configured profiles SHALL be shown checked and SHALL NOT be uncheckable, since
+found on this machine, found ones first, side by side in one row of tiles of the same height on a wide viewport — each
+with its name and whether it was found on one line and its status below — and one below the other on a narrow one.
+Configured profiles SHALL be shown checked and SHALL NOT be uncheckable, since
 the wizard never removes a profile. A preset SHALL be checked by default when its executable is found, and unchecked
 otherwise. For every checked agent whose executable is not found, the step SHALL show how to install it, as the
 `environment-check` capability's instructions specify, and SHALL still allow continuing.
