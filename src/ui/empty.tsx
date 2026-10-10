@@ -1,4 +1,5 @@
 import type { Config } from "../shared/types.ts";
+import { AddGithubButton } from "./addGithub.tsx";
 import { NewProjectButton } from "./newProject.tsx";
 import { href, navigate } from "./url.ts";
 
@@ -22,6 +23,7 @@ export function NoRepos({ config }: { config: Config | null }) {
             Open Settings
           </a>
           <NewProjectButton config={config} small={false} />
+          <AddGithubButton config={config} small={false} />
         </div>
       )}
     </div>

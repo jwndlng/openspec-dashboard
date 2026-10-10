@@ -112,3 +112,8 @@ export function ghIssue(patch: Record<string, unknown> & { number: number }): Re
     ...patch,
   };
 }
+
+/** A repository in the shape `gh repo list --json …` prints, with defaults for everything a test does not set. */
+export function ghRepo(patch: Record<string, unknown> & { nameWithOwner: string }): Record<string, unknown> {
+  return { description: "", isPrivate: false, isArchived: false, pushedAt: "2026-09-01T10:00:00Z", ...patch };
+}

@@ -3,7 +3,7 @@
 // built from the configuration as it is when the user continues, and only adds or changes what the user touched.
 import { AGENT_PRESETS, CLAUDE_PROFILE } from "../shared/agentDefaults.ts";
 import { PROJECT_SETTINGS, type ProjectSetting, settingApplies, withAutoFetch, withPrTitleConvention, withRepoAgent } from "../shared/repoSettings.ts";
-import { type AgentAvailability, type AutoFetchSeconds, autoFetchInterval, type Config, type EnvironmentReport, type PrTitleConvention, type RepoConfig, repoAgentEnabled } from "../shared/types.ts";
+import { type AgentAvailability, type AutoFetchSeconds, autoFetchInterval, type Config, type EnvironmentReport, type GithubClone, type PrTitleConvention, type RepoConfig, repoAgentEnabled } from "../shared/types.ts";
 import { newAgentProfile, parseArgLines } from "./sessionState.ts";
 
 export const SETUP_STEPS = ["Welcome", "System check", "Workspace", "Agents", "Console", "Project settings", "Done"] as const;
@@ -49,6 +49,25 @@ export function workspaceSave(current: Config, entered: readonly string[], missi
     roots.push(root);
   }
   return roots.length === current.scanRoots.length ? null : { ...current, scanRoots: roots };
+}
+
+/**
+ * Whether the Workspace step has a workspace folder to continue with: a configured root, an entered one that exists (as
+ * far as discovery has said), or one marked to be created.
+ */
+export function workspaceRootReady(configured: readonly string[], entered: readonly string[], missing: ReadonlySet<string> | ReadonlyMap<string, unknown>, toCreate: ReadonlySet<string>): boolean {
+  return configured.length > 0 || entered.some((root) => !missing.has(root) || toCreate.has(root));
+}
+
+/** The roots Add from GitHub may clone into from the Workspace step: configured ones, and entered ones that exist or will. */
+export function githubRootChoices(configured: readonly string[], entered: readonly string[], missing: ReadonlySet<string> | ReadonlyMap<string, unknown>, toCreate: ReadonlySet<string>): string[] {
+  return [...configured, ...entered.filter((root) => !configured.includes(root) && (!missing.has(root) || toCreate.has(root)))];
+}
+
+/** `~/Workspace`, proposed for creation when no root is configured and no well-known folder exists in the home folder. */
+export function proposedWorkspace(home: string | undefined, configured: readonly string[], suggestions: readonly string[]): string | undefined {
+  if (!home || configured.length > 0 || suggestions.length > 0) return undefined;
+  return `${home.replace(/[\\/]+$/, "")}/Workspace`;
 }
 
 /** One agent the Agents step offers: a configured profile (always kept, so never unchecked), or a preset not configured yet. */
@@ -332,12 +351,16 @@ export function projectSettingsSave(
 /** What setup saved so far, collected step by step for the Done step. */
 export interface SetupSaved {
   rootsAdded: string[];
+  /** The roots among `rootsAdded` that setup created as new folders. */
+  rootsCreated: string[];
   tracked: number;
+  /** `owner/name` of every GitHub repository setup cloned. */
+  cloned: string[];
   agentsAdded: string[];
   projectsChanged: number;
 }
 
-export const NOTHING_SAVED: SetupSaved = { rootsAdded: [], tracked: 0, agentsAdded: [], projectsChanged: 0 };
+export const NOTHING_SAVED: SetupSaved = { rootsAdded: [], rootsCreated: [], tracked: 0, cloned: [], agentsAdded: [], projectsChanged: 0 };
 
 /** What the Done step reports: what setup saved, and the checks and agents still needing attention. */
 export interface SetupSummary extends SetupSaved {
@@ -359,7 +382,9 @@ export function setupSummary(config: Config | null, saved: SetupSaved, report?: 
   const sessions = config?.agentSessions;
   return {
     rootsAdded: [...saved.rootsAdded],
+    rootsCreated: [...saved.rootsCreated],
     tracked: saved.tracked,
+    cloned: [...saved.cloned],
     agentsAdded: [...saved.agentsAdded],
     projectsChanged: saved.projectsChanged,
     agentSessions: sessions?.enabled === true,
@@ -399,7 +424,15 @@ export function leftToFix(summary: SetupSummary): number {
 export function doneCards(summary: SetupSummary, home?: string): DoneCard[] {
   // `~/Workspace` reads better on a card than the full path; anything outside the home folder is shown as it is.
   const short = (path: string) => (home && (path === home || path.startsWith(`${home}/`)) ? `~${path.slice(home.length)}` : path);
-  const workspaceChanged = summary.rootsAdded.length > 0 || summary.tracked > 0;
+  const workspaceChanged = summary.rootsAdded.length > 0 || summary.tracked > 0 || summary.cloned.length > 0;
+  const workspaceDetail =
+    summary.rootsAdded.length > 0
+      ? `${summary.tracked > 0 ? "Tracked, from" : "Added"} ${listed(summary.rootsAdded.map(short))}`
+      : summary.tracked > 0
+        ? "Tracked from your workspace folders"
+        : summary.cloned.length > 0
+          ? ""
+          : "No folder added and no project tracked";
   const defaultName = summary.defaultAgent ?? "the default agent";
   return [
     {
@@ -416,13 +449,15 @@ export function doneCards(summary: SetupSummary, home?: string): DoneCard[] {
     {
       step: "Workspace",
       mark: workspaceChanged ? "done" : "unchanged",
-      outcome: summary.tracked > 0 ? plural(summary.tracked, "project", "projects") : "No change",
-      detail:
-        summary.rootsAdded.length > 0
-          ? `${summary.tracked > 0 ? "Tracked, from" : "Added"} ${listed(summary.rootsAdded.map(short))}`
-          : summary.tracked > 0
-            ? "Tracked from your workspace folders"
-            : "No folder added and no project tracked",
+      outcome: summary.tracked > 0 ? plural(summary.tracked, "project", "projects") : summary.cloned.length > 0 ? `${summary.cloned.length} cloned` : "No change",
+      detail: [
+        workspaceDetail,
+        summary.rootsCreated.length > 0 ? `created ${listed(summary.rootsCreated.map(short))}` : "",
+        summary.cloned.length > 0 ? `cloned ${listed(summary.cloned)} from GitHub` : "",
+      ]
+        .filter(Boolean)
+        .join("; ")
+        .replace(/^./, (first) => first.toUpperCase()),
     },
     {
       step: "Agents",
@@ -454,4 +489,128 @@ export function doneCards(summary: SetupSummary, home?: string): DoneCard[] {
 /** Whether every check is `ok` or `not-needed`, which the System check step says plainly. */
 export function allInPlace(report: EnvironmentReport | undefined): boolean {
   return report?.checks.every((c) => c.status === "ok" || c.status === "not-needed") === true;
+}
+
+/** One GitHub repository listed in the Workspace step, cloned into `path` on Continue. */
+export interface ListedRepo {
+  repo: string;
+  root: string;
+  name: string;
+  path: string;
+}
+
+/** What the Workspace step's Continue starts from. */
+export interface WorkspaceContinueInput {
+  entered: readonly string[];
+  toCreate: ReadonlySet<string>;
+  /** Entered roots discovery reported missing. */
+  missing: ReadonlySet<string>;
+  /** Paths of the found projects that are checked. */
+  checked: readonly string[];
+  listed: readonly ListedRepo[];
+  /** Clones started for listed paths on an earlier Continue or a retry. */
+  cloneIds: Readonly<Record<string, string>>;
+  /** Listed paths whose clone the server refused to start; tried again only by a retry. */
+  cloneRefused: Readonly<Record<string, string>>;
+}
+
+export interface WorkspaceContinueDeps {
+  createWorkspaceFolder(path: string): Promise<{ path: string }>;
+  config(): Promise<Config>;
+  saveConfig(config: Config): Promise<Config>;
+  trackRepo(path: string): Promise<Config>;
+  cloneGithub(repo: string, root: string, name: string): Promise<GithubClone>;
+  /** Tells the clone list a clone started, so it is polled. */
+  started(clone: GithubClone): void;
+  /** Resolves once none of `ids` is cloning, with every clone the list knows. */
+  waitForClones(ids: readonly string[]): Promise<Map<string, GithubClone>>;
+  /** Every configuration saved on the way. */
+  onSaved(config: Config): void;
+}
+
+export interface WorkspaceContinueResult {
+  /** `next`: move to the next step; `stay`: show what went wrong and keep the step open. */
+  outcome: "stay" | "next";
+  /** The roots were saved and the checked projects tracked: what was entered is configured now. */
+  saved: boolean;
+  /** Folders created, as the server made them. */
+  created: string[];
+  /** Entered roots that exist now: created, or there already. */
+  nowThere: string[];
+  createErrors: Map<string, string>;
+  rootsAdded: string[];
+  tracked: number;
+  cloneIds: Record<string, string>;
+  cloneRefused: Record<string, string>;
+  /** `owner/name` of the clones that succeeded, once the step moves on. */
+  cloned: string[];
+}
+
+const failureText = (err: unknown) => (err instanceof Error ? err.message : String(err));
+const isTaken = (err: unknown) => (err as { status?: number })?.status === 409 && /already exists/.test(failureText(err));
+
+/**
+ * The Workspace step's Continue, in the order the setup-wizard spec gives: create each folder marked to be created,
+ * save the roots, track the checked projects, then clone each listed repository not tried yet and wait for every clone
+ * of the step. A refused creation — or a folder that turned out to be there already — saves nothing. A clone that is
+ * refused or fails keeps the step open; the next Continue then moves on without cloning what succeeded.
+ */
+export async function continueWorkspaceStep(input: WorkspaceContinueInput, deps: WorkspaceContinueDeps): Promise<WorkspaceContinueResult> {
+  const result: WorkspaceContinueResult = { outcome: "stay", saved: false, created: [], nowThere: [], createErrors: new Map(), rootsAdded: [], tracked: 0, cloneIds: { ...input.cloneIds }, cloneRefused: { ...input.cloneRefused }, cloned: [] };
+  let appeared = false;
+  for (const root of input.entered.filter((r) => input.toCreate.has(r))) {
+    try {
+      result.created.push((await deps.createWorkspaceFolder(root)).path);
+      result.nowThere.push(root);
+    } catch (err) {
+      if (isTaken(err)) {
+        // Not created again: marked as found, and saved like any existing root on the next Continue.
+        result.nowThere.push(root);
+        appeared = true;
+      } else result.createErrors.set(root, failureText(err));
+    }
+  }
+  if (result.createErrors.size > 0 || appeared) return result;
+
+  const fresh = await deps.config();
+  const next = workspaceSave(fresh, input.entered, new Set([...input.missing].filter((r) => !result.nowThere.includes(r) && !input.toCreate.has(r))));
+  let current = fresh;
+  if (next) {
+    current = await deps.saveConfig(next);
+    deps.onSaved(current);
+    result.rootsAdded = next.scanRoots.filter((r) => !fresh.scanRoots.includes(r));
+  }
+  for (const path of input.checked) {
+    current = await deps.trackRepo(path);
+    result.tracked++;
+  }
+  if (result.tracked > 0) deps.onSaved(current);
+  result.saved = true;
+
+  const attempted = input.listed.filter((r) => !result.cloneIds[r.path] && result.cloneRefused[r.path] === undefined);
+  let refusedNow = false;
+  for (const r of attempted) {
+    try {
+      const clone = await deps.cloneGithub(r.repo, r.root, r.name);
+      result.cloneIds[r.path] = clone.id;
+      deps.started(clone);
+    } catch (err) {
+      result.cloneRefused[r.path] = failureText(err);
+      refusedNow = true;
+    }
+  }
+  const ids = input.listed.flatMap((r) => (result.cloneIds[r.path] ? [result.cloneIds[r.path]] : []));
+  const outcomes = ids.length > 0 ? await deps.waitForClones(ids) : new Map<string, GithubClone>();
+  const failedNow = attempted.some((r) => result.cloneIds[r.path] && outcomes.get(result.cloneIds[r.path])?.state === "failed");
+  if (refusedNow || failedNow) return result;
+  const succeeded = input.listed.flatMap((r) => {
+    const clone = result.cloneIds[r.path] ? outcomes.get(result.cloneIds[r.path]) : undefined;
+    return clone && (clone.state === "tracked" || clone.state === "integratable") ? [clone] : [];
+  });
+  // A clone that uses OpenSpec was tracked by the server: read the configuration it changed.
+  if (succeeded.length > 0) deps.onSaved(await deps.config());
+  result.cloned = succeeded.map((c) => c.repo);
+  result.tracked += succeeded.filter((c) => c.state === "tracked").length;
+  result.outcome = "next";
+  return result;
 }

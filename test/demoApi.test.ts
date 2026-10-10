@@ -416,3 +416,69 @@ test("the demo's setup view leaves the agents out and judges nothing not needed"
   expect(report.checks.some((c) => c.id.startsWith("agent:"))).toBe(false);
   expect(report.checks.some((c) => c.status === "not-needed")).toBe(false);
 });
+
+// ---- Add from GitHub and the workspace folder, simulated ----
+
+test("the demo lists a fictional owner's repositories, one already added", async () => {
+  const { api } = demo();
+  const list = await api.listGithubRepos();
+  expect(list.status).toBe("ok");
+  expect(list.repos.filter((r) => r.added)).toHaveLength(1);
+  expect(list.repos.map((r) => r.repo)).toContain("acme/ledger-sync");
+  expect((await api.githubClones()).gitAvailable).toBe(true);
+});
+
+test("cloning a repository with OpenSpec tracks it with sample changes; one without is offered for integration", async () => {
+  const { api } = demo();
+  const started = await api.cloneGithub("acme/ledger-sync", DEMO_ROOT, "ledger-sync");
+  expect(started.state).toBe("cloning");
+  await Bun.sleep(5);
+  expect((await api.githubClones()).clones[0].state).toBe("tracked");
+  const repo = (await api.state()).repos.find((r) => r.path === `${DEMO_ROOT}/ledger-sync`);
+  expect(repo?.changes.length).toBeGreaterThan(0);
+  expect(repo?.changes.every((c) => c.repoId === repo.id)).toBe(true);
+
+  await api.cloneGithub("acme/brand-assets", DEMO_ROOT, "brand-assets");
+  await Bun.sleep(5);
+  expect((await api.discover()).integratable.map((r) => r.path)).toContain(`${DEMO_ROOT}/brand-assets`);
+  expect((await api.config()).repos.some((r) => r.path === `${DEMO_ROOT}/brand-assets`)).toBe(false);
+});
+
+test("one fictional repository fails; it can be retried and dismissed, and refusals are the server's", async () => {
+  const { api } = demo();
+  const failing = await api.cloneGithub("acme/legacy-billing", DEMO_ROOT, "legacy-billing");
+  await Bun.sleep(5);
+  const [failed] = (await api.githubClones()).clones;
+  expect(failed.state).toBe("failed");
+  expect(failed.reason).toContain("gh auth setup-git");
+  // Retry replaces the failed entry.
+  await api.cloneGithub("acme/legacy-billing", DEMO_ROOT, "legacy-billing");
+  expect((await api.githubClones()).clones).toHaveLength(1);
+  await Bun.sleep(5);
+  const [again] = (await api.githubClones()).clones;
+  expect((await api.dismissGithubClone(again.id)).clones).toEqual([]);
+  await expect(api.dismissGithubClone(failing.id)).rejects.toMatchObject({ status: 404 });
+  await expect(api.cloneGithub("https://gitlab.com/acme/x", DEMO_ROOT, "x")).rejects.toMatchObject({ status: 400 });
+  await expect(api.cloneGithub("acme/x", "/somewhere/else", "x")).rejects.toMatchObject({ status: 404 });
+  const tracked = (await api.config()).repos[0];
+  await expect(api.cloneGithub("acme/x", DEMO_ROOT, tracked.path.split("/").at(-1) ?? "")).rejects.toMatchObject({ status: 409 });
+});
+
+test("a workspace folder is created in memory once, and discovery then finds it", async () => {
+  const { api } = demo();
+  expect(await api.createWorkspaceFolder("~/Workspace")).toEqual({ path: "/home/demo/Workspace" });
+  await expect(api.createWorkspaceFolder("~/Workspace")).rejects.toMatchObject({ status: 409 });
+  await expect(api.createWorkspaceFolder("relative")).rejects.toMatchObject({ status: 400 });
+  expect((await api.discover(["/home/demo/Workspace"])).errors).toEqual([]);
+});
+
+test("everything Add from GitHub did is gone after a reload", async () => {
+  const { api } = demo();
+  await api.cloneGithub("acme/ledger-sync", DEMO_ROOT, "ledger-sync");
+  await api.createWorkspaceFolder("~/Workspace");
+  await Bun.sleep(5);
+  const fresh = demo().api;
+  expect((await fresh.githubClones()).clones).toEqual([]);
+  expect((await fresh.state()).repos.some((r) => r.path.endsWith("/ledger-sync"))).toBe(false);
+  expect((await fresh.discover(["/home/demo/Workspace"])).errors).toHaveLength(1);
+});

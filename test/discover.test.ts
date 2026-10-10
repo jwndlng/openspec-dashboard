@@ -197,3 +197,16 @@ test("toIntegratable drops configured repositories and sorts by path", () => {
   const known = [newRepoConfig("/w/alpha", true), newRepoConfig("/w/beta", false)];
   expect(toIntegratable(known, ["/w/zeta", "/w/alpha", "/w/beta", "/w/gamma"]).map((r) => r.path)).toEqual(["/w/gamma", "/w/zeta"]);
 });
+
+test("a folder a clone is still writing is in neither result until the clone has finished", async () => {
+  // A clone in progress: `.git` exists, and the marker may already be checked out.
+  const cloning = await repoAt("cloning", "beta-soc");
+  await mkdir(join(cloning, ".git"));
+  await mkdir(join(root, "cloning", "chat-groups", ".git"), { recursive: true });
+  const during = await discoverRepos([], [join(root, "cloning")], [], [cloning, join(root, "cloning", "chat-groups")]);
+  expect(during.candidates).toEqual([]);
+  expect(during.integratable).toEqual([]);
+  const after = await discoverRepos([], [join(root, "cloning")]);
+  expect(after.candidates.map((c) => c.path)).toEqual([cloning]);
+  expect(after.integratable.map((r) => r.path)).toEqual([join(root, "cloning", "chat-groups")]);
+});

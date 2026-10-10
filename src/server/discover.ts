@@ -78,14 +78,17 @@ async function walk(dir: string, depth: number, w: Walk): Promise<void> {
  * Finds directories carrying a registered framework's project marker (for OpenSpec `openspec/config.yaml`) under each
  * root, up to `maxDepth` levels down. Roots are canonicalised first and the walk never follows symlinks, so every
  * reported path is canonical and a directory is reported once however the roots were spelled. Errors name the root as
- * the user typed it. `frameworks` maps each reported path to the framework whose marker it has.
+ * the user typed it. `frameworks` maps each reported path to the framework whose marker it has. `cloning` are folders
+ * a GitHub clone is still writing (`githubClone.ts`): skipped like ignore paths, since a half-written `.git` would read
+ * as integratable and a half-written tree as anything at all.
  */
 export async function findSpecProjects(
   roots: string[],
   maxDepth = DEFAULT_MAX_DEPTH,
   ignorePaths: string[] = [],
+  cloning: string[] = [],
 ): Promise<{ paths: string[]; frameworks: Map<string, FrameworkId>; integratable: string[]; errors: DiscoverResult["errors"] }> {
-  const w: Walk = { maxDepth, found: new Map(), integratable: new Set(), ignorePaths: ignorePaths.map(canonicalPath), skipDirs: skippedDirs() };
+  const w: Walk = { maxDepth, found: new Map(), integratable: new Set(), ignorePaths: [...ignorePaths, ...cloning].map(canonicalPath), skipDirs: skippedDirs() };
   const errors: DiscoverResult["errors"] = [];
   for (const root of roots) {
     const abs = canonicalPath(root);
@@ -173,7 +176,8 @@ export async function withSameRemote(known: RepoConfig[], candidates: Discovered
   });
 }
 
-export async function discoverRepos(known: RepoConfig[], roots: string[], ignorePaths: string[] = []): Promise<DiscoverResult> {
-  const { paths, frameworks, integratable, errors } = await findSpecProjects(roots, DEFAULT_MAX_DEPTH, ignorePaths);
+/** `cloning`: target folders of clones still running, reported in neither result until they have finished. */
+export async function discoverRepos(known: RepoConfig[], roots: string[], ignorePaths: string[] = [], cloning: string[] = []): Promise<DiscoverResult> {
+  const { paths, frameworks, integratable, errors } = await findSpecProjects(roots, DEFAULT_MAX_DEPTH, ignorePaths, cloning);
   return { candidates: await withSameRemote(known, toCandidates(known, paths, frameworks)), integratable: toIntegratable(known, integratable), errors };
 }

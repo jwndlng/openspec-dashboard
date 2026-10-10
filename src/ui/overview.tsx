@@ -5,6 +5,8 @@ import { api } from "./api.ts";
 import { hasCheckoutInfo } from "./checkoutMarkers.ts";
 import { createDiscoveryStore, type DiscoveryState } from "./discoveryState.ts";
 import { NewProjectButton } from "./newProject.tsx";
+import { AddGithubButton } from "./addGithub.tsx";
+import { githubClones, useGithubClones } from "./githubClonesState.ts";
 import { relTime } from "./format.ts";
 import {
   filterRows,
@@ -45,7 +47,7 @@ import { branchNotice } from "./pullState.ts";
 import { repoPath } from "./routes.ts";
 import { useSessionUi } from "./sessions.tsx";
 import { summarize } from "./sharedConfigState.ts";
-import { type Tracking, UnmanagedSection, useTracking } from "./untracked.tsx";
+import { type Tracking, UnmanagedSection, useCloneActions, useTracking } from "./untracked.tsx";
 import { currentQuery, followInApp, href, hrefWithQuery, navigate, replaceQuery } from "./url.ts";
 
 /** Plain left-click only, so modifier-clicks and text selection keep their browser behaviour. */
@@ -248,6 +250,7 @@ export function NothingTracked({ config }: { config: Config | null }) {
           Open Settings
         </a>
         <NewProjectButton config={config} small={false} />
+        <AddGithubButton config={config} small={false} />
       </div>
     </div>
   );
@@ -395,6 +398,12 @@ export function Overview({ snapshot, config, onConfig, onReload }: { snapshot: S
     });
   };
   const tracking = useTracking({ onConfig, rediscover });
+  const clones = useGithubClones();
+  const cloneActions = useCloneActions();
+  // A clone that finished is a repository now: tracked (the config changed) or waiting to be integrated (discovery).
+  const rediscoverRef = useRef(rediscover);
+  rediscoverRef.current = rediscover;
+  useEffect(() => githubClones.onFinished(() => rediscoverRef.current()), []);
   // Against the saved roots and ignore paths, whenever the overview opens or they change (a save in Settings).
   const rootsKey = config ? JSON.stringify([config.scanRoots, config.ignorePaths]) : undefined;
   useEffect(() => {
@@ -408,7 +417,7 @@ export function Overview({ snapshot, config, onConfig, onReload }: { snapshot: S
     wasRunning.current = runningIntegrations;
   }, [runningIntegrations]);
   const pending = pendingRows(config, snapshot);
-  const untracked = untrackedEntries(config, discovered.result);
+  const untracked = untrackedEntries(config, discovered.result, clones.clones);
   hintAcross(rows, pending, untracked);
   const visible = sortRows(filterRows(rows, state.q, state.wip, state.labels), state.sort, state.dir);
   const labelFilter: LabelFilter = { isActive: (label) => isLabelActive(state, label), onToggle: (label) => setState(toggleLabel(state, label)) };
@@ -463,6 +472,7 @@ export function Overview({ snapshot, config, onConfig, onReload }: { snapshot: S
         </div>
         <div class="band-actions">
           <NewProjectButton config={config} />
+          <AddGithubButton config={config} />
           <PullAllButton repoIds={rows.filter((r) => r.isGit && r.ok).map((r) => r.id)} />
         </div>
       </div>
@@ -619,6 +629,7 @@ export function Overview({ snapshot, config, onConfig, onReload }: { snapshot: S
             hasRoots={hasRoots}
             query={state.q}
             tracking={tracking}
+            clones={cloneActions}
             integrateOff={integrateUnavailable(config, ui.agents)}
             runningIntegration={runningIntegration}
             showIntegration={(id) => ui.showIntegration(id)}

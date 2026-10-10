@@ -20,6 +20,11 @@ import {
 import { byTag, elements, textOf } from "./vnode.ts";
 
 const noop = () => {};
+/** Activates a button the test expects to be there. */
+const press = (el: { props: Record<string, unknown> } | undefined) => {
+  if (!el) throw new Error("no such button");
+  (el.props.onClick as () => void)();
+};
 
 test("the wizard is a dialog named as the setup, showing its position and every step", () => {
   const frame = WizardFrame({ step: 4, onContinue: noop, onBack: noop, onSkip: noop, children: "body" });
@@ -445,3 +450,82 @@ test("Done is a visual ending: a headline, one card per step with its icon and m
   expect(textOf(agentsCard)).toContain("Antigravity");
 });
 
+
+// ---- workspace folder and GitHub repositories (add-github-repositories) ----
+
+const githubView = (patch: Partial<NonNullable<WorkspaceView["github"]>> = {}): NonNullable<WorkspaceView["github"]> => ({ listed: [], clones: {}, refused: {}, ...patch });
+
+test("a missing root is offered Create folder, and marked to be created on Continue once chosen", () => {
+  const created: string[] = [];
+  const missing = new Map([["/w/acme", "does not exist"]]);
+  const step = WorkspaceStep({ view: workspace({ missing }), onInput: noop, onAdd: noop, onRemove: noop, onToggle: noop, onPick: noop, onCreate: (p) => created.push(p) });
+  expect(textOf(step)).toContain("not found");
+  const create = byTag(step, "button").find((b) => textOf(b) === "Create folder");
+  press(create);
+  expect(created).toEqual(["/w/acme"]);
+  const marked = WorkspaceStep({ view: workspace({ missing, toCreate: new Set(["/w/acme"]) }), onInput: noop, onAdd: noop, onRemove: noop, onToggle: noop, onPick: noop });
+  expect(textOf(marked)).toContain("created on Continue");
+  expect(textOf(marked)).not.toContain("not found");
+  expect(byTag(marked, "button").some((b) => textOf(b) === "Don't create")).toBe(true);
+  const refused = WorkspaceStep({ view: workspace({ missing, toCreate: new Set(["/w/acme"]), createErrors: new Map([["/w/acme", "its parent folder /w does not exist"]]) }), onInput: noop, onAdd: noop, onRemove: noop, onToggle: noop, onPick: noop });
+  expect(textOf(refused)).toContain("Could not create it: its parent folder /w does not exist");
+});
+
+test("with no root and nothing to suggest, creating ~/Workspace is proposed", () => {
+  const proposed: string[] = [];
+  const step = WorkspaceStep({ view: workspace({ entered: [], suggestions: [], proposed: "/home/demo/Workspace" }), onInput: noop, onAdd: noop, onRemove: noop, onToggle: noop, onPick: noop, onPropose: (p) => proposed.push(p) });
+  const button = byTag(step, "button").find((b) => textOf(b) === "Create /home/demo/Workspace");
+  press(button);
+  expect(proposed).toEqual(["/home/demo/Workspace"]);
+});
+
+test("Continue says a workspace folder is needed while there is none, and Skip setup stays", () => {
+  const frame = WizardFrame({ step: 2, onContinue: noop, onBack: noop, onSkip: noop, continueBlocked: "A workspace folder is needed: choose one or create a new one.", children: "" });
+  const buttons = byTag(frame, "button");
+  expect(buttons.find((b) => textOf(b) === "Continue")?.props.disabled).toBe(true);
+  expect(textOf(frame)).toContain("A workspace folder is needed");
+  expect(buttons.find((b) => textOf(b) === "Skip setup")?.props.disabled).toBeFalsy();
+});
+
+test("GitHub repositories are listed with their target, removable before Continue, and a failure offers Retry", () => {
+  const calls: string[] = [];
+  const listed = [
+    { repo: "acme/beta-soc", root: "/w/acme", name: "beta-soc", path: "/w/acme/beta-soc" },
+    { repo: "acme/missing-repo", root: "/w/acme", name: "missing-repo", path: "/w/acme/missing-repo" },
+    { repo: "acme/chat-groups", root: "/w/acme", name: "chat-groups", path: "/w/acme/chat-groups" },
+  ];
+  const clones = {
+    "/w/acme/beta-soc": { id: "c1", repo: "acme/beta-soc", root: "/w/acme", name: "beta-soc", path: "/w/acme/beta-soc", state: "tracked" as const, startedAt: "" },
+    "/w/acme/missing-repo": { id: "c2", repo: "acme/missing-repo", root: "/w/acme", name: "missing-repo", path: "/w/acme/missing-repo", state: "failed" as const, reason: "Repository not found.", startedAt: "" },
+  };
+  const step = WorkspaceStep({
+    view: workspace({ github: githubView({ listed, clones }) }),
+    onInput: noop,
+    onAdd: noop,
+    onRemove: noop,
+    onToggle: noop,
+    onPick: noop,
+    onAddGithub: () => calls.push("open"),
+    onRemoveGithub: (p) => calls.push(`remove ${p}`),
+    onRetryGithub: (p) => calls.push(`retry ${p}`),
+  });
+  const text = textOf(step);
+  expect(text).toContain("→ /w/acme/beta-soc");
+  expect(text).toContain("tracked");
+  expect(text).toContain("Repository not found.");
+  expect(text).toContain("cloned on Continue");
+  const buttons = byTag(step, "button");
+  press(buttons.find((b) => textOf(b) === "Add from GitHub"));
+  press(buttons.find((b) => textOf(b) === "Retry"));
+  press(buttons.find((b) => b.props["aria-label"] === "Remove acme/chat-groups"));
+  // A repository whose clone started can no longer be removed.
+  expect(buttons.some((b) => b.props["aria-label"] === "Remove acme/beta-soc")).toBe(false);
+  expect(calls).toEqual(["open", "retry /w/acme/missing-repo", "remove /w/acme/chat-groups"]);
+});
+
+test("Add from GitHub in the step is inactive with its reason", () => {
+  const step = WorkspaceStep({ view: workspace({ github: githubView({ off: "git was not found on this machine" }) }), onInput: noop, onAdd: noop, onRemove: noop, onToggle: noop, onPick: noop });
+  const button = byTag(step, "button").find((b) => textOf(b) === "Add from GitHub");
+  expect(button?.props.disabled).toBe(true);
+  expect(textOf(step)).toContain("Add from GitHub is unavailable: git was not found on this machine.");
+});

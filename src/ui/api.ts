@@ -1,5 +1,6 @@
 import type { ActivityQuery } from "../shared/activity.ts";
 import type { RepoAgentPatch } from "../shared/repoSettings.ts";
+import type { GithubClone, GithubClonesResponse, GithubRepoList } from "../shared/types.ts";
 import type { ActivityPage, AutoMergePromptResult, ConsoleSession, ProjectConsoleLike, CleanupPreview, CleanupResult, CleanupSelection, ChangeIssueRef, CreateChangeResponse, DismissPreview, DismissResult, EnvironmentReport, EnvironmentView, FolderPickResult, PromptResult, PullRequestsResponse, PullResolve, PullResult, RepoIssues, SetupState, ShipResult, StartResult, UpdateStatus, WorkStatus } from "../shared/types.ts";
 import type { AgentAvailability, AutoFetchSeconds, ArtifactFileContent, ChangeArtifacts, Config, CreateProjectResponse, DiscoverResult, IntegrationSession, PrTitleConvention, RepoConfig, ScanTriggerResult, Session, SessionAction, SessionWorktree, SharedConfig, SharedConfigApplyResult, SharedConfigAssignment, SharedConfigPreview, Snapshot } from "../shared/types.ts";
 import { socketOrigin } from "./url.ts";
@@ -91,6 +92,22 @@ export interface Api {
   pickFolder(): Promise<FolderPickResult>;
   /** Finish or Skip setup: clears the pending flag and returns the saved configuration. */
   markSetupDone(): Promise<Config>;
+  /**
+   * **Create folder** in the setup wizard: one new, empty folder; the configuration is not changed. `ApiError` 400, 404
+   * (parent missing) or 409 (exists, or in a tracked repository, an ignore path or the home) with the reason.
+   */
+  createWorkspaceFolder(path: string): Promise<{ path: string }>;
+  /**
+   * One owner's GitHub repositories through the read-only `gh repo list` — the signed-in account's without `owner`.
+   * Reaches GitHub, so it is only called when Add from GitHub opens, its owner changes or its Refresh is activated.
+   */
+  listGithubRepos(owner?: string): Promise<GithubRepoList>;
+  /** Starts cloning `repo` into `<root>/<name>`; resolves once the folder exists. `ApiError` with the reason when refused. */
+  cloneGithub(repo: string, root: string, name: string): Promise<GithubClone>;
+  /** Read-only, in memory: the clones since the dashboard started, and whether git is on this machine. */
+  githubClones(): Promise<GithubClonesResponse>;
+  /** Drops a finished clone's entry; the folder is never touched. */
+  dismissGithubClone(id: string): Promise<{ clones: GithubClone[] }>;
   /** What the server last learned about newer releases (openspec/specs/update-notice). Contacts no network. */
   updateStatus(): Promise<UpdateStatus>;
   /** **Check now**: the server asks for the latest release and answers the new status. `ApiError` 409 while checks are off. */
@@ -262,6 +279,11 @@ export const httpApi: Api = {
   setup: () => call<SetupState>("/api/setup"),
   pickFolder: () => call<FolderPickResult>("/api/setup/folder", { method: "POST", body: "{}" }),
   markSetupDone: () => call<Config>("/api/setup/done", { method: "POST", body: "{}" }),
+  createWorkspaceFolder: (path) => call<{ path: string }>("/api/setup/workspace-folder", { method: "POST", body: JSON.stringify({ path }) }),
+  listGithubRepos: (owner) => call<GithubRepoList>("/api/github/repos", { method: "POST", body: JSON.stringify(owner ? { owner } : {}) }),
+  cloneGithub: (repo, root, name) => call<GithubClone>("/api/github/clone", { method: "POST", body: JSON.stringify({ repo, root, name }) }),
+  githubClones: () => call<GithubClonesResponse>("/api/github/clones"),
+  dismissGithubClone: (id) => call<{ clones: GithubClone[] }>("/api/github/clones/dismiss", { method: "POST", body: JSON.stringify({ id }) }),
   updateStatus: () => call<UpdateStatus>("/api/update"),
   checkForUpdate: () => call<UpdateStatus>("/api/update/check", { method: "POST" }),
   createChange: (repoId, name, prompt, dependsOn, issue) =>
@@ -353,6 +375,11 @@ export const api: Api = {
   setup: () => current.setup(),
   pickFolder: () => current.pickFolder(),
   markSetupDone: () => current.markSetupDone(),
+  createWorkspaceFolder: (path) => current.createWorkspaceFolder(path),
+  listGithubRepos: (owner) => current.listGithubRepos(owner),
+  cloneGithub: (...args) => current.cloneGithub(...args),
+  githubClones: () => current.githubClones(),
+  dismissGithubClone: (id) => current.dismissGithubClone(id),
   updateStatus: () => current.updateStatus(),
   checkForUpdate: () => current.checkForUpdate(),
   createChange: (...args) => current.createChange(...args),

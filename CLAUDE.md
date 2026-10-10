@@ -117,36 +117,50 @@ bun test test/scanner.test.ts   # a single test file
    **project console** (`openProjectConsole`, `src/server/sessions/manager.ts`, `POST /api/repos/<id>/console`): the
    project's agent, without a prompt, in place in a tracked repository's own folder — for a git repository its main
    checkout — with no worktree, no branch and no git command by the dashboard. Outside every tracked
-   repository, **creating a new project** (`src/server/createProject.ts`, `POST /api/projects`) is the one other
-   write beyond the dashboard home: on the user's confirmation, one new, empty folder directly inside a configured
-   workspace root, made with a non-recursive (exclusive) `mkdir` and refused in or below a tracked repository, an
-   ignore path or the dashboard home, then `git init` in that folder and nothing else — no other file, no commit, no
-   remote, nothing deleted even when `git init` fails. Every precondition is checked before the folder exists, and the
-   folder is then handed to an integration session, so `openspec init` is the agent's, exactly as for **Integrate**. With agent sessions disabled no process that can modify a repository is ever started. Scanning, polling, discovery, previews and saving settings
+   repository, the dashboard writes beyond its home in exactly three places, each on the user's confirmation and each
+   one new folder checked by `src/server/newFolder.ts` before it exists and made with a non-recursive (exclusive)
+   `mkdir`, refused in or below a tracked repository, an ignore path or the dashboard home. **Creating a new project**
+   (`src/server/createProject.ts`, `POST /api/projects`): the folder directly inside a configured workspace root, then
+   `git init` in that folder and nothing else — no other file, no commit, no remote, nothing deleted even when
+   `git init` fails; the folder is then handed to an integration session, so `openspec init` is the agent's, exactly as
+   for **Integrate**. **Cloning a GitHub repository** (`src/server/githubClone.ts`, `POST /api/github/clone`, Add from
+   GitHub on the overview or a setup wizard Continue): the folder directly inside a configured workspace root, then
+   `git clone` into it from `https://github.com/<owner>/<name>.git` — a URL built from an `owner/name` validated by
+   `src/shared/github.ts`, never taken from the request — with the pull action's rules (no prompt, batch SSH, no stdin,
+   credentials masked), `core.hooksPath` pointed at an empty folder under the home so no hook runs, no automatic
+   maintenance, no submodules and a ten-minute timeout, working directory in the home, at most two at a time; on
+   failure a non-recursive `rmdir` of the folder only if git left it empty, and nothing else is ever deleted, written
+   into the clone or configured in it. A clone holding `openspec/config.yaml` is tracked through the same serialised
+   write as a confirmed integration; the in-memory clone list is never an input to scanning, and discovery leaves out
+   folders still being cloned into. **Creating a workspace folder** (`createWorkspaceFolder` in `src/server/setup.ts`,
+   `POST /api/setup/workspace-folder`, the setup wizard's **Create folder**): one empty folder whose parent exists,
+   nothing written into it, no process, and the configuration left for the wizard to save. With agent sessions disabled no process that can modify a repository is ever started. Scanning, polling, discovery, previews and saving settings
    write nothing to a repository. In particular `tasks.md` is never written: the dashboard reads the three checkbox
    states (`[x]`, `[~]` — finished, awaiting the user's confirmation — and `[ ]`) and shows them; only the agent, in its
    own session under its own permission prompts, ticks a box or writes a `- [~]`. All other writes stay under `~/.spec-control/` (or `SPEC_CONTROL_HOME`
-   in tests), apart from that new project folder. Apart from the worktree commands (the home migration's `worktree repair` among them), the pull action's and the automatic fetch's `fetch`, the pull action's `merge --ff-only`, leftover `rm --cached`
-   and restoring `add`, the create-change and dismissal `add`, the cleanup's `branch -D` and the new project's `git init`, git is invoked only with
+   in tests), apart from those three folders. Apart from the worktree commands (the home migration's `worktree repair` among them), the pull action's and the automatic fetch's `fetch`, the pull action's `merge --ff-only`, leftover `rm --cached`
+   and restoring `add`, the create-change and dismissal `add`, the cleanup's `branch -D`, the new project's `git init` and the GitHub clone's `git clone`, git is invoked only with
    the read-only subcommands listed in that spec — among them `ls-tree`, `cat-file` and `hash-object` without `-w`,
    which is how a leftover is told from the user's own work, and `merge-tree --write-tree`, which answers whether a
    session's branch still merges into its base. That last one is the only read-only subcommand that writes anything at
    all: it puts the tree it merges into an object database, so it is always invoked with `GIT_OBJECT_DIRECTORY` pointed
    at a scratch store under `~/.spec-control/` and the repository's own objects offered only as
    `GIT_ALTERNATE_OBJECT_DIRECTORIES` — it reads everything and writes nothing into the repository, and it is never
-   given a working tree, an index or a ref. The **pull-request query** (`src/server/pullRequests.ts`) and the **issue query**
-   (`src/server/issues.ts`) are the other things that leave this machine, and neither is a write: they run the GitHub
-   CLI's read-only `gh pr list`, `gh api user` and `gh issue list` and no other subcommand, all through `runGh` in
-   `src/server/gh.ts`, without a shell, with their working directory in the dashboard home and the
-   repository named with `--repo owner/name`, so no `gh` process ever runs inside a tracked repository, runs no git and
-   changes nothing on GitHub. The pull-request query runs only when the user opens or refreshes a view that shows pull requests, or as an open
+   given a working tree, an index or a ref. The **pull-request query** (`src/server/pullRequests.ts`), the **issue query**
+   (`src/server/issues.ts`) and the **repository listing** of Add from GitHub (`listGithubRepos` in `src/server/gh.ts`,
+   `POST /api/github/repos`) are the other things that leave this machine besides the clone, and none is a write: they
+   run the GitHub CLI's read-only `gh pr list`, `gh api user`, `gh issue list` and `gh repo list` and no other
+   subcommand, all through `runGh` in `src/server/gh.ts`, without a shell, with their working directory in the dashboard
+   home and the repository named with `--repo owner/name` (the listing's owner passed as one validated argument), so no
+   `gh` process ever runs inside a tracked repository, runs no git and changes nothing on GitHub. The pull-request query runs only when the user opens or refreshes a view that shows pull requests, or as an open
    board's **pull-request watch** (while the board is open in a visible tab and one of its cards links an open pull
    request that is not ready: only those repositories, at most once a minute, `src/ui/pullRequestsState.ts`
    `watchPlan`); the issue query runs only when the user opens a board's **Import from issues** dialog or presses its
    Refresh, for that one repository, and keeps nothing — never on any other timer, during a scan or from the projects
-   overview (`test/pullRequestsApi.test.ts` and `test/issuesApi.test.ts` prove a scan, discovery and the
-   endpoints' reads start no `gh`, and that a full refresh or an issue listing leaves every fixture repository
-   byte-for-byte unchanged).
+   overview; the repository listing runs only when the Add from GitHub dialog opens, its owner changes or its Refresh is
+   pressed, and keeps nothing (`test/pullRequestsApi.test.ts`, `test/issuesApi.test.ts` and `test/githubApi.test.ts`
+   prove a scan, discovery and the endpoints' reads start no `gh` and no clone, and that a full refresh, an issue
+   listing or a repository listing leaves every fixture repository byte-for-byte unchanged).
    Adding a path or a subcommand means changing that spec first.
 2. **Loopback only.** The server binds `127.0.0.1`; there is no auth because nothing else can reach it.
 2a. **Mutating API routes are same-origin only.** Every non-GET `/api/` request passes `crossSiteRefusal` in
@@ -158,17 +172,18 @@ bun test test/scanner.test.ts   # a single test file
    Do not call the library's `resolveSchema`/`loadChangeContext`: they locate files via `import.meta.url`, which does not exist inside the
    compiled binary. The adapter embeds the schema at build time. Anything that works under `bun run` but reads files
    relative to a module path must also be verified in `dist/spec-control`.
-4. **No network at runtime, except the pull action, the automatic fetch, the pull-request and issue queries and the
-   update check.** The UI is one HTML file with inlined
+4. **No network at runtime, except the pull action, the automatic fetch, a GitHub clone, the pull-request, issue and
+   repository-list queries and the update check.** The UI is one HTML file with inlined
    JS, CSS and fonts; do not add CDN links, remote fonts or fetches to other hosts — the links to github.com in the
    Pull requests view, the Import from issues dialog, on cards, in the detail header and in the update banner are links the user follows, not requests the page makes. The server reaches a network in exactly
-   three places, each on the user's own action or setting: when git does, inside the pull action or a project's automatic fetch of invariant 1 (on unless switched off), and when `gh` does,
-   inside the pull-request or issue query of invariant 1 (`src/server/pullRequests.ts`, `src/server/issues.ts`) — for
+   three places, each on the user's own action or setting: when git does, inside the pull action, a project's automatic fetch of invariant 1 (on unless switched off) or a GitHub clone the user confirmed in Add from GitHub, a setup wizard Continue or a Retry (`src/server/githubClone.ts`), and when `gh` does,
+   inside the pull-request, issue or repository-list query of invariant 1 (`src/server/pullRequests.ts`, `src/server/issues.ts`, `src/server/gh.ts`) — for
+   the repository list, the user opened Add from GitHub, changed its owner or pressed its Refresh; for
    issues, the user opened Import from issues or pressed its Refresh; for pull requests, the user activated Refresh, or opened
    the Pull requests view, a repository's pull-request dialog or a Kanban board (whose cards link to their change's pull
    request) with a list older than five minutes, or an open, visible board watches its cards' pull requests that are not
    ready yet (every minute while checks run or mergeability is unknown, every five minutes otherwise, only those
-   repositories, never in the demo), at most one refresh at a time. Both use the
+   repositories, never in the demo), at most one refresh at a time. All of them use the
    tool's own credentials: the dashboard never sees, stores or asks for them, never prompts, and masks credentials in
    any error text it passes on. Without `gh`, or without it being signed in, the feature reports itself unavailable and
    nothing else changes.

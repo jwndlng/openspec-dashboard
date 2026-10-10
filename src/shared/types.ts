@@ -1333,6 +1333,66 @@ export interface RepoIssues {
   issues: GithubIssue[];
 }
 
+/** One repository of `gh repo list`, as the Add from GitHub dialog shows it (openspec/specs/github-repositories). */
+export interface GithubRepoEntry {
+  /** `owner/name`. */
+  repo: string;
+  description: string;
+  private: boolean;
+  archived: boolean;
+  /** When it was last pushed to; empty when GitHub reports none. */
+  pushedAt: string;
+  /** A tracked repository has it as its `origin`: shown, but not offered again. */
+  added: boolean;
+}
+
+/** What `POST /api/github/repos` answers: one owner's repositories, newest push first. `repos` is empty unless `ok`. */
+export interface GithubRepoList {
+  status: "ok" | "unavailable" | "failed";
+  /** The owner listed: the one asked for, or the account `gh` is signed in as. */
+  owner?: string;
+  /** Why it is `unavailable` or `failed`; credentials masked. */
+  reason?: string;
+  setup?: RepoPullRequests["setup"];
+  /** The limit of 200 was reached. */
+  truncated?: boolean;
+  repos: GithubRepoEntry[];
+}
+
+/**
+ * A clone started since the dashboard started (`GET /api/github/clones`). Kept in memory only; never an input to
+ * scanning, columns or actions. `tracked`: it holds `openspec/config.yaml` and was added to the configuration;
+ * `integratable`: cloned without it; `failed`: git refused or timed out.
+ */
+export interface GithubClone {
+  id: string;
+  /** `owner/name`. */
+  repo: string;
+  root: string;
+  name: string;
+  path: string;
+  state: "cloning" | "tracked" | "integratable" | "failed";
+  /** Why it failed, credentials masked. */
+  reason?: string;
+  startedAt: string;
+  finishedAt?: string;
+}
+
+/** What `GET /api/github/clones` answers: the clones, and whether `git` is on this machine at all. */
+export interface GithubClonesResponse {
+  clones: GithubClone[];
+  gitAvailable: boolean;
+}
+
+export interface GithubCloneRequest {
+  /** `owner/name`, or a URL `parseGithubRepo` accepts. */
+  repo: string;
+  /** One of the configured workspace roots. */
+  root: string;
+  /** The folder created directly inside `root`. */
+  name: string;
+}
+
 /** What the import sends along with a create request: which issue the change comes from. */
 export interface ChangeIssueRef {
   number: number;

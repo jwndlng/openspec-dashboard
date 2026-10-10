@@ -1236,6 +1236,14 @@ button.badge.worktree-path.done { color: var(--success); }
 .issue-import .issue-imported { margin: 0 0 0 26px; color: var(--fg-subtle); }
 .new-change .issue-import-name { margin-left: 26px; flex-direction: column; }
 .new-change .issue-import-name input.input { padding: 6px 9px; }
+.add-github .add-github-owner { display: flex; align-items: center; gap: 6px; font-size: 13px; }
+.add-github .add-github-owner input.input { width: 11em; }
+.add-github .add-github-description { margin: 0 0 0 26px; }
+.add-github .add-github-typed input.input { flex: 1 1 auto; min-width: 0; }
+.add-github-chosen { max-height: 260px; }
+.add-github-chosen li { flex-wrap: wrap; }
+.add-github-chosen .issue-import-name { margin-left: 0; flex-direction: row; align-items: baseline; gap: 6px; }
+.add-github-chosen .add-github-path { flex: 1 1 12em; min-width: 0; overflow-wrap: anywhere; }
 .new-change-results li .mono { overflow-wrap: anywhere; }
 .new-change-results li { display: flex; gap: 10px; align-items: baseline; padding: 3px 10px; font-size: 13px; }
 .new-change-results .repo { font-weight: 600; color: var(--fg-heading); min-width: 0; }
