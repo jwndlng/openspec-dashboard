@@ -1,0 +1,2 @@
+depends_on:
+  - add-github-repositories
