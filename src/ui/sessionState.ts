@@ -438,6 +438,17 @@ export function slugId(name: string, taken: string[]): string {
   return id;
 }
 
+/** The one starter prompt a newly added agent gets; the others are left for the user to write in Settings. */
+export const NEW_AGENT_PROMPTS: AgentProfile["prompts"] = { implement: "Implement the OpenSpec change {change}: run `openspec instructions apply --change {change}` and follow it." };
+
+/**
+ * The profile Settings' **+ Add agent** and the setup wizard's **Add another agent** create: a name, a command and
+ * {@link NEW_AGENT_PROMPTS}. The id is made from `idBase` (the name unless given) and differs from every `taken` one.
+ */
+export function newAgentProfile({ name, command, taken, idBase = name }: { name: string; command: string[]; taken: string[]; idBase?: string }): AgentProfile {
+  return { id: slugId(idBase, taken), name, command, prompts: { ...NEW_AGENT_PROMPTS } };
+}
+
 /**
  * The main console the overlay shows: the running one (there is at most one), else the one the overlay just opened or
  * last showed, else the most recent. An ended console stays readable until the user starts a new one.

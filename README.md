@@ -82,11 +82,15 @@ The macOS binaries are not notarised either: if macOS refuses to open one, run
 Releases from before the rename are named `openspec-dashboard-<tag>-<platform>` and verify with
 `--repo jwndlng/openspec-dashboard`.
 
-**First run.** A short **setup** opens on the first start: add the folders your projects live in (common ones such
-as `~/Workspace` are suggested) and pick which of the OpenSpec projects found under them to track; choose whether to turn
-agent sessions on and with which agent; and check the tools Spec Control relies on, with the command to install
-whatever is missing — shown for you to copy, never run. Every step can be skipped and changed later in **Settings** or on
-**Projects**, and **Help → Run setup again** opens it once more. Agent sessions stay off unless you turn them on.
+**First run.** A short **setup** opens on the first start: add the folders your projects live in — with **Choose
+folder…**, which opens your system's folder dialog (Finder on macOS), by typing a path, or from suggestions such as
+`~/Workspace` — and pick which of the OpenSpec projects found under them to track; check every agent CLI you use, add
+your own, and choose the default; choose the agent the top-bar **console** runs; set your projects' settings (PR titles,
+Docs auto-merge, auto fetch and more), the same for all of them or one project at a time; and check the tools Spec
+Control relies on, with the command to install whatever is missing — shown for you to copy, never run. Every step can
+be skipped and changed later in **Settings** or on **Projects**, and **Help → Run setup again** opens it once more.
+Agent sessions are off until you turn them on; setup offers that switched on, so continuing past its Agents
+step turns them on unless you uncheck it.
 
 **From source.** Needs [Bun](https://bun.sh) ≥ 1.4.
 

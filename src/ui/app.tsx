@@ -553,7 +553,7 @@ export function App() {
     <IntegrationOverlay />
     <ProjectConsoleOverlay />
     {tourOpen && <Tour onClose={endTour} />}
-    {setupOpen && <SetupWizard config={config} onSaved={setupSaved} onClose={closeSetup} />}
+    {setupOpen && <SetupWizard config={config} snapshot={snapshot} onSaved={setupSaved} onClose={closeSetup} />}
     </SessionProvider>
     </PullRequestsProvider>
     </PullProvider>

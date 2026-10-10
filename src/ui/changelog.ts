@@ -15,6 +15,13 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    id: "2026-10-09-setup-wizard-more",
+    date: "2026-10-09",
+    title: "A fuller setup",
+    summary:
+      "Setup now opens your system's folder dialog with **Choose folder…**, takes every agent CLI you use (and your own), lets you pick the **console**'s agent, and walks through your **project settings** — the same for all projects or one at a time — in a larger, roomier dialog. Run it again from **Help**.",
+  },
+  {
     id: "2026-10-09-setup-wizard",
     date: "2026-10-09",
     title: "Set up in a few steps",
