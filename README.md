@@ -38,6 +38,8 @@ something.
 - **Pull requests** — each change's pull request on its card, with checks and readiness, read through your GitHub CLI.
 - **New projects** — set up OpenSpec in an existing repository, or start a new one, with your agent doing the
   `openspec init`.
+- **Add from GitHub** — keep your projects on GitHub only? Pick repositories from your account (or type
+  `owner/name`) and they are cloned into a workspace folder; one that uses OpenSpec is tracked at once.
 - **One file, offline** — a single binary with the UI built in, a setup and a short tour on first start and a Help
   page for the details.
 
@@ -82,9 +84,10 @@ The macOS binaries are not notarised either: if macOS refuses to open one, run
 Releases from before the rename are named `openspec-dashboard-<tag>-<platform>` and verify with
 `--repo jwndlng/openspec-dashboard`.
 
-**First run.** A short **setup** opens on the first start: add the folders your projects live in — with **Choose
+**First run.** A short **setup** opens on the first start: choose the folder your projects live in — with **Choose
 folder…**, which opens your system's folder dialog (Finder on macOS), by typing a path, or from suggestions such as
-`~/Workspace` — and pick which of the OpenSpec projects found under them to track; check every agent CLI you use, add
+`~/Workspace` — or create a new one, pick which of the OpenSpec projects found under it to track, and add GitHub
+repositories to clone into it; check every agent CLI you use, add
 your own, and choose the default; choose the agent the top-bar **console** runs; set your projects' settings (PR titles,
 Docs auto-merge, auto fetch and more), the same for all of them or one project at a time; and check the tools Spec
 Control relies on, with the command to install whatever is missing — shown for you to copy, never run. Every step can
@@ -129,8 +132,11 @@ Agent sessions that were running when you quit end as resumable and can be resum
   or starting and ending an agent session's worktree — plus **Auto fetch**, which fetches each project's remote every
   minute (refs only, never your files) unless you switch it off in the project's settings. It never commits or pushes;
   your agent does that, under its own permission prompts.
-- It uses the network only for **Pull** and **Auto fetch** (through git), to read pull requests and issues (through
-  `gh`), with those tools' own sign-ins, and for the daily [update check](#updating) unless you turn it off. It never
+- Outside your repositories it creates a folder only when you ask: **New project**, a workspace folder in setup, or a
+  repository cloned with **Add from GitHub** — each one new folder, never inside a repository; the only thing it
+  ever removes there is the empty folder of a clone that failed.
+- It uses the network only for **Pull**, **Auto fetch** and **Add from GitHub**'s clone (through git), to read pull
+  requests, issues and your GitHub repositories (through `gh`), with those tools' own sign-ins, and for the daily [update check](#updating) unless you turn it off. It never
   sees your credentials and never changes anything on GitHub.
 - Its own state lives in `~/.spec-control/`.
 

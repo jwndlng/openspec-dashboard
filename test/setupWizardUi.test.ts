@@ -20,6 +20,11 @@ import {
 import { byTag, elements, textOf } from "./vnode.ts";
 
 const noop = () => {};
+/** Activates a button the test expects to be there. */
+const press = (el: { props: Record<string, unknown> } | undefined) => {
+  if (!el) throw new Error("no such button");
+  (el.props.onClick as () => void)();
+};
 
 test("the wizard is a dialog named as the setup, showing its position and every step", () => {
   const frame = WizardFrame({ step: 4, onContinue: noop, onBack: noop, onSkip: noop, children: "body" });
@@ -456,7 +461,7 @@ test("a missing root is offered Create folder, and marked to be created on Conti
   const step = WorkspaceStep({ view: workspace({ missing }), onInput: noop, onAdd: noop, onRemove: noop, onToggle: noop, onPick: noop, onCreate: (p) => created.push(p) });
   expect(textOf(step)).toContain("not found");
   const create = byTag(step, "button").find((b) => textOf(b) === "Create folder");
-  (create?.props.onClick as () => void)();
+  press(create);
   expect(created).toEqual(["/w/acme"]);
   const marked = WorkspaceStep({ view: workspace({ missing, toCreate: new Set(["/w/acme"]) }), onInput: noop, onAdd: noop, onRemove: noop, onToggle: noop, onPick: noop });
   expect(textOf(marked)).toContain("created on Continue");
@@ -470,7 +475,7 @@ test("with no root and nothing to suggest, creating ~/Workspace is proposed", ()
   const proposed: string[] = [];
   const step = WorkspaceStep({ view: workspace({ entered: [], suggestions: [], proposed: "/home/demo/Workspace" }), onInput: noop, onAdd: noop, onRemove: noop, onToggle: noop, onPick: noop, onPropose: (p) => proposed.push(p) });
   const button = byTag(step, "button").find((b) => textOf(b) === "Create /home/demo/Workspace");
-  (button?.props.onClick as () => void)();
+  press(button);
   expect(proposed).toEqual(["/home/demo/Workspace"]);
 });
 
@@ -510,9 +515,9 @@ test("GitHub repositories are listed with their target, removable before Continu
   expect(text).toContain("Repository not found.");
   expect(text).toContain("cloned on Continue");
   const buttons = byTag(step, "button");
-  (buttons.find((b) => textOf(b) === "Add from GitHub")?.props.onClick as () => void)();
-  (buttons.find((b) => textOf(b) === "Retry")?.props.onClick as () => void)();
-  (buttons.find((b) => b.props["aria-label"] === "Remove acme/chat-groups")?.props.onClick as () => void)();
+  press(buttons.find((b) => textOf(b) === "Add from GitHub"));
+  press(buttons.find((b) => textOf(b) === "Retry"));
+  press(buttons.find((b) => b.props["aria-label"] === "Remove acme/chat-groups"));
   // A repository whose clone started can no longer be removed.
   expect(buttons.some((b) => b.props["aria-label"] === "Remove acme/beta-soc")).toBe(false);
   expect(calls).toEqual(["open", "retry /w/acme/missing-repo", "remove /w/acme/chat-groups"]);

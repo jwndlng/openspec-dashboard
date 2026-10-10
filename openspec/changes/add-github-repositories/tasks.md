@@ -38,5 +38,5 @@
 
 ## 8. Docs and verification
 
-- [ ] 8.1 Update `CLAUDE.md` invariants 1 and 4 (the cloned folder and workspace folder as writes outside tracked repositories, `git clone` as a write subcommand, `gh repo list` as a read-only subcommand, the clone as a network access on the user's action) and `README.md` (Add from GitHub, workspace folder in setup); verify by reading the diff against the dashboard-api delta
-- [ ] 8.2 Run `bun run check` and `bun run build`, then verify in `dist/spec-control` with `SPEC_CONTROL_HOME` set to a scratch folder that the wizard creates a workspace folder and that cloning a local bare repository (redirected with `insteadOf`) into it tracks it and its board shows its changes
+- [x] 8.1 Update `CLAUDE.md` invariants 1 and 4 (the cloned folder and workspace folder as writes outside tracked repositories, `git clone` as a write subcommand, `gh repo list` as a read-only subcommand, the clone as a network access on the user's action) and `README.md` (Add from GitHub, workspace folder in setup); verify by reading the diff against the dashboard-api delta
+- [~] 8.2 Run `bun run check` and `bun run build`, then verify in `dist/spec-control` with `SPEC_CONTROL_HOME` set to a scratch folder that the wizard creates a workspace folder and that cloning a local bare repository (redirected with `insteadOf`) into it tracks it and its board shows its changes

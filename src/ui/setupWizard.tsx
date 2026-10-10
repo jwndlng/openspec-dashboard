@@ -10,7 +10,7 @@ import { AddGithubDialog } from "./addGithub.tsx";
 import { githubClones, useGithubClones } from "./githubClonesState.ts";
 import { cloneOutcome } from "./githubState.ts";
 import { AgentSessionsStatement } from "./agentSettings.tsx";
-import { api, ApiError } from "./api.ts";
+import { api } from "./api.ts";
 import { CommandSteps } from "./commandSteps.tsx";
 import { IconCheck, IconFolder, IconFolderGit, IconGitBranch, IconGitPullRequest, IconHelp, IconKanban, IconMonitor, IconPencil, IconRefresh, IconScan, IconSettings, IconTerminal } from "./icons.tsx";
 import { AgentSelect, AUTO_FETCH_TITLE, AUTO_MERGE_HINT, AutoFetchSelect, autoFetchLabel, KEEP_EACH, KEEP_EACH_LABEL, PR_TITLES_TITLE, PrTitlesSelect } from "./projectSettings.tsx";
@@ -52,7 +52,6 @@ import {
   sharedSetting,
   skippedNote,
   withDraft,
-  workspaceSave,
 } from "./setupState.ts";
 
 const message = (err: unknown) => (err instanceof Error ? err.message : String(err));

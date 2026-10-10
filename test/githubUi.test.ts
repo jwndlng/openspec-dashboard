@@ -18,6 +18,11 @@ import {
 import { defaultConfig } from "../src/server/config.ts";
 import { byComponent, byTag, textOf } from "./vnode.ts";
 
+/** Activates a button the test expects to be there. */
+const press = (el: { props: Record<string, unknown> } | undefined) => {
+  if (!el) throw new Error("no such button");
+  (el.props.onClick as () => void)();
+};
 const entry = (repo: string, patch: Partial<GithubRepoEntry> = {}): GithubRepoEntry => ({ repo, description: "", private: false, archived: false, pushedAt: "2026-10-01T10:00:00Z", added: false, ...patch });
 const clone = (patch: Partial<GithubClone> & Pick<GithubClone, "id" | "state">): GithubClone => ({ repo: "acme/beta-soc", root: "/w/acme", name: "beta-soc", path: "/w/acme/beta-soc", startedAt: "2026-10-10T10:00:00Z", ...patch });
 
@@ -315,7 +320,7 @@ test("the dialog lists repositories with their marks, the target path and Clone"
   expect(textOf(submit)).toBe("Clone 1");
   expect(submit?.props.disabled).toBe(false);
   const cancel = byTag(node, "button").find((b) => textOf(b) === "Cancel");
-  (cancel?.props.onClick as () => void)();
+  press(cancel);
   expect(calls).toEqual(["close"]);
 });
 

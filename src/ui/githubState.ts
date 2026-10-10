@@ -309,9 +309,15 @@ export class AddGithubController {
   /** Adds the typed repository to the choice, reduced to `owner/name`; refused with the reason otherwise. */
   addTyped(): void {
     const parsed = parseGithubRepo(this.state.typed);
-    if (!parsed.ok) return this.set({ typedError: parsed.reason });
+    if (!parsed.ok) {
+      this.set({ typedError: parsed.reason });
+      return;
+    }
     const added = this.state.repos.find((r) => r.repo.toLowerCase() === parsed.repo.toLowerCase())?.added;
-    if (added) return this.set({ typedError: `${parsed.repo} is already tracked` });
+    if (added) {
+      this.set({ typedError: `${parsed.repo} is already tracked` });
+      return;
+    }
     this.set({ chosen: chooseRepo(this.state.chosen, parsed.repo), typed: "", typedError: undefined });
   }
 

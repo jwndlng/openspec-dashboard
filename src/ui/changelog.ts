@@ -15,6 +15,13 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    id: "2026-10-10-add-from-github",
+    date: "2026-10-10",
+    title: "Add your GitHub repositories",
+    summary:
+      "**Add from GitHub** on **Projects** clones repositories from your account — or any `owner/name` — into a workspace folder, and one that uses OpenSpec is tracked at once. Setup can now create a new workspace folder and clone your repositories into it, so you can start with nothing checked out.",
+  },
+  {
     id: "2026-10-09-setup-wizard-more",
     date: "2026-10-09",
     title: "A fuller setup",
