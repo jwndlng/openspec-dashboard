@@ -1378,6 +1378,12 @@ export interface GithubClone {
   finishedAt?: string;
 }
 
+/** What `GET /api/github/clones` answers: the clones, and whether `git` is on this machine at all. */
+export interface GithubClonesResponse {
+  clones: GithubClone[];
+  gitAvailable: boolean;
+}
+
 export interface GithubCloneRequest {
   /** `owner/name`, or a URL `parseGithubRepo` accepts. */
   repo: string;

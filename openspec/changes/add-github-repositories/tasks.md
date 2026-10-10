@@ -27,9 +27,9 @@
 
 ## 6. UI
 
-- [ ] 6.1 Add the API calls to `src/ui/api.ts` and a shared `githubClonesState` that polls `GET /api/github/clones` every second only while a job is `cloning`; unit test the start/stop rule
-- [ ] 6.2 Add `src/ui/addGithub.tsx`: owner field, list with search, private/archived/last-push, `added` entries not selectable, typed entry with instant validation, root choice (preselected when one) and editable folder name with the full path shown, duplicate-target check, `gh` unavailable/failed messages, Refresh, `clone` and `collect` modes; component tests cover listing, typed entry, refusals and that closing without Clone starts nothing
-- [ ] 6.3 On the projects overview: **Add from GitHub** in the header band and empty state (inactive with reason without a root or without git), and `Cloning…` / `clone failed` entries with Retry and Dismiss under Unmanaged projects; extend the overview tests for the project-overview delta scenarios
+- [x] 6.1 Add the API calls to `src/ui/api.ts` and a shared `githubClonesState` that polls `GET /api/github/clones` every second only while a job is `cloning`; unit test the start/stop rule
+- [x] 6.2 Add `src/ui/addGithub.tsx`: owner field, list with search, private/archived/last-push, `added` entries not selectable, typed entry with instant validation, root choice (preselected when one) and editable folder name with the full path shown, duplicate-target check, `gh` unavailable/failed messages, Refresh, `clone` and `collect` modes; component tests cover listing, typed entry, refusals and that closing without Clone starts nothing
+- [x] 6.3 On the projects overview: **Add from GitHub** in the header band and empty state (inactive with reason without a root or without git), and `Cloning…` / `clone failed` entries with Retry and Dismiss under Unmanaged projects; extend the overview tests for the project-overview delta scenarios
 - [ ] 6.4 In the setup wizard's Workspace step: **Create folder** for missing roots, the `~/Workspace` proposal, Continue inactive without a root, the GitHub repositories list fed by the dialog in `collect` mode, and Continue in the order create folders → save → track → clone with failure/retry handling; the Done step lists created roots and cloned repositories; extend the wizard tests with the setup-wizard delta scenarios
 
 ## 7. Demo

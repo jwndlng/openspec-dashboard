@@ -1,7 +1,7 @@
 // Projects overview: URL state, row derivation and sorting. Pure, shared by the view and its tests.
 import { isComplete } from "../shared/columns.ts";
 import { type DisplayedLabel, displayedLabels, labelHue, labelKey, type LabelColors } from "../shared/labels.ts";
-import type { AutoFetchOutcome, Config, DiscoveredRepo, DiscoverResult, RepoSharedConfig, RepoSnapshot, Snapshot, WorkInProgress, Worktree } from "../shared/types.ts";
+import type { AutoFetchOutcome, Config, DiscoveredRepo, DiscoverResult, GithubClone, RepoSharedConfig, RepoSnapshot, Snapshot, WorkInProgress, Worktree } from "../shared/types.ts";
 
 /**
  * The snapshot as the config describes it now: only repositories it enables, under the names it gives them. A config
@@ -274,7 +274,7 @@ export function pendingRows(config: Config | null, snapshot: Snapshot | null): P
 }
 
 /** What an unmanaged project is, which decides the actions it is offered. */
-export type UntrackedKind = "disabled" | "discovered" | "integratable";
+export type UntrackedKind = "disabled" | "discovered" | "integratable" | "cloning" | "cloneFailed";
 
 export interface UntrackedEntry {
   kind: UntrackedKind;
@@ -284,6 +284,8 @@ export interface UntrackedEntry {
   hint?: string;
   /** Discovered entries only: other known repositories with the same `origin`. */
   sameRemoteAs?: DiscoveredRepo["sameRemoteAs"];
+  /** Clone entries only: the clone, with its `owner/name`, root and folder, and why it failed. */
+  clone?: Pick<GithubClone, "id" | "repo" | "root" | "name" | "reason">;
 }
 
 /**
@@ -291,7 +293,7 @@ export interface UntrackedEntry {
  * repositories without OpenSpec — minus anything the config already holds, which covers the moment between an Enable
  * and the next discovery result. One list, by name, then path, whatever each entry is.
  */
-export function untrackedEntries(config: Config | null, discover: DiscoverResult | undefined): UntrackedEntry[] {
+export function untrackedEntries(config: Config | null, discover: DiscoverResult | undefined, clones: readonly GithubClone[] = []): UntrackedEntry[] {
   const configured = new Set(config?.repos.map((r) => r.id));
   const entries: UntrackedEntry[] = [
     ...(config?.repos ?? []).filter((r) => !r.enabled).map((r): UntrackedEntry => ({ kind: "disabled", id: r.id, name: r.name, path: r.path })),
@@ -301,6 +303,10 @@ export function untrackedEntries(config: Config | null, discover: DiscoverResult
     ...(discover?.integratable ?? [])
       .filter((r) => !configured.has(r.id))
       .map((r): UntrackedEntry => ({ kind: "integratable", id: r.id, name: r.name, path: r.path })),
+    // Running and failed clones; a finished one is a repository like any other, found by discovery or tracked.
+    ...clones
+      .filter((c) => c.state === "cloning" || c.state === "failed")
+      .map((c): UntrackedEntry => ({ kind: c.state === "cloning" ? "cloning" : "cloneFailed", id: c.id, name: c.name, path: c.path, clone: { id: c.id, repo: c.repo, root: c.root, name: c.name, reason: c.reason } })),
   ];
   return entries.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }) || a.path.localeCompare(b.path));
 }

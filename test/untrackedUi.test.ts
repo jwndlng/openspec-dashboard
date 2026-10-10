@@ -1,11 +1,12 @@
 import { expect, test } from "bun:test";
 import { defaultAgentSessions, defaultConfig } from "../src/server/config.ts";
-import type { Config, DiscoverResult, RepoSnapshot } from "../src/shared/types.ts";
+import type { Config, DiscoverResult, GithubClone, RepoSnapshot } from "../src/shared/types.ts";
 import { NewProjectButton } from "../src/ui/newProject.tsx";
 import { NothingTracked, PendingTableRow, PendingTile, Row, Tile } from "../src/ui/overview.tsx";
 import { overviewRows, untrackedEntries } from "../src/ui/overviewState.ts";
 import { FoundSummary } from "../src/ui/settings.tsx";
-import { DisableButton, type Tracking, UnmanagedSection, type UntrackedSectionProps } from "../src/ui/untracked.tsx";
+import { AddGithubButton } from "../src/ui/addGithub.tsx";
+import { type CloneActions, DisableButton, type Tracking, UnmanagedSection, type UntrackedSectionProps } from "../src/ui/untracked.tsx";
 import { byComponent, byTag, textOf } from "./vnode.ts";
 
 /** Records what the view asks for instead of calling the server. */
@@ -50,10 +51,15 @@ const found: DiscoverResult = {
   errors: [],
 };
 
+function cloneActions(calls: string[], state: Partial<Pick<CloneActions, "busy" | "errors">> = {}): CloneActions {
+  return { busy: state.busy ?? {}, errors: state.errors ?? {}, retry: (e) => calls.push(`retry ${e.id}`), dismiss: (e) => calls.push(`dismiss ${e.id}`) };
+}
+
 function section(patch: Partial<UntrackedSectionProps> = {}) {
   const { t, calls } = tracking();
   const shown: string[] = [];
   const props: UntrackedSectionProps = {
+    clones: cloneActions(calls),
     entries: untrackedEntries(config, found),
     discovery: { result: found, running: false },
     hasRoots: true,
@@ -198,4 +204,49 @@ test("Settings counts what discovery found and points to Projects instead of lis
   expect(textOf(both)).toContain("Found 2 using OpenSpec and 1 without OpenSpec, not tracked yet");
   expect(byTag(both, "a")[0].props.href).toBe("/");
   expect(textOf(FoundSummary({ candidates: 0, integratable: 0 }))).toBe("Every repository under these roots is tracked.");
+});
+
+const clone = (patch: Partial<GithubClone> & Pick<GithubClone, "id" | "repo" | "name" | "state">): GithubClone => ({
+  root: "/w/acme",
+  path: `/w/acme/${patch.name}`,
+  startedAt: "2026-10-10T10:00:00Z",
+  ...patch,
+});
+
+test("a running clone and a failed one are listed with their owner/name and path; only the failed one offers Retry and Dismiss", () => {
+  const clones = [
+    clone({ id: "clone-1", repo: "acme/beta-soc", name: "beta-soc-gh", state: "cloning" }),
+    clone({ id: "clone-2", repo: "acme/missing-repo", name: "missing-repo", state: "failed", reason: "Repository not found." }),
+    clone({ id: "clone-3", repo: "acme/done-repo", name: "done-repo", state: "tracked" }),
+  ];
+  const { view, calls } = section({ entries: untrackedEntries(config, found, clones) });
+  expect(textOf(byTag(view, "h2")[0])).toBe("Unmanaged projects · 5");
+  const labels = byTag(view, "span").filter((s) => String(s.props.class).includes("untracked-kind"));
+  expect(labels.map(textOf)).toEqual(["OpenSpec", "Cloning…", "no OpenSpec", "disabled", "clone failed"]);
+  const text = textOf(view);
+  expect(text).toContain("acme/beta-soc");
+  expect(text).toContain("/w/acme/beta-soc-gh");
+  expect(text).toContain("Repository not found.");
+  expect(text).not.toContain("done-repo");
+  const running = byTag(view, "li")[1];
+  expect(byTag(running, "button")).toEqual([]);
+  click(button(view, "Retry"));
+  click(button(view, "Dismiss"));
+  expect(calls).toEqual(["retry clone-2", "dismiss clone-2"]);
+});
+
+test("a retry in progress blocks the failed entry; its failure is shown on it", () => {
+  const calls: string[] = [];
+  const entries = untrackedEntries(config, found, [clone({ id: "clone-2", repo: "acme/missing-repo", name: "missing-repo", state: "failed", reason: "x" })]);
+  const { view } = section({ entries, clones: cloneActions(calls, { busy: { "clone-2": "retry" }, errors: { "clone-2": "/w/acme/missing-repo already exists" } }) });
+  expect(button(view, "Retrying…").props.disabled).toBe(true);
+  expect(button(view, "Dismiss").props.disabled).toBe(true);
+  expect(byTag(view, "span").filter((s) => s.props.role === "alert").map(textOf)).toEqual(["/w/acme/missing-repo already exists"]);
+});
+
+test("the empty overview offers Add from GitHub next to New project", () => {
+  const empty = NothingTracked({ config });
+  const offered = byComponent(empty, AddGithubButton);
+  expect(offered).toHaveLength(1);
+  expect(offered[0].props.small).toBe(false);
 });

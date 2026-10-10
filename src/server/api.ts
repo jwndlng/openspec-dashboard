@@ -32,6 +32,7 @@ import { LocalRepoSource } from "./source.ts";
 import { frameworkById } from "./frameworks/registry.ts";
 import type { UpdateChecker } from "./updateCheck.ts";
 import { VERSION } from "./version.ts";
+import { whichOnPath } from "./paths.ts";
 
 export interface AppState {
   config: Config;
@@ -1136,8 +1137,8 @@ export function createFetchHandler({ state, indexHtml }: AppOptions): (req: Requ
       if (req.method === "POST" && pathname === "/api/setup/workspace-folder") return postWorkspaceFolder(state, req);
       if (req.method === "POST" && pathname === "/api/github/repos") return postGithubRepos(state, req);
       if (req.method === "POST" && pathname === "/api/github/clone") return postGithubClone(state, req);
-      // Read-only and in memory: starts no process.
-      if (req.method === "GET" && pathname === "/api/github/clones") return json({ clones: state.githubClones?.list() ?? [] });
+      // Read-only and in memory: starts no process. `gitAvailable` is a PATH lookup, so Add from GitHub can say git is missing.
+      if (req.method === "GET" && pathname === "/api/github/clones") return json({ clones: state.githubClones?.list() ?? [], gitAvailable: whichOnPath("git") !== undefined });
       if (req.method === "POST" && pathname === "/api/github/clones/dismiss") return postGithubCloneDismiss(state, req);
       if (req.method === "GET" && pathname === "/api/config") return json(state.config);
       if (req.method === "PUT" && pathname === "/api/config") return putConfig(state, req);
