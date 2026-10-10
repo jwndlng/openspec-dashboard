@@ -1042,8 +1042,11 @@ export function createFetchHandler({ state, indexHtml }: AppOptions): (req: Requ
       if (req.method === "GET" && pathname === "/api/state") return json(state.autoFetcher?.withOutcomes(state.scanner.snapshot) ?? state.scanner.snapshot);
       // Read-only and local (openspec/specs/environment-check): no network, nothing in a tracked repository.
       // `force` is what **Re-check** sends: the user just changed the machine, which no cache key can see.
+      // `view=setup` is the wizard's System check: no per-agent checks, fixed setup verdicts.
       if (req.method === "GET" && pathname === "/api/environment") {
-        return json(await environmentReport(state.config, state.scanner.snapshot, { force: url.searchParams.get("force") === "1" }));
+        const view = url.searchParams.get("view") ?? "settings";
+        if (view !== "settings" && view !== "setup") return json({ error: "view must be setup or settings" }, 400);
+        return json(await environmentReport(state.config, state.scanner.snapshot, { force: url.searchParams.get("force") === "1", view }));
       }
       if (req.method === "GET" && pathname === "/api/activity") return getActivity(state, url);
       if (req.method === "GET" && pathname === "/api/update") return json(updateStatus(state));

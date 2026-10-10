@@ -80,3 +80,29 @@ test("a request with repositories tracked leaves them untouched", async () => {
   expect(JSON.stringify(report)).not.toContain(repo);
   state.config = defaultConfig();
 });
+
+// The setup view (dashboard-api: environment endpoint).
+test("view=setup has no agent check and judges nothing not-needed while agent sessions are off", async () => {
+  resetEnvironmentCache();
+  const config = defaultConfig();
+  state.config = {
+    ...config,
+    agentSessions: { ...config.agentSessions, enabled: false, agents: [...config.agentSessions.agents, { id: "codex", name: "Codex", command: ["codex", "{prompt}"], prompts: {} }] },
+  };
+  try {
+    const res = await fetch(`${base}/api/environment?view=setup`);
+    expect(res.status).toBe(200);
+    const report = (await res.json()) as EnvironmentReport;
+    expect(report.checks.some((c) => c.id.startsWith("agent:"))).toBe(false);
+    for (const id of ["github-cli", "git-identity"]) expect(report.checks.find((c) => c.id === id)?.status).not.toBe("not-needed");
+    const settings = (await (await fetch(`${base}/api/environment`)).json()) as EnvironmentReport;
+    expect(settings.checks.filter((c) => c.id.startsWith("agent:")).length).toBe(2);
+  } finally {
+    state.config = defaultConfig();
+  }
+});
+
+test("another view is refused with 400", async () => {
+  const res = await fetch(`${base}/api/environment?view=everything`);
+  expect(res.status).toBe(400);
+});

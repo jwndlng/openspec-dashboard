@@ -310,7 +310,7 @@ export function createDemoApi({ now = Date.now, latencyMs = 150, clock }: DemoAp
     },
     config: () => reply(config),
     // Fixed sample data, derived from the config the visitor is looking at: no process, no PATH, no file, no connection.
-    environment: () => reply(demoEnvironment(config, now())),
+    environment: (_force, view) => reply(demoEnvironment(config, now(), view)),
     // Setup is done in the demo; the sample workspace is suggested again once the visitor removed it as a root.
     setup: () => reply({ pending: false, home: DEMO_HOME, platform: "linux" as const, suggestedRoots: config.scanRoots.includes(DEMO_ROOT) ? [] : [DEMO_ROOT], folderPicker: true }),
     // No dialog in a web page: Choose folder… adds the sample workspace, so the visitor sees the button work.

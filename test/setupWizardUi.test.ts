@@ -22,18 +22,18 @@ import { byTag, elements, textOf } from "./vnode.ts";
 const noop = () => {};
 
 test("the wizard is a dialog named as the setup, showing its position and every step", () => {
-  const frame = WizardFrame({ step: 3, onContinue: noop, onBack: noop, onSkip: noop, children: "body" });
+  const frame = WizardFrame({ step: 4, onContinue: noop, onBack: noop, onSkip: noop, children: "body" });
   const dialog = byTag(frame, "div").find((el) => el.props.role === "dialog");
   expect(dialog?.props["aria-modal"]).toBe("true");
   expect(String(dialog?.props["aria-label"])).toContain("setup");
   const text = textOf(frame);
-  expect(text).toContain("4 of 7");
+  expect(text).toContain("5 of 7");
   const steps = byTag(byTag(frame, "ol")[0], "li");
-  expect(steps.map(textOf)).toEqual(["Welcome, done", "Workspace, done", "Agents, done", "Console", "Project settings", "System check", "Done"]);
+  expect(steps.map(textOf)).toEqual(["Welcome, done", "System check, done", "Workspace, done", "Agents, done", "Console", "Project settings", "Done"]);
   expect(steps.filter((li) => li.props["aria-current"] === "step").map(textOf)).toEqual(["Console"]);
   // Steps passed are done: green (the `past` class) with a check mark; the current and later ones are not.
-  expect(steps.map((li) => li.props.class)).toEqual(["past", "past", "past", "current", "", "", ""]);
-  expect(steps.map((li) => byTag(li, "svg").length)).toEqual([1, 1, 1, 0, 0, 0, 0]);
+  expect(steps.map((li) => li.props.class)).toEqual(["past", "past", "past", "past", "current", "", ""]);
+  expect(steps.map((li) => byTag(li, "svg").length)).toEqual([1, 1, 1, 1, 0, 0, 0]);
   expect(byTag(frame, "button").map(textOf)).toEqual(["Skip setup", "Back", "Continue"]);
 });
 
@@ -55,13 +55,13 @@ test("the step list opens every step up to the furthest one reached, and none be
 });
 
 test("a blocked Continue says why, and no later step opens from the list", () => {
-  const frame = WizardFrame({ step: 2, reachable: 4, onStep: noop, continueBlocked: "Choose at least one agent to continue.", onContinue: noop, onBack: noop, onSkip: noop, children: "" });
+  const frame = WizardFrame({ step: 3, reachable: 5, onStep: noop, continueBlocked: "Choose at least one agent to continue.", onContinue: noop, onBack: noop, onSkip: noop, children: "" });
   const next = byTag(frame, "button").find((el) => textOf(el) === "Continue");
   expect(next?.props.disabled).toBe(true);
   expect(textOf(frame)).toContain("Choose at least one agent to continue.");
   const links = byTag(byTag(frame, "ol")[0], "li").map((li) => byTag(li, "button").length > 0);
-  // Welcome and Workspace still open (Back); Console and Project settings, though reached, do not.
-  expect(links).toEqual([true, true, false, false, false, false, false]);
+  // Welcome, System check and Workspace still open (Back); Console and Project settings, though reached, do not.
+  expect(links).toEqual([true, true, true, false, false, false, false]);
 });
 
 test("Welcome has no Back, Done no Skip, and a pending Skip asks first", () => {
@@ -81,7 +81,7 @@ test("Welcome shows the steps as an ordered list, the connectors and the Ready n
   const step = WelcomeStep();
   const list = byTag(step, "ol").find((el) => el.props["aria-label"] === "What setup covers");
   const items = byTag(list, "li");
-  expect(items.map((li) => textOf(byTag(li, "strong")[0]))).toEqual(["Workspace", "Agents", "Console", "Project settings", "System check"]);
+  expect(items.map((li) => textOf(byTag(li, "strong")[0]))).toEqual(["System check", "Workspace", "Agents", "Console", "Project settings"]);
   expect(items.map((li) => textOf(li).slice(0, 1))).toEqual(["1", "2", "3", "4", "5"]);
   for (const li of items) expect(byTag(li, "span").find((el) => el.props.class === "setup-flow-mark")?.props["aria-hidden"]).toBe("true");
   const ready = byTag(step, "div").find((el) => String(el.props.class).includes("setup-flow-end"));
@@ -147,7 +147,7 @@ test("Choose folder… opens the dialog, waits while it is open, and is not offe
   expect(textOf(again)).toContain("/w/acme is already listed");
 });
 
-const agentHandlers = { onEnable: noop, onCheck: noop, onAddCustom: noop, onCustomChange: noop, onRemoveCustom: noop, onDefault: noop };
+const agentHandlers = { onRecheck: noop, onEnable: noop, onCheck: noop, onAddCustom: noop, onCustomChange: noop, onRemoveCustom: noop, onDefault: noop };
 const agents = (patch: Partial<AgentsView> = {}): AgentsView => ({
   savedEnabled: false,
   enable: false,
@@ -216,6 +216,21 @@ test("a checked agent that is missing shows how to install it, and the switch ca
   const toggle = byTag(step, "input").find((el) => el.props.type === "checkbox");
   expect(toggle?.props.checked).toBe(true);
   expect(toggle?.props.disabled).toBe(true);
+  // Agents are checked here, not in the System check.
+  expect(textOf(step)).not.toContain("System check");
+  expect(textOf(step)).toContain("Check again");
+});
+
+test("Check again looks the agents up again and shows that it works", () => {
+  let calls = 0;
+  const step = AgentsStep({ view: agents(), ...agentHandlers, onRecheck: () => calls++ });
+  const button = byTag(step, "button").find((el) => textOf(el).includes("Check again"));
+  (button!.props.onClick as () => void)();
+  expect(calls).toBe(1);
+  const working = byTag(AgentsStep({ view: agents({ checking: true }), ...agentHandlers }), "button").find((el) => textOf(el).includes("Checking…"));
+  expect(working?.props.disabled).toBe(true);
+  // Once found, the install instructions are gone: they follow the view's `installs`, which the lookup decides.
+  expect(textOf(AgentsStep({ view: agents({ installs: [] }), ...agentHandlers }))).not.toContain("was not found");
 });
 
 const consoleView = (patch: Partial<ConsoleView> = {}): ConsoleView => ({
@@ -348,10 +363,46 @@ const reportWith = (status: "warning" | "ok"): EnvironmentReport => ({
 
 test("the System check lists a missing gh with copyable install and login commands", () => {
   const step = SystemCheckStep({ report: reportWith("warning"), loading: false, onRecheck: noop });
-  expect(textOf(step)).toContain("warning");
+  expect(textOf(step)).toContain("Warning");
   expect(byTag(step, "code").map(textOf)).toEqual(["brew install gh", "gh auth login"]);
   expect(elements(step).filter((el) => typeof el.type === "function" && el.props.label === "Copy")).toHaveLength(2);
   expect(textOf(step)).not.toContain("Everything needed is in place");
+  expect(textOf(step)).toContain("pull requests and issues");
+  expect(textOf(step)).toContain("worktree");
+});
+
+test("the System check is a visual report: a headline with the count in place, then one card per check", () => {
+  const five: EnvironmentReport = {
+    checkedAt: "2026-10-09T10:00:00.000Z",
+    status: "warning",
+    checks: [
+      { id: "dashboard-home", label: "Dashboard home", status: "ok", found: "writable: /home/demo/.spec-control" },
+      { id: "git", label: "git", status: "ok", found: "/usr/bin/git" },
+      { id: "git-identity", label: "Git committer identity", status: "ok", found: "Demo User <demo@example.invalid>" },
+      { id: "openspec-cli", label: "OpenSpec CLI", status: "ok", found: "/usr/local/bin/openspec" },
+      reportWith("warning").checks[1],
+    ],
+  };
+  const step = SystemCheckStep({ report: five, loading: false, onRecheck: noop });
+  const hero = byTag(step, "div").find((el) => String(el.props.class).startsWith("setup-system-hero"));
+  expect(String(hero?.props.class)).toContain("attention");
+  expect(textOf(hero)).toContain("4 of 5 in place");
+  expect(byTag(hero, "button").map(textOf)).toEqual(["Re-check"]);
+  const list = byTag(step, "ul").find((el) => el.props["aria-label"] === "What was checked");
+  const cards = byTag(list, "li").filter((li) => String(li.props.class).startsWith("setup-check "));
+  expect(cards.map((li) => textOf(byTag(li, "strong")[0]))).toEqual(["Dashboard home", "git", "Git committer identity", "OpenSpec CLI", "GitHub CLI"]);
+  expect(cards.map((li) => String(li.props.class).replace("setup-check ", ""))).toEqual(["ok", "ok", "ok", "ok", "warning"]);
+  for (const card of cards) {
+    const icon = byTag(card, "span").find((el) => el.props.class === "setup-check-icon");
+    expect(icon?.props["aria-hidden"]).toBe("true");
+    expect(byTag(icon, "svg")).toHaveLength(1);
+  }
+  expect(textOf(cards[0])).toContain("In place");
+  // The fix lives inside the card that needs it, and only there.
+  expect(byTag(cards[4], "code").map(textOf)).toEqual(["brew install gh", "gh auth login"]);
+  expect(cards.slice(0, 4).every((li) => byTag(li, "code").length === 0)).toBe(true);
+  const ok = byTag(SystemCheckStep({ report: reportWith("ok"), loading: false, onRecheck: noop }), "div").find((el) => String(el.props.class).startsWith("setup-system-hero"));
+  expect(String(ok?.props.class)).toContain("ok");
 });
 
 test("all in place is said plainly, and Re-check shows that it works", () => {
@@ -363,26 +414,34 @@ test("all in place is said plainly, and Re-check shows that it works", () => {
 });
 
 test("Done is a visual ending: a headline, one card per step with its icon and mark, and what comes next", () => {
-  const summary = { ...NOTHING_SAVED, rootsAdded: ["/w/acme"], tracked: 2, agentsAdded: ["Codex", "Antigravity"], projectsChanged: 3, agentSessions: true, defaultAgent: "Codex", agents: 3, checked: true, remaining: [] };
+  const summary = { ...NOTHING_SAVED, rootsAdded: ["/w/acme"], tracked: 2, agentsAdded: ["Codex", "Antigravity"], projectsChanged: 3, agentSessions: true, defaultAgent: "Codex", agents: 3, checked: true, remaining: [], agentsMissing: [] };
   const done = DoneStep({ summary, firstStart: true });
   expect(textOf(done)).toContain("You're all set");
   expect(textOf(done)).toContain("ready for your 2 projects");
   const list = byTag(done, "ul").find((el) => el.props["aria-label"] === "What setup did");
   const cards = byTag(list, "li");
-  expect(cards.map((li) => textOf(byTag(li, "span").find((el) => el.props.class === "setup-done-name")))).toEqual(["Workspace", "Agents", "Console", "Project settings", "System check"]);
+  expect(cards.map((li) => textOf(byTag(li, "span").find((el) => el.props.class === "setup-done-name")))).toEqual(["System check", "Workspace", "Agents", "Console", "Project settings"]);
   for (const card of cards) expect(byTag(card, "svg").length).toBeGreaterThan(0);
   expect(cards.map((li) => String(li.props.class).replace("setup-done-card ", ""))).toEqual(["done", "done", "done", "done", "done"]);
-  expect(textOf(cards[1])).toContain("added Codex and Antigravity");
-  expect(textOf(cards[2])).toContain("Codex");
-  expect(textOf(cards[3])).toContain("3 projects");
+  expect(textOf(cards[2])).toContain("added Codex and Antigravity");
+  expect(textOf(cards[3])).toContain("Codex");
+  expect(textOf(cards[4])).toContain("3 projects");
   expect(textOf(done)).toContain("short tour");
   expect(textOf(DoneStep({ summary }))).not.toContain("short tour");
 
   const left = DoneStep({ summary: { ...summary, remaining: ["GitHub CLI"] } });
   expect(textOf(left)).toContain("one thing is left to fix");
-  const system = byTag(byTag(left, "ul")[0], "li")[4];
+  const system = byTag(byTag(left, "ul")[0], "li")[0];
   expect(String(system.props.class)).toContain("attention");
   expect(textOf(system)).toContain("Needs attention");
   expect(textOf(system)).toContain("GitHub CLI");
+
+  // An agent still missing: Agents needs attention and names it, the System check is done.
+  const agent = DoneStep({ summary: { ...summary, agentsMissing: ["Antigravity"] } });
+  expect(textOf(agent)).toContain("one thing is left to fix");
+  const [systemCard, , agentsCard] = byTag(byTag(agent, "ul")[0], "li");
+  expect(String(systemCard.props.class)).toContain("done");
+  expect(String(agentsCard.props.class)).toContain("attention");
+  expect(textOf(agentsCard)).toContain("Antigravity");
 });
 

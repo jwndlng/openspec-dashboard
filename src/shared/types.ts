@@ -1217,6 +1217,13 @@ export interface InstructionStep {
   command?: string;
 }
 
+/**
+ * Which report: `settings` judges what matters from the saved configuration; `setup` is the wizard's System check, run
+ * before agents or a workspace are chosen, so it leaves the per-agent checks to the Agents step and judges every tool
+ * by what setup is about to switch on — nothing is `not-needed` (environment-check: the setup view leaves agents out).
+ */
+export type EnvironmentView = "settings" | "setup";
+
 export interface EnvironmentReport {
   checkedAt: string;
   /** The worst status of any check, in `ENVIRONMENT_STATUS_ORDER`. */

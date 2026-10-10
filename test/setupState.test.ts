@@ -13,6 +13,7 @@ import {
   customAgentProblem,
   customAgentRef,
   doneCards,
+  leftToFix,
   defaultAgentOptions,
   expandHome,
   initiallyChecked,
@@ -42,7 +43,7 @@ function edited(): Config {
 }
 
 test("the seven steps, in order", () => {
-  expect([...SETUP_STEPS]).toEqual(["Welcome", "Workspace", "Agents", "Console", "Project settings", "System check", "Done"]);
+  expect([...SETUP_STEPS]).toEqual(["Welcome", "System check", "Workspace", "Agents", "Console", "Project settings", "Done"]);
 });
 
 test("the wizard opens by itself only while setup is pending, once, with nothing in the way", () => {
@@ -304,7 +305,9 @@ test("the Done step names what was saved and what is left", () => {
     agents: 1,
     checked: true,
     remaining: ["GitHub CLI"],
+    agentsMissing: [],
   });
+  expect(setupSummary(config, NOTHING_SAVED, report, ["Antigravity"]).agentsMissing).toEqual(["Antigravity"]);
   const withConsole: Config = { ...config, agentSessions: { ...config.agentSessions, agents: [CLAUDE_PROFILE, CODEX_PROFILE], consoleAgent: "codex" } };
   expect(setupSummary(withConsole, NOTHING_SAVED).consoleAgent).toBe("Codex");
   expect(allInPlace(report)).toBe(false);
@@ -312,26 +315,31 @@ test("the Done step names what was saved and what is left", () => {
   expect(allInPlace(undefined)).toBe(false);
 });
 
-test("the Done step's cards say how each step came out; only the System check can need attention", () => {
-  const base = { ...NOTHING_SAVED, rootsAdded: ["/w/acme"], tracked: 2, agentsAdded: ["Codex"], agentSessions: true, defaultAgent: "Claude Code", agents: 2, checked: true, remaining: [] };
+test("the Done step's cards say how each step came out; only the System check and Agents can need attention", () => {
+  const base = { ...NOTHING_SAVED, rootsAdded: ["/w/acme"], tracked: 2, agentsAdded: ["Codex"], agentSessions: true, defaultAgent: "Claude Code", agents: 2, checked: true, remaining: [], agentsMissing: [] };
   expect(doneCards(base).map((c) => [c.step, c.mark, c.outcome])).toEqual([
+    ["System check", "done", "All in place"],
     ["Workspace", "done", "2 projects"],
     ["Agents", "done", "2 agents"],
     ["Console", "done", "Claude Code"],
     ["Project settings", "unchanged", "No change"],
-    ["System check", "done", "All in place"],
   ]);
-  expect(doneCards(base)[0].detail).toBe("Tracked, from /w/acme");
-  expect(doneCards({ ...base, rootsAdded: ["/home/demo/Workspace"] }, "/home/demo")[0].detail).toBe("Tracked, from ~/Workspace");
-  expect(doneCards(base)[1].detail).toBe("Sessions on, Claude Code by default; added Codex");
+  expect(doneCards(base)[1].detail).toBe("Tracked, from /w/acme");
+  expect(doneCards({ ...base, rootsAdded: ["/home/demo/Workspace"] }, "/home/demo")[1].detail).toBe("Tracked, from ~/Workspace");
+  expect(doneCards(base)[2].detail).toBe("Sessions on, Claude Code by default; added Codex");
   const left = doneCards({ ...base, remaining: ["GitHub CLI"], consoleAgent: "Codex", projectsChanged: 1 });
-  expect(left[4]).toMatchObject({ mark: "attention", outcome: "1 to fix" });
-  expect(left[4].detail).toContain("GitHub CLI");
-  expect(left[2]).toMatchObject({ outcome: "Codex", detail: "Chosen for the console" });
-  expect(left[3]).toMatchObject({ mark: "done", outcome: "1 project" });
-  const nothing = doneCards({ ...NOTHING_SAVED, agentSessions: false, agents: 1, checked: false, remaining: [] });
-  expect(nothing.map((c) => c.mark)).toEqual(["unchanged", "unchanged", "unchanged", "unchanged", "attention"]);
-  expect(nothing[2].detail).toBe("Available once agent sessions are on");
+  expect(left[0]).toMatchObject({ mark: "attention", outcome: "1 to fix" });
+  expect(left[0].detail).toContain("GitHub CLI");
+  expect(left[3]).toMatchObject({ outcome: "Codex", detail: "Chosen for the console" });
+  expect(left[4]).toMatchObject({ mark: "done", outcome: "1 project" });
+  const missing = doneCards({ ...base, agentsMissing: ["Antigravity"] });
+  expect(missing[0].mark).toBe("done");
+  expect(missing[2].mark).toBe("attention");
+  expect(missing[2].detail).toContain("Antigravity not found");
+  expect(leftToFix({ ...base, remaining: ["GitHub CLI"], agentsMissing: ["Antigravity"] })).toBe(2);
+  const nothing = doneCards({ ...NOTHING_SAVED, agentSessions: false, agents: 1, checked: false, remaining: [], agentsMissing: [] });
+  expect(nothing.map((c) => c.mark)).toEqual(["attention", "unchanged", "unchanged", "unchanged", "unchanged"]);
+  expect(nothing[3].detail).toBe("Available once agent sessions are on");
 });
 
 test("the demo turns the wizard's auto-open off, as it does the tour's", async () => {

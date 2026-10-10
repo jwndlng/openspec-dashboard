@@ -8,7 +8,7 @@ import { DEFAULT_SHORTCUTS } from "../../shared/agentDefaults.ts";
 import { deriveStage } from "../../shared/columns.ts";
 import { resolveDependencies } from "../../shared/dependencies.ts";
 import { detectLabels } from "../../shared/labels.ts";
-import type { ActivityEvent, AgentProfile, ArtifactStatus, ChangeSnapshot, CheckoutStatus, Config, EnvironmentCheck, EnvironmentReport, GithubIssue, IntegratableRepo, PullRequest, PullRequestsResponse, RepoConfig, RepoIssues, RepoPullRequests, RepoSnapshot, SharedProfile, Shortcut, Snapshot, Worktree } from "../../shared/types.ts";
+import type { ActivityEvent, AgentProfile, ArtifactStatus, ChangeSnapshot, CheckoutStatus, Config, EnvironmentCheck, EnvironmentReport, EnvironmentView, GithubIssue, IntegratableRepo, PullRequest, PullRequestsResponse, RepoConfig, RepoIssues, RepoPullRequests, RepoSnapshot, SharedProfile, Shortcut, Snapshot, Worktree } from "../../shared/types.ts";
 import { summarizeWorkInProgress } from "../../shared/workInProgress.ts";
 
 /** Appears in the demo bundle only; test/demoBundle.test.ts uses it to tell the two bundles apart. */
@@ -485,10 +485,12 @@ const DEMO_TOOL_PATHS: Record<string, string> = {
 /**
  * The demo's environment report: every check passes, and the checks the configuration makes unnecessary read as
  * `not-needed`, exactly as in the dashboard. Derived from the config the visitor is looking at, so switching agent
- * sessions off in the demo's Settings changes it the same way. Nothing is started, looked up or read for it.
+ * sessions off in the demo's Settings changes it the same way. The setup view leaves the agents out and judges nothing
+ * `not-needed`, as the server's does. Nothing is started, looked up or read for it.
  */
-export function demoEnvironment(config: Config, now: number): EnvironmentReport {
-  const sessions = config.agentSessions.enabled;
+export function demoEnvironment(config: Config, now: number, view: EnvironmentView = "settings"): EnvironmentReport {
+  const setup = view === "setup";
+  const sessions = setup || config.agentSessions.enabled;
   const off = "not needed while agent sessions are off";
   const needed = (check: EnvironmentCheck): EnvironmentCheck => (sessions ? check : { id: check.id, label: check.label, status: "not-needed", found: off });
   const checks: EnvironmentCheck[] = [
@@ -496,7 +498,7 @@ export function demoEnvironment(config: Config, now: number): EnvironmentReport 
     { id: "git", label: "git", status: "ok", found: DEMO_TOOL_PATHS.git },
     needed({ id: "git-identity", label: "Git committer identity", status: "ok", found: "Demo User, configured for this user" }),
     { id: "openspec-cli", label: "OpenSpec CLI", status: "ok", found: DEMO_TOOL_PATHS.openspec },
-    ...config.agentSessions.agents.map((agent) =>
+    ...(setup ? [] : config.agentSessions.agents).map((agent) =>
       needed({
         id: `agent:${agent.id}`,
         label: `Agent: ${agent.name}${agent.id === config.agentSessions.defaultAgent ? " (default)" : ""}`,

@@ -490,3 +490,58 @@ test("a missing preset agent gets its preset's command, a custom one the generic
   expect(custom[0].text).toContain("my-agent-cli");
   expect(custom[0].command).toBeUndefined();
 });
+
+// The setup view (environment-check: the setup view leaves agents out).
+async function setupReport(bin: string, config: Config = defaultConfig(), snapshot: Snapshot = { generatedAt: "2026-09-30T10:00:00.000Z", repos: [] }): Promise<EnvironmentReport> {
+  const home = await useTempHome();
+  cleanups.push(home.cleanup);
+  process.env.PATH = bin;
+  resetEnvironmentCache();
+  return environmentReport(config, snapshot, { view: "setup" });
+}
+
+test("setup view: a fresh installation without gh warns about the GitHub CLI that Settings calls not needed", async () => {
+  const { bin } = await machine(["git", "openspec", "claude"]);
+  const setup = await setupReport(bin);
+  expect(byId(setup, "git").status).toBe("ok");
+  expect(byId(setup, "github-cli").status).toBe("warning");
+  expect(byId(setup, "github-cli").instructions?.map((s) => s.command)).toContain("gh auth login");
+  expect(setup.status).toBe("warning");
+  const settings = await environmentReport(defaultConfig(), { generatedAt: "2026-09-30T10:00:00.000Z", repos: [] }, { force: true });
+  expect(byId(settings, "github-cli").status).toBe("not-needed");
+});
+
+test("setup view: git missing before anything is tracked is a problem, where Settings says warning", async () => {
+  const { bin } = await machine(["openspec", "gh"]);
+  const setup = await setupReport(bin);
+  expect(byId(setup, "git").status).toBe("problem");
+  expect(byId(setup, "git-identity").status).toBe("warning");
+  expect(setup.status).toBe("problem");
+  const settings = await environmentReport(defaultConfig(), { generatedAt: "2026-09-30T10:00:00.000Z", repos: [] }, { force: true });
+  expect(byId(settings, "git").status).toBe("warning");
+});
+
+test("setup view: no agent checks and nothing not-needed, while Settings keeps both agents", async () => {
+  const base = defaultConfig();
+  const config: Config = {
+    ...base,
+    agentSessions: { ...base.agentSessions, agents: [...base.agentSessions.agents, { id: "codex", name: "Codex", command: ["codex", "{prompt}"], prompts: {} }] },
+  };
+  const { bin } = await machine([]);
+  const setup = await setupReport(bin, config);
+  expect(setup.checks.map((c) => c.id)).toEqual(["dashboard-home", "git", "git-identity", "openspec-cli", "github-cli"]);
+  expect(setup.checks.some((c) => c.status === "not-needed")).toBe(false);
+  expect(setup.caveat).toContain("valid");
+  const settings = await environmentReport(withAgents(config), { generatedAt: "2026-09-30T10:00:00.000Z", repos: [] }, { force: true });
+  expect(settings.checks.filter((c) => c.id.startsWith("agent:")).map((c) => c.id)).toEqual(["agent:claude", "agent:codex"]);
+});
+
+test("setup view: each view is cached on its own", async () => {
+  const { bin } = await machine();
+  const snapshot: Snapshot = { generatedAt: "2026-09-30T10:00:00.000Z", repos: [] };
+  const setup = await setupReport(bin);
+  const settings = await environmentReport(defaultConfig(), snapshot);
+  expect(settings).not.toBe(setup);
+  expect(await environmentReport(defaultConfig(), snapshot, { view: "setup" })).toBe(setup);
+  expect(await environmentReport(defaultConfig(), snapshot)).toBe(settings);
+});
