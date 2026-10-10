@@ -1080,7 +1080,10 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: 
 .setup-checks li.muted { opacity: 0.72; }
 .setup-check-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; min-width: 0; }
 .setup-actions { flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: var(--gap-1); padding: 12px 28px; background: var(--bg-section); border-top: 1px solid var(--border-light); }
-.setup-actions-end { margin-left: auto; display: flex; flex-wrap: wrap; gap: var(--gap-1); }
+.setup-actions-end { margin-left: auto; display: flex; flex-wrap: wrap; align-items: center; gap: var(--gap-1); }
+.setup-blocked { color: var(--fg-subtle); }
+/* The primary button's own colours would hide that it is disabled. */
+.setup-actions .btn.primary:disabled { opacity: 0.45; box-shadow: none; transform: none; cursor: not-allowed; }
 @media (max-width: 720px) {
   .setup-setting { grid-template-columns: minmax(0, 1fr); padding: 14px 0; }
   .setup-setting-label { padding-top: 0; }

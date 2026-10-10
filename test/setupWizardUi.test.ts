@@ -54,6 +54,16 @@ test("the step list opens every step up to the furthest one reached, and none be
   expect(byTag(byTag(WizardFrame({ step: 3, onContinue: noop, children: "" }), "ol")[0], "button")).toHaveLength(0);
 });
 
+test("a blocked Continue says why, and no later step opens from the list", () => {
+  const frame = WizardFrame({ step: 2, reachable: 4, onStep: noop, continueBlocked: "Choose at least one agent to continue.", onContinue: noop, onBack: noop, onSkip: noop, children: "" });
+  const next = byTag(frame, "button").find((el) => textOf(el) === "Continue");
+  expect(next?.props.disabled).toBe(true);
+  expect(textOf(frame)).toContain("Choose at least one agent to continue.");
+  const links = byTag(byTag(frame, "ol")[0], "li").map((li) => byTag(li, "button").length > 0);
+  // Welcome and Workspace still open (Back); Console and Project settings, though reached, do not.
+  expect(links).toEqual([true, true, false, false, false, false, false]);
+});
+
 test("Welcome has no Back, Done no Skip, and a pending Skip asks first", () => {
   expect(byTag(WizardFrame({ step: 0, onContinue: noop, onSkip: noop, children: "" }), "button").map(textOf)).toEqual(["Skip setup", "Continue"]);
   expect(byTag(WizardFrame({ step: 6, onContinue: noop, onBack: noop, continueLabel: "Finish", children: "" }), "button").map(textOf)).toEqual(["Back", "Finish"]);
@@ -181,6 +191,14 @@ test("checking an agent and adding a custom one are reported", () => {
   (agy.props.onChange as (e: unknown) => void)({ currentTarget: { checked: true } });
   (byTag(step, "button").find((el) => textOf(el).includes("Add another agent"))!.props.onClick as () => void)();
   expect(calls).toEqual([["agy", true], "add"]);
+});
+
+test("without a checked agent there is no default to choose yet", () => {
+  const step = AgentsStep({ view: agents({ checked: [], defaultOptions: [], choices: agents().choices.map((c) => ({ ...c, configured: false })) }), ...agentHandlers });
+  expect(byTag(step, "select").some((el) => el.props["aria-label"] === "Default agent")).toBe(false);
+  expect(textOf(step)).toContain("Check at least one agent");
+  // Nothing is locked: every agent can be checked or unchecked.
+  expect(byTag(byTag(step, "fieldset")[0], "input").filter((el) => el.props.type === "checkbox").every((el) => el.props.disabled === false)).toBe(true);
 });
 
 test("an incomplete custom agent says what is missing", () => {

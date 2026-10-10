@@ -15,6 +15,7 @@ import { AgentSelect, AUTO_FETCH_TITLE, AUTO_MERGE_HINT, AutoFetchSelect, autoFe
 import {
   type AgentChoice,
   agentChoices,
+  agentsReady,
   agentsSave,
   allInPlace,
   type CustomAgent,
@@ -57,6 +58,7 @@ export function WizardFrame({
   onBack,
   onContinue,
   continueLabel = "Continue",
+  continueBlocked,
   busy = false,
   onSkip,
   confirmingSkip = false,
@@ -73,6 +75,8 @@ export function WizardFrame({
   onBack?: () => void;
   onContinue: () => void;
   continueLabel?: string;
+  /** Why Continue cannot be used yet; it is then disabled, with this said beside it, and no later step opens. */
+  continueBlocked?: string;
   busy?: boolean;
   /** Absent on Done, which offers Finish instead. */
   onSkip?: () => void;
@@ -103,7 +107,7 @@ export function WizardFrame({
                 </>
               );
               // Any step up to the furthest one reached can be opened; one not reached yet only through Continue.
-              const open = onStep && i !== step && i <= reachable;
+              const open = onStep && i !== step && i <= reachable && (i < step || continueBlocked === undefined);
               return (
                 <li key={name} class={i === step ? "current" : i < step ? "past" : i <= reachable ? "reached" : ""} aria-current={i === step ? "step" : undefined}>
                   {open ? (
@@ -140,12 +144,17 @@ export function WizardFrame({
                 </button>
               )}
               <span class="setup-actions-end">
+                {continueBlocked && (
+                  <span id="setup-continue-blocked" class="hint setup-blocked">
+                    {continueBlocked}
+                  </span>
+                )}
                 {onBack && (
                   <button type="button" class="btn" onClick={onBack} disabled={busy}>
                     Back
                   </button>
                 )}
-                <button type="button" class="btn primary" onClick={onContinue} disabled={busy}>
+                <button type="button" class="btn primary" onClick={onContinue} disabled={busy || continueBlocked !== undefined} aria-describedby={continueBlocked ? "setup-continue-blocked" : undefined}>
                   {busy ? "Saving…" : continueLabel}
                 </button>
               </span>
@@ -428,18 +437,22 @@ export function AgentsStep({ view, ...on }: { view: AgentsView } & AgentsHandler
           </button>
         </div>
       </fieldset>
-      <label class="field setup-default-agent">
-        <span>Default agent</span>
-        <select class="input" value={view.defaultAgent} aria-label="Default agent" onChange={(e) => on.onDefault(e.currentTarget.value)}>
-          {view.defaultOptions.map((o) => (
-            <option key={o.id} value={o.id}>
-              {o.name}
-              {o.available === false ? " (not found)" : ""}
-            </option>
-          ))}
-        </select>
-        <span class="hint">Started by a card's session buttons unless a project chooses another one.</span>
-      </label>
+      {view.defaultOptions.length > 0 ? (
+        <label class="field setup-default-agent">
+          <span>Default agent</span>
+          <select class="input" value={view.defaultAgent} aria-label="Default agent" onChange={(e) => on.onDefault(e.currentTarget.value)}>
+            {view.defaultOptions.map((o) => (
+              <option key={o.id} value={o.id}>
+                {o.name}
+                {o.available === false ? " (not found)" : ""}
+              </option>
+            ))}
+          </select>
+          <span class="hint">Started by a card's session buttons unless a project chooses another one.</span>
+        </label>
+      ) : (
+        <p class="hint">Check at least one agent above, or add your own: the default agent is chosen among them.</p>
+      )}
       {view.installs.map(({ name, steps }) => (
         <div key={name} class="setup-install">
           <p>{name} was not found on this machine. To install it:</p>
@@ -964,6 +977,7 @@ export function SetupWizard({ config, snapshot, onSaved, onClose }: { config: Co
   const defaultOptions = defaultAgentOptions(choices, checkedIds, custom);
   const chosenDefault = defaultAgent && defaultOptions.some((o) => o.id === defaultAgent) ? defaultAgent : config ? preselectedAgent(config, choices, checkedIds) : "";
   const agentsChoice = { enable, checked: checkedIds, custom, defaultAgent: chosenDefault };
+  const agentsBlocked = availability && !agentsReady(choices, checkedIds, custom) ? "Choose at least one agent to continue." : undefined;
   const savedEnabled = config?.agentSessions.enabled === true;
 
   const storedConsole = config?.agentSessions.consoleAgent;
@@ -1193,7 +1207,7 @@ export function SetupWizard({ config, snapshot, onSaved, onClose }: { config: Co
     if (busy || picking || target === step || target > furthest) return;
     if (target < step) return setStep(target);
     if (step === STEP.workspace) return void continueWorkspace(target);
-    if (step === STEP.agents) return void continueAgents(target);
+    if (step === STEP.agents) return agentsBlocked ? undefined : void continueAgents(target);
     if (step === STEP.console) return void continueConsole(target);
     if (step === STEP.projects && config) return void continueProjects(target);
     setStep(target);
@@ -1272,14 +1286,20 @@ export function SetupWizard({ config, snapshot, onSaved, onClose }: { config: Co
       saveError: agentsError,
     };
     return (
-      <WizardFrame {...frame} onContinue={() => void continueAgents()}>
+      <WizardFrame {...frame} onContinue={() => void continueAgents()} continueBlocked={agentsBlocked}>
         <AgentsStep
           view={view}
           onEnable={setEnable}
-          onCheck={(id, on) => setChecked(on ? [...checkedIds, id].filter((c, i, all) => all.indexOf(c) === i) : checkedIds.filter((c) => c !== id))}
-          onAddCustom={() => setCustom([...custom, { key: String(++customSeq.current), name: "", command: "" }])}
-          onCustomChange={(key, patch) => setCustom(custom.map((a) => (a.key === key ? { ...a, ...patch } : a)))}
-          onRemoveCustom={(key) => setCustom(custom.filter((a) => a.key !== key))}
+          onCheck={(id, on) =>
+            // From the latest state, not this render's: two quick clicks must not undo each other.
+            setChecked((was) => {
+              const list = was ?? checkedIds;
+              return on ? (list.includes(id) ? list : [...list, id]) : list.filter((c) => c !== id);
+            })
+          }
+          onAddCustom={() => setCustom((was) => [...was, { key: String(++customSeq.current), name: "", command: "" }])}
+          onCustomChange={(key, patch) => setCustom((was) => was.map((a) => (a.key === key ? { ...a, ...patch } : a)))}
+          onRemoveCustom={(key) => setCustom((was) => was.filter((a) => a.key !== key))}
           onDefault={setDefaultAgent}
         />
       </WizardFrame>

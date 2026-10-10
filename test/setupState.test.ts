@@ -6,6 +6,7 @@ import { NEW_AGENT_PROMPTS } from "../src/ui/sessionState.ts";
 import {
   type AgentsChoice,
   agentChoices,
+  agentsReady,
   agentsSave,
   allInPlace,
   consoleSave,
@@ -25,12 +26,20 @@ import {
   sharedSetting,
   shouldOpenSetup,
   skippedNote,
+  untouchedDefaultAgents,
   workspaceSave,
 } from "../src/ui/setupState.ts";
 
 const found = (id: string, name: string, available: boolean): AgentAvailability => ({ id, name, available, ...(available ? { path: `/usr/local/bin/${id}` } : {}) });
 
 const open = { enabled: true, pending: true, alreadyOpened: false, ready: true, overlayOpen: false };
+
+/** A configuration whose Claude Code profile the user edited: a profile they configured, which the wizard keeps. */
+const EDITED_CLAUDE = { ...CLAUDE_PROFILE, command: ["claude", "--model", "opus", "{prompt}"] };
+function edited(): Config {
+  const base = defaultConfig();
+  return { ...base, agentSessions: { ...base.agentSessions, agents: [structuredClone(EDITED_CLAUDE)] } };
+}
 
 test("the seven steps, in order", () => {
   expect([...SETUP_STEPS]).toEqual(["Welcome", "Workspace", "Agents", "Console", "Project settings", "System check", "Done"]);
@@ -71,7 +80,7 @@ test("the Workspace step adds roots, keeps existing ones, skips missing ones and
 });
 
 test("an installed preset is offered first and preselected when the default agent is missing", () => {
-  const config = defaultConfig();
+  const config = edited();
   const choices = agentChoices(config, [found("claude", "Claude Code", false)], [found("codex", "Codex", true), found("agy", "Antigravity", false)]);
   expect(choices.map((c) => [c.id, c.configured, c.available])).toEqual([
     ["codex", false, true],
@@ -82,7 +91,7 @@ test("an installed preset is offered first and preselected when the default agen
 });
 
 test("an installed default stays preselected; with nothing installed the default is", () => {
-  const config = defaultConfig();
+  const config = edited();
   expect(preselectedAgent(config, agentChoices(config, [found("claude", "Claude Code", true)], [found("codex", "Codex", true)]))).toBe("claude");
   expect(preselectedAgent(config, agentChoices(config, [found("claude", "Claude Code", false)], [found("codex", "Codex", false)]))).toBe("claude");
 });
@@ -90,7 +99,7 @@ test("an installed default stays preselected; with nothing installed the default
 const agentsChoice = (patch: Partial<AgentsChoice> = {}): AgentsChoice => ({ enable: false, checked: ["claude"], custom: [], defaultAgent: "claude", ...patch });
 
 test("configured profiles and found presets are checked; the default is chosen among the checked ones", () => {
-  const config = defaultConfig();
+  const config = edited();
   // claude and codex found, agy not.
   const choices = agentChoices(config, [found("claude", "Claude Code", true)], [found("codex", "Codex", true), found("agy", "Antigravity", false)]);
   const checked = initiallyChecked(choices);
@@ -106,12 +115,42 @@ test("configured profiles and found presets are checked; the default is chosen a
 });
 
 test("switching on with a preset adds it, makes it the default and keeps the other profile", () => {
-  const saved = agentsSave(defaultConfig(), agentsChoice({ enable: true, checked: ["codex", "claude"], defaultAgent: "codex" }));
+  const saved = agentsSave(edited(), agentsChoice({ enable: true, checked: ["codex", "claude"], defaultAgent: "codex" }));
   expect(saved?.agentSessions.enabled).toBe(true);
   expect(saved?.agentSessions.defaultAgent).toBe("codex");
   expect(saved?.agentSessions.agents.map((a) => a.id)).toEqual(["claude", "codex"]);
   expect(saved?.agentSessions.agents[1]).toEqual(CODEX_PROFILE);
-  expect(saved?.agentSessions.agents[0]).toEqual(CLAUDE_PROFILE);
+  expect(saved?.agentSessions.agents[0]).toEqual(EDITED_CLAUDE);
+});
+
+test("the shipped Claude Code profile is not pre-configured: it is offered like any preset, checked only when found", () => {
+  const fresh = defaultConfig();
+  expect(untouchedDefaultAgents(fresh)).toBe(true);
+  expect(untouchedDefaultAgents(edited())).toBe(false);
+  const missing = agentChoices(fresh, [found("claude", "Claude Code", false)], [found("codex", "Codex", false), found("agy", "Antigravity", false)]);
+  expect(missing.every((c) => !c.configured)).toBe(true);
+  expect(initiallyChecked(missing)).toEqual([]);
+  // One agent is required to proceed.
+  expect(agentsReady(missing, [], [])).toBe(false);
+  expect(agentsReady(missing, ["codex"], [])).toBe(true);
+  expect(agentsReady(missing, [], [{ key: "1", name: "My agent", command: "my-agent" }])).toBe(true);
+  expect(agentsReady(missing, [], [{ key: "1", name: "My agent", command: "" }])).toBe(false);
+  const installed = agentChoices(fresh, [found("claude", "Claude Code", true)], [found("codex", "Codex", false)]);
+  expect(initiallyChecked(installed)).toEqual(["claude"]);
+});
+
+test("saving replaces the shipped profile with exactly the agents checked", () => {
+  const onlyCodex = agentsSave(defaultConfig(), agentsChoice({ enable: true, checked: ["codex"], defaultAgent: "codex" }));
+  expect(onlyCodex?.agentSessions.agents).toEqual([CODEX_PROFILE]);
+  expect(onlyCodex?.agentSessions.defaultAgent).toBe("codex");
+  // Keeping Claude Code checked keeps it; only switching sessions on is a change then.
+  const keep = agentsSave(defaultConfig(), agentsChoice({ enable: true }));
+  expect(keep?.agentSessions.agents).toEqual([CLAUDE_PROFILE]);
+  expect(agentsSave(defaultConfig(), agentsChoice())).toBeNull();
+  // Nothing checked: nothing saved, the configuration keeps the agent it has.
+  expect(agentsSave(defaultConfig(), agentsChoice({ enable: true, checked: [], defaultAgent: "" }))).toBeNull();
+  // A profile the user edited is never replaced.
+  expect(agentsSave(edited(), agentsChoice({ checked: ["codex"], defaultAgent: "codex" }))?.agentSessions.agents.map((a) => a.id)).toEqual(["claude", "codex"]);
 });
 
 test("several presets are added in the order listed", () => {
@@ -143,7 +182,7 @@ test("leaving agent sessions off with the current default saves nothing", () => 
 });
 
 test("the Agents step never switches agent sessions off and never touches repositories", () => {
-  const on: Config = { ...defaultConfig(), agentSessions: { ...defaultConfig().agentSessions, enabled: true } };
+  const on: Config = { ...edited(), agentSessions: { ...edited().agentSessions, enabled: true } };
   expect(agentsSave(on, agentsChoice())).toBeNull();
   const changed = agentsSave(on, agentsChoice({ checked: ["claude", "codex"], defaultAgent: "codex" }));
   expect(changed?.agentSessions.enabled).toBe(true);

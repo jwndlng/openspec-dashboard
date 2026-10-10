@@ -144,7 +144,10 @@ It SHALL list the configured profiles and every preset not configured yet, each 
 found on this machine, found ones first, side by side in one row of tiles of the same height on a wide viewport — each
 with its name and whether it was found on one line and its status below — and one below the other on a narrow one.
 Configured profiles SHALL be shown checked and SHALL NOT be uncheckable, since
-the wizard never removes a profile. A preset SHALL be checked by default when its executable is found, and unchecked
+the wizard never removes a profile the user configured. Agents SHALL NOT come pre-configured in the wizard: while the
+configuration's agents are exactly what a fresh installation ships — the Claude Code profile, unchanged, as the only
+profile and the default, with no console agent — that profile SHALL NOT count as configured, and Claude Code SHALL be
+offered like any other preset. A preset SHALL be checked by default when its executable is found, and unchecked
 otherwise. For every checked agent whose executable is not found, the step SHALL show how to install it, as the
 `environment-check` capability's instructions specify, and SHALL still allow continuing.
 
@@ -158,22 +161,40 @@ The step SHALL offer a choice of the **default agent** among the checked agents.
 preselected when it is checked and its executable is found, otherwise the first checked agent that is found, otherwise
 the configured default.
 
+At least one agent is required to proceed: while no agent is configured, checked or described completely as a custom
+agent, **Continue** SHALL be disabled and SHALL say that an agent has to be chosen, and no later step SHALL open from the
+step list; **Back** and **Skip setup** stay available, and skipping keeps the configuration's agents as they are.
+
 **Continue** SHALL save: agent sessions switched on unless the user unchecked the switch; every checked preset and every custom
-agent that is not configured yet added as a profile, in the order listed; and the chosen agent as the default. It
-SHALL NOT switch agent sessions off, remove or edit a configured profile, or change any repository's agent settings.
+agent that is not configured yet added as a profile, in the order listed — in place of the shipped profile while the
+agents are the untouched default, so that exactly the checked agents are configured; and the chosen agent as the
+default. It SHALL NOT switch agent sessions off, remove or edit a profile the user configured, or change any
+repository's agent settings.
 If the user unchecked the switch, checked nothing new and chose the current default, **Continue** SHALL save nothing.
 
 #### Scenario: Several agents installed
-- **WHEN** `claude` and `codex` are found, `agy` is not, agent sessions are off and only the Claude Code profile is configured
-- **THEN** Claude Code is listed checked and cannot be unchecked, Codex is checked, Antigravity is unchecked, and Claude Code is preselected as the default agent
+- **WHEN** a fresh installation finds `claude` and `codex` but not `agy`
+- **THEN** Claude Code and Codex are listed checked and can be unchecked, Antigravity is unchecked, and Claude Code is preselected as the default agent
+
+#### Scenario: Claude Code is not pre-configured
+- **WHEN** a fresh installation finds none of the presets' executables
+- **THEN** no agent is checked, Claude Code can be checked like Codex and Antigravity, and **Continue** is disabled with the reason that an agent has to be chosen
+
+#### Scenario: One agent is enough
+- **WHEN** in that state the user checks Codex
+- **THEN** **Continue** is available, and continuing saves Codex as the only profile and the default agent, without the shipped Claude Code profile
+
+#### Scenario: A profile the user edited stays
+- **WHEN** the user changed the Claude Code profile's command in Settings and runs setup again
+- **THEN** Claude Code is listed as configured, checked and cannot be unchecked
 
 #### Scenario: Switching on with an installed preset
-- **WHEN** `codex` is found, `claude` is not, agent sessions are off and only the Claude Code profile is configured
-- **THEN** Codex is checked and preselected as the default agent; continuing with agent sessions switched on saves agent sessions enabled, the Codex profile added and made the default, and the Claude Code profile kept
+- **WHEN** on a fresh installation `codex` is found, `claude` is not, and agent sessions are off
+- **THEN** Codex is checked and preselected as the default agent and Claude Code is unchecked; continuing with agent sessions switched on saves agent sessions enabled and Codex as the only profile and the default
 
 #### Scenario: Adding two agents
 - **WHEN** the user keeps Codex checked, also checks Antigravity, keeps agent sessions switched on, chooses Codex as the default and continues
-- **THEN** the saved configuration has agent sessions enabled, the profiles Claude Code, Codex and Antigravity, Codex as the default agent, and every repository's agent settings unchanged
+- **THEN** the saved configuration has agent sessions enabled, the profiles Codex and Antigravity, Codex as the default agent, and every repository's agent settings unchanged
 
 #### Scenario: A custom agent
 - **WHEN** the user activates **Add another agent**, enters the name `My agent` and the command `my-agent` and `{prompt}` on two lines, and continues

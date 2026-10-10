@@ -1,7 +1,7 @@
 // The setup wizard's decisions (openspec/specs/setup-wizard), pure so they are tested without a DOM: when it opens by
 // itself, which agents are checked and preselected, what each step saves, and what the Done step says. Every save is
 // built from the configuration as it is when the user continues, and only adds or changes what the user touched.
-import { AGENT_PRESETS } from "../shared/agentDefaults.ts";
+import { AGENT_PRESETS, CLAUDE_PROFILE } from "../shared/agentDefaults.ts";
 import { PROJECT_SETTINGS, type ProjectSetting, settingApplies, withAutoFetch, withPrTitleConvention, withRepoAgent } from "../shared/repoSettings.ts";
 import { type AgentAvailability, type AutoFetchSeconds, autoFetchInterval, type Config, type EnvironmentReport, type PrTitleConvention, type RepoConfig, repoAgentEnabled } from "../shared/types.ts";
 import { newAgentProfile, parseArgLines } from "./sessionState.ts";
@@ -60,9 +60,34 @@ export interface AgentChoice {
 }
 
 /** The configured profiles and the presets not configured yet, found ones first, otherwise in their given order. */
+/** The same value whatever the order of object keys: a profile read back from the configuration may list them otherwise. */
+function stable(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(stable).join(",")}]`;
+  if (value && typeof value === "object") {
+    const entries = Object.entries(value as Record<string, unknown>).filter(([, v]) => v !== undefined);
+    return `{${entries.sort(([a], [b]) => a.localeCompare(b)).map(([k, v]) => `${JSON.stringify(k)}:${stable(v)}`).join(",")}}`;
+  }
+  return JSON.stringify(value);
+}
+
+/**
+ * Whether the agents are still exactly what a fresh installation ships — the Claude Code profile as preset and nothing
+ * else. The wizard does not count that as a choice the user made: it offers Claude Code like any other preset, and the
+ * Agents step's save puts the agents the user checks in its place.
+ */
+export function untouchedDefaultAgents(config: Config): boolean {
+  const sessions = config.agentSessions;
+  return sessions.agents.length === 1 && sessions.defaultAgent === CLAUDE_PROFILE.id && !sessions.consoleAgent && stable(sessions.agents[0]) === stable(CLAUDE_PROFILE);
+}
+
+/** The profiles the user configured: none while the agents are the untouched default. */
+export function configuredAgents(config: Config): Config["agentSessions"]["agents"] {
+  return untouchedDefaultAgents(config) ? [] : config.agentSessions.agents;
+}
+
 export function agentChoices(config: Config, agents: readonly AgentAvailability[], presets: readonly AgentAvailability[]): AgentChoice[] {
   const found = new Map([...agents, ...presets].map((a) => [a.id, a.available]));
-  const configured = config.agentSessions.agents.map((a) => ({ id: a.id, name: a.name, configured: true, available: found.get(a.id) ?? false }));
+  const configured = configuredAgents(config).map((a) => ({ id: a.id, name: a.name, configured: true, available: found.get(a.id) ?? false }));
   const ids = new Set(configured.map((a) => a.id));
   const offered = AGENT_PRESETS.filter(({ profile }) => !ids.has(profile.id)).map(({ profile }) => ({
     id: profile.id,
@@ -131,7 +156,8 @@ export interface AgentsChoice {
  */
 export function agentsSave(current: Config, choice: AgentsChoice): Config | null {
   const sessions = current.agentSessions;
-  const agents = [...sessions.agents];
+  // The untouched default is replaced by what the user checks; profiles the user configured are always kept.
+  const agents = [...configuredAgents(current)];
   for (const id of choice.checked) {
     if (agents.some((a) => a.id === id)) continue;
     const preset = AGENT_PRESETS.find(({ profile }) => profile.id === id)?.profile;
@@ -144,11 +170,18 @@ export function agentsSave(current: Config, choice: AgentsChoice): Config | null
     agents.push(profile);
     customIds.set(customAgentRef(agent), profile.id);
   }
+  // No agent at all: nothing to save, and the configuration keeps the agent it has.
+  if (agents.length === 0) return null;
   const wanted = customIds.get(choice.defaultAgent) ?? choice.defaultAgent;
-  const defaultAgent = agents.some((a) => a.id === wanted) ? wanted : sessions.defaultAgent;
+  const defaultAgent = agents.some((a) => a.id === wanted) ? wanted : agents.some((a) => a.id === sessions.defaultAgent) ? sessions.defaultAgent : agents[0].id;
   const enabled = sessions.enabled || choice.enable;
-  if (enabled === sessions.enabled && agents.length === sessions.agents.length && defaultAgent === sessions.defaultAgent) return null;
+  if (enabled === sessions.enabled && stable(agents) === stable(sessions.agents) && defaultAgent === sessions.defaultAgent) return null;
   return { ...current, agentSessions: { ...sessions, enabled, agents, defaultAgent } };
+}
+
+/** Whether the Agents step can continue: at least one agent is configured, checked or described completely. */
+export function agentsReady(choices: readonly AgentChoice[], checked: readonly string[], custom: readonly CustomAgent[]): boolean {
+  return defaultAgentOptions(choices, checked, custom).length > 0;
 }
 
 /** The Console step's save: only the console agent, `undefined` (follow the default) stored as no choice. */
