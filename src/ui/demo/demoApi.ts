@@ -4,7 +4,9 @@ import { labelKey, labelProblem, MAX_LABEL_COLORS } from "../../shared/labels.ts
 import { availableName } from "../../shared/nameHints.ts";
 import { summarizeWorkInProgress } from "../../shared/workInProgress.ts";
 import { AUTO_FETCH_SECONDS, DEFAULT_AUTO_FETCH_SECONDS } from "../../shared/types.ts";
-import type { ChangeSnapshot, Config, DismissFile, DismissPreview, FolderPickResult, PullBlockingFile, PullResult, RepoConfig, RepoSharedConfig, RepoSnapshot, SharedConfigApplyResult, SharedConfigPreview, SharedProfile, Snapshot, UpdateStatus } from "../../shared/types.ts";
+import type { ChangeSnapshot, Config, DismissFile, DismissPreview, FolderPickResult, GithubClone, GithubRepoEntry, IntegratableRepo, PullBlockingFile, PullResult, RepoConfig, RepoSharedConfig, RepoSnapshot, SharedConfigApplyResult, SharedConfigPreview, SharedProfile, Snapshot, UpdateStatus } from "../../shared/types.ts";
+import { parseGithubRepo } from "../../shared/github.ts";
+import { isProjectName } from "../../shared/types.ts";
 import { ApiError, type Api, labelLists } from "../api.ts";
 import { demoApply, demoPreview, newCleanupState, remainingWorktrees } from "./demoCleanup.ts";
 import { createDemoSessions } from "./demoSessions.ts";
@@ -47,6 +49,36 @@ const BLOCKED_FILES: PullBlockingFile[] = [
 const BLOCKED_HINT =
   "These files are left over from changes created here that the incoming commits already contain. Resolve and pull replaces them with the incoming version and keeps a copy of anything that differs.";
 const BLOCKED_COPY = `/home/demo/.spec-control/pull-backups/${BLOCKED_REPO}/2026-02-14T09-41-08-317Z/openspec/changes/${BLOCKED_CHANGE}/prompt.md`;
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Add from GitHub, simulated: a fictional owner's repositories, one already tracked (by its folder name), one with
+// OpenSpec that brings a board along, one without, and one whose clone fails so Retry and Dismiss can be tried.
+// ---------------------------------------------------------------------------------------------------------------------
+const DEMO_GITHUB_OWNER = "acme";
+interface DemoGithubRepo {
+  name: string;
+  description: string;
+  private?: boolean;
+  archived?: boolean;
+  daysAgo: number;
+  /** Uses OpenSpec: tracked once cloned, with the sample changes of the integrated sample repository. */
+  openspec?: boolean;
+  /** The clone fails with this reason. */
+  fails?: string;
+}
+const DEMO_GITHUB_REPOS: DemoGithubRepo[] = [
+  { name: "ledger-sync", description: "Nightly ledger reconciliation between the billing and accounting services", daysAgo: 1, openspec: true },
+  { name: "brand-assets", description: "Logos, fonts and slide templates", daysAgo: 9 },
+  { name: "legacy-billing", description: "The old invoicing service, kept for reference", private: true, daysAgo: 30, fails: "repository 'https://github.com/acme/legacy-billing.git/' not found — a private repository needs git credentials for github.com, for example through `gh auth setup-git`" },
+  { name: "design-notes", description: "Decision records from before OpenSpec", archived: true, daysAgo: 400 },
+];
+
+/** A stable id for a path the demo made up, shaped like the server's. */
+function demoId(path: string): string {
+  let hash = 2166136261;
+  for (const ch of path) hash = Math.imul(hash ^ ch.charCodeAt(0), 16777619) >>> 0;
+  return hash.toString(16).padStart(8, "0");
+}
 
 export interface DemoApiOptions {
   now?: () => number;
@@ -137,7 +169,7 @@ export function createDemoApi({ now = Date.now, latencyMs = 150, clock }: DemoAp
 
   /** The board without session worktrees: what the sessions themselves are validated against. */
   /** Every repository the sample can describe: the tracked ones, plus any that has been integrated in this session. */
-  const sampleRepo = (id: string): RepoSnapshot | undefined => sample.snapshot.repos.find((s) => s.id === id) ?? sample.integrated.find((s) => s.id === id);
+  const sampleRepo = (id: string): RepoSnapshot | undefined => sample.snapshot.repos.find((s) => s.id === id) ?? sample.integrated.find((s) => s.id === id) ?? clonedBoards.get(id);
 
   const baseSnapshot = (): Snapshot => ({
     generatedAt,
@@ -222,8 +254,32 @@ export function createDemoApi({ now = Date.now, latencyMs = 150, clock }: DemoAp
       }),
   });
 
+  // Add from GitHub's in-memory state: the clones, what they brought, and the workspace folders "created".
+  const githubClones: GithubClone[] = [];
+  const clonedBoards = new Map<string, RepoSnapshot>();
+  const clonedWithoutOpenSpec: IntegratableRepo[] = [];
+  const createdFolders = new Set<string>();
+  let cloneSeq = 1;
+  /** Long enough to see "Cloning…" on the overview. */
+  const CLONE_MS = latencyMs * 10;
+  /** A cloned repository's board: the integrated sample repository's changes, under the clone's own id and path. */
+  const clonedBoard = (id: string, name: string, path: string): RepoSnapshot => {
+    const base = sample.integrated[0];
+    if (!base) return emptyRepo(id, name, path);
+    return {
+      ...structuredClone(base),
+      id,
+      name,
+      path,
+      scannedAt: new Date(now()).toISOString(),
+      worktrees: base.worktrees.filter((w) => w.isMain).map((w) => ({ ...w, path })),
+      changes: base.changes.filter((c) => !c.checkout || c.checkout.isMain).map((c) => ({ ...structuredClone(c), repoId: id, checkout: c.checkout ? { ...c.checkout, path } : undefined })),
+    };
+  };
+  const takenPaths = () => new Set([...config.repos.map((r) => r.path), ...sample.candidates.map((c) => c.path), ...sample.integratable.map((r) => r.path), ...githubClones.map((c) => c.path)]);
+
   /** Still without OpenSpec: the sample's integratable repositories minus the ones the visitor has already set up. */
-  const integratable = () => sample.integratable.filter((r) => !config.repos.some((c) => c.id === r.id));
+  const integratable = () => [...sample.integratable, ...clonedWithoutOpenSpec].filter((r) => !config.repos.some((c) => c.id === r.id));
 
   const demoSessions: ReturnType<typeof createDemoSessions> = createDemoSessions({
     now,
@@ -233,7 +289,7 @@ export function createDemoApi({ now = Date.now, latencyMs = 150, clock }: DemoAp
     integratable,
     // The recording ended, which here stands for `openspec/config.yaml` appearing: track it and show its board.
     onIntegrated: (path) => {
-      const repo = sample.integratable.find((r) => r.path === path);
+      const repo = [...sample.integratable, ...clonedWithoutOpenSpec].find((r) => r.path === path);
       if (!repo || config.repos.some((r) => r.id === repo.id)) return;
       config = { ...config, repos: [...config.repos, { id: repo.id, path: repo.path, name: repo.name, enabled: true }] };
       generatedAt = new Date(now()).toISOString();
@@ -315,6 +371,73 @@ export function createDemoApi({ now = Date.now, latencyMs = 150, clock }: DemoAp
     setup: () => reply({ pending: false, home: DEMO_HOME, platform: "linux" as const, suggestedRoots: config.scanRoots.includes(DEMO_ROOT) ? [] : [DEMO_ROOT], folderPicker: true }),
     // No dialog in a web page: Choose folder… adds the sample workspace, so the visitor sees the button work.
     pickFolder: () => reply<FolderPickResult>({ status: "chosen", path: DEMO_ROOT }),
+    // Nothing is created anywhere: the folder exists for this page only, so the wizard can save it as a root.
+    createWorkspaceFolder: (path) =>
+      attempt(() => {
+        const trimmed = path.trim();
+        const expanded = (trimmed === "~" ? DEMO_HOME : trimmed.startsWith("~/") ? `${DEMO_HOME}/${trimmed.slice(2)}` : trimmed).replace(/\/+$/, "");
+        if (!expanded.startsWith("/")) throw new ApiError(400, "the folder must be an absolute path (~ is accepted)");
+        if (createdFolders.has(expanded) || expanded === DEMO_ROOT || expanded === DEMO_HOME) throw new ApiError(409, `${expanded} already exists`);
+        createdFolders.add(expanded);
+        return { path: expanded };
+      }),
+    // Made up: a fictional owner's repositories, whoever is asked for. No process, no network.
+    listGithubRepos: (owner) =>
+      reply({
+        status: "ok" as const,
+        owner: owner || DEMO_GITHUB_OWNER,
+        truncated: false,
+        repos: [
+          // One the visitor already has: the first sample repository, as if its origin were on GitHub.
+          ...sample.snapshot.repos.slice(0, 1).map((r): GithubRepoEntry => ({ repo: `${owner || DEMO_GITHUB_OWNER}/${r.name}`, description: "Already tracked here", private: false, archived: false, pushedAt: new Date(now() - 2 * 3600_000).toISOString(), added: true })),
+          ...DEMO_GITHUB_REPOS.map((r): GithubRepoEntry => ({ repo: `${owner || DEMO_GITHUB_OWNER}/${r.name}`, description: r.description, private: r.private === true, archived: r.archived === true, pushedAt: new Date(now() - r.daysAgo * 86_400_000).toISOString(), added: false })),
+        ],
+      }),
+    // A clone that takes a moment and then is tracked, waits to be integrated, or fails — in this page's memory only.
+    cloneGithub: (repoInput, root, name) =>
+      attempt(() => {
+        const parsed = parseGithubRepo(repoInput);
+        if (!parsed.ok) throw new ApiError(400, parsed.reason);
+        if (!isProjectName(name)) throw new ApiError(400, "the folder name must start with a letter or digit and use only letters, digits, '.', '_' and '-'");
+        if (!config.scanRoots.includes(root)) throw new ApiError(404, "that is not one of the configured workspace roots");
+        const path = `${root.replace(/\/+$/, "")}/${name}`;
+        const failedHere = githubClones.findIndex((c) => c.path === path && c.state === "failed");
+        if (failedHere >= 0) githubClones.splice(failedHere, 1);
+        if (takenPaths().has(path)) throw new ApiError(409, `${path} already exists`);
+        const clone: GithubClone = { id: `clone-${cloneSeq++}`, repo: parsed.repo, root, name, path, state: "cloning", startedAt: new Date(now()).toISOString() };
+        githubClones.push(clone);
+        const known = DEMO_GITHUB_REPOS.find((r) => r.name === parsed.name);
+        setTimeout(() => {
+          clone.finishedAt = new Date(now()).toISOString();
+          if (known?.fails) {
+            clone.state = "failed";
+            clone.reason = known.fails;
+            return;
+          }
+          const id = demoId(path);
+          if (known?.openspec) {
+            clonedBoards.set(id, clonedBoard(id, name, path));
+            const repo: RepoConfig = { id, path, name, enabled: true };
+            config = { ...config, repos: [...config.repos, { ...repo, name: availableName(repo, config.repos.map((r) => r.name)) }].sort((x, y) => x.path.localeCompare(y.path)) };
+            generatedAt = new Date(now()).toISOString();
+            clone.state = "tracked";
+          } else {
+            clonedWithoutOpenSpec.push({ id, path, name });
+            clone.state = "integratable";
+          }
+        }, CLONE_MS);
+        // As the server answers: the entry as it was when the clone started.
+        return { ...clone };
+      }),
+    githubClones: () => reply({ clones: githubClones, gitAvailable: true }),
+    dismissGithubClone: (id) =>
+      attempt(() => {
+        const at = githubClones.findIndex((c) => c.id === id);
+        if (at < 0) throw new ApiError(404, "no such clone");
+        if (githubClones[at].state === "cloning") throw new ApiError(409, "the clone is still running");
+        githubClones.splice(at, 1);
+        return { clones: githubClones };
+      }),
     markSetupDone: () => {
       const { setup: _, ...rest } = config;
       config = rest;
@@ -447,8 +570,8 @@ export function createDemoApi({ now = Date.now, latencyMs = 150, clock }: DemoAp
       const tracked = new Set(config.repos.map((r) => r.id));
       return reply({
         candidates: roots.some(inDemo) ? sample.candidates.filter((c) => !tracked.has(c.id) && !ignored(c.path)) : [],
-        integratable: roots.some(inDemo) ? integratable().filter((r) => !ignored(r.path)) : [],
-        errors: roots.filter((root) => !inDemo(root)).map((root) => ({ root, message: "The demo cannot read your disk; only the sample workspace exists here." })),
+        integratable: integratable().filter((r) => !ignored(r.path) && roots.some((root) => r.path.startsWith(`${root.replace(/\/+$/, "")}/`))),
+        errors: roots.filter((root) => !inDemo(root) && !createdFolders.has(root.replace(/\/+$/, ""))).map((root) => ({ root, message: "The demo cannot read your disk; only the sample workspace exists here." })),
       });
     },
     // A pull in the demo contacts nothing: it answers with what the dashboard would say for such a repository.

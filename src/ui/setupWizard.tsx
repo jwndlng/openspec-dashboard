@@ -5,9 +5,12 @@
 import { useCallback, useEffect, useRef, useState } from "preact/hooks";
 import { agentInstallSteps } from "../shared/agentDefaults.ts";
 import { PROJECT_SETTINGS, type ProjectSetting, settingApplies } from "../shared/repoSettings.ts";
-import type { AgentAvailability, AgentProfile, Config, DiscoverResult, EnvironmentReport, InstructionStep, RepoConfig, SetupState, Snapshot } from "../shared/types.ts";
+import type { AgentAvailability, AgentProfile, Config, DiscoverResult, EnvironmentReport, GithubClone, InstructionStep, RepoConfig, SetupState, Snapshot } from "../shared/types.ts";
+import { AddGithubDialog } from "./addGithub.tsx";
+import { githubClones, useGithubClones } from "./githubClonesState.ts";
+import { cloneOutcome } from "./githubState.ts";
 import { AgentSessionsStatement } from "./agentSettings.tsx";
-import { api } from "./api.ts";
+import { api, ApiError } from "./api.ts";
 import { CommandSteps } from "./commandSteps.tsx";
 import { IconCheck, IconFolder, IconFolderGit, IconGitBranch, IconGitPullRequest, IconHelp, IconKanban, IconMonitor, IconPencil, IconRefresh, IconScan, IconSettings, IconTerminal } from "./icons.tsx";
 import { AgentSelect, AUTO_FETCH_TITLE, AUTO_MERGE_HINT, AutoFetchSelect, autoFetchLabel, KEEP_EACH, KEEP_EACH_LABEL, PR_TITLES_TITLE, PrTitlesSelect } from "./projectSettings.tsx";
@@ -29,6 +32,11 @@ import {
   isAbsoluteRoot,
   leftToFix,
   NOTHING_SAVED,
+  continueWorkspaceStep,
+  githubRootChoices,
+  type ListedRepo,
+  proposedWorkspace,
+  workspaceRootReady,
   type ProjectSettingsMode,
   preselectedAgent,
   projectSettingsSave,
@@ -235,6 +243,24 @@ export interface WorkspaceView {
   pickError?: string;
   /** The folder last chosen in the dialog was already listed, so nothing was added. */
   pickedAgain?: string;
+  /** Entered roots that do not exist yet and are created on Continue. */
+  toCreate?: ReadonlySet<string>;
+  /** Why creating a root was refused, by root. */
+  createErrors?: ReadonlyMap<string, string>;
+  /** `~/Workspace`, offered for creation while there is no root and nothing to suggest. */
+  proposed?: string;
+  /** Add from GitHub in this step: the repositories listed to clone on Continue, and how each one went. */
+  github?: WorkspaceGithub;
+}
+
+export interface WorkspaceGithub {
+  listed: readonly ListedRepo[];
+  /** The clone started for a listed path, as the clone list reports it. */
+  clones: Readonly<Record<string, GithubClone | undefined>>;
+  /** Why the server refused to start a listed path's clone. */
+  refused: Readonly<Record<string, string>>;
+  /** Why Add from GitHub cannot be used here. */
+  off?: string;
 }
 
 export function WorkspaceStep({
@@ -244,6 +270,11 @@ export function WorkspaceStep({
   onRemove,
   onToggle,
   onPick,
+  onCreate = () => {},
+  onPropose = () => {},
+  onAddGithub = () => {},
+  onRemoveGithub = () => {},
+  onRetryGithub = () => {},
 }: {
   view: WorkspaceView;
   onInput: (text: string) => void;
@@ -251,13 +282,25 @@ export function WorkspaceStep({
   onRemove: (path: string) => void;
   onToggle: (path: string) => void;
   onPick: () => void;
+  /** Marks a missing root to be created on Continue, or unmarks it. */
+  onCreate?: (path: string) => void;
+  /** Accepts the proposal to create `~/Workspace`. */
+  onPropose?: (path: string) => void;
+  onAddGithub?: () => void;
+  onRemoveGithub?: (path: string) => void;
+  onRetryGithub?: (path: string) => void;
 }) {
   const candidates = view.discovery?.candidates ?? [];
   const integratable = view.discovery?.integratable.length ?? 0;
   const anyRoot = view.configuredRoots.length + view.entered.length > 0;
+  const toCreate = view.toCreate ?? new Set<string>();
+  const github = view.github;
   return (
     <div class="setup-step">
-      <p class="setup-lead">Add the folders your repositories live in. Spec Control looks for projects with OpenSpec below them, a few levels deep; nothing is saved until you continue.</p>
+      <p class="setup-lead">
+        Choose the folder your repositories live in, or create a new one. Spec Control looks for projects with OpenSpec below it, a few levels deep, and clones GitHub
+        repositories into it; nothing is saved until you continue.
+      </p>
       <section class="setup-group" aria-label="Workspace folders">
         {view.configuredRoots.length > 0 && (
           <ul class="setup-roots" aria-label="Configured workspace roots">
@@ -271,12 +314,24 @@ export function WorkspaceStep({
         {view.entered.length > 0 && (
           <ul class="setup-roots" aria-label="Workspace roots to add">
             {view.entered.map((root) => (
-              <li key={root} class={view.missing.has(root) ? "missing" : ""}>
+              <li key={root} class={view.missing.has(root) && !toCreate.has(root) ? "missing" : ""}>
                 <code>{root}</code>
-                {view.missing.has(root) ? <span class="badge danger">not found — {view.missing.get(root)}</span> : <span class="hint">to add</span>}
+                {toCreate.has(root) ? (
+                  <span class="badge success">created on Continue</span>
+                ) : view.missing.has(root) ? (
+                  <span class="badge danger">not found — {view.missing.get(root)}</span>
+                ) : (
+                  <span class="hint">to add</span>
+                )}
+                {view.missing.has(root) && (
+                  <button type="button" class="btn sm" onClick={() => onCreate(root)} aria-pressed={toCreate.has(root)} title={toCreate.has(root) ? "Do not create this folder" : "Create this folder when you continue: one new, empty folder"}>
+                    {toCreate.has(root) ? "Don't create" : "Create folder"}
+                  </button>
+                )}
                 <button type="button" class="btn sm ghost" onClick={() => onRemove(root)} aria-label={`Remove ${root}`}>
                   Remove
                 </button>
+                {view.createErrors?.get(root) && <span class="notice danger setup-create-error">Could not create it: {view.createErrors.get(root)}</span>}
               </li>
             ))}
           </ul>
@@ -318,7 +373,65 @@ export function WorkspaceStep({
             ))}
           </p>
         )}
+        {view.proposed && !view.entered.includes(view.proposed) && (
+          <p class="setup-suggestions">
+            <span class="hint">No workspace folder yet:</span>
+            <button type="button" class="btn sm" onClick={() => onPropose(view.proposed as string)}>
+              Create {view.proposed}
+            </button>
+          </p>
+        )}
       </section>
+      {github && (
+        <section class="setup-group" aria-label="GitHub repositories">
+          <div class="row setup-github-head">
+            <strong>GitHub repositories</strong>
+            <button type="button" class="btn sm" onClick={onAddGithub} disabled={github.off !== undefined} title={github.off ? `Add from GitHub is unavailable: ${github.off}` : "Choose GitHub repositories to clone into a workspace folder"}>
+              Add from GitHub
+            </button>
+          </div>
+          {github.off && <p class="hint">Add from GitHub is unavailable: {github.off}.</p>}
+          {github.listed.length === 0 ? (
+            <p class="hint">Keep your projects on GitHub? Add them here; they are cloned into your workspace folder when you continue.</p>
+          ) : (
+            <ul class="setup-roots setup-github" aria-label="GitHub repositories to clone">
+              {github.listed.map((r) => {
+                const clone = github.clones[r.path];
+                const refused = github.refused[r.path];
+                const outcome = clone ? cloneOutcome(clone) : undefined;
+                const failed = refused !== undefined || clone?.state === "failed";
+                return (
+                  <li key={r.path} class={failed ? "missing" : ""}>
+                    <code>{r.repo}</code>
+                    <span class="hint mono">→ {r.path}</span>
+                    {outcome ? (
+                      <span class={`badge ${outcome.tone}`} title={outcome.detail}>
+                        {outcome.label}
+                      </span>
+                    ) : refused ? (
+                      <span class="badge danger">refused</span>
+                    ) : (
+                      <span class="hint">cloned on Continue</span>
+                    )}
+                    {failed && (
+                      <button type="button" class="btn sm" onClick={() => onRetryGithub(r.path)}>
+                        Retry
+                      </button>
+                    )}
+                    {!clone && (
+                      <button type="button" class="btn sm ghost" onClick={() => onRemoveGithub(r.path)} aria-label={`Remove ${r.repo}`}>
+                        Remove
+                      </button>
+                    )}
+                    {(refused ?? (clone?.state === "failed" ? clone.reason : undefined)) && <span class="notice danger setup-create-error">{refused ?? clone?.reason}</span>}
+                    {clone?.state === "integratable" && <span class="hint">Integrate it from the projects overview.</span>}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </section>
+      )}
       {anyRoot && (
         <section class="setup-group setup-found" aria-live="polite" aria-label="Projects found">
           {view.discovering && <p class="hint">Looking for projects…</p>}
@@ -914,6 +1027,26 @@ export function DoneStep({ summary, firstStart = false, home }: { summary: Setup
 
 const STEP = { welcome: 0, system: 1, workspace: 2, agents: 3, console: 4, projects: 5, done: 6 } as const;
 
+/** Resolves with the clones `ids` once none of them is cloning any more, as the clone list reports them. */
+function waitForClones(ids: readonly string[]): Promise<Map<string, GithubClone>> {
+  const settled = () => {
+    const known = new Map(githubClones.get().clones.map((c) => [c.id, c]));
+    return ids.every((id) => known.get(id)?.state !== "cloning") ? known : undefined;
+  };
+  if (ids.length === 0) return Promise.resolve(new Map());
+  return new Promise((resolve) => {
+    const check = () => {
+      const done = settled();
+      if (!done) return false;
+      unsubscribe();
+      resolve(done);
+      return true;
+    };
+    const unsubscribe = githubClones.subscribe(() => void check());
+    if (!check()) void githubClones.refresh();
+  });
+}
+
 /**
  * The wizard. `onSaved` receives every configuration a step saved; `onClose` is told whether setup could be marked done
  * (when not, the wizard opens again on the next load, which is the safe direction). `snapshot` says which projects are
@@ -944,6 +1077,15 @@ export function SetupWizard({ config, snapshot, onSaved, onClose }: { config: Co
   const [pickError, setPickError] = useState<string>();
   const [pickedAgain, setPickedAgain] = useState<string>();
   const discoverySeq = useRef(0);
+  const [toCreate, setToCreate] = useState<Set<string>>(new Set());
+  const [createErrors, setCreateErrors] = useState<Map<string, string>>(new Map());
+  // Marked to be created but there by the time the user continued: found after all, saved like any other root.
+  const [appeared, setAppeared] = useState<Set<string>>(new Set());
+  const [githubOpen, setGithubOpen] = useState(false);
+  const [listed, setListed] = useState<ListedRepo[]>([]);
+  const [cloneIds, setCloneIds] = useState<Record<string, string>>({});
+  const [cloneRefused, setCloneRefused] = useState<Record<string, string>>({});
+  const clones = useGithubClones();
 
   // Agents.
   const [availability, setAvailability] = useState<{ agents: AgentAvailability[]; presets: AgentAvailability[] }>();
@@ -1016,7 +1158,8 @@ export function SetupWizard({ config, snapshot, onSaved, onClose }: { config: Co
   useEffect(() => heading.current?.focus(), [step]);
 
   const configuredRoots = config?.scanRoots ?? [];
-  const missing = new Map((discovery.result?.errors ?? []).filter((e) => entered.includes(e.root)).map((e) => [e.root, e.message]));
+  const missing = new Map((discovery.result?.errors ?? []).filter((e) => entered.includes(e.root) && !appeared.has(e.root)).map((e) => [e.root, e.message]));
+  const rootReady = workspaceRootReady(configuredRoots, entered, missing, toCreate);
 
   // Discovery over the configured and entered roots, without saving; only the latest run's result is shown.
   const rootsKey = JSON.stringify([configuredRoots, entered]);
@@ -1076,7 +1219,7 @@ export function SetupWizard({ config, snapshot, onSaved, onClose }: { config: Co
 
   /** Something entered on the current step that its Continue has not saved. */
   const dirty =
-    (step === STEP.workspace && (entered.length > 0 || input.trim() !== "")) ||
+    (step === STEP.workspace && (entered.length > 0 || input.trim() !== "" || listed.some((r) => !cloneIds[r.path]))) ||
     (step === STEP.agents && config !== null && agentsSave(config, agentsChoice) !== null) ||
     (step === STEP.console && config !== null && consoleSave(config, consoleAgent) !== null) ||
     (step === STEP.projects && projectsDirty);
@@ -1117,7 +1260,8 @@ export function SetupWizard({ config, snapshot, onSaved, onClose }: { config: Co
   // confirmation shows, as Keep going. While the system's folder dialog is open it does nothing here.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "Escape" || busy || picking) return;
+      // The Add from GitHub dialog handles its own Escape.
+      if (e.key !== "Escape" || busy || picking || githubOpen) return;
       e.stopPropagation();
       // Escape closes an open help overlay first, and does not end setup.
       if (help) {
@@ -1129,7 +1273,7 @@ export function SetupWizard({ config, snapshot, onSaved, onClose }: { config: Co
     };
     document.addEventListener("keydown", onKey, true);
     return () => document.removeEventListener("keydown", onKey, true);
-  }, [busy, picking, help, closeHelp, confirmingSkip, requestSkip]);
+  }, [busy, picking, githubOpen, help, closeHelp, confirmingSkip, requestSkip]);
 
   const enterRoot = (root: string) => {
     if (!entered.includes(root) && !configuredRoots.includes(root)) setEntered((was) => (was.includes(root) ? was : [...was, root]));
@@ -1164,29 +1308,69 @@ export function SetupWizard({ config, snapshot, onSaved, onClose }: { config: Co
     }
   };
 
+  /** Starts the clone of one listed repository; a refusal is kept on it. Resolves to the clone's id, if it started. */
+  const startClone = async (r: ListedRepo): Promise<string | undefined> => {
+    try {
+      const clone = await api.cloneGithub(r.repo, r.root, r.name);
+      setCloneIds((was) => ({ ...was, [r.path]: clone.id }));
+      setCloneRefused(({ [r.path]: _old, ...rest }) => rest);
+      void githubClones.started(clone);
+      return clone.id;
+    } catch (err) {
+      setCloneRefused((was) => ({ ...was, [r.path]: message(err) }));
+      return undefined;
+    }
+  };
+
+  /** Continue on the Workspace step: `continueWorkspaceStep` decides; this applies its result to the step. */
   const continueWorkspace = async (to: number = STEP.agents) => {
     setBusy(true);
     setWorkspaceError(undefined);
     try {
-      const fresh = await api.config();
-      const next = workspaceSave(fresh, entered, new Set(missing.keys()));
-      let current = fresh;
-      if (next) {
-        current = await api.saveConfig(next);
-        onSaved(current);
+      const checkedPaths = (discovery.result?.candidates ?? []).filter((c) => !unchecked.has(c.path)).map((c) => c.path);
+      const result = await continueWorkspaceStep(
+        { entered, toCreate, missing: new Set(missing.keys()), checked: checkedPaths, listed, cloneIds, cloneRefused },
+        {
+          createWorkspaceFolder: api.createWorkspaceFolder,
+          config: api.config,
+          saveConfig: api.saveConfig,
+          trackRepo: api.trackRepo,
+          cloneGithub: api.cloneGithub,
+          started: (clone) => {
+            setCloneIds((was) => ({ ...was, [clone.path]: clone.id }));
+            void githubClones.started(clone);
+          },
+          waitForClones,
+          onSaved,
+        },
+      );
+      const nowThere = new Set(result.nowThere);
+      if (nowThere.size > 0) {
+        setToCreate((was) => new Set([...was].filter((r) => !nowThere.has(r))));
+        setAppeared((was) => new Set([...was, ...nowThere]));
       }
-      const added = next ? next.scanRoots.filter((r) => !fresh.scanRoots.includes(r)) : [];
-      let tracked = 0;
-      for (const candidate of discovery.result?.candidates ?? []) {
-        if (unchecked.has(candidate.path)) continue;
-        current = await api.trackRepo(candidate.path);
-        tracked++;
+      setCreateErrors(result.createErrors);
+      setCloneIds(result.cloneIds);
+      setCloneRefused(result.cloneRefused);
+      setSaved((was) => ({
+        ...was,
+        rootsAdded: [...was.rootsAdded, ...result.rootsAdded],
+        rootsCreated: [...was.rootsCreated, ...result.created],
+        tracked: was.tracked + result.tracked,
+        cloned: [...was.cloned, ...result.cloned],
+      }));
+      // Saved: what was entered is configured now, whether or not the clones keep the step open.
+      if (result.saved) {
+        setEntered([]);
+        setUnchecked(new Set());
+        setToCreate(new Set());
       }
-      if (tracked > 0) onSaved(current);
-      setSaved((was) => ({ ...was, rootsAdded: [...was.rootsAdded, ...added], tracked: was.tracked + tracked }));
-      setEntered([]);
-      setUnchecked(new Set());
-      setStep(to);
+      if (result.outcome === "next") {
+        setListed([]);
+        setCloneIds({});
+        setCloneRefused({});
+        setStep(to);
+      }
     } catch (err) {
       setWorkspaceError(message(err));
     } finally {
@@ -1327,15 +1511,47 @@ export function SetupWizard({ config, snapshot, onSaved, onClose }: { config: Co
       picking,
       pickError,
       pickedAgain,
+      toCreate,
+      createErrors,
+      proposed: proposedWorkspace(info?.home, configuredRoots, info?.suggestedRoots ?? []),
+      github: {
+        listed,
+        clones: Object.fromEntries(Object.entries(cloneIds).map(([path, id]) => [path, clones.clones.find((c) => c.id === id)])),
+        refused: cloneRefused,
+        off: clones.gitAvailable === false ? "git was not found on this machine" : rootReady ? undefined : "choose or create a workspace folder first",
+      },
     };
+    const githubRoots = githubRootChoices(configuredRoots, entered, missing, toCreate);
     return (
-      <WizardFrame {...frame} onContinue={() => void continueWorkspace()}>
+      <WizardFrame {...frame} continueBlocked={rootReady ? undefined : "A workspace folder is needed: choose one or create a new one."} onContinue={() => void continueWorkspace()}>
         <WorkspaceStep
           view={view}
           onInput={setInput}
           onAdd={addRoot}
           onPick={() => void pickRoot()}
-          onRemove={(root) => setEntered(entered.filter((r) => r !== root))}
+          onCreate={(root) =>
+            setToCreate((was) => {
+              const next = new Set(was);
+              if (next.has(root)) next.delete(root);
+              else next.add(root);
+              return next;
+            })
+          }
+          onPropose={(path) => {
+            enterRoot(path);
+            setToCreate((was) => new Set([...was, path]));
+          }}
+          onAddGithub={() => setGithubOpen(true)}
+          onRemoveGithub={(path) => setListed(listed.filter((r) => r.path !== path))}
+          onRetryGithub={(path) => {
+            const r = listed.find((l) => l.path === path);
+            if (r) void startClone(r);
+          }}
+          onRemove={(root) => {
+            setEntered(entered.filter((r) => r !== root));
+            setToCreate((was) => new Set([...was].filter((r) => r !== root)));
+            setListed(listed.filter((l) => l.root !== root || cloneIds[l.path] !== undefined));
+          }}
           onToggle={(path) => {
             const next = new Set(unchecked);
             if (next.has(path)) next.delete(path);
@@ -1343,6 +1559,15 @@ export function SetupWizard({ config, snapshot, onSaved, onClose }: { config: Co
             setUnchecked(next);
           }}
         />
+        {githubOpen && (
+          <AddGithubDialog
+            roots={githubRoots}
+            mode="collect"
+            taken={listed.map((r) => r.path)}
+            onClose={() => setGithubOpen(false)}
+            onCollect={(targets) => setListed((was) => [...was, ...targets.filter((t) => !was.some((r) => r.path === t.path)).map((t) => ({ repo: t.repo, root: t.root, name: t.name, path: t.path }))])}
+          />
+        )}
       </WizardFrame>
     );
   }

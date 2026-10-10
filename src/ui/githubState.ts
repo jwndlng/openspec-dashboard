@@ -49,6 +49,8 @@ export function chooseRepo(chosen: readonly ChosenRepo[], repo: string): ChosenR
 }
 
 export interface CloneTarget extends ChosenRepo {
+  /** The workspace root it is cloned into; empty while none is chosen. */
+  root: string;
   /** `<root>/<name>`, or empty while no root is chosen. */
   path: string;
   /** Why it cannot be cloned like this; `undefined` when it can. */
@@ -69,7 +71,7 @@ export function cloneTargets(chosen: readonly ChosenRepo[], root: string, taken:
     if (!isProjectName(name)) problem = "the folder name must start with a letter or digit and use only letters, digits, '.', '_' and '-'";
     else if (path && paths.some((p, j) => j !== i && p === path)) problem = "two repositories would go into the same folder";
     else if (path && taken.includes(path)) problem = "that folder is already taken by another repository being added";
-    return { repo: c.repo, name, path, ...(problem ? { problem } : {}) };
+    return { repo: c.repo, name, root, path, ...(problem ? { problem } : {}) };
   });
 }
 
