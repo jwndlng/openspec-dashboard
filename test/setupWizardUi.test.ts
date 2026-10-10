@@ -363,12 +363,46 @@ const reportWith = (status: "warning" | "ok"): EnvironmentReport => ({
 
 test("the System check lists a missing gh with copyable install and login commands", () => {
   const step = SystemCheckStep({ report: reportWith("warning"), loading: false, onRecheck: noop });
-  expect(textOf(step)).toContain("warning");
+  expect(textOf(step)).toContain("Warning");
   expect(byTag(step, "code").map(textOf)).toEqual(["brew install gh", "gh auth login"]);
   expect(elements(step).filter((el) => typeof el.type === "function" && el.props.label === "Copy")).toHaveLength(2);
   expect(textOf(step)).not.toContain("Everything needed is in place");
   expect(textOf(step)).toContain("pull requests and issues");
   expect(textOf(step)).toContain("worktree");
+});
+
+test("the System check is a visual report: a headline with the count in place, then one card per check", () => {
+  const five: EnvironmentReport = {
+    checkedAt: "2026-10-09T10:00:00.000Z",
+    status: "warning",
+    checks: [
+      { id: "dashboard-home", label: "Dashboard home", status: "ok", found: "writable: /home/demo/.spec-control" },
+      { id: "git", label: "git", status: "ok", found: "/usr/bin/git" },
+      { id: "git-identity", label: "Git committer identity", status: "ok", found: "Demo User <demo@example.invalid>" },
+      { id: "openspec-cli", label: "OpenSpec CLI", status: "ok", found: "/usr/local/bin/openspec" },
+      reportWith("warning").checks[1],
+    ],
+  };
+  const step = SystemCheckStep({ report: five, loading: false, onRecheck: noop });
+  const hero = byTag(step, "div").find((el) => String(el.props.class).startsWith("setup-system-hero"));
+  expect(String(hero?.props.class)).toContain("attention");
+  expect(textOf(hero)).toContain("4 of 5 in place");
+  expect(byTag(hero, "button").map(textOf)).toEqual(["Re-check"]);
+  const list = byTag(step, "ul").find((el) => el.props["aria-label"] === "What was checked");
+  const cards = byTag(list, "li").filter((li) => String(li.props.class).startsWith("setup-check "));
+  expect(cards.map((li) => textOf(byTag(li, "strong")[0]))).toEqual(["Dashboard home", "git", "Git committer identity", "OpenSpec CLI", "GitHub CLI"]);
+  expect(cards.map((li) => String(li.props.class).replace("setup-check ", ""))).toEqual(["ok", "ok", "ok", "ok", "warning"]);
+  for (const card of cards) {
+    const icon = byTag(card, "span").find((el) => el.props.class === "setup-check-icon");
+    expect(icon?.props["aria-hidden"]).toBe("true");
+    expect(byTag(icon, "svg")).toHaveLength(1);
+  }
+  expect(textOf(cards[0])).toContain("In place");
+  // The fix lives inside the card that needs it, and only there.
+  expect(byTag(cards[4], "code").map(textOf)).toEqual(["brew install gh", "gh auth login"]);
+  expect(cards.slice(0, 4).every((li) => byTag(li, "code").length === 0)).toBe(true);
+  const ok = byTag(SystemCheckStep({ report: reportWith("ok"), loading: false, onRecheck: noop }), "div").find((el) => String(el.props.class).startsWith("setup-system-hero"));
+  expect(String(ok?.props.class)).toContain("ok");
 });
 
 test("all in place is said plainly, and Re-check shows that it works", () => {

@@ -86,6 +86,13 @@ and its instructions, each command shown so that it can be copied with one actio
 whether each agent's executable is found is shown in the Agents step. It SHALL say that the GitHub CLI is used for pull requests
 and issues, and that git is needed to give each agent session its own worktree. It SHALL offer **Re-check**, which requests a fresh report and marks itself as working while
 it does. It SHALL say plainly when everything needed is in place, and SHALL allow continuing whatever the report says.
+It SHALL present the report in the same visual language as the Done step: a headline with a large badge — a check mark
+when everything needed is in place, a mark that something needs attention otherwise — saying how many checks are in
+place, with **Re-check** beside it; then one card per check, in the report's order, each with an icon for its tool, its
+label, what was found and its status as a pill in text and colour, the card's edge in the status's colour, and for a
+check that is not `ok` its remedy and instructions inside the card. The cards SHALL be exposed to assistive technology
+as a list, each read as its label, status and what was found, with the icons hidden; any animation SHALL not play when
+the user prefers reduced motion, and the step SHALL fit a 400px viewport without horizontal scrolling.
 The dashboard SHALL NOT run any command shown in the instructions.
 
 #### Scenario: gh is missing
@@ -107,6 +114,10 @@ The dashboard SHALL NOT run any command shown in the instructions.
 #### Scenario: All in place
 - **WHEN** every check of the setup view is `ok`
 - **THEN** the step says that everything needed is in place
+
+#### Scenario: A visual report
+- **WHEN** the System check step shows a setup view in which the GitHub CLI check is `warning` and the other four are `ok`
+- **THEN** the headline says four of five checks are in place beside a mark that something needs attention, with **Re-check** beside it, and five cards follow in the report's order, each with its tool's icon and a status pill, the GitHub CLI card in the warning colour holding its install and login commands
 
 ### Requirement: The Agents step can switch agent sessions on with a chosen default agent
 The Agents step SHALL state, as the Agent sessions section of Settings does, that enabling agent sessions lets the

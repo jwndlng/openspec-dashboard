@@ -11,6 +11,7 @@
 - [x] 2.2 Make the System check step request the setup view when shown and on Re-check, list no agent checks and say what git and the GitHub CLI are used for; verify with the System check scenarios
 - [x] 2.3 Add **Check again** to the Agents step, re-running the executable lookup, and remove its pointer to the System check; verify with the "Checking again after installing" scenario
 - [x] 2.4 Make the Done step request a fresh setup view and mark Agents when a checked agent is not found; verify with the Done scenarios including "An agent still missing"
+- [x] 2.5 Give the System check step the Done step's visual language — a headline with a badge, the count in place and Re-check, then one card per check with its tool's icon, a status pill and a status-coloured edge, instructions inside the card — in `src/ui/setupWizard.tsx` and `src/ui/styles.css`; verify with the "A visual report" scenario in the wizard tests
 
 ## 3. Verification
 

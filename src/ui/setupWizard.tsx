@@ -9,8 +9,7 @@ import type { AgentAvailability, AgentProfile, Config, DiscoverResult, Environme
 import { AgentSessionsStatement } from "./agentSettings.tsx";
 import { api } from "./api.ts";
 import { CommandSteps } from "./commandSteps.tsx";
-import { ENVIRONMENT_STATUS_BADGE, ENVIRONMENT_STATUS_LABEL } from "./environmentState.ts";
-import { IconCheck, IconFolderGit, IconHelp, IconMonitor, IconRefresh, IconScan, IconSettings, IconTerminal } from "./icons.tsx";
+import { IconCheck, IconFolder, IconFolderGit, IconGitBranch, IconGitPullRequest, IconHelp, IconKanban, IconMonitor, IconPencil, IconRefresh, IconScan, IconSettings, IconTerminal } from "./icons.tsx";
 import { AgentSelect, AUTO_FETCH_TITLE, AUTO_MERGE_HINT, AutoFetchSelect, autoFetchLabel, KEEP_EACH, KEEP_EACH_LABEL, PR_TITLES_TITLE, PrTitlesSelect } from "./projectSettings.tsx";
 import {
   type AgentChoice,
@@ -773,39 +772,84 @@ function IndividualProject({
   );
 }
 
+/** Each check's tool, as an icon on its card; a check the wizard does not know gets the System check's own. */
+const CHECK_ICON: Record<string, (typeof WELCOME_FLOW)[number]["Icon"]> = {
+  "dashboard-home": IconFolder,
+  git: IconGitBranch,
+  "git-identity": IconPencil,
+  "openspec-cli": IconKanban,
+  "github-cli": IconGitPullRequest,
+};
+
+/** The status as the card's pill says it. */
+const CHECK_STATUS_LABEL: Record<EnvironmentReport["status"], string> = { ok: "In place", warning: "Warning", problem: "Problem", "not-needed": "Not needed" };
+
+/**
+ * The System check, in the Done step's visual language: a headline with a badge, how many checks are in place and
+ * Re-check, then one card per check with its tool's icon, a status pill and, when it is not in place, how to fix it.
+ */
 export function SystemCheckStep({ report, loading, error, onRecheck }: { report?: EnvironmentReport; loading: boolean; error?: string; onRecheck: () => void }) {
+  const counted = report?.checks.filter((c) => c.status !== "not-needed") ?? [];
+  const inPlace = counted.filter((c) => c.status === "ok").length;
+  const ready = allInPlace(report);
+  const tone = report === undefined ? "pending" : ready ? "ok" : "attention";
   return (
-    <div class="setup-step">
-      <div class="row">
-        <p class="grow">
-          The tools Spec Control and your agents rely on, checked on this machine before the next steps use them. git gives each agent session its own worktree; the GitHub
-          CLI is used for pull requests and issues. Nothing is installed or run for you.
-        </p>
+    <div class="setup-step setup-system">
+      <p class="setup-lead">
+        The tools Spec Control and your agents rely on, checked on this machine before the next steps use them. git gives each agent session its own worktree; the GitHub
+        CLI is used for pull requests and issues. Nothing is installed or run for you.
+      </p>
+      <div class={`setup-system-hero ${tone}`}>
+        <span class="setup-system-badge" aria-hidden="true">
+          {tone === "ok" ? <IconCheck size={26} /> : tone === "attention" ? <span class="setup-system-bang">!</span> : <IconScan size={24} />}
+        </span>
+        <div class="setup-system-text">
+          <p class="setup-system-title">
+            {report === undefined ? (error === undefined ? "Checking this machine…" : "The environment could not be checked") : ready ? "Everything needed is in place" : `${inPlace} of ${counted.length} in place`}
+          </p>
+          <p class="setup-system-sub">
+            {report === undefined
+              ? "This takes a moment."
+              : ready
+                ? "Every tool Spec Control relies on was found."
+                : "Install what is missing now or later — you can continue either way."}
+          </p>
+        </div>
         <button type="button" class="btn sm" onClick={onRecheck} disabled={loading}>
           <IconRefresh size={13} />
           {loading ? "Checking…" : "Re-check"}
         </button>
       </div>
       {error !== undefined && <p class="notice danger">The environment could not be checked: {error}</p>}
-      {report === undefined && error === undefined && <p class="hint">Checking this machine…</p>}
-      {allInPlace(report) && <p class="notice ok">Everything needed is in place.</p>}
       {report && (
-        <ul class="setup-checks">
-          {report.checks.map((check) => (
-            <li key={check.id} class={check.status === "not-needed" ? "muted" : ""}>
-              <div class="setup-check-head">
-                <span class={ENVIRONMENT_STATUS_BADGE[check.status]}>{ENVIRONMENT_STATUS_LABEL[check.status]}</span>
-                <strong>{check.label}</strong>
-                <span class="hint">{check.found}</span>
-              </div>
-              {check.status !== "ok" && check.status !== "not-needed" && (
-                <>
-                  {check.remedy && <p class="hint">{check.remedy}</p>}
-                  {check.instructions && check.instructions.length > 0 && <CommandSteps steps={check.instructions} />}
-                </>
-              )}
-            </li>
-          ))}
+        <ul class="setup-checks" aria-label="What was checked">
+          {report.checks.map((check) => {
+            const Icon = CHECK_ICON[check.id] ?? IconScan;
+            const fix = check.status !== "ok" && check.status !== "not-needed";
+            return (
+              <li key={check.id} class={`setup-check ${check.status}`}>
+                <div class="setup-check-head">
+                  <span class="setup-check-icon" aria-hidden="true">
+                    <Icon size={18} />
+                  </span>
+                  <span class="setup-check-text">
+                    <strong class="setup-check-name">{check.label}</strong>
+                    <span class="setup-check-found">{check.found}</span>
+                  </span>
+                  <span class={`setup-check-status ${check.status}`}>
+                    {check.status === "ok" ? <IconCheck size={12} /> : fix ? <span aria-hidden="true">!</span> : null}
+                    {CHECK_STATUS_LABEL[check.status]}
+                  </span>
+                </div>
+                {fix && (check.remedy || (check.instructions && check.instructions.length > 0)) && (
+                  <div class="setup-check-fix">
+                    {check.remedy && <p class="hint">{check.remedy}</p>}
+                    {check.instructions && check.instructions.length > 0 && <CommandSteps steps={check.instructions} />}
+                  </div>
+                )}
+              </li>
+            );
+          })}
         </ul>
       )}
       {report?.caveat && <p class="hint">{report.caveat}</p>}
