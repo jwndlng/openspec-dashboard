@@ -14,11 +14,13 @@ export interface IntegrationState {
   config: Config;
   scanner: { trigger: () => { started: boolean } };
   sessions?: SessionManager;
+  /** Clones still running are not offered for integration until they have finished. */
+  githubClones?: { runningPaths(): string[] };
 }
 
 /** Canonical paths discovery currently reports as waiting for OpenSpec. A fresh walk: "currently" is the whole point. */
 async function integratablePaths(state: IntegrationState): Promise<Set<string>> {
-  const { integratable } = await discoverRepos(state.config.repos, state.config.scanRoots, state.config.ignorePaths);
+  const { integratable } = await discoverRepos(state.config.repos, state.config.scanRoots, state.config.ignorePaths, state.githubClones?.runningPaths());
   return new Set(integratable.map((r) => r.path));
 }
 

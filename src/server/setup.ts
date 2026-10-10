@@ -1,15 +1,17 @@
 // The setup wizard's server side (openspec/specs/setup-wizard): whether setup is pending, which well-known folders in
 // the home directory are worth offering as workspace roots, and the system's folder dialog. Everything the wizard saves
 // goes through the existing config and tracking routes; the only write here is clearing the flag in the dashboard's
-// own config. The folder dialog is the one process the wizard may start: a constant argument list, no shell, nothing
-// from the request on its command line, and it writes nothing.
+// own config — and a new workspace folder the user marked to be created, one empty directory made under New project's
+// placement rules (`newFolder.ts`). The folder dialog is the one process the wizard may start here: a constant argument
+// list, no shell, nothing from the request on its command line, and it writes nothing.
 import { mkdir, stat } from "node:fs/promises";
 import { homedir } from "node:os";
-import { join, sep } from "node:path";
+import { basename, dirname, isAbsolute, join, sep } from "node:path";
 import { installPlatform } from "../shared/agentDefaults.ts";
 import type { Config, FolderPickResult, SetupState } from "../shared/types.ts";
 import { updateConfig } from "./config.ts";
-import { canonicalPath, dashboardHome } from "./paths.ts";
+import { isDirectory, makeNewFolder, NewFolderError, pathTaken, placementProblem } from "./newFolder.ts";
+import { canonicalPath, dashboardHome, expandPath } from "./paths.ts";
 
 /**
  * Checked one by one, directly in the home directory, in this order. A fixed list rather than a listing of the home
@@ -181,4 +183,23 @@ export async function markSetupDone(state: { config: Config }): Promise<Config> 
     return rest;
   });
   return saved;
+}
+
+/**
+ * The Workspace step's **Create folder** (setup-wizard): one new, empty directory with a non-recursive, exclusive
+ * create, inside an existing directory and outside every tracked repository, ignore path and the home. Starts no
+ * process and leaves the configuration alone — the wizard saves the root afterwards. Throws {@link NewFolderError}
+ * with `400`, `404` or `409`; returns the folder's canonical path.
+ */
+export async function createWorkspaceFolder(config: Pick<Config, "repos" | "ignorePaths">, input: unknown): Promise<string> {
+  const expanded = typeof input === "string" && input.trim() ? expandPath(input.trim()) : "";
+  if (!expanded || !isAbsolute(expanded)) throw new NewFolderError(400, "the folder must be an absolute path (~ is accepted)");
+  const parent = canonicalPath(dirname(expanded));
+  if (!(await isDirectory(parent))) throw new NewFolderError(404, `its parent folder ${parent} does not exist`);
+  const path = join(parent, basename(expanded));
+  if (await pathTaken(path)) throw new NewFolderError(409, `${path} already exists`);
+  const problem = placementProblem(config, path);
+  if (problem) throw new NewFolderError(409, problem);
+  await makeNewFolder(path);
+  return canonicalPath(path);
 }

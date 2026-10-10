@@ -9,14 +9,19 @@ import type { AutoFetcher } from "./autoFetch.ts";
 import { applyCleanup, CleanupBusyError, previewCleanup } from "./cleanup.ts";
 import { changeDirFor, listArtifactFiles, readArtifactFile } from "./artifacts.ts";
 import { consoleFolderProblem } from "./sessions/consoleFolder.ts";
-import { type FolderPickerContext, FolderPickerBusyError, folderPickerContext, markSetupDone, pickFolder, setupState } from "./setup.ts";
+import { createWorkspaceFolder, type FolderPickerContext, FolderPickerBusyError, folderPickerContext, markSetupDone, pickFolder, setupState } from "./setup.ts";
+import { NewFolderError } from "./newFolder.ts";
 import { ConfigValidationError, newRepoConfig, repoId, updateConfig, validateConfig, validateIgnorePaths, validateScanRoots } from "./config.ts";
 import { createChange } from "./createChange.ts";
 import { createProject, CreateProjectError } from "./createProject.ts";
 import { dismissChange, DismissError, isDismissableName, previewDismiss } from "./dismissChange.ts";
 import { discoverRepos } from "./discover.ts";
 import { environmentReport } from "./environment.ts";
-import { confirmPendingIntegrations, startIntegration } from "./integration.ts";
+import { confirmIntegration, confirmPendingIntegrations, startIntegration } from "./integration.ts";
+import { githubRepoFromRemote, listGithubRepos } from "./gh.ts";
+import { originUrl } from "./git.ts";
+import { GithubClones } from "./githubClone.ts";
+import { isGithubOwner } from "../shared/github.ts";
 import { MAX_BLOCKING_FILES, PullBusyError, pullAll, pullRepository, resolvePullRepository } from "./pull.ts";
 import { Issues } from "./issues.ts";
 import { PullRequests, type RepoTarget } from "./pullRequests.ts";
@@ -45,6 +50,8 @@ export interface AppState {
   updateChecker?: UpdateChecker;
   /** Where the setup's folder dialog is looked up; absent means this machine's. Tests point it at a fake picker. */
   folderPicker?: FolderPickerContext;
+  /** Clones of Add from GitHub since the dashboard started; created on first use, kept in memory only. */
+  githubClones?: GithubClones;
 }
 
 /** The part of Bun's server object the handler needs: upgrading the terminal request to a WebSocket. */
@@ -144,7 +151,7 @@ async function postTrackRepo(state: AppState, req: Request): Promise<Response> {
   // Slow and read-only, so it runs before the write is queued; the write re-checks only what can change meanwhile.
   const candidate = state.config.repos.some((r) => r.id === id)
     ? undefined
-    : (await discoverRepos(state.config.repos, state.config.scanRoots, state.config.ignorePaths)).candidates.find((c) => c.id === id);
+    : (await discoverRepos(state.config.repos, state.config.scanRoots, state.config.ignorePaths, state.githubClones?.runningPaths())).candidates.find((c) => c.id === id);
   const { previous, saved } = await updateConfig(state, (current) => {
     if (current.repos.some((r) => r.id === id)) return { ...current, repos: current.repos.map((r) => (r.id === id ? { ...r, enabled: true } : r)) };
     if (!candidate) throw new TrackingError(404, NOT_A_CANDIDATE);
@@ -351,7 +358,7 @@ async function postDiscover(state: AppState, req: Request): Promise<Response> {
   // A marker written while an agent was still going is noticed here: the folder becomes a tracked repository rather
   // than being offered again. Read-only towards repositories; the only write is to the dashboard's own config.
   await confirmPendingIntegrations(state);
-  const result: DiscoverResult = await discoverRepos(state.config.repos, roots, ignorePaths);
+  const result: DiscoverResult = await discoverRepos(state.config.repos, roots, ignorePaths, state.githubClones?.runningPaths());
   return json(result);
 }
 
@@ -1020,6 +1027,72 @@ async function postSetupFolder(state: AppState): Promise<Response> {
   }
 }
 
+/** **Create folder** in the setup wizard's Workspace step: one empty folder; the configuration is saved by the wizard. */
+async function postWorkspaceFolder(state: AppState, req: Request): Promise<Response> {
+  try {
+    return json({ path: await createWorkspaceFolder(state.config, (await readJson(req)).path) }, 201);
+  } catch (err) {
+    if (err instanceof NewFolderError || err instanceof SessionError) return json({ error: err.message }, err.status);
+    throw err;
+  }
+}
+
+/**
+ * The clone list, created on first use. A clone holding the project marker is tracked through the same serialised
+ * write as an integration that worked — enabled, default name, scan — and nothing else about it is stored.
+ */
+function githubClones(state: AppState): GithubClones {
+  state.githubClones ??= new GithubClones({
+    config: () => state.config,
+    track: async (path) => {
+      const added = await confirmIntegration(state, path);
+      if (added) {
+        state.pullRequests?.forgetOrigins();
+        state.autoFetcher?.plan();
+      }
+      return added;
+    },
+  });
+  return state.githubClones;
+}
+
+/** Lower-cased `owner/name` of every configured repository whose `origin` is on github.com: those are "already added". */
+async function addedGithubRepos(config: Config): Promise<Set<string>> {
+  const origins = await Promise.all(config.repos.map((repo) => originUrl(repo.path).catch(() => undefined)));
+  return new Set(origins.flatMap((url) => githubRepoFromRemote(url)?.toLowerCase() ?? []));
+}
+
+/**
+ * Add from GitHub's list (github-repositories): one owner's repositories through the read-only `gh repo list`. A POST
+ * because it starts `gh`, which reaches GitHub; it writes nothing, keeps nothing and triggers no scan.
+ */
+async function postGithubRepos(state: AppState, req: Request): Promise<Response> {
+  const { owner } = await readJson(req);
+  if (owner !== undefined && owner !== "" && !isGithubOwner(owner)) return json({ error: "the owner may only use letters, digits and single hyphens (at most 39 characters)" }, 400);
+  return json(await listGithubRepos(owner || undefined, await addedGithubRepos(state.config)));
+}
+
+/** Clone on the user's confirmation: answers `202` once the folder exists, without waiting for git. */
+async function postGithubClone(state: AppState, req: Request): Promise<Response> {
+  try {
+    return json(await githubClones(state).start(await readJson(req)), 202);
+  } catch (err) {
+    if (err instanceof NewFolderError || err instanceof SessionError) return json({ error: err.message }, err.status);
+    throw err;
+  }
+}
+
+async function postGithubCloneDismiss(state: AppState, req: Request): Promise<Response> {
+  try {
+    const clones = githubClones(state);
+    clones.dismiss((await readJson(req)).id);
+    return json({ clones: clones.list() });
+  } catch (err) {
+    if (err instanceof NewFolderError || err instanceof SessionError) return json({ error: err.message }, err.status);
+    throw err;
+  }
+}
+
 export function createFetchHandler({ state, indexHtml }: AppOptions): (req: Request, server?: ServerLike) => Promise<Response> {
   return async (req, server) => {
     const url = new URL(req.url);
@@ -1060,6 +1133,12 @@ export function createFetchHandler({ state, indexHtml }: AppOptions): (req: Requ
       }
       // A POST because it starts a process (the system's folder dialog); the body is never read.
       if (req.method === "POST" && pathname === "/api/setup/folder") return postSetupFolder(state);
+      if (req.method === "POST" && pathname === "/api/setup/workspace-folder") return postWorkspaceFolder(state, req);
+      if (req.method === "POST" && pathname === "/api/github/repos") return postGithubRepos(state, req);
+      if (req.method === "POST" && pathname === "/api/github/clone") return postGithubClone(state, req);
+      // Read-only and in memory: starts no process.
+      if (req.method === "GET" && pathname === "/api/github/clones") return json({ clones: state.githubClones?.list() ?? [] });
+      if (req.method === "POST" && pathname === "/api/github/clones/dismiss") return postGithubCloneDismiss(state, req);
       if (req.method === "GET" && pathname === "/api/config") return json(state.config);
       if (req.method === "PUT" && pathname === "/api/config") return putConfig(state, req);
       if (req.method === "POST" && pathname === "/api/discover") return postDiscover(state, req);

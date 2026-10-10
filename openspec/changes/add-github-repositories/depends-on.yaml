@@ -1,0 +1,2 @@
+depends_on:
+  - wizard-system-check-first

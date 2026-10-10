@@ -1,9 +1,10 @@
-// The GitHub CLI, run the one way the dashboard runs it: shared by the pull-request query (pullRequests.ts) and the
-// issue query (issues.ts), so both are provably started alike — without a shell, in the dashboard home, with prompts
-// disabled, no stdin and a timeout. The subcommands themselves stay in those two modules, written out in full, so the
-// read-only `gh pr list`, `gh api user` and `gh issue list` remain the only ones (openspec/specs/dashboard-api).
+// The GitHub CLI, run the one way the dashboard runs it: shared by the pull-request query (pullRequests.ts), the
+// issue query (issues.ts) and the repository listing of Add from GitHub (`listGithubRepos` below), so all three are
+// provably started alike — without a shell, in the dashboard home, with prompts disabled, no stdin and a timeout. Each
+// subcommand is written out in full where it is used, so the read-only `gh pr list`, `gh api user`, `gh issue list` and
+// `gh repo list` remain the only ones (openspec/specs/dashboard-api).
 import { mkdir } from "node:fs/promises";
-import type { RepoPullRequests } from "../shared/types.ts";
+import type { GithubRepoEntry, GithubRepoList, RepoPullRequests } from "../shared/types.ts";
 import { normalizeRemote } from "./git.ts";
 import { dashboardHome, whichOnPath } from "./paths.ts";
 import { maskCredentials } from "./pull.ts";
@@ -100,4 +101,62 @@ export function failureOf(run: GhRun, purpose = "see pull requests"): GhFailure 
   if (saysNotSignedIn(run.err)) return NOT_SIGNED_IN;
   if (run.timedOut) return { kind: "failed", reason: "gh timed out" };
   return { kind: "failed", reason: ghReason(run.err) };
+}
+
+// ---- the repository listing (openspec/specs/github-repositories) ----
+
+/** Repositories per owner; GitHub's own order is not trusted, the list is sorted by the last push. */
+export const REPO_LIST_LIMIT = 200;
+const REPO_FIELDS = "nameWithOwner,description,isPrivate,isArchived,pushedAt";
+
+const asText = (value: unknown): string => (typeof value === "string" ? value : "");
+
+/** One entry of `gh repo list --json …`, or undefined when it names no repository. */
+export function parseRepoEntry(raw: unknown, added: ReadonlySet<string>): GithubRepoEntry | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const entry = raw as Record<string, unknown>;
+  const repo = asText(entry.nameWithOwner);
+  if (!/^[^/\s]+\/[^/\s]+$/.test(repo)) return undefined;
+  return {
+    repo,
+    description: asText(entry.description),
+    private: entry.isPrivate === true,
+    archived: entry.isArchived === true,
+    pushedAt: asText(entry.pushedAt),
+    added: added.has(repo.toLowerCase()),
+  };
+}
+
+/**
+ * One owner's repositories through the read-only `gh repo list`, for the user who opened Add from GitHub, changed its
+ * owner or pressed Refresh — never on a timer. Without `owner`, `gh api user` names the signed-in account first.
+ * `owner` must already be validated (`isGithubOwner`); it is passed as one argument. `added` holds the lower-cased
+ * `owner/name` of every tracked repository's `origin`. Writes nothing and keeps nothing.
+ */
+export async function listGithubRepos(owner: string | undefined, added: ReadonlySet<string>, timeoutMs = GH_TIMEOUT_MS): Promise<GithubRepoList> {
+  const purpose = "list your GitHub repositories";
+  let login = owner;
+  if (!login) {
+    const user = await runGh(["api", "user", "--jq", ".login"], timeoutMs);
+    const failure = failureOf(user, purpose);
+    if (failure) return { status: failure.kind, reason: failure.reason, setup: failure.setup, repos: [] };
+    login = user.out.trim();
+    if (!login) return { status: "failed", reason: "gh did not name the signed-in account", repos: [] };
+  }
+  const run = await runGh(["repo", "list", login, "--limit", String(REPO_LIST_LIMIT), "--json", REPO_FIELDS], timeoutMs);
+  const failure = failureOf(run, purpose);
+  if (failure) return { status: failure.kind, owner: login, reason: failure.reason, setup: failure.setup, repos: [] };
+  let raw: unknown;
+  try {
+    raw = JSON.parse(run.out || "[]");
+  } catch {
+    return { status: "failed", owner: login, reason: "gh returned output that is not JSON", repos: [] };
+  }
+  if (!Array.isArray(raw)) return { status: "failed", owner: login, reason: "gh returned output that is not a list", repos: [] };
+  const repos = raw
+    .map((entry) => parseRepoEntry(entry, added))
+    .filter((entry): entry is GithubRepoEntry => entry !== undefined)
+    // Newest push first; the name breaks ties.
+    .sort((a, b) => (Date.parse(b.pushedAt) || 0) - (Date.parse(a.pushedAt) || 0) || a.repo.localeCompare(b.repo));
+  return { status: "ok", owner: login, truncated: raw.length >= REPO_LIST_LIMIT, repos };
 }

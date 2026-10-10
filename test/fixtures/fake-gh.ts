@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 // A stand-in for the GitHub CLI. Tests never run the real `gh` and never touch the network: this answers
-// `pr list`, `api user` and `issue list` from a JSON scenario file named by FAKE_GH_SCENARIO, and appends one JSON line per
+// `pr list`, `api user`, `issue list` and `repo list` from a JSON scenario file named by FAKE_GH_SCENARIO, and appends one JSON line per
 // invocation (argv and cwd) to FAKE_GH_LOG so a test can prove which calls ran, and from where.
 //
 // Scenario shape (every key optional):
@@ -11,6 +11,8 @@
 //     "exitCode": 1,
 //     "repos": { "acme/alpha-infra": { "open": [ … ], "closed": [ … ] } },   // entries may carry "mergeable"
 //     "issues": { "acme/alpha-infra": [ … ] },      // open issues, newest first, as `issue list` prints them
+//     "owners": { "jdoe": [ … ] },                  // `repo list <owner>` entries, as `gh` prints them
+//     "perRepo": { "acme": { "mode": "fail" } },    // also keyed by owner for `repo list`
 //     "perRepo": { "acme/beta-soc": { "mode": "fail", "stderr": "…" } },
 //     "userMode": "fail"                          // only for `api user`
 //   }
@@ -29,6 +31,7 @@ interface Scenario extends Mode {
   login?: string;
   repos?: Record<string, { open?: unknown[]; closed?: unknown[] }>;
   issues?: Record<string, unknown[]>;
+  owners?: Record<string, unknown[]>;
   perRepo?: Record<string, Mode>;
   userMode?: Mode["mode"];
 }
@@ -97,8 +100,18 @@ if (argv[0] === "api" && argv[1] === "user") {
       fields && item && typeof item === "object" ? Object.fromEntries(Object.entries(item).filter(([key]) => fields.includes(key))) : item;
     return `${JSON.stringify((scenario.issues?.[repo] ?? []).slice(0, limit).map(project))}\n`;
   });
+} else if (argv[0] === "repo" && argv[1] === "list") {
+  const owner = argv[2] && !argv[2].startsWith("--") ? argv[2] : (scenario.login ?? "demo-user");
+  const limit = Number(flag("limit") ?? 30);
+  const mode: Mode = { ...scenario, ...(scenario.perRepo?.[owner] ?? {}) };
+  finish(mode, () => {
+    const fields = flag("json")?.split(",");
+    const project = (item: unknown) =>
+      fields && item && typeof item === "object" ? Object.fromEntries(Object.entries(item).filter(([key]) => fields.includes(key))) : item;
+    return `${JSON.stringify((scenario.owners?.[owner] ?? []).slice(0, limit).map(project))}\n`;
+  });
 } else {
-  // Every other subcommand is a bug in the caller: the dashboard runs only these three.
+  // Every other subcommand is a bug in the caller: the dashboard runs only these four.
   process.stderr.write(`fake-gh: unexpected invocation ${JSON.stringify(argv)}\n`);
   process.exit(64);
 }
