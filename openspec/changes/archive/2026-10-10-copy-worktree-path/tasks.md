@@ -12,4 +12,4 @@
 ## 3. Verify
 
 - [x] 3.1 `bun run check` passes
-- [~] 3.2 In the running dashboard, open a change with a worktree, click the badge and paste the path into a terminal (`cd <paste>` lands in the worktree)
+- [x] 3.2 In the running dashboard, open a change with a worktree, click the badge and paste the path into a terminal (`cd <paste>` lands in the worktree)
